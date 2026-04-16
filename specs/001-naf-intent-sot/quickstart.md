@@ -95,16 +95,16 @@ result = await store.seed("dcfabric", branch="001-naf-intent-sot")
 | Infrahub implementation | `packages/intent/snapl_intent/infrahub/store.py` |
 | Schema YAML files | `packages/intent/snapl_intent/schemas/` (3-batch: base/ → extensions/ → project) |
 | Seed data YAML files | `packages/intent/snapl_intent/seed/dcfabric/` |
-| Unit tests | `tests/unit/intent/` |
-| Integration tests | `tests/integration/intent/` |
+| Unit tests | `tests/unit/test_intent/` |
+| Integration tests | `tests/integration/test_intent/` |
 | Docker Compose | `development/docker-compose.yml` |
 
 ## Running Tests
 
 ```bash
 # Unit tests (no Infrahub needed — uses mock client)
-uv run pytest tests/unit/intent/ -m unit -v
+uv run pytest tests/unit/test_intent/ -m unit -v
 
 # Integration tests (requires running Infrahub)
-uv run pytest tests/integration/intent/ -m integration -v
+uv run pytest tests/integration/test_intent/ -m integration -v
 ```

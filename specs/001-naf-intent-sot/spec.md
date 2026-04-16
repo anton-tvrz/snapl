@@ -109,9 +109,9 @@ The platform supports multiple network automation scenarios (datacenter fabric, 
 - **FR-008**: System MUST provide a consistent interface for desired state operations regardless of which use case is being queried, enabling downstream consumers to work with any use case through the same interaction patterns.
 - **FR-009**: System MUST support updating existing desired state (re-ingesting) without creating duplicate records.
 - **FR-010**: System MUST support the datacenter fabric use case as the primary and fully-tested use case at first delivery.
+- **FR-011**: System MUST support deletion of a device and its desired state from the Source of Truth. Deletion MUST be coordinated with other NAF modules (specifically the Collector's observed state) to ensure the device is safely decommissioned before intent is removed. The Intent module MUST expose deletion as an operation that other modules can gate or confirm.
 - **FR-012**: System MUST include stub schema definitions for the Business Intent model (ApplicationService, ServiceEndpoint, ConnectivityIntent, InfrastructureBinding, FirewallRuleSet, OperationalOverride, OverrideWindow, OverrideAction). These schemas are provisioned alongside device-level schemas but have no retrieval, seeding, or deletion implementation in this feature.
 - **FR-013**: Feature MUST deliver a local infrastructure stack (Docker Compose) for running the Source of Truth and its dependencies (graph database, cache, message queue). This enables integration testing and local development.
-- **FR-011**: System MUST support deletion of a device and its desired state from the Source of Truth. Deletion MUST be coordinated with other NAF modules (specifically the Collector's observed state) to ensure the device is safely decommissioned before intent is removed. The Intent module MUST expose deletion as an operation that other modules can gate or confirm.
 
 ### Key Entities
 

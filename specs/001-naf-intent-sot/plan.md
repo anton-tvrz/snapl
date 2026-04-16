@@ -84,14 +84,14 @@ development/
 tests/
 ├── conftest.py                         # Shared fixtures (mock_infrahub_client, spine_leaf_topology)
 ├── unit/
-│   └── intent/
+│   └── test_intent/
 │       ├── test_models.py              # Pydantic model validation
 │       ├── test_abc.py                 # ABC contract enforcement
 │       ├── test_store.py               # InfrahubIntentStore with mock client
 │       ├── test_schema.py              # Schema provisioning logic (batch ordering)
 │       └── test_seed.py                # Data ingestion logic (dependency ordering)
 └── integration/
-    └── intent/
+    └── test_intent/
         ├── test_infrahub_schema.py     # Schema load against live Infrahub
         ├── test_infrahub_seed.py       # Seed data against live Infrahub
         └── test_infrahub_query.py      # Query desired state from live Infrahub

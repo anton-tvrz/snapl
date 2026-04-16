@@ -43,7 +43,7 @@
 - [ ] T008 Implement Pydantic models per contract (Device, Interface, BGPSession, DesiredState, Schema, ProvisionResult, SeedResult, DeleteResult) in packages/intent/snapl_intent/models.py
 - [ ] T009 Implement IntentStore ABC with all async method signatures per contracts/intent-store.md in packages/intent/snapl_intent/abc.py
 - [ ] T010 Implement Infrahub async client wrapper (connection via env vars, auth, 10s timeout, error mapping to domain exceptions) in packages/intent/snapl_intent/infrahub/client.py
-- [ ] T011 Update package exports (models, ABC, exceptions) in packages/intent/snapl_intent/__init__.py and packages/intent/snapl_intent/infrahub/__init__.py
+- [ ] T011 Update package exports (models, ABC, exceptions) in packages/intent/snapl_intent/__init__.py and create empty packages/intent/snapl_intent/infrahub/__init__.py placeholder
 
 **Checkpoint**: Foundation ready — models, ABC, exceptions, client wrapper all tested and passing. User story implementation can begin.
 
@@ -62,7 +62,7 @@
 ### Implementation
 
 - [ ] T013 [US1] Create InfrahubIntentStore class scaffolding with get_desired_state() implementation (GraphQL query, node-to-Pydantic mapping) in packages/intent/snapl_intent/infrahub/store.py
-- [ ] T014 [US1] Create infrahub subpackage exports (InfrahubIntentStore) in packages/intent/snapl_intent/infrahub/__init__.py
+- [ ] T014 [US1] Add InfrahubIntentStore export to packages/intent/snapl_intent/infrahub/__init__.py (placeholder created in T011)
 
 **Checkpoint**: US1 unit tests pass. get_desired_state() returns correct DesiredState from mock Infrahub client. Integration tests deferred to Phase 4 (require seeded data).
 
@@ -133,25 +133,30 @@
 
 - [ ] T032 [P] [US4] Write unit tests for use case isolation (get_desired_state with use_case filter returns only matching devices, seed to one use case does not affect another) in tests/unit/test_intent/test_store.py (append to existing)
 
-### Implementation
+### Fixture & Implementation
 
 - [ ] T033 [US4] Validate and enforce use_case filter in all InfrahubIntentStore query paths in packages/intent/snapl_intent/infrahub/store.py
-- [ ] T034 [US4] Write integration test for cross-use-case isolation against live Infrahub (seed two use cases, verify independence) in tests/integration/test_intent/test_infrahub_query.py (append to existing)
+- [ ] T034 [P] [US4] Create minimal second-use-case seed fixture (2 devices tagged use_case=test_edge, reusing dcfabric schema types) in packages/intent/snapl_intent/seed/test_edge/topology.yml
+- [ ] T035 [US4] Write integration test for cross-use-case isolation against live Infrahub (seed dcfabric + test_edge fixtures, verify queries return only matching use_case, verify modifications to one use case do not affect the other) in tests/integration/test_intent/test_infrahub_query.py (append to existing)
 
-**Checkpoint**: US4 complete. Use case isolation verified — operations on dcfabric do not affect other use cases.
+**Checkpoint**: US4 complete. Use case isolation verified — operations on dcfabric do not affect the test_edge fixture, satisfying SC-004.
 
 ---
 
 ## Phase 7: Polish & Cross-Cutting Concerns
 
-**Purpose**: Coordinated deletion, Infrahub branch support, and end-to-end validation
+**Purpose**: Coordinated deletion (completes FR-011), Infrahub branch support, missing integration test coverage, and end-to-end validation.
 
-- [ ] T035 [P] Write unit tests for InfrahubIntentStore.delete_device() (success removes device + interfaces + BGP sessions, not found raises IntentNotFoundError, deletion error raises IntentDeletionError) in tests/unit/test_intent/test_store.py (append to existing)
-- [ ] T036 Add delete_device() method to InfrahubIntentStore in packages/intent/snapl_intent/infrahub/store.py
-- [ ] T037 [P] Add Infrahub branch parameter support to seed() and get_desired_state() in packages/intent/snapl_intent/infrahub/store.py
-- [ ] T038 Run quickstart.md validation end-to-end against live Infrahub (provision -> seed -> query -> inspect schema)
-- [ ] T039 Verify all unit tests pass: uv run pytest tests/unit/test_intent/ -v
-- [ ] T040 Verify all integration tests pass against live Infrahub: uv run pytest tests/integration/test_intent/ -v
+- [ ] T036 [P] Write unit tests for InfrahubIntentStore.delete_device() (success removes device + interfaces + BGP sessions, not found raises IntentNotFoundError, deletion error raises IntentDeletionError) in tests/unit/test_intent/test_store.py (append to existing)
+- [ ] T037 Add delete_device() method to InfrahubIntentStore — fulfills FR-011. The method exposes deletion as an operation callers can gate; the Intent module itself does not query the Collector — coordination is the caller's (Orchestrator's) responsibility. File: packages/intent/snapl_intent/infrahub/store.py
+- [ ] T038 [P] Add Infrahub branch parameter support to seed() and get_desired_state() in packages/intent/snapl_intent/infrahub/store.py
+- [ ] T039 [P] Write integration test for get_schema() against live Infrahub (provision dcfabric schema, verify Schema object returned with correct entities and source files, verify unknown use case raises IntentSchemaError) in tests/integration/test_intent/test_infrahub_schema.py (append to existing)
+- [ ] T040 Add performance assertions to integration tests validating SC-001 (<5s single-device retrieval) and SC-007 (<10s error on unavailable SoT) in tests/integration/test_intent/test_infrahub_query.py
+- [ ] T041 Run quickstart.md validation end-to-end against live Infrahub (provision -> seed -> query -> inspect schema)
+- [ ] T042 Verify all unit tests pass: uv run pytest tests/unit/test_intent/ -v
+- [ ] T043 Verify all integration tests pass against live Infrahub: uv run pytest tests/integration/test_intent/ -v
+
+> **Note on SC-002 (<2min seed of 50 devices)**: Current dcfabric fixture (T020) has ~6 devices. A 50-device fixture is deferred to a follow-up feature — current seed implementation is measured against the 6-device topology, and scaling to 50 is an incremental data change (no new code).
 
 ---
 
@@ -189,8 +194,8 @@
 **Phase 3**: T012 can start immediately after Phase 2
 **Phase 4**: T015-T020 all in parallel (independent YAML files); T021-T023 all in parallel (independent test files)
 **Phase 5**: T030 can start as soon as store.py exists from Phase 3
-**Phase 6**: T032 can start as soon as Phase 4 completes
-**Phase 7**: T035, T037 can run in parallel
+**Phase 6**: T032, T034 can run in parallel (test and fixture are independent)
+**Phase 7**: T036, T038, T039 can run in parallel
 
 ---
 
@@ -230,8 +235,8 @@ Task: T023 "Unit tests for store provision/seed in test_store.py"
 3. US2 YAML files + schema + seed -> Full provision-seed-query pipeline
 4. US1 integration tests -> Complete US1 end-to-end validation
 5. US3 schema inspection -> Developer tooling
-6. US4 use case isolation -> Multi-use-case validation
-7. Polish -> Deletion, branching, quickstart validation
+6. US4 use case isolation (with test_edge fixture) -> Multi-use-case validation (SC-004)
+7. Polish -> Deletion (FR-011), branching, integration test coverage additions, performance assertions, quickstart validation
 
 ### Single-Developer Strategy (Recommended)
 
