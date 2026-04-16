@@ -46,3 +46,6 @@ Thumbs.db
 # Environment
 .env
 !.env.example
+
+# Spec Kit extensions cache
+.specify/extensions/.cache/
