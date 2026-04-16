@@ -1,0 +1,178 @@
+# PR validation — quality gates for every pull request
+name: PR Validation
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, labeled]
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Reusable quality checks (lint, security, tests)
+  # ---------------------------------------------------------------------------
+  quality:
+    name: Quality Checks
+    uses: ./.github/workflows/quality.yml
+    permissions:
+      contents: read
+      security-events: write
+    secrets: inherit
+
+  # ---------------------------------------------------------------------------
+  # Issue link check — enforce Closes/Fixes/Resolves #N in PR body
+  # ---------------------------------------------------------------------------
+  issue-link-check:
+    name: Issue Link Check
+    runs-on: ubuntu-latest
+    permissions: {}
+    if: >-
+      !startsWith(github.head_ref, 'dependabot/') &&
+      !startsWith(github.head_ref, 'release/')
+    steps:
+      - name: Check PR body for issue reference
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          if echo "$PR_BODY" | grep -iqE '\b(closes|fixes|resolves)\b\s+#[0-9]+'; then
+            echo "PR body contains an issue reference."
+          else
+            echo "PR body must include 'Closes #<issue-number>' to link this PR to an issue."
+            echo ""
+            echo "Add one of the following to your PR description:"
+            echo "  Closes #123"
+            echo "  Fixes #123"
+            echo "  Resolves #123"
+            echo ""
+            echo "This ensures the PR appears in the 'Linked pull requests' column on the project board."
+            exit 1
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Changelog fragment check — enforce towncrier fragment in user-facing PRs
+  # ---------------------------------------------------------------------------
+  changelog-check:
+    name: Changelog Check
+    runs-on: ubuntu-latest
+    permissions: {}
+    if: >-
+      !startsWith(github.head_ref, 'dependabot/') &&
+      !startsWith(github.head_ref, 'release/') &&
+      !contains(github.event.pull_request.labels.*.name,
+      'skip-changelog')
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Check for changelog fragment
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          echo "Checking for changelog fragments in this PR..."
+          echo ""
+
+          FRAGMENTS=$(git diff --name-only --diff-filter=AM \
+            "$BASE_SHA"..."$HEAD_SHA" -- 'changelog/*.md' \
+            | grep -v '.gitkeep' || true)
+
+          if [ -n "$FRAGMENTS" ]; then
+            echo "Found changelog fragment(s):"
+            echo "$FRAGMENTS"
+            echo ""
+            echo "Changelog check passed."
+          else
+            echo "No changelog fragment found in this PR."
+            echo ""
+            echo "Please add a changelog fragment file:"
+            echo "  echo \"Description\" > changelog/<issue-number>.<type>.md"
+            echo ""
+            echo "Types: added, changed, deprecated, removed, fixed, security"
+            echo ""
+            echo "If this change does not need a changelog entry (CI-only,"
+            echo "docs-only, test-only, or internal refactoring), ask a"
+            echo "maintainer to add the 'skip-changelog' label to this PR."
+            exit 1
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Auto-label PRs
+  # ---------------------------------------------------------------------------
+  labeler:
+    name: Auto Label
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/labeler@v6
+        with:
+          configuration-path: .github/labeler.yml
+
+  # ---------------------------------------------------------------------------
+  # Wiki reminder for workflow changes
+  # ---------------------------------------------------------------------------
+  wiki-reminder:
+    name: Documentation Reminder
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Check for workflow changes
+        id: check
+        run: |
+          CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- '.github/workflows/')
+          if [ -n "$CHANGED" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "files<<EOF" >> "$GITHUB_OUTPUT"
+            echo "$CHANGED" >> "$GITHUB_OUTPUT"
+            echo "EOF" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Comment on PR
+        if: steps.check.outputs.changed == 'true'
+        uses: marocchino/sticky-pull-request-comment@v3
+        with:
+          header: wiki-reminder
+          message: |
+            **Documentation update may be needed** — the following workflow files were changed:
+            ```
+            ${{ steps.check.outputs.files }}
+            ```
+            Please update documentation if these changes affect development workflows.
+
+  # ---------------------------------------------------------------------------
+  # PR Summary — aggregate results
+  # ---------------------------------------------------------------------------
+  pr-summary:
+    name: PR Summary
+    runs-on: ubuntu-latest
+    needs:
+      - quality
+      - issue-link-check
+      - changelog-check
+    if: always()
+    steps:
+      - name: Check job results
+        run: |
+          echo "## PR Validation Summary"
+          echo ""
+          echo "| Job | Status |"
+          echo "|-----|--------|"
+          echo "| Quality Checks | ${{ needs.quality.result }} |"
+          echo "| Issue Link Check | ${{ needs.issue-link-check.result }} |"
+          echo "| Changelog Check | ${{ needs.changelog-check.result }} |"
+          echo ""
+
+          if [[ "${{ needs.quality.result }}" == "failure" ]] || \
+             [[ "${{ needs.issue-link-check.result }}" == "failure" ]] || \
+             [[ "${{ needs.changelog-check.result }}" == "failure" ]]; then
+            echo "Required jobs failed — blocking merge."
+            exit 1
+          fi
+
+          echo "All required checks passed."

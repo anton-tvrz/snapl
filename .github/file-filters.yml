@@ -1,0 +1,68 @@
+# Path-based file filters for CI conditional job execution
+# Used by dorny/paths-filter in GitHub Actions workflows
+
+intent:
+  - "packages/intent/**"
+  - "tests/**"
+  - "pyproject.toml"
+  - "uv.lock"
+
+executor:
+  - "packages/executor/**"
+  - "tests/**"
+  - "pyproject.toml"
+  - "uv.lock"
+
+collector:
+  - "packages/collector/**"
+  - "tests/**"
+  - "pyproject.toml"
+  - "uv.lock"
+
+observability:
+  - "packages/observability/**"
+  - "tests/**"
+  - "pyproject.toml"
+  - "uv.lock"
+
+orchestrator:
+  - "packages/orchestrator/**"
+  - "tests/**"
+  - "pyproject.toml"
+  - "uv.lock"
+
+presentation:
+  - "packages/presentation/**"
+  - "tests/**"
+  - "pyproject.toml"
+  - "uv.lock"
+
+python:
+  - "**/*.py"
+  - "pyproject.toml"
+  - "uv.lock"
+
+documentation:
+  - "docs/**"
+  - "dev/**"
+  - "*.md"
+
+ci:
+  - ".github/**"
+  - ".pre-commit-config.yaml"
+
+infrastructure:
+  - "development/**"
+  - "docker-compose*.yml"
+
+yaml:
+  - "**/*.yml"
+  - "**/*.yaml"
+  - ".yamllint.yml"
+
+schemas:
+  - "packages/intent/snapl_intent/schemas/**"
+
+templates:
+  - "packages/*/templates/**"
+  - "**/*.j2"

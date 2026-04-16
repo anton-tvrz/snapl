@@ -1,0 +1,49 @@
+# Build packages on tags
+name: Build Artifacts
+
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  PYTHON_VERSION: "3.12"
+  UV_VERSION: "latest"
+
+jobs:
+  build-packages:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: ${{ env.UV_VERSION }}
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Build snapl-intent
+        run: uv build --package snapl-intent
+
+      - name: Build snapl-executor
+        run: uv build --package snapl-executor
+
+      - name: Build snapl-collector
+        run: uv build --package snapl-collector
+
+      - name: Build snapl-observability
+        run: uv build --package snapl-observability
+
+      - name: Build snapl-orchestrator
+        run: uv build --package snapl-orchestrator
+
+      - name: Build snapl-presentation
+        run: uv build --package snapl-presentation
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/

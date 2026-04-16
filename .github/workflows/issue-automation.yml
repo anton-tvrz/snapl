@@ -1,0 +1,126 @@
+# Issue automation — bug triage + close guard
+#
+# Combines two lifecycle automations:
+#   - Bug triage: auto-label new bug reports with `triage` and post welcome comment
+#   - Close guard: reopen issues closed while linked PRs are still unmerged
+#
+# See dev/guidelines/issue-management.md for the full issue lifecycle.
+name: Issue Automation
+
+on:
+  issues:
+    types: [opened, closed]
+
+permissions:
+  issues: write
+  pull-requests: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Bug triage — runs when an issue is opened
+  # ---------------------------------------------------------------------------
+  triage-bug-report:
+    name: Triage Bug Report
+    runs-on: ubuntu-latest
+    if: github.event.action == 'opened'
+    steps:
+      - name: Apply labels and welcome comment
+        uses: actions/github-script@v8
+        with:
+          script: |
+            // Check if the issue has the "bug" label (from bug_report.yml template)
+            const labels = context.payload.issue.labels.map(l => l.name);
+
+            if (labels.includes('bug')) {
+              // Add a "triage" label so maintainers know it's unreviewed
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                labels: ['triage']
+              });
+
+              // Post a welcome/triage comment
+              const msg = "Thanks for reporting this bug!\n\n" +
+                "It has been automatically marked for `triage`. " +
+                "A maintainer will review it shortly. In the meantime, " +
+                "please ensure your description includes **Steps to Reproduce** " +
+                "and **Environment Details**.";
+
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: msg
+              });
+            }
+
+  # ---------------------------------------------------------------------------
+  # Close guard — runs when an issue is closed
+  # ---------------------------------------------------------------------------
+  close-guard:
+    name: Check for Unmerged Linked PRs
+    runs-on: ubuntu-latest
+    if: github.event.action == 'closed'
+    steps:
+      - name: Look for open PRs that close this issue
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          # Search open PRs whose body references this issue
+          PATTERN="(?i)(closes|fixes|resolves)\\\\s+#${ISSUE_NUMBER}\\\\b"
+          JQ_EXPR="[.[] | select(.body | test(\"$PATTERN\"))] | length"
+          OPEN_PRS=$(gh pr list \
+            --repo "$REPO" \
+            --state open \
+            --json number,body,title \
+            --jq "$JQ_EXPR")
+
+          echo "open_prs=$OPEN_PRS" >> "$GITHUB_OUTPUT"
+
+          if [ "$OPEN_PRS" -gt 0 ]; then
+            echo "Found $OPEN_PRS open PR(s) linked to issue #${ISSUE_NUMBER}."
+            PATTERN="(?i)(closes|fixes|resolves)\\\\s+#${ISSUE_NUMBER}\\\\b"
+            FILTER="[.[] | select(.body | test(\"$PATTERN\"))]"
+            FORMAT="map(\"- #\\(.number) — \\(.title)\") | join(\"\\n\")"
+            PR_LIST=$(gh pr list \
+              --repo "$REPO" \
+              --state open \
+              --json number,title,body \
+              --jq "$FILTER | $FORMAT")
+            echo "pr_list<<EOF" >> "$GITHUB_OUTPUT"
+            echo "$PR_LIST" >> "$GITHUB_OUTPUT"
+            echo "EOF" >> "$GITHUB_OUTPUT"
+          else
+            echo "No open PRs linked — issue can stay closed."
+          fi
+
+      - name: Reopen issue and comment
+        if: steps.check.outputs.open_prs != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+          PR_LIST: ${{ steps.check.outputs.pr_list }}
+        run: |
+          gh issue reopen "$ISSUE_NUMBER" --repo "$REPO"
+
+          COMMENT_BODY=$(cat <<COMMENT
+          **Issue reopened automatically.**
+
+          This issue was closed while it still has unmerged PR(s) linked to it:
+
+          ${PR_LIST}
+
+          Per our [issue management guidelines](dev/guidelines/issue-management.md),
+          issues should only be closed by merging the associated PR
+          into \`main\` — never manually.
+
+          > _This check is enforced by the Issue Automation workflow._
+          COMMENT
+          )
+
+          gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body "$COMMENT_BODY"

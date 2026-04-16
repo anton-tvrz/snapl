@@ -1,0 +1,281 @@
+# =============================================================================
+# snapl — Root workspace configuration
+# =============================================================================
+# NAF-aligned network automation prototype with Spec-Driven Development.
+# Monorepo workspace managed by uv. Six NAF building block packages:
+#   - packages/intent/       Source of Truth, desired state models, schemas
+#   - packages/executor/     Config deployment (gNMI, Jinja2 templates)
+#   - packages/collector/    Live data retrieval
+#   - packages/observability/ Drift detection, metrics, audit
+#   - packages/orchestrator/ Temporal workflows + activities
+#   - packages/presentation/ CLI / API interface
+#
+# Setup:   uv sync --all-groups
+# Test:    uv run invoke test-unit
+# Lint:    uv run invoke lint
+# Format:  uv run invoke format
+
+[project]
+name = "snapl-workspace"
+version = "0.1.0"
+description = "NAF-aligned network automation prototype — Infrahub, Temporal, Nokia SR Linux"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+dependencies = [
+    "snapl-intent",
+    "snapl-executor",
+    "snapl-collector",
+    "snapl-observability",
+    "snapl-orchestrator",
+    "snapl-presentation",
+]
+
+[dependency-groups]
+testing = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "pytest-asyncio>=0.23",
+    "pytest-timeout>=2.2",
+    "pytest-xdist>=3.5",
+    "pytest-httpx>=0.30",
+]
+linting = [
+    "ruff>=0.11",
+    "yamllint>=1.35",
+]
+typing = [
+    "mypy>=1.10",
+    "types-PyYAML",
+    "types-requests",
+]
+dev = [
+    "invoke>=2.2",
+    "pre-commit>=4.0",
+    "ipython>=8.0",
+    "towncrier>=24.8",
+    "bandit[toml]>=1.7",
+    "bandit-sarif-formatter>=1.1.1",
+    "detect-secrets>=1.5",
+]
+
+# No build-system — this is a virtual workspace root (not a distributable package)
+
+# =============================================================================
+# uv workspace — links packages/* as editable packages
+# =============================================================================
+
+[tool.uv.sources]
+snapl-intent = { workspace = true }
+snapl-executor = { workspace = true }
+snapl-collector = { workspace = true }
+snapl-observability = { workspace = true }
+snapl-orchestrator = { workspace = true }
+snapl-presentation = { workspace = true }
+
+[tool.uv.workspace]
+members = ["packages/*"]
+
+# =============================================================================
+# Ruff — replaces black, isort, pylint, flake8
+# =============================================================================
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+exclude = [
+    ".git",
+    ".venv",
+    "__pycache__",
+    "*.egg-info",
+    "dist",
+    "build",
+]
+
+[tool.ruff.lint]
+select = [
+    "F",       # pyflakes
+    "E", "W",  # pycodestyle
+    "I",       # isort
+    "N",       # pep8-naming
+    "UP",      # pyupgrade
+    "S",       # bandit (security)
+    "B",       # bugbear
+    "A",       # builtins
+    "C4",      # comprehensions
+    "DTZ",     # datetimez
+    "T10",     # debugger
+    "ISC",     # implicit-str-concat
+    "ICN",     # import-conventions
+    "PIE",     # misc lints
+    "PT",      # pytest-style
+    "RSE",     # raise
+    "RET",     # return
+    "SLF",     # private-access
+    "SIM",     # simplify
+    "TID",     # tidy-imports
+    "TCH",     # type-checking
+    "ARG",     # unused-arguments
+    "PTH",     # pathlib
+    "ERA",     # commented-out code
+    "PL",      # pylint
+    "RUF",     # ruff-specific
+]
+ignore = [
+    "S101",    # assert used — fine in tests
+    "S603",    # subprocess call - check for untrusted input
+    "S607",    # start process with partial path
+    "PLR0913", # too many arguments
+    "PLR2004", # magic value comparison
+    "ERA001",  # commented-out code (too noisy during development)
+    "ARG001",  # unused function argument (common in stubs)
+    "ARG002",  # unused method argument
+    "RET504",  # unnecessary assignment before return
+    "PLR0915", # too many statements
+    "S701",    # jinja2 autoescape — templates are trusted SR Linux JSON
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = [
+    "S101",    # assert is fine in tests
+    "S106",    # hardcoded passwords in test fixtures
+    "PLR2004", # magic values in tests
+    "ARG001",  # unused fixtures
+    "SLF001",  # private access in tests
+    "PT004",   # fixture doesn't return anything
+    "PLC0415", # imports inside test functions
+]
+"**/activities/*.py" = [
+    "ARG001",  # stubs have unused arguments
+]
+"**/workflows/*.py" = [
+    "ARG001",  # stubs have unused arguments
+]
+
+[tool.ruff.lint.isort]
+known-first-party = [
+    "snapl_intent",
+    "snapl_executor",
+    "snapl_collector",
+    "snapl_observability",
+    "snapl_orchestrator",
+    "snapl_presentation",
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+# =============================================================================
+# MyPy — static type checking
+# =============================================================================
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+check_untyped_defs = true
+ignore_missing_imports = true
+disallow_untyped_defs = false
+exclude = [
+    "\\.venv/",
+    "build/",
+    "dist/",
+]
+
+# =============================================================================
+# Pytest — test configuration
+# =============================================================================
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "unit: Unit tests (no external dependencies)",
+    "integration: Integration tests (requires Infrahub/Temporal/Containerlab)",
+    "live: Live infrastructure tests (requires running Infrahub/Containerlab/gNMI)",
+    "e2e: End-to-end pipeline tests",
+    "slow: Slow tests (>30 seconds)",
+    "pre_deployment: Pre-deployment validation",
+    "post_deployment: Post-deployment validation",
+]
+addopts = "-v --strict-markers --tb=short"
+asyncio_mode = "auto"
+timeout = 300
+
+# =============================================================================
+# Coverage — code coverage reporting
+# =============================================================================
+
+[tool.coverage.run]
+source = [
+    "packages/intent/snapl_intent",
+    "packages/executor/snapl_executor",
+    "packages/collector/snapl_collector",
+    "packages/observability/snapl_observability",
+    "packages/orchestrator/snapl_orchestrator",
+    "packages/presentation/snapl_presentation",
+]
+omit = [
+    "*/tests/*",
+    "*/__pycache__/*",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.",
+    "if TYPE_CHECKING:",
+    "pass",
+]
+
+# =============================================================================
+# Towncrier — changelog management
+# =============================================================================
+
+[tool.towncrier]
+package = "snapl_intent"
+directory = "changelog"
+filename = "CHANGELOG.md"
+title_format = "## [{version}] - {project_date}"
+issue_format = "[#{issue}](https://github.com/anton-tvrz/snapl/issues/{issue})"
+
+[[tool.towncrier.type]]
+directory = "added"
+name = "Added"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "changed"
+name = "Changed"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "deprecated"
+name = "Deprecated"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "removed"
+name = "Removed"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "fixed"
+name = "Fixed"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "security"
+name = "Security"
+showcontent = true
+
+# =============================================================================
+# Bandit — security scanning
+# =============================================================================
+
+[tool.bandit]
+exclude_dirs = ["tests", ".venv"]
+skips = ["B101", "B105", "B107", "B701"]

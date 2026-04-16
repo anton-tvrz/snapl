@@ -1,0 +1,46 @@
+# Auto-label PRs based on changed file paths
+# Used by actions/labeler
+
+intent:
+  - changed-files:
+      - any-glob-to-any-file: ["packages/intent/**"]
+
+executor:
+  - changed-files:
+      - any-glob-to-any-file: ["packages/executor/**"]
+
+collector:
+  - changed-files:
+      - any-glob-to-any-file: ["packages/collector/**"]
+
+observability:
+  - changed-files:
+      - any-glob-to-any-file: ["packages/observability/**"]
+
+orchestrator:
+  - changed-files:
+      - any-glob-to-any-file: ["packages/orchestrator/**"]
+
+presentation:
+  - changed-files:
+      - any-glob-to-any-file: ["packages/presentation/**"]
+
+tests:
+  - changed-files:
+      - any-glob-to-any-file: ["tests/**"]
+
+documentation:
+  - changed-files:
+      - any-glob-to-any-file: ["docs/**", "dev/**", "*.md"]
+
+ci:
+  - changed-files:
+      - any-glob-to-any-file: [".github/**"]
+
+infrastructure:
+  - changed-files:
+      - any-glob-to-any-file: ["development/**"]
+
+config:
+  - changed-files:
+      - any-glob-to-any-file: ["pyproject.toml", "uv.lock", ".pre-commit-config.yaml", ".editorconfig"]

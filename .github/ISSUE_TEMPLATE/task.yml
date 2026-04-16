@@ -1,0 +1,51 @@
+name: Task
+description: A development task or chore
+title: "[Task]: "
+labels: ["task"]
+assignees: ["anton-tvrz"]
+body:
+  - type: input
+    id: branch_name
+    attributes:
+      label: Branch Name
+      description: What branch will this be worked on?
+      placeholder: "dev/description-of-task"
+    validations:
+      required: false
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What needs to be done?
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: Acceptance Criteria
+      description: How do we know this is done?
+      placeholder: |
+        - [ ] Criterion 1
+        - [ ] Criterion 2
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - Intent (snapl_intent)
+        - Executor (snapl_executor)
+        - Collector (snapl_collector)
+        - Observability (snapl_observability)
+        - Orchestrator (snapl_orchestrator)
+        - Presentation (snapl_presentation)
+        - CI/CD
+        - Docker / Infrastructure
+        - Documentation
+        - Other
+    validations:
+      required: true

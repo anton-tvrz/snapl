@@ -1,0 +1,56 @@
+name: Feature Request
+description: Suggest a new feature or enhancement
+title: "[Feature]: "
+labels: ["enhancement"]
+assignees: ["anton-tvrz"]
+body:
+  - type: input
+    id: branch_name
+    attributes:
+      label: Branch Name
+      description: What branch will this be worked on?
+      placeholder: "feature/description-of-feature"
+    validations:
+      required: false
+
+  - type: textarea
+    id: use_case
+    attributes:
+      label: Use Case
+      description: What problem would this feature solve?
+      placeholder: As a user, I want to ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed_solution
+    attributes:
+      label: Proposed Solution
+      description: How do you think this should work?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Any alternative solutions or workarounds?
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Which part of the project would this affect?
+      options:
+        - Intent (snapl_intent)
+        - Executor (snapl_executor)
+        - Collector (snapl_collector)
+        - Observability (snapl_observability)
+        - Orchestrator (snapl_orchestrator)
+        - Presentation (snapl_presentation)
+        - CI/CD
+        - Docker / Infrastructure
+        - Documentation
+        - Other
+    validations:
+      required: true
