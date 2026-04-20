@@ -1,0 +1,105 @@
+# Infrahub schema — Batch 3: Business Intent stubs (FR-012).
+#
+# Schema definitions only. No retrieval, seeding, or deletion in this feature —
+# they are reserved for a follow-up feature that lifts business-level intent
+# (applications, services, connectivity) to first-class entities.
+#
+# Each node has minimal attributes sufficient to make it queryable. Fields
+# deliberately stay simple — the final contract will be designed alongside
+# the business-intent use case. Do NOT expand these in the current feature.
+---
+# yaml-language-server: $schema=https://schema.infrahub.app/infrahub/schema/latest.json
+version: "1.0"
+
+nodes:
+  - name: ApplicationService
+    namespace: Business
+    description: "Business-level service declaration (stub)."
+    label: "Application Service"
+    default_filter: name__value
+    attributes:
+      - name: name
+        kind: Text
+        unique: true
+      - name: description
+        kind: Text
+        optional: true
+
+  - name: ServiceEndpoint
+    namespace: Business
+    description: "Ingress/egress point for an ApplicationService (stub)."
+    label: "Service Endpoint"
+    default_filter: name__value
+    attributes:
+      - name: name
+        kind: Text
+        unique: true
+      - name: description
+        kind: Text
+        optional: true
+
+  - name: ConnectivityIntent
+    namespace: Business
+    description: "Desired connectivity between endpoints (stub)."
+    label: "Connectivity Intent"
+    default_filter: name__value
+    attributes:
+      - name: name
+        kind: Text
+        unique: true
+      - name: description
+        kind: Text
+        optional: true
+
+  - name: InfrastructureBinding
+    namespace: Business
+    description: "Maps a ConnectivityIntent to physical infrastructure (stub)."
+    label: "Infrastructure Binding"
+    default_filter: name__value
+    attributes:
+      - name: name
+        kind: Text
+        unique: true
+
+  - name: FirewallRuleSet
+    namespace: Business
+    description: "Security policy declaration (stub)."
+    label: "Firewall Rule Set"
+    default_filter: name__value
+    attributes:
+      - name: name
+        kind: Text
+        unique: true
+      - name: description
+        kind: Text
+        optional: true
+
+  - name: OperationalOverride
+    namespace: Business
+    description: "Temporary operational exception (stub)."
+    label: "Operational Override"
+    default_filter: name__value
+    attributes:
+      - name: name
+        kind: Text
+        unique: true
+
+  - name: OverrideWindow
+    namespace: Business
+    description: "Time-bounded override period (stub)."
+    label: "Override Window"
+    default_filter: name__value
+    attributes:
+      - name: name
+        kind: Text
+        unique: true
+
+  - name: OverrideAction
+    namespace: Business
+    description: "Action taken during an override window (stub)."
+    label: "Override Action"
+    default_filter: name__value
+    attributes:
+      - name: name
+        kind: Text
+        unique: true

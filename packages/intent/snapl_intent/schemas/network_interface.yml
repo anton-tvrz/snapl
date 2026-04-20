@@ -1,0 +1,49 @@
+# Infrahub schema — Batch 3: snapl project-specific InterfacePhysical extensions.
+#
+# Extends the base `InterfacePhysical` (Batch 1, schema-library) with
+# peer-link metadata used by the datacenter fabric topology builder:
+#   - role: functional role (fabric link, loopback, management, access)
+#   - peer_device / peer_interface: human-readable link endpoint for cabling
+#     and topology visualisations — not used for resolution at runtime.
+#
+# Dependencies: Batch 1 (dcim). No Batch 2 relations.
+---
+# yaml-language-server: $schema=https://schema.infrahub.app/infrahub/schema/latest.json
+version: "1.0"
+
+extensions:
+  nodes:
+    - kind: InterfacePhysical
+      attributes:
+        - name: role
+          kind: Dropdown
+          optional: true
+          description: "Functional role of the interface"
+          order_weight: 1500
+          choices:
+            - name: fabric
+              label: Fabric
+              description: "Inter-switch fabric link (spine-leaf)"
+              color: "#A9CCE3"
+            - name: loopback
+              label: Loopback
+              description: "Loopback interface for router-id and peering"
+              color: "#A2D9CE"
+            - name: management
+              label: Management
+              description: "Out-of-band management interface"
+              color: "#F9E79F"
+            - name: access
+              label: Access
+              description: "Host-facing access port"
+              color: "#D7BDE2"
+        - name: peer_device
+          kind: Text
+          optional: true
+          description: "Name of the connected peer device"
+          order_weight: 1510
+        - name: peer_interface
+          kind: Text
+          optional: true
+          description: "Name of the peer's interface"
+          order_weight: 1520

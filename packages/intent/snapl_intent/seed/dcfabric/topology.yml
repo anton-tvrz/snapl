@@ -1,0 +1,179 @@
+# Datacenter fabric seed — 2 spines, 4 leaves, eBGP underlay on Nokia SR Linux.
+#
+# Shape matches the 12-step dependency order enforced by
+# ``snapl_intent.infrahub.seed``:
+#   Organization -> Location -> Manufacturer -> Platform -> DeviceType ->
+#   AutonomousSystem -> VRF -> IPPrefix -> Device -> IPAddress ->
+#   Interface -> BGPPeerGroup -> BGPSession
+#
+# Addressing plan (self-contained, not tied to containerlab):
+#   - Management:       10.0.0.0/24          (spines .1-.2, leaves .11-.14)
+#   - Loopbacks:        10.1.0.0/24          (one /32 per device)
+#   - Fabric underlay:  10.10.0.0/16         (/31 links, 2 per spine-leaf pair)
+#   - BGP ASNs:         spine 65000-65001, leaves 65011-65014 (eBGP)
+---
+
+organization:
+  name: "snapl Lab"
+  description: "snapl prototype lab environment"
+
+manufacturer:
+  name: "Nokia"
+  description: "Nokia Corporation — SR Linux network operating system"
+
+location:
+  name: "Local Lab"
+  shortname: "local-lab"
+  description: "Local OrbStack / Docker development environment"
+
+platform:
+  name: "Nokia SR Linux"
+  description: "Nokia Service Router Linux"
+  nornir_platform: "srlinux"
+  napalm_driver: "srl"
+  containerlab_os: "nokia_srlinux"
+  ansible_network_os: "nokia.srlinux.srlinux"
+  netmiko_device_type: "nokia_srl"
+
+device_types:
+  - name: "7220 IXR-D3"
+    description: "Nokia 7220 IXR-D3 — Spine"
+    part_number: "7220-IXR-D3"
+  - name: "7220 IXR-D2"
+    description: "Nokia 7220 IXR-D2 — Leaf"
+    part_number: "7220-IXR-D2"
+
+autonomous_systems:
+  - name: "spine-01 AS"
+    asn: 65000
+    description: "Spine-01 autonomous system"
+  - name: "spine-02 AS"
+    asn: 65001
+    description: "Spine-02 autonomous system"
+  - name: "leaf-01 AS"
+    asn: 65011
+  - name: "leaf-02 AS"
+    asn: 65012
+  - name: "leaf-03 AS"
+    asn: 65013
+  - name: "leaf-04 AS"
+    asn: 65014
+
+vrfs:
+  - name: "default"
+    description: "Global routing table / default VRF"
+
+ip_prefixes:
+  - prefix: "10.0.0.0/24"
+    description: "Management network"
+  - prefix: "10.1.0.0/24"
+    description: "Loopback supernet"
+  - prefix: "10.10.0.0/16"
+    description: "Fabric underlay supernet"
+
+devices:
+  - name: spine-01
+    role: spine
+    status: active
+    use_case: dcfabric
+    device_type: "7220 IXR-D3"
+    management_ip: "10.0.0.1/24"
+    asn: 65000
+    description: "Spine 01"
+  - name: spine-02
+    role: spine
+    status: active
+    use_case: dcfabric
+    device_type: "7220 IXR-D3"
+    management_ip: "10.0.0.2/24"
+    asn: 65001
+    description: "Spine 02"
+  - name: leaf-01
+    role: leaf
+    status: active
+    use_case: dcfabric
+    device_type: "7220 IXR-D2"
+    management_ip: "10.0.0.11/24"
+    asn: 65011
+    description: "Leaf 01"
+  - name: leaf-02
+    role: leaf
+    status: active
+    use_case: dcfabric
+    device_type: "7220 IXR-D2"
+    management_ip: "10.0.0.12/24"
+    asn: 65012
+    description: "Leaf 02"
+  - name: leaf-03
+    role: leaf
+    status: active
+    use_case: dcfabric
+    device_type: "7220 IXR-D2"
+    management_ip: "10.0.0.13/24"
+    asn: 65013
+    description: "Leaf 03"
+  - name: leaf-04
+    role: leaf
+    status: active
+    use_case: dcfabric
+    device_type: "7220 IXR-D2"
+    management_ip: "10.0.0.14/24"
+    asn: 65014
+    description: "Leaf 04"
+
+# Fabric interfaces: each spine has one /31 link to each leaf.
+# Addressing: 10.10.<spine-idx>.<leaf-idx*2>/31 on spine side,
+#              .<leaf-idx*2 + 1> on leaf side. Keeps links unique + decodable.
+interfaces:
+  # spine-01 to leaves
+  - {device: spine-01, name: ethernet-1/1, role: fabric, mtu: 9214, ip_address: "10.10.1.0/31", peer_device: leaf-01, peer_interface: ethernet-1/49, description: "to leaf-01:ethernet-1/49"}
+  - {device: spine-01, name: ethernet-1/2, role: fabric, mtu: 9214, ip_address: "10.10.1.2/31", peer_device: leaf-02, peer_interface: ethernet-1/49, description: "to leaf-02:ethernet-1/49"}
+  - {device: spine-01, name: ethernet-1/3, role: fabric, mtu: 9214, ip_address: "10.10.1.4/31", peer_device: leaf-03, peer_interface: ethernet-1/49, description: "to leaf-03:ethernet-1/49"}
+  - {device: spine-01, name: ethernet-1/4, role: fabric, mtu: 9214, ip_address: "10.10.1.6/31", peer_device: leaf-04, peer_interface: ethernet-1/49, description: "to leaf-04:ethernet-1/49"}
+  - {device: spine-01, name: loopback0, role: loopback, ip_address: "10.1.0.1/32", description: "Router ID spine-01"}
+
+  # spine-02 to leaves
+  - {device: spine-02, name: ethernet-1/1, role: fabric, mtu: 9214, ip_address: "10.10.2.0/31", peer_device: leaf-01, peer_interface: ethernet-1/50, description: "to leaf-01:ethernet-1/50"}
+  - {device: spine-02, name: ethernet-1/2, role: fabric, mtu: 9214, ip_address: "10.10.2.2/31", peer_device: leaf-02, peer_interface: ethernet-1/50, description: "to leaf-02:ethernet-1/50"}
+  - {device: spine-02, name: ethernet-1/3, role: fabric, mtu: 9214, ip_address: "10.10.2.4/31", peer_device: leaf-03, peer_interface: ethernet-1/50, description: "to leaf-03:ethernet-1/50"}
+  - {device: spine-02, name: ethernet-1/4, role: fabric, mtu: 9214, ip_address: "10.10.2.6/31", peer_device: leaf-04, peer_interface: ethernet-1/50, description: "to leaf-04:ethernet-1/50"}
+  - {device: spine-02, name: loopback0, role: loopback, ip_address: "10.1.0.2/32", description: "Router ID spine-02"}
+
+  # leaf-01 uplinks + loopback
+  - {device: leaf-01, name: ethernet-1/49, role: fabric, mtu: 9214, ip_address: "10.10.1.1/31", peer_device: spine-01, peer_interface: ethernet-1/1, description: "to spine-01:ethernet-1/1"}
+  - {device: leaf-01, name: ethernet-1/50, role: fabric, mtu: 9214, ip_address: "10.10.2.1/31", peer_device: spine-02, peer_interface: ethernet-1/1, description: "to spine-02:ethernet-1/1"}
+  - {device: leaf-01, name: loopback0, role: loopback, ip_address: "10.1.0.11/32", description: "Router ID leaf-01"}
+
+  # leaf-02 uplinks + loopback
+  - {device: leaf-02, name: ethernet-1/49, role: fabric, mtu: 9214, ip_address: "10.10.1.3/31", peer_device: spine-01, peer_interface: ethernet-1/2, description: "to spine-01:ethernet-1/2"}
+  - {device: leaf-02, name: ethernet-1/50, role: fabric, mtu: 9214, ip_address: "10.10.2.3/31", peer_device: spine-02, peer_interface: ethernet-1/2, description: "to spine-02:ethernet-1/2"}
+  - {device: leaf-02, name: loopback0, role: loopback, ip_address: "10.1.0.12/32", description: "Router ID leaf-02"}
+
+  # leaf-03 uplinks + loopback
+  - {device: leaf-03, name: ethernet-1/49, role: fabric, mtu: 9214, ip_address: "10.10.1.5/31", peer_device: spine-01, peer_interface: ethernet-1/3, description: "to spine-01:ethernet-1/3"}
+  - {device: leaf-03, name: ethernet-1/50, role: fabric, mtu: 9214, ip_address: "10.10.2.5/31", peer_device: spine-02, peer_interface: ethernet-1/3, description: "to spine-02:ethernet-1/3"}
+  - {device: leaf-03, name: loopback0, role: loopback, ip_address: "10.1.0.13/32", description: "Router ID leaf-03"}
+
+  # leaf-04 uplinks + loopback
+  - {device: leaf-04, name: ethernet-1/49, role: fabric, mtu: 9214, ip_address: "10.10.1.7/31", peer_device: spine-01, peer_interface: ethernet-1/4, description: "to spine-01:ethernet-1/4"}
+  - {device: leaf-04, name: ethernet-1/50, role: fabric, mtu: 9214, ip_address: "10.10.2.7/31", peer_device: spine-02, peer_interface: ethernet-1/4, description: "to spine-02:ethernet-1/4"}
+  - {device: leaf-04, name: loopback0, role: loopback, ip_address: "10.1.0.14/32", description: "Router ID leaf-04"}
+
+bgp_peer_groups:
+  - name: "underlay-ipv4"
+    description: "eBGP underlay peer group for spine-leaf fabric"
+    address_family: ipv4
+    send_community: true
+
+# eBGP sessions — every leaf peers with every spine (2x4 = 8 sessions total)
+bgp_sessions:
+  # spine-01 <-> leaves
+  - {description: "spine-01 <-> leaf-01 eBGP", session_type: EXTERNAL, role: backbone, local_device: spine-01, remote_device: leaf-01, local_as: 65000, remote_as: 65011, local_ip: "10.10.1.0/31", remote_ip: "10.10.1.1/31", peer_group: underlay-ipv4}
+  - {description: "spine-01 <-> leaf-02 eBGP", session_type: EXTERNAL, role: backbone, local_device: spine-01, remote_device: leaf-02, local_as: 65000, remote_as: 65012, local_ip: "10.10.1.2/31", remote_ip: "10.10.1.3/31", peer_group: underlay-ipv4}
+  - {description: "spine-01 <-> leaf-03 eBGP", session_type: EXTERNAL, role: backbone, local_device: spine-01, remote_device: leaf-03, local_as: 65000, remote_as: 65013, local_ip: "10.10.1.4/31", remote_ip: "10.10.1.5/31", peer_group: underlay-ipv4}
+  - {description: "spine-01 <-> leaf-04 eBGP", session_type: EXTERNAL, role: backbone, local_device: spine-01, remote_device: leaf-04, local_as: 65000, remote_as: 65014, local_ip: "10.10.1.6/31", remote_ip: "10.10.1.7/31", peer_group: underlay-ipv4}
+  # spine-02 <-> leaves
+  - {description: "spine-02 <-> leaf-01 eBGP", session_type: EXTERNAL, role: backbone, local_device: spine-02, remote_device: leaf-01, local_as: 65001, remote_as: 65011, local_ip: "10.10.2.0/31", remote_ip: "10.10.2.1/31", peer_group: underlay-ipv4}
+  - {description: "spine-02 <-> leaf-02 eBGP", session_type: EXTERNAL, role: backbone, local_device: spine-02, remote_device: leaf-02, local_as: 65001, remote_as: 65012, local_ip: "10.10.2.2/31", remote_ip: "10.10.2.3/31", peer_group: underlay-ipv4}
+  - {description: "spine-02 <-> leaf-03 eBGP", session_type: EXTERNAL, role: backbone, local_device: spine-02, remote_device: leaf-03, local_as: 65001, remote_as: 65013, local_ip: "10.10.2.4/31", remote_ip: "10.10.2.5/31", peer_group: underlay-ipv4}
+  - {description: "spine-02 <-> leaf-04 eBGP", session_type: EXTERNAL, role: backbone, local_device: spine-02, remote_device: leaf-04, local_as: 65001, remote_as: 65014, local_ip: "10.10.2.6/31", remote_ip: "10.10.2.7/31", peer_group: underlay-ipv4}

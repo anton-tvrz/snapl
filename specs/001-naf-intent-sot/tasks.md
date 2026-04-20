@@ -19,10 +19,10 @@
 
 **Purpose**: Project directory structure, Docker infrastructure, and test scaffolding
 
-- [ ] T001 Create package directory structure (infrahub/, schemas/base/, schemas/extensions/, seed/dcfabric/) in packages/intent/snapl_intent/
-- [ ] T002 [P] Create Docker Compose stack (Neo4j, Redis, RabbitMQ, Infrahub server) in development/docker-compose.yml
-- [ ] T003 [P] Create environment variable template (INFRAHUB_ADDRESS, INFRAHUB_API_TOKEN) in development/.env.example
-- [ ] T004 [P] Add shared test fixtures (mock_infrahub_client, spine_leaf_topology) to tests/conftest.py and create tests/integration/test_intent/__init__.py
+- [X] T001 Create package directory structure (infrahub/, schemas/base/, schemas/extensions/, seed/dcfabric/) in packages/intent/snapl_intent/
+- [X] T002 [P] Create Docker Compose stack (Neo4j, Redis, RabbitMQ, Infrahub server) in development/docker-compose.yml
+- [X] T003 [P] Create environment variable template (INFRAHUB_ADDRESS, INFRAHUB_API_TOKEN) in development/.env.example
+- [X] T004 [P] Add shared test fixtures (mock_infrahub_client, spine_leaf_topology) to tests/conftest.py and create tests/integration/test_intent/__init__.py
 
 ---
 
@@ -34,16 +34,16 @@
 
 ### Tests (TDD — write first, verify they fail)
 
-- [ ] T005 [P] Write unit tests for Pydantic models (Device, Interface, BGPSession, DesiredState, Schema, ProvisionResult, SeedResult, DeleteResult) in tests/unit/test_intent/test_models.py
-- [ ] T006 [P] Write unit tests for IntentStore ABC contract enforcement (abstract methods, cannot instantiate) in tests/unit/test_intent/test_abc.py
+- [X] T005 [P] Write unit tests for Pydantic models (Device, Interface, BGPSession, DesiredState, Schema, ProvisionResult, SeedResult, DeleteResult) in tests/unit/test_intent/test_models.py
+- [X] T006 [P] Write unit tests for IntentStore ABC contract enforcement (abstract methods, cannot instantiate) in tests/unit/test_intent/test_abc.py
 
 ### Implementation
 
-- [ ] T007 [P] Implement exception hierarchy (IntentError, IntentConnectionError, IntentNotFoundError, IntentValidationError, IntentSchemaError, IntentDeletionError) in packages/intent/snapl_intent/exceptions.py
-- [ ] T008 Implement Pydantic models per contract (Device, Interface, BGPSession, DesiredState, Schema, ProvisionResult, SeedResult, DeleteResult) in packages/intent/snapl_intent/models.py
-- [ ] T009 Implement IntentStore ABC with all async method signatures per contracts/intent-store.md in packages/intent/snapl_intent/abc.py
-- [ ] T010 Implement Infrahub async client wrapper (connection via env vars, auth, 10s timeout, error mapping to domain exceptions) in packages/intent/snapl_intent/infrahub/client.py
-- [ ] T011 Update package exports (models, ABC, exceptions) in packages/intent/snapl_intent/__init__.py and create empty packages/intent/snapl_intent/infrahub/__init__.py placeholder
+- [X] T007 [P] Implement exception hierarchy (IntentError, IntentConnectionError, IntentNotFoundError, IntentValidationError, IntentSchemaError, IntentDeletionError) in packages/intent/snapl_intent/exceptions.py
+- [X] T008 Implement Pydantic models per contract (Device, Interface, BGPSession, DesiredState, Schema, ProvisionResult, SeedResult, DeleteResult) in packages/intent/snapl_intent/models.py
+- [X] T009 Implement IntentStore ABC with all async method signatures per contracts/intent-store.md in packages/intent/snapl_intent/abc.py
+- [X] T010 Implement Infrahub async client wrapper (connection via env vars, auth, 10s timeout, error mapping to domain exceptions) in packages/intent/snapl_intent/infrahub/client.py
+- [X] T011 Update package exports (models, ABC, exceptions) in packages/intent/snapl_intent/__init__.py and create empty packages/intent/snapl_intent/infrahub/__init__.py placeholder
 
 **Checkpoint**: Foundation ready — models, ABC, exceptions, client wrapper all tested and passing. User story implementation can begin.
 
@@ -57,12 +57,12 @@
 
 ### Tests (TDD — write first, verify they fail)
 
-- [ ] T012 [P] [US1] Write unit tests for InfrahubIntentStore.get_desired_state() with mock client (single device by ID, filtered by role, filtered by use_case, combined filters, not found returns empty list, connection error raises IntentConnectionError) in tests/unit/test_intent/test_store.py
+- [X] T012 [P] [US1] Write unit tests for InfrahubIntentStore.get_desired_state() with mock client (single device by ID, filtered by role, filtered by use_case, combined filters, not found returns empty list, connection error raises IntentConnectionError) in tests/unit/test_intent/test_store.py
 
 ### Implementation
 
-- [ ] T013 [US1] Create InfrahubIntentStore class scaffolding with get_desired_state() implementation (GraphQL query, node-to-Pydantic mapping) in packages/intent/snapl_intent/infrahub/store.py
-- [ ] T014 [US1] Add InfrahubIntentStore export to packages/intent/snapl_intent/infrahub/__init__.py (placeholder created in T011)
+- [X] T013 [US1] Create InfrahubIntentStore class scaffolding with get_desired_state() implementation (GraphQL query, node-to-Pydantic mapping) in packages/intent/snapl_intent/infrahub/store.py
+- [X] T014 [US1] Add InfrahubIntentStore export to packages/intent/snapl_intent/infrahub/__init__.py (placeholder created in T011)
 
 **Checkpoint**: US1 unit tests pass. get_desired_state() returns correct DesiredState from mock Infrahub client. Integration tests deferred to Phase 4 (require seeded data).
 
@@ -76,28 +76,28 @@
 
 ### Schema & Seed Data Files
 
-- [ ] T015 [P] [US2] Create Batch 1 base schema YAML files (dcim, ipam, location, organization from Infrahub schema-library) in packages/intent/snapl_intent/schemas/base/
-- [ ] T016 [P] [US2] Create Batch 2 extension schema YAML files (routing_bgp, vrf from Infrahub schema-library) in packages/intent/snapl_intent/schemas/extensions/
-- [ ] T017 [P] [US2] Create Batch 3 project-specific schema YAML for DcimDevice extensions (role attribute, use_case relationship) in packages/intent/snapl_intent/schemas/network_device.yml
-- [ ] T018 [P] [US2] Create Batch 3 project-specific schema YAML for InterfacePhysical extensions (peer_device, peer_interface attributes) in packages/intent/snapl_intent/schemas/network_interface.yml
-- [ ] T019 [P] [US2] Create Batch 3 business intent stub schema YAML (ApplicationService, ServiceEndpoint, ConnectivityIntent, InfrastructureBinding, FirewallRuleSet, OperationalOverride, OverrideWindow, OverrideAction) in packages/intent/snapl_intent/schemas/business_intent.yml
-- [ ] T020 [P] [US2] Create datacenter fabric seed data YAML (2 spines, 4 leaves, interfaces, IP addresses, BGP sessions per topology) in packages/intent/snapl_intent/seed/dcfabric/topology.yml
+- [X] T015 [P] [US2] Create Batch 1 base schema YAML files (dcim, ipam, location, organization from Infrahub schema-library) in packages/intent/snapl_intent/schemas/base/
+- [X] T016 [P] [US2] Create Batch 2 extension schema YAML files (routing_bgp, vrf from Infrahub schema-library) in packages/intent/snapl_intent/schemas/extensions/
+- [X] T017 [P] [US2] Create Batch 3 project-specific schema YAML for DcimDevice extensions (role attribute, use_case relationship) in packages/intent/snapl_intent/schemas/network_device.yml
+- [X] T018 [P] [US2] Create Batch 3 project-specific schema YAML for InterfacePhysical extensions (peer_device, peer_interface attributes) in packages/intent/snapl_intent/schemas/network_interface.yml
+- [X] T019 [P] [US2] Create Batch 3 business intent stub schema YAML (ApplicationService, ServiceEndpoint, ConnectivityIntent, InfrastructureBinding, FirewallRuleSet, OperationalOverride, OverrideWindow, OverrideAction) in packages/intent/snapl_intent/schemas/business_intent.yml
+- [X] T020 [P] [US2] Create datacenter fabric seed data YAML (2 spines, 4 leaves, interfaces, IP addresses, BGP sessions per topology) in packages/intent/snapl_intent/seed/dcfabric/topology.yml
 
 ### Tests (TDD — write first, verify they fail)
 
-- [ ] T021 [P] [US2] Write unit tests for 3-batch schema provisioning logic (batch discovery, ordering, idempotent load, schema validation error) in tests/unit/test_intent/test_schema.py
-- [ ] T022 [P] [US2] Write unit tests for dependency-ordered data ingestion (YAML parsing, upsert semantics, dependency ordering, validation rejection, re-run produces no duplicates) in tests/unit/test_intent/test_seed.py
-- [ ] T023 [P] [US2] Write unit tests for InfrahubIntentStore.provision_schema() and seed() with mock client (success, schema not provisioned error, validation error, branch parameter) in tests/unit/test_intent/test_store.py (append to existing)
+- [X] T021 [P] [US2] Write unit tests for 3-batch schema provisioning logic (batch discovery, ordering, idempotent load, schema validation error) in tests/unit/test_intent/test_schema.py
+- [X] T022 [P] [US2] Write unit tests for dependency-ordered data ingestion (YAML parsing, upsert semantics, dependency ordering, validation rejection, re-run produces no duplicates) in tests/unit/test_intent/test_seed.py
+- [X] T023 [P] [US2] Write unit tests for InfrahubIntentStore.provision_schema() and seed() with mock client (success, schema not provisioned error, validation error, branch parameter) in tests/unit/test_intent/test_store.py (append to existing)
 
 ### Implementation
 
-- [ ] T024 [US2] Implement 3-batch schema provisioning logic (discover YAML files in schemas/base/ -> extensions/ -> project, load via SDK client.schema.load()) in packages/intent/snapl_intent/infrahub/schema.py
-- [ ] T025 [US2] Implement dependency-ordered data ingestion logic (parse seed YAML, resolve dependencies, upsert via SDK in correct order) in packages/intent/snapl_intent/infrahub/seed.py
-- [ ] T026 [US2] Add provision_schema() and seed() methods to InfrahubIntentStore in packages/intent/snapl_intent/infrahub/store.py
+- [X] T024 [US2] Implement 3-batch schema provisioning logic (discover YAML files in schemas/base/ -> extensions/ -> project, load via SDK client.schema.load()) in packages/intent/snapl_intent/infrahub/schema.py
+- [X] T025 [US2] Implement dependency-ordered data ingestion logic (parse seed YAML, resolve dependencies, upsert via SDK in correct order) in packages/intent/snapl_intent/infrahub/seed.py
+- [X] T026 [US2] Add provision_schema() and seed() methods to InfrahubIntentStore in packages/intent/snapl_intent/infrahub/store.py
 
 ### Integration Tests (require running Infrahub via docker compose)
 
-- [ ] T027 [US2] Write integration test for schema provisioning against live Infrahub (3-batch load, idempotent re-run) in tests/integration/test_intent/test_infrahub_schema.py
+- [X] T027 [US2] Write integration test for schema provisioning against live Infrahub (3-batch load, idempotent re-run) in tests/integration/test_intent/test_infrahub_schema.py
 - [ ] T028 [US2] Write integration test for data seeding against live Infrahub (full dcfabric topology, upsert on re-run) in tests/integration/test_intent/test_infrahub_seed.py
 - [ ] T029 [US1] Write integration test for desired state query against live Infrahub (single device, role filter, use_case filter, empty result) in tests/integration/test_intent/test_infrahub_query.py
 
