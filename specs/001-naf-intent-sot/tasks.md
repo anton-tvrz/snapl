@@ -119,11 +119,11 @@
 
 ### Tests (TDD — write first, verify they fail)
 
-- [ ] T030 [P] [US3] Write unit tests for InfrahubIntentStore.get_schema() with mock client (valid use case returns Schema, unknown use case raises IntentSchemaError) in tests/unit/test_intent/test_store.py (append to existing)
+- [X] T030 [P] [US3] Write unit tests for InfrahubIntentStore.get_schema() with mock client (valid use case returns Schema, unknown use case raises IntentSchemaError) in tests/unit/test_intent/test_store.py (append to existing)
 
 ### Implementation
 
-- [ ] T031 [US3] Add get_schema() method to InfrahubIntentStore (query Infrahub schema registry, map to Schema model) in packages/intent/snapl_intent/infrahub/store.py
+- [X] T031 [US3] Add get_schema() method to InfrahubIntentStore (query Infrahub schema registry, map to Schema model) in packages/intent/snapl_intent/infrahub/store.py
 
 **Checkpoint**: US3 complete. get_schema() returns structured schema definition with entities and source files.
 

@@ -17,8 +17,8 @@ from typing import Any
 from uuid import UUID
 
 from snapl_intent.abc import IntentStore
-from snapl_intent.exceptions import IntentConnectionError
-from snapl_intent.infrahub.schema import SchemaLoader
+from snapl_intent.exceptions import IntentConnectionError, IntentSchemaError
+from snapl_intent.infrahub.schema import SchemaLoader, discover_schema_batches
 from snapl_intent.infrahub.seed import SeedIngester
 from snapl_intent.models import (
     BGPSession,
@@ -42,6 +42,23 @@ _SEED_ROOT = _PACKAGE_ROOT / "seed"
 # ``DcimDevice``; project-specific extensions layer on top without changing
 # the kind.
 DEVICE_KIND = "DcimDevice"
+
+# Schema namespaces declared in the packaged YAML tree. ``get_schema`` uses
+# this set to filter out Infrahub built-ins (Core*, Builtin*, Profile*) from
+# the provisioned kind list.
+_PROJECT_NAMESPACES: tuple[str, ...] = (
+    "Dcim",
+    "Interface",
+    "Ipam",
+    "Location",
+    "Organization",
+    "Routing",
+    "Business",
+)
+
+
+def _is_project_kind(kind: str) -> bool:
+    return any(kind.startswith(ns) for ns in _PROJECT_NAMESPACES)
 
 
 def _value(node: Any, attr: str, default: Any = None) -> Any:
@@ -128,8 +145,34 @@ class InfrahubIntentStore(IntentStore):
     # satisfy the ABC so the class is instantiable in Phase 3 unit tests.
 
     async def get_schema(self, use_case: str) -> Schema:
-        """Implemented in Phase 5 (US3)."""
-        raise NotImplementedError("get_schema is implemented in Phase 5")
+        # A use case is "known" iff its seed directory exists in the package.
+        if not (_SEED_ROOT / use_case).is_dir():
+            raise IntentSchemaError(f"Unknown use case: {use_case}")
+
+        try:
+            registry = await self._client.schema.all(branch=self._default_branch)
+        except (OSError, TimeoutError) as exc:
+            raise IntentConnectionError(f"Infrahub unreachable: {exc}") from exc
+        except Exception as exc:
+            if exc.__class__.__module__.startswith("infrahub"):
+                raise IntentConnectionError(f"Infrahub error: {exc}") from exc
+            raise
+
+        project_kinds = sorted(k for k in (registry or {}) if _is_project_kind(k))
+        if not project_kinds:
+            raise IntentSchemaError(
+                f"No schema provisioned for use case {use_case!r} — run provision_schema first"
+            )
+
+        batches = discover_schema_batches(_SCHEMAS_ROOT)
+        source_files = sorted(path.name for batch in batches for path in batch)
+
+        return Schema(
+            use_case=use_case,
+            version="1.0",
+            entities=project_kinds,
+            source_files=source_files,
+        )
 
     async def provision_schema(self, use_case: str) -> ProvisionResult:
         loader = SchemaLoader(

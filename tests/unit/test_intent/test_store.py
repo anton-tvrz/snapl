@@ -24,7 +24,7 @@ from snapl_intent.exceptions import (
     IntentValidationError,
 )
 from snapl_intent.infrahub.store import InfrahubIntentStore
-from snapl_intent.models import DesiredState, ProvisionResult, SeedResult
+from snapl_intent.models import DesiredState, ProvisionResult, Schema, SeedResult
 
 pytestmark = pytest.mark.unit
 
@@ -282,3 +282,67 @@ class TestSeed:
 
         with pytest.raises(IntentValidationError):
             await store.seed("dcfabric", data_path=path)
+
+
+# ---------------------------------------------------------------------------
+# US3 — get_schema
+# ---------------------------------------------------------------------------
+
+
+def _schema_kind(kind: str) -> SimpleNamespace:
+    """Return a minimal stand-in for ``NodeSchemaAPI`` — only ``kind`` matters here."""
+    return SimpleNamespace(kind=kind)
+
+
+class TestGetSchema:
+    async def test_returns_schema_for_known_use_case(self, mock_infrahub_client):
+        # schema.all() returns a mixture of Infrahub built-ins and our kinds —
+        # the store should filter down to project namespaces and sort.
+        mock_infrahub_client.schema.all.return_value = {
+            "BuiltinTag": _schema_kind("BuiltinTag"),
+            "CoreAccount": _schema_kind("CoreAccount"),
+            "DcimDevice": _schema_kind("DcimDevice"),
+            "InterfacePhysical": _schema_kind("InterfacePhysical"),
+            "IpamPrefix": _schema_kind("IpamPrefix"),
+            "RoutingBGPSession": _schema_kind("RoutingBGPSession"),
+        }
+        store = InfrahubIntentStore(client=mock_infrahub_client)
+
+        result = await store.get_schema("dcfabric")
+
+        assert isinstance(result, Schema)
+        assert result.use_case == "dcfabric"
+        assert "DcimDevice" in result.entities
+        assert "InterfacePhysical" in result.entities
+        assert "RoutingBGPSession" in result.entities
+        # Infrahub built-ins must not leak through.
+        assert "BuiltinTag" not in result.entities
+        assert "CoreAccount" not in result.entities
+        # Source files are discovered from the packaged schemas tree.
+        assert result.source_files, "expected non-empty source_files"
+        assert all(f.endswith(".yml") for f in result.source_files)
+
+    async def test_unknown_use_case_raises_schema_error(self, mock_infrahub_client):
+        store = InfrahubIntentStore(client=mock_infrahub_client)
+
+        with pytest.raises(IntentSchemaError):
+            await store.get_schema("definitely-not-a-real-use-case")
+
+    async def test_no_provisioned_kinds_raises_schema_error(self, mock_infrahub_client):
+        # Infrahub is reachable but only built-ins are present — schema was
+        # never provisioned for this project.
+        mock_infrahub_client.schema.all.return_value = {
+            "BuiltinTag": _schema_kind("BuiltinTag"),
+            "CoreAccount": _schema_kind("CoreAccount"),
+        }
+        store = InfrahubIntentStore(client=mock_infrahub_client)
+
+        with pytest.raises(IntentSchemaError):
+            await store.get_schema("dcfabric")
+
+    async def test_connection_error_translated(self, mock_infrahub_client):
+        mock_infrahub_client.schema.all.side_effect = OSError("connection refused")
+        store = InfrahubIntentStore(client=mock_infrahub_client)
+
+        with pytest.raises(IntentConnectionError):
+            await store.get_schema("dcfabric")
