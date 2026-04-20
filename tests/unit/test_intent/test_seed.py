@@ -16,10 +16,17 @@ import yaml
 
 from snapl_intent.exceptions import IntentConnectionError, IntentValidationError
 from snapl_intent.infrahub.seed import (
+    SEED_DEFERRED,
     SEED_ORDER,
     SeedIngester,
     load_seed_file,
 )
+
+# Full dependency order = current SEED_ORDER plus the sections deferred until
+# relationship resolution lands (T028-followup). The invariant tests below
+# check the full chain so they remain meaningful once the deferred sections
+# move back into SEED_ORDER.
+FULL_ORDER: list[str] = SEED_ORDER + SEED_DEFERRED
 
 pytestmark = pytest.mark.unit
 
@@ -63,19 +70,22 @@ class TestLoadSeedFile:
 
 class TestSeedOrder:
     def test_supporting_entities_precede_devices(self):
-        assert SEED_ORDER.index("organization") < SEED_ORDER.index("devices")
-        assert SEED_ORDER.index("manufacturer") < SEED_ORDER.index("devices")
-        assert SEED_ORDER.index("platform") < SEED_ORDER.index("devices")
-        assert SEED_ORDER.index("device_types") < SEED_ORDER.index("devices")
-        assert SEED_ORDER.index("location") < SEED_ORDER.index("devices")
-        assert SEED_ORDER.index("autonomous_systems") < SEED_ORDER.index("devices")
+        assert FULL_ORDER.index("organization") < FULL_ORDER.index("devices")
+        assert FULL_ORDER.index("manufacturer") < FULL_ORDER.index("devices")
+        assert FULL_ORDER.index("platform") < FULL_ORDER.index("devices")
+        assert FULL_ORDER.index("device_types") < FULL_ORDER.index("devices")
+        assert FULL_ORDER.index("location") < FULL_ORDER.index("devices")
+        assert FULL_ORDER.index("autonomous_systems") < FULL_ORDER.index("devices")
 
     def test_interfaces_come_after_devices(self):
-        assert SEED_ORDER.index("devices") < SEED_ORDER.index("interfaces")
+        assert FULL_ORDER.index("devices") < FULL_ORDER.index("interfaces")
 
     def test_bgp_sessions_come_last(self):
-        assert SEED_ORDER.index("bgp_peer_groups") < SEED_ORDER.index("bgp_sessions")
-        assert SEED_ORDER.index("interfaces") < SEED_ORDER.index("bgp_sessions")
+        assert FULL_ORDER.index("bgp_peer_groups") < FULL_ORDER.index("bgp_sessions")
+        assert FULL_ORDER.index("interfaces") < FULL_ORDER.index("bgp_sessions")
+
+    def test_active_and_deferred_are_disjoint(self):
+        assert set(SEED_ORDER).isdisjoint(SEED_DEFERRED)
 
 
 # ---------------------------------------------------------------------------
@@ -101,6 +111,9 @@ class TestSeedIngester:
         return client
 
     async def test_ingest_upserts_in_declared_order(self, tmp_path: Path):
+        # Deferred sections (devices, interfaces, bgp_*) are still present in
+        # the dataset — the ingester must ignore them silently until the
+        # relationship-resolution layer lands (T028-followup).
         dataset: dict[str, Any] = {
             "organization": {"name": "Test Org"},
             "location": {"name": "Lab", "shortname": "lab"},
@@ -134,33 +147,22 @@ class TestSeedIngester:
 
         result = await ingester.seed(use_case="dcfabric", data_path=path, branch="main")
 
-        # The ingester must have attempted to create nodes for every section
-        # we provided.
+        # Every section in SEED_ORDER appears in the dataset as a singleton,
+        # so one create per section.
+        assert client.create.await_count == len(SEED_ORDER)
         create_kinds = [call.kwargs.get("kind") for call in client.create.await_args_list]
-        assert "OrganizationGeneric" in create_kinds or "Organization" in create_kinds or any(
-            "Organization" in k for k in create_kinds
-        )
+        assert any("Organization" in (k or "") for k in create_kinds)
         assert result.use_case == "dcfabric"
         assert result.branch == "main"
-        assert result.devices_created == 1
-        assert result.total_records >= 10  # at least one per section above
+        assert result.devices_created == 0  # devices is in SEED_DEFERRED
+        assert result.total_records == len(SEED_ORDER)
 
-    async def test_ingest_second_run_updates_without_duplicates(self, tmp_path: Path):
+    async def test_ingest_second_run_upserts_in_place(self, tmp_path: Path):
         dataset: dict[str, Any] = {
             "organization": {"name": "Test Org"},
             "location": {"name": "Lab", "shortname": "lab"},
             "manufacturer": {"name": "Nokia"},
             "platform": {"name": "SR Linux"},
-            "device_types": [{"name": "IXR-D2"}],
-            "devices": [
-                {
-                    "name": "spine-01",
-                    "role": "spine",
-                    "use_case": "dcfabric",
-                    "device_type": "IXR-D2",
-                    "management_ip": "10.0.0.1/24",
-                }
-            ],
         }
         path = tmp_path / "topology.yml"
         path.write_text(yaml.safe_dump(dataset))
@@ -169,25 +171,19 @@ class TestSeedIngester:
         ingester = SeedIngester(client=client)
 
         await ingester.seed(use_case="dcfabric", data_path=path)
-        # Second run: existing nodes are returned by ``filters`` — simulate by
-        # flipping filters to yield a matching node. The node.save call path
-        # should be exercised without new create() calls for the device.
-        existing_device = _stub_node(name="spine-01")
-        existing_device.name = MagicMock(value="spine-01")  # attribute probe
-        client.filters.return_value = [existing_device]
         create_calls_before = client.create.await_count
+
+        # Second run: ``filters`` now returns an existing node so the ingester
+        # takes the update branch instead of calling ``create``.
+        existing = _stub_node(name="existing")
+        existing.name = MagicMock(value="Test Org")
+        client.filters.return_value = [existing]
 
         result = await ingester.seed(use_case="dcfabric", data_path=path)
 
-        # Devices already exist — we should not re-create them.
-        device_create_calls_after = sum(
-            1
-            for call in client.create.await_args_list[create_calls_before:]
-            if (call.kwargs.get("kind") or "").endswith("Device")
-        )
-        assert device_create_calls_after == 0
-        assert result.devices_created == 0
-        assert result.devices_updated == 1
+        # No new create calls after the second seed — everything was an upsert.
+        assert client.create.await_count == create_calls_before
+        assert result.total_records == len(SEED_ORDER)
 
     async def test_missing_data_path_raises(self, tmp_path: Path):
         client = self._make_client()

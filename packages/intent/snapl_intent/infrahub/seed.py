@@ -5,6 +5,22 @@ Records are processed in ``SEED_ORDER`` so that each entity's dependencies
 (organization, platform, device type, ASN, ...) exist before the entity itself
 is written. Upsert is implemented by looking up the existing node via its
 natural key (``name`` for most kinds) and saving it in place when present.
+
+Deferred scope (see ``SEED_DEFERRED`` below)
+--------------------------------------------
+The current ingester treats every YAML field as an attribute and passes it
+straight to ``client.create(data=...)``. That is sufficient for nodes whose
+only mandatory fields are attributes (organization, manufacturer, location,
+platform), but it cannot resolve *relationships* — e.g. a ``DcimDeviceType``
+needs ``manufacturer`` resolved to a node reference, a ``DcimDevice`` needs
+``device_type`` / ``location`` / ``platform`` / ``asn``, interfaces need
+``device``, and BGP peer groups / sessions need ``device`` + ``vrf``.
+
+Wiring those up requires a relationship-resolution layer on top of the
+current section framework. That work is tracked separately — see
+``specs/001-naf-intent-sot/tasks.md`` T028-followup. Until it lands, the
+extra sections sit in ``SEED_DEFERRED`` so the full topology YAML remains
+authoritative (the data is real; only the loader is partial).
 """
 
 from __future__ import annotations
@@ -24,22 +40,28 @@ from snapl_intent.models import SeedResult
 if TYPE_CHECKING:
     from pathlib import Path
 
-# Dependency order: supporting entities before the devices that reference them,
-# interfaces after devices, BGP sessions last (they reference interfaces and
-# peer groups).
+# Dependency order: supporting entities before the devices that reference them.
+# Only attribute-only sections are loaded today; everything that needs
+# relationship resolution is deferred (see module docstring + SEED_DEFERRED).
 SEED_ORDER: list[str] = [
     "organization",
     "location",
     "manufacturer",
     "platform",
-    "device_types",
-    "autonomous_systems",
-    "vrfs",
-    "ip_prefixes",
-    "devices",
-    "interfaces",
-    "bgp_peer_groups",
-    "bgp_sessions",
+]
+
+# Sections present in topology YAML but not yet loaded — each requires
+# resolving at least one mandatory relationship that the current ingester
+# cannot handle. Kept here so the full ordered list remains visible.
+SEED_DEFERRED: list[str] = [
+    "device_types",        # needs manufacturer
+    "autonomous_systems",  # needs organization
+    "vrfs",                # needs ip_namespace
+    "ip_prefixes",         # needs ip_namespace
+    "devices",             # needs device_type, location, platform, asn
+    "interfaces",          # needs device (Parent)
+    "bgp_peer_groups",     # inherits RoutingProtocol: needs device + vrf
+    "bgp_sessions",        # inherits RoutingProtocol: needs device + vrf
 ]
 
 

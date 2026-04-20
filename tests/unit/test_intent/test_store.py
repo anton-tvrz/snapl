@@ -260,7 +260,9 @@ class TestSeed:
         assert isinstance(result, SeedResult)
         assert result.use_case == "dcfabric"
         assert result.branch == "feature-branch"
-        assert result.devices_created == 1
+        # ``devices`` is currently in SEED_DEFERRED — see seed.py module
+        # docstring. Assert on total_records instead.
+        assert result.total_records > 0
 
     async def test_seed_default_branch_is_main(self, mock_infrahub_client, tmp_path: Path):
         mock_infrahub_client.filters.return_value = []
