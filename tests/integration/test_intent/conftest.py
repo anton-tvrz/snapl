@@ -111,3 +111,57 @@ async def seeded_store(live_infrahub_client, _seeded_once: bool) -> InfrahubInte
     if not _seeded_once:
         pytest.skip("Seed data unavailable (Infrahub not reachable or schema missing)")
     return InfrahubIntentStore(client=live_infrahub_client)
+
+
+# ---------------------------------------------------------------------------
+# Query-test devices
+# ---------------------------------------------------------------------------
+# Until the seed ingester's relationship-resolution layer lands
+# (``SEED_DEFERRED`` in ``snapl_intent.infrahub.seed``), devices are created
+# inline here so T029 has something to query. The fixture is idempotent: it
+# looks up each device by name before creating.
+_QUERY_TEST_DEVICES: list[dict[str, str]] = [
+    {"name": "query-spine-01", "role": "spine", "use_case": "dcfabric"},
+    {"name": "query-leaf-01", "role": "leaf", "use_case": "dcfabric"},
+    {"name": "query-edge-01", "role": "core", "use_case": "test_edge"},
+]
+
+
+@pytest.fixture(scope="session")
+async def _query_devices_seeded(
+    infrahub_address: str, infrahub_reachable: bool, _seeded_once: bool
+) -> bool:
+    if not (infrahub_reachable and _seeded_once):
+        return False
+    client = build_client(address=infrahub_address, api_token=_resolved_token())
+    locations = await client.filters(kind="LocationSite", shortname__value="local-lab")
+    if not locations:
+        return False
+    location = locations[0]
+    for device_data in _QUERY_TEST_DEVICES:
+        existing = await client.filters(kind="DcimDevice", name__value=device_data["name"])
+        if existing:
+            continue
+        node = await client.create(
+            kind="DcimDevice",
+            data={
+                "name": device_data["name"],
+                "status": "active",
+                "role": device_data["role"],
+                "use_case": device_data["use_case"],
+                "location": location.id,
+            },
+        )
+        await node.save()
+    return True
+
+
+@pytest.fixture
+async def query_store(
+    live_infrahub_client, _query_devices_seeded: bool
+) -> InfrahubIntentStore:
+    if not _query_devices_seeded:
+        pytest.skip(
+            "Query-test devices unavailable (Infrahub not reachable or schema/seed missing)"
+        )
+    return InfrahubIntentStore(client=live_infrahub_client)

@@ -99,7 +99,7 @@ class InfrahubIntentStore(IntentStore):
     ) -> list[DesiredState]:
         filters: dict[str, Any] = {}
         if device_id is not None:
-            filters["id"] = str(device_id)
+            filters["ids"] = [str(device_id)]
         if use_case is not None:
             filters["use_case__value"] = use_case
         if role is not None:

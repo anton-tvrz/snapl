@@ -191,9 +191,9 @@ class TestGetDesiredState:
         await store.get_desired_state(device_id=dev_uuid)
 
         kwargs = mock_infrahub_client.filters.await_args.kwargs
-        # The SDK expects string UUIDs on the wire
-        id_values = [v for k, v in kwargs.items() if k.startswith("id")]
-        assert str(dev_uuid) in id_values
+        # Infrahub's GraphQL expects ``ids: [String]`` rather than a single
+        # ``id`` argument, so the store wraps the UUID in a one-element list.
+        assert kwargs.get("ids") == [str(dev_uuid)]
 
 
 # ---------------------------------------------------------------------------

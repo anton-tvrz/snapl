@@ -104,7 +104,8 @@
   - Per-section declaration of which YAML fields are relationships, each mapping to `(peer_kind, lookup_attr)`. Resolve at upsert time via `filters(kind=..., <lookup>__value=item[field])` and pass `{"id": node.id}` to `create(data=...)`.
   - Handle BGP peer-groups: their inherited `RoutingProtocol` requires `device` + `vrf`, but `topology.yml` declares one shared peer-group. Either relax Protocol inheritance for peer-groups or adjust the ingester to materialise one peer-group per device.
   - Expand `test_seed.py::test_ingest_second_run_upserts_in_place` to cover device idempotency once devices re-enter `SEED_ORDER`.
-- [ ] T029 [US1] Write integration test for desired state query against live Infrahub (single device, role filter, use_case filter, empty result) in tests/integration/test_intent/test_infrahub_query.py
+- [X] T029 [US1] Write integration test for desired state query against live Infrahub (single device, role filter, use_case filter, empty result) in tests/integration/test_intent/test_infrahub_query.py
+  - **Scope note**: Device fixture is created inline via the SDK (in `_query_devices_seeded`) since the seed ingester does not yet resolve device relationships — see T028-followup. The fixture can be removed once device seeding moves out of `SEED_DEFERRED`.
 
 **Checkpoint**: US1 + US2 fully functional end-to-end. Schema provisioning loads 3 batches including business intent stubs. Seed ingests dcfabric topology. get_desired_state returns seeded data with correct relationships. All unit and integration tests pass.
 
