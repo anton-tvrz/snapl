@@ -6,27 +6,30 @@ Records are processed in ``SEED_ORDER`` so that each entity's dependencies
 is written. Upsert is implemented by looking up the existing node via its
 natural key (``name`` for most kinds) and saving it in place when present.
 
+Relationship resolution
+-----------------------
+Sections can declare ``relationships`` on their ``_Section`` definition. For
+each declared relationship, ``_upsert_item`` looks up the peer by its natural
+key (e.g. ``manufacturer: "Nokia"`` → ``OrganizationManufacturer`` with
+``name__value="Nokia"``) and substitutes the peer id into the payload before
+calling ``client.create``. An unresolvable peer raises
+:class:`IntentValidationError` so seed files fail fast with a clear message.
+
 Deferred scope (see ``SEED_DEFERRED`` below)
 --------------------------------------------
-The current ingester treats every YAML field as an attribute and passes it
-straight to ``client.create(data=...)``. That is sufficient for nodes whose
-only mandatory fields are attributes (organization, manufacturer, location,
-platform), but it cannot resolve *relationships* — e.g. a ``DcimDeviceType``
-needs ``manufacturer`` resolved to a node reference, a ``DcimDevice`` needs
-``device_type`` / ``location`` / ``platform`` / ``asn``, interfaces need
-``device``, and BGP peer groups / sessions need ``device`` + ``vrf``.
-
-Wiring those up requires a relationship-resolution layer on top of the
-current section framework. That work is tracked separately — see
-``specs/001-naf-intent-sot/tasks.md`` T028-followup. Until it lands, the
-extra sections sit in ``SEED_DEFERRED`` so the full topology YAML remains
-authoritative (the data is real; only the loader is partial).
+Sections still parked in ``SEED_DEFERRED`` need extra wiring the ingester
+does not yet provide — IP-namespace bootstrap (``vrfs`` / ``ip_prefixes``),
+parent-pointer materialization (``interfaces``), or RoutingProtocol shadow
+copies (``bgp_peer_groups`` / ``bgp_sessions``). See
+``specs/001-naf-intent-sot/tasks.md`` T028-followup for the remaining
+milestones. The full topology YAML is authoritative; only the loader is
+partial.
 """
 
 from __future__ import annotations
 
 import contextlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import yaml
@@ -38,34 +41,54 @@ from snapl_intent.exceptions import (
 from snapl_intent.models import SeedResult
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
     from pathlib import Path
 
 # Dependency order: supporting entities before the devices that reference them.
-# Only attribute-only sections are loaded today; everything that needs
-# relationship resolution is deferred (see module docstring + SEED_DEFERRED).
+# Sections with relationship-only peers (manufacturer, organization, etc.)
+# must appear after those peer sections.
 SEED_ORDER: list[str] = [
     "organization",
     "location",
     "manufacturer",
     "platform",
+    "device_types",
+    "autonomous_systems",
+    "devices",
 ]
 
-# Sections present in topology YAML but not yet loaded — each requires
-# resolving at least one mandatory relationship that the current ingester
-# cannot handle. Kept here so the full ordered list remains visible.
+# Sections present in topology YAML but not yet loaded — each requires extra
+# scaffolding the ingester does not yet provide (IP-namespace bootstrap,
+# parent-pointer wiring, RoutingProtocol shadow copies).
 SEED_DEFERRED: list[str] = [
-    "device_types",        # needs manufacturer
-    "autonomous_systems",  # needs organization
-    "vrfs",                # needs ip_namespace
-    "ip_prefixes",         # needs ip_namespace
-    "devices",             # needs device_type, location, platform, asn
-    "interfaces",          # needs device (Parent)
-    "bgp_peer_groups",     # inherits RoutingProtocol: needs device + vrf
-    "bgp_sessions",        # inherits RoutingProtocol: needs device + vrf
+    "vrfs",                # needs ip_namespace bootstrap
+    "ip_prefixes",         # needs ip_namespace bootstrap
+    "interfaces",          # needs device Parent materialization + ip_address
+    "bgp_peer_groups",     # inherits RoutingProtocol: needs device + vrf shadow copies
+    "bgp_sessions",        # inherits RoutingProtocol: needs device + vrf shadow copies
 ]
 
 
-DEVICE_REQUIRED_FIELDS: tuple[str, ...] = ("name", "role", "use_case", "device_type")
+DEVICE_REQUIRED_FIELDS: tuple[str, ...] = (
+    "name",
+    "role",
+    "use_case",
+    "device_type",
+    "location",
+)
+
+
+@dataclass(frozen=True)
+class _Rel:
+    """Descriptor for a relationship field resolved by natural key.
+
+    ``peer_kind`` is the Infrahub kind of the peer node; ``lookup_attr`` is the
+    peer's attribute used as the natural key (``name`` for most kinds,
+    ``shortname`` for locations, ``asn`` for autonomous systems).
+    """
+
+    peer_kind: str
+    lookup_attr: str = "name"
 
 
 @dataclass(frozen=True)
@@ -73,6 +96,7 @@ class _Section:
     kind: str  # Infrahub node kind
     lookup: tuple[str, ...]  # Fields used as natural key for upsert
     list_valued: bool  # Whether the section holds a list (vs. a single dict)
+    relationships: Mapping[str, _Rel] = field(default_factory=dict)
 
 
 _SECTIONS: dict[str, _Section] = {
@@ -80,11 +104,31 @@ _SECTIONS: dict[str, _Section] = {
     "manufacturer": _Section("OrganizationManufacturer", ("name",), False),
     "platform": _Section("DcimPlatform", ("name",), False),
     "location": _Section("LocationSite", ("shortname",), False),
-    "device_types": _Section("DcimDeviceType", ("name",), True),
-    "autonomous_systems": _Section("RoutingAutonomousSystem", ("name",), True),
+    "device_types": _Section(
+        "DcimDeviceType",
+        ("name",),
+        True,
+        relationships={"manufacturer": _Rel("OrganizationManufacturer")},
+    ),
+    "autonomous_systems": _Section(
+        "RoutingAutonomousSystem",
+        ("name",),
+        True,
+        relationships={"organization": _Rel("OrganizationProvider")},
+    ),
     "vrfs": _Section("IpamVRF", ("name",), True),
     "ip_prefixes": _Section("IpamPrefix", ("prefix",), True),
-    "devices": _Section("DcimDevice", ("name",), True),
+    "devices": _Section(
+        "DcimDevice",
+        ("name",),
+        True,
+        relationships={
+            "device_type": _Rel("DcimDeviceType"),
+            "platform": _Rel("DcimPlatform"),
+            "location": _Rel("LocationSite", "shortname"),
+            "asn": _Rel("RoutingAutonomousSystem", "asn"),
+        },
+    ),
     "interfaces": _Section("InterfacePhysical", ("device", "name"), True),
     "bgp_peer_groups": _Section("RoutingBGPPeerGroup", ("name",), True),
     "bgp_sessions": _Section(
@@ -185,18 +229,54 @@ class SeedIngester:
         branch: str,
     ) -> bool:
         """Upsert one item. Returns ``True`` when a new node was created."""
-        filters = {f"{key}__value": item[key] for key in section.lookup if key in item}
+        payload = await self._resolve_relationships(section, item)
+
+        filters = {f"{key}__value": payload[key] for key in section.lookup if key in payload}
         existing = await self._client.filters(kind=section.kind, **filters)
         if existing:
             node = existing[0]
-            for attr, value in item.items():
+            for attr, value in payload.items():
                 attr_obj = getattr(node, attr, None)
+                # TODO(T028-followup): relationship updates don't propagate here.
+                # The ``hasattr(attr_obj, "value")`` guard silently skips rel
+                # attributes, so changes to device_type/location/... on an
+                # existing node aren't written back. Safe for now because the
+                # seed is idempotent on natural keys, not on relationship drift.
                 if attr_obj is not None and hasattr(attr_obj, "value"):
                     with contextlib.suppress(AttributeError):
                         attr_obj.value = value
             await node.save()
             return False
 
-        node = await self._client.create(kind=section.kind, data=item, branch=branch)
+        node = await self._client.create(kind=section.kind, data=payload, branch=branch)
         await node.save()
         return True
+
+    async def _resolve_relationships(
+        self, section: _Section, item: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Return a copy of ``item`` with relationship fields rewritten to peer ids.
+
+        Looks up each declared relationship peer via its natural key. Raises
+        :class:`IntentValidationError` if a referenced peer does not exist —
+        seeds are declarative, so an unresolvable reference is a data error,
+        not a transient failure.
+        """
+        if not section.relationships:
+            return dict(item)
+
+        resolved = dict(item)
+        for field_name, rel in section.relationships.items():
+            if field_name not in resolved:
+                continue
+            value = resolved[field_name]
+            filter_kwargs = {f"{rel.lookup_attr}__value": value}
+            peers = await self._client.filters(kind=rel.peer_kind, **filter_kwargs)
+            if not peers:
+                raise IntentValidationError(
+                    f"Unresolved {field_name}={value!r} for {section.kind}: "
+                    f"no {rel.peer_kind} matching {rel.lookup_attr}__value={value!r}",
+                    field=field_name,
+                )
+            resolved[field_name] = peers[0].id
+        return resolved

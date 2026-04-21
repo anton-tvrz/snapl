@@ -22,10 +22,10 @@ from snapl_intent.infrahub.seed import (
     load_seed_file,
 )
 
-# Full dependency order = current SEED_ORDER plus the sections deferred until
-# relationship resolution lands (T028-followup). The invariant tests below
-# check the full chain so they remain meaningful once the deferred sections
-# move back into SEED_ORDER.
+# Full dependency order = SEED_ORDER plus remaining deferred sections
+# (IP-namespace, interfaces, RoutingProtocol shadow copies — see
+# T028-followup). Invariants below cover the whole chain so they remain
+# meaningful as deferred sections graduate into SEED_ORDER.
 FULL_ORDER: list[str] = SEED_ORDER + SEED_DEFERRED
 
 pytestmark = pytest.mark.unit
@@ -111,33 +111,14 @@ class TestSeedIngester:
         return client
 
     async def test_ingest_upserts_in_declared_order(self, tmp_path: Path):
-        # Deferred sections (devices, interfaces, bgp_*) are still present in
-        # the dataset — the ingester must ignore them silently until the
-        # relationship-resolution layer lands (T028-followup).
+        # Attribute-only sections — no relationship resolution needed, so the
+        # default ``filters=[]`` mock is sufficient. Relationship resolution is
+        # covered by ``test_ingest_resolves_relationships_to_peer_ids`` below.
         dataset: dict[str, Any] = {
             "organization": {"name": "Test Org"},
             "location": {"name": "Lab", "shortname": "lab"},
             "manufacturer": {"name": "Nokia"},
             "platform": {"name": "SR Linux"},
-            "device_types": [{"name": "IXR-D2"}],
-            "autonomous_systems": [{"name": "AS1", "asn": 65001}],
-            "vrfs": [{"name": "default"}],
-            "ip_prefixes": [{"prefix": "10.0.0.0/24"}],
-            "devices": [
-                {
-                    "name": "spine-01",
-                    "role": "spine",
-                    "use_case": "dcfabric",
-                    "device_type": "IXR-D2",
-                    "management_ip": "10.0.0.1/24",
-                    "asn": 65001,
-                }
-            ],
-            "interfaces": [{"device": "spine-01", "name": "ethernet-1/1"}],
-            "bgp_peer_groups": [{"name": "underlay-ipv4"}],
-            "bgp_sessions": [
-                {"local_device": "spine-01", "remote_device": "leaf-01", "local_as": 65000, "remote_as": 65001}
-            ],
         }
         path = tmp_path / "topology.yml"
         path.write_text(yaml.safe_dump(dataset))
@@ -147,15 +128,58 @@ class TestSeedIngester:
 
         result = await ingester.seed(use_case="dcfabric", data_path=path, branch="main")
 
-        # Every section in SEED_ORDER appears in the dataset as a singleton,
-        # so one create per section.
-        assert client.create.await_count == len(SEED_ORDER)
+        assert client.create.await_count == len(dataset)
         create_kinds = [call.kwargs.get("kind") for call in client.create.await_args_list]
         assert any("Organization" in (k or "") for k in create_kinds)
         assert result.use_case == "dcfabric"
         assert result.branch == "main"
-        assert result.devices_created == 0  # devices is in SEED_DEFERRED
-        assert result.total_records == len(SEED_ORDER)
+        assert result.devices_created == 0
+        assert result.total_records == len(dataset)
+
+    async def test_ingest_resolves_relationships_to_peer_ids(self, tmp_path: Path):
+        dataset: dict[str, Any] = {
+            "device_types": [
+                {"name": "IXR-D2", "manufacturer": "Nokia"},
+            ],
+        }
+        path = tmp_path / "topology.yml"
+        path.write_text(yaml.safe_dump(dataset))
+
+        peer = _stub_node()
+        peer.id = "mfr-1"
+
+        async def fake_filters(*, kind: str, **kwargs: Any) -> list[Any]:
+            if kind == "OrganizationManufacturer" and kwargs.get("name__value") == "Nokia":
+                return [peer]
+            return []
+
+        client = self._make_client()
+        client.filters = AsyncMock(side_effect=fake_filters)
+        ingester = SeedIngester(client=client)
+
+        await ingester.seed(use_case="dcfabric", data_path=path)
+
+        device_type_call = next(
+            call
+            for call in client.create.await_args_list
+            if call.kwargs.get("kind") == "DcimDeviceType"
+        )
+        assert device_type_call.kwargs["data"]["manufacturer"] == "mfr-1"
+
+    async def test_ingest_raises_when_relationship_peer_missing(self, tmp_path: Path):
+        dataset: dict[str, Any] = {
+            "device_types": [
+                {"name": "IXR-D2", "manufacturer": "Unknown"},
+            ],
+        }
+        path = tmp_path / "topology.yml"
+        path.write_text(yaml.safe_dump(dataset))
+
+        client = self._make_client()
+        ingester = SeedIngester(client=client)
+
+        with pytest.raises(IntentValidationError, match="Unresolved manufacturer"):
+            await ingester.seed(use_case="dcfabric", data_path=path)
 
     async def test_ingest_second_run_upserts_in_place(self, tmp_path: Path):
         dataset: dict[str, Any] = {
@@ -183,7 +207,7 @@ class TestSeedIngester:
 
         # No new create calls after the second seed — everything was an upsert.
         assert client.create.await_count == create_calls_before
-        assert result.total_records == len(SEED_ORDER)
+        assert result.total_records == len(dataset)
 
     async def test_missing_data_path_raises(self, tmp_path: Path):
         client = self._make_client()

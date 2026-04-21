@@ -231,14 +231,15 @@ class TestSeed:
             "organization": {"name": "Test Org"},
             "manufacturer": {"name": "Nokia"},
             "platform": {"name": "SR Linux"},
-            "location": {"name": "Lab"},
-            "device_types": [{"name": "IXR-D2"}],
+            "location": {"name": "Lab", "shortname": "lab"},
+            "device_types": [{"name": "IXR-D2", "manufacturer": "Nokia"}],
             "devices": [
                 {
                     "name": "spine-01",
                     "role": "spine",
                     "use_case": "dcfabric",
                     "device_type": "IXR-D2",
+                    "location": "lab",
                 }
             ],
         }
@@ -246,9 +247,34 @@ class TestSeed:
         path.write_text(yaml.safe_dump(dataset))
         return path
 
+    @staticmethod
+    def _wire_peer_resolver(client: MagicMock) -> None:
+        """Return stub peers for relationship-resolution filter calls.
+
+        The same stub shape doubles as an "existing" node when the ingester's
+        upsert lookup hits the same kind — the stub has an awaitable ``save``
+        so the update path completes without blowing up. Semantic idempotency
+        is covered by ``test_seed.py``; here we only need the end-to-end
+        call chain to succeed so the :class:`SeedResult` assertions fire.
+        """
+        peer_kinds = {
+            "OrganizationManufacturer",
+            "DcimDeviceType",
+            "LocationSite",
+        }
+
+        async def fake_filters(*, kind: str, **_kwargs):
+            if kind in peer_kinds:
+                stub = MagicMock()
+                stub.id = f"{kind}-peer-id"
+                stub.save = AsyncMock()
+                return [stub]
+            return []
+
+        client.filters = AsyncMock(side_effect=fake_filters)
+
     async def test_seed_returns_seed_result(self, mock_infrahub_client, tmp_path: Path):
-        # New records — nothing already exists.
-        mock_infrahub_client.filters.return_value = []
+        self._wire_peer_resolver(mock_infrahub_client)
         mock_infrahub_client.create.side_effect = lambda **_: MagicMock(save=AsyncMock())
         store = InfrahubIntentStore(client=mock_infrahub_client)
         data_path = self._write_dataset(tmp_path)
@@ -260,12 +286,11 @@ class TestSeed:
         assert isinstance(result, SeedResult)
         assert result.use_case == "dcfabric"
         assert result.branch == "feature-branch"
-        # ``devices`` is currently in SEED_DEFERRED — see seed.py module
-        # docstring. Assert on total_records instead.
         assert result.total_records > 0
+        assert result.devices_created == 1
 
     async def test_seed_default_branch_is_main(self, mock_infrahub_client, tmp_path: Path):
-        mock_infrahub_client.filters.return_value = []
+        self._wire_peer_resolver(mock_infrahub_client)
         mock_infrahub_client.create.side_effect = lambda **_: MagicMock(save=AsyncMock())
         store = InfrahubIntentStore(client=mock_infrahub_client)
         data_path = self._write_dataset(tmp_path)

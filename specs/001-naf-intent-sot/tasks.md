@@ -99,13 +99,14 @@
 
 - [X] T027 [US2] Write integration test for schema provisioning against live Infrahub (3-batch load, idempotent re-run) in tests/integration/test_intent/test_infrahub_schema.py
 - [X] T028 [US2] Write integration test for data seeding against live Infrahub (full dcfabric topology, upsert on re-run) in tests/integration/test_intent/test_infrahub_seed.py
-  - **Scope note**: Only attribute-only sections are loaded today (organization, location, manufacturer, platform). Sections that require relationship resolution (device_types, autonomous_systems, vrfs, ip_prefixes, devices, interfaces, bgp_peer_groups, bgp_sessions) are parked in `SEED_DEFERRED` — see T028-followup.
-- [ ] T028-followup [US2] Implement relationship-resolution layer in the seed ingester so the deferred sections in `packages/intent/snapl_intent/infrahub/seed.py::SEED_DEFERRED` can be loaded. Needs:
-  - Per-section declaration of which YAML fields are relationships, each mapping to `(peer_kind, lookup_attr)`. Resolve at upsert time via `filters(kind=..., <lookup>__value=item[field])` and pass `{"id": node.id}` to `create(data=...)`.
-  - Handle BGP peer-groups: their inherited `RoutingProtocol` requires `device` + `vrf`, but `topology.yml` declares one shared peer-group. Either relax Protocol inheritance for peer-groups or adjust the ingester to materialise one peer-group per device.
-  - Expand `test_seed.py::test_ingest_second_run_upserts_in_place` to cover device idempotency once devices re-enter `SEED_ORDER`.
+  - **Scope note**: Milestone A of T028-followup landed — attribute-only sections plus `device_types`, `autonomous_systems`, and `devices` (with `manufacturer`, `organization`, `device_type`, `platform`, `location`, `asn` relationships) now load through `SEED_ORDER`. Remaining sections (`vrfs`, `ip_prefixes`, `interfaces`, `bgp_peer_groups`, `bgp_sessions`) are still parked in `SEED_DEFERRED`.
+- [ ] T028-followup [US2] Milestones for promoting the remaining `SEED_DEFERRED` sections in `packages/intent/snapl_intent/infrahub/seed.py`:
+  - [X] **Milestone A — device-chain relationships**: per-section `_Rel` declaration + peer-id substitution at upsert time, for `device_types`, `autonomous_systems`, `devices`. Raises `IntentValidationError` when a referenced peer does not exist.
+  - [ ] **Milestone B — IP-namespace bootstrap**: materialise the default namespace so `vrfs` + `ip_prefixes` can promote out of deferred.
+  - [ ] **Milestone C — interfaces + IP addressing**: resolve `device` parents, materialise `management_ip` on devices and per-link `ip_address` entries. Expand `test_seed.py::test_ingest_second_run_upserts_in_place` to cover device idempotency with interfaces in play.
+  - [ ] **Milestone D — BGP peer-groups/sessions**: `RoutingProtocol` inheritance requires `device` + `vrf`, but topology declares one shared peer-group. Resolved via **shadow copies** — materialise N `BGPPeerGroup` rows at seed time from one logical YAML declaration; schema left unchanged.
 - [X] T029 [US1] Write integration test for desired state query against live Infrahub (single device, role filter, use_case filter, empty result) in tests/integration/test_intent/test_infrahub_query.py
-  - **Scope note**: Device fixture is created inline via the SDK (in `_query_devices_seeded`) since the seed ingester does not yet resolve device relationships — see T028-followup. The fixture can be removed once device seeding moves out of `SEED_DEFERRED`.
+  - **Scope note**: Device fixture is still created inline via the SDK (in `_query_devices_seeded`) because `test_edge` isn't yet in the packaged seed (see Phase 6 T034). The inline path can be removed once the per-use-case topology tree lands.
 
 **Checkpoint**: US1 + US2 fully functional end-to-end. Schema provisioning loads 3 batches including business intent stubs. Seed ingests dcfabric topology. get_desired_state returns seeded data with correct relationships. All unit and integration tests pass.
 

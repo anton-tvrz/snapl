@@ -39,25 +39,33 @@ device_types:
   - name: "7220 IXR-D3"
     description: "Nokia 7220 IXR-D3 — Spine"
     part_number: "7220-IXR-D3"
+    manufacturer: "Nokia"
   - name: "7220 IXR-D2"
     description: "Nokia 7220 IXR-D2 — Leaf"
     part_number: "7220-IXR-D2"
+    manufacturer: "Nokia"
 
 autonomous_systems:
   - name: "spine-01 AS"
     asn: 65000
     description: "Spine-01 autonomous system"
+    organization: "snapl Lab"
   - name: "spine-02 AS"
     asn: 65001
     description: "Spine-02 autonomous system"
+    organization: "snapl Lab"
   - name: "leaf-01 AS"
     asn: 65011
+    organization: "snapl Lab"
   - name: "leaf-02 AS"
     asn: 65012
+    organization: "snapl Lab"
   - name: "leaf-03 AS"
     asn: 65013
+    organization: "snapl Lab"
   - name: "leaf-04 AS"
     asn: 65014
+    organization: "snapl Lab"
 
 vrfs:
   - name: "default"
@@ -77,6 +85,8 @@ devices:
     status: active
     use_case: dcfabric
     device_type: "7220 IXR-D3"
+    location: "local-lab"
+    platform: "Nokia SR Linux"
     management_ip: "10.0.0.1/24"
     asn: 65000
     description: "Spine 01"
@@ -85,6 +95,8 @@ devices:
     status: active
     use_case: dcfabric
     device_type: "7220 IXR-D3"
+    location: "local-lab"
+    platform: "Nokia SR Linux"
     management_ip: "10.0.0.2/24"
     asn: 65001
     description: "Spine 02"
@@ -93,6 +105,8 @@ devices:
     status: active
     use_case: dcfabric
     device_type: "7220 IXR-D2"
+    location: "local-lab"
+    platform: "Nokia SR Linux"
     management_ip: "10.0.0.11/24"
     asn: 65011
     description: "Leaf 01"
@@ -101,6 +115,8 @@ devices:
     status: active
     use_case: dcfabric
     device_type: "7220 IXR-D2"
+    location: "local-lab"
+    platform: "Nokia SR Linux"
     management_ip: "10.0.0.12/24"
     asn: 65012
     description: "Leaf 02"
@@ -109,6 +125,8 @@ devices:
     status: active
     use_case: dcfabric
     device_type: "7220 IXR-D2"
+    location: "local-lab"
+    platform: "Nokia SR Linux"
     management_ip: "10.0.0.13/24"
     asn: 65013
     description: "Leaf 03"
@@ -117,6 +135,8 @@ devices:
     status: active
     use_case: dcfabric
     device_type: "7220 IXR-D2"
+    location: "local-lab"
+    platform: "Nokia SR Linux"
     management_ip: "10.0.0.14/24"
     asn: 65014
     description: "Leaf 04"
