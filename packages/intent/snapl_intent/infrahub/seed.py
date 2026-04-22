@@ -57,13 +57,12 @@ SEED_ORDER: list[str] = [
     "vrfs",        # requires default IpamNamespace (Milestone B)
     "ip_prefixes", # requires default IpamNamespace (Milestone B)
     "devices",
+    "interfaces",  # Milestone C — device parent + ip_address materialisation
 ]
 
 # Sections present in topology YAML but not yet loaded — each requires extra
-# scaffolding the ingester does not yet provide (parent-pointer wiring,
-# RoutingProtocol shadow copies).
+# scaffolding the ingester does not yet provide (RoutingProtocol shadow copies).
 SEED_DEFERRED: list[str] = [
-    "interfaces",          # needs device Parent materialization + ip_address
     "bgp_peer_groups",     # inherits RoutingProtocol: needs device + vrf shadow copies
     "bgp_sessions",        # inherits RoutingProtocol: needs device + vrf shadow copies
 ]
@@ -98,6 +97,9 @@ class _Section:
     list_valued: bool  # Whether the section holds a list (vs. a single dict)
     relationships: Mapping[str, _Rel] = field(default_factory=dict)
     namespace_field: str | None = None  # if set, inject default IpamNamespace id here
+    ip_field: str | None = None  # YAML field → IpamIPAddress → wired into ip_addresses list
+    primary_address_field: str | None = None  # YAML field → IpamIPAddress → wired into primary_address
+    lookup_rel_fields: frozenset[str] = field(default_factory=frozenset)  # lookup fields resolved as rel ids
 
 
 _SECTIONS: dict[str, _Section] = {
@@ -129,8 +131,16 @@ _SECTIONS: dict[str, _Section] = {
             "location": _Rel("LocationSite", "shortname"),
             "asn": _Rel("RoutingAutonomousSystem", "asn"),
         },
+        primary_address_field="management_ip",
     ),
-    "interfaces": _Section("InterfacePhysical", ("device", "name"), True),
+    "interfaces": _Section(
+        "InterfacePhysical",
+        ("device", "name"),
+        True,
+        relationships={"device": _Rel("DcimDevice")},
+        ip_field="ip_address",
+        lookup_rel_fields=frozenset({"device"}),
+    ),
     "bgp_peer_groups": _Section("RoutingBGPPeerGroup", ("name",), True),
     "bgp_sessions": _Section(
         "RoutingBGPSession",
@@ -171,9 +181,12 @@ class SeedIngester:
         dataset = load_seed_file(data_path)
         self._validate(dataset)
 
-        # Fetch the default IP namespace once if any namespace-bearing sections exist.
+        # Fetch the default IP namespace once if any section will materialise IpamIPAddress.
         namespace_id: str | None = None
-        if {"vrfs", "ip_prefixes"}.intersection(dataset):
+        _needs_ns = {"vrfs", "ip_prefixes", "interfaces"}.intersection(dataset) or any(
+            d.get("management_ip") for d in (dataset.get("devices") or [])
+        )
+        if _needs_ns:
             namespace_id = await self._get_default_namespace_id()
 
         devices_created = 0
@@ -209,6 +222,25 @@ class SeedIngester:
             total_records=total_records,
             branch=branch,
         )
+
+    async def _materialise_ip_address(
+        self, *, address: str, namespace_id: str, branch: str
+    ) -> str:
+        """Upsert an IpamIPAddress node and return its id."""
+        existing = await self._client.filters(
+            kind="IpamIPAddress",
+            address__value=address,
+            ip_namespace__ids=[namespace_id],
+        )
+        if existing:
+            return existing[0].id
+        node = await self._client.create(
+            kind="IpamIPAddress",
+            data={"address": address, "ip_namespace": namespace_id},
+            branch=branch,
+        )
+        await node.save()
+        return node.id
 
     async def _get_default_namespace_id(self) -> str:
         results = await self._client.filters(kind="IpamNamespace", default__value=True)
@@ -250,7 +282,31 @@ class SeedIngester:
         if section.namespace_field and namespace_id:
             payload[section.namespace_field] = namespace_id
 
-        filters = {f"{key}__value": payload[key] for key in section.lookup if key in payload}
+        # Materialise per-item IP address into IpamIPAddress, wire to ip_addresses list.
+        if section.ip_field and section.ip_field in payload and namespace_id:
+            ip_str = payload.pop(section.ip_field)
+            ip_id = await self._materialise_ip_address(
+                address=ip_str, namespace_id=namespace_id, branch=branch
+            )
+            payload["ip_addresses"] = [ip_id]
+
+        # Materialise management IP into IpamIPAddress, wire to primary_address.
+        if section.primary_address_field and section.primary_address_field in payload and namespace_id:
+            ip_id = await self._materialise_ip_address(
+                address=payload[section.primary_address_field],
+                namespace_id=namespace_id,
+                branch=branch,
+            )
+            payload["primary_address"] = ip_id
+
+        filters: dict[str, Any] = {}
+        for key in section.lookup:
+            if key not in payload:
+                continue
+            if key in section.lookup_rel_fields:
+                filters[f"{key}__ids"] = [payload[key]]
+            else:
+                filters[f"{key}__value"] = payload[key]
         existing = await self._client.filters(kind=section.kind, **filters)
         if existing:
             node = existing[0]

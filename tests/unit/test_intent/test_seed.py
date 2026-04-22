@@ -96,6 +96,15 @@ class TestSeedOrder:
     def test_vrfs_follow_autonomous_systems(self):
         assert SEED_ORDER.index("autonomous_systems") < SEED_ORDER.index("vrfs")
 
+    def test_interfaces_in_seed_order(self):
+        assert "interfaces" in SEED_ORDER
+
+    def test_interfaces_not_deferred(self):
+        assert "interfaces" not in SEED_DEFERRED
+
+    def test_interfaces_follow_devices_in_seed_order(self):
+        assert SEED_ORDER.index("devices") < SEED_ORDER.index("interfaces")
+
 
 # ---------------------------------------------------------------------------
 # Ingester — order, upsert, idempotency
@@ -332,3 +341,292 @@ class TestNamespaceBootstrap:
             if c.kwargs.get("kind") == "IpamNamespace"
         ]
         assert len(ns_calls) == 1
+
+
+# ---------------------------------------------------------------------------
+# Milestone C — interfaces + IP materialisation
+# ---------------------------------------------------------------------------
+
+
+def _make_client_with_ns_and_peers(
+    ns_id: str = "ns-1",
+    device_id: str = "dev-1",
+) -> MagicMock:
+    """Client stub that resolves IpamNamespace, DcimDevice and common device peers."""
+    ns = _stub_node("namespace")
+    ns.id = ns_id
+    device = _stub_node("device")
+    device.id = device_id
+
+    async def fake_filters(*, kind: str, **kwargs: Any) -> list[Any]:
+        if kind == "IpamNamespace":
+            return [ns]
+        if kind == "DcimDevice":
+            return [device]
+        if kind in ("DcimDeviceType", "DcimPlatform", "LocationSite", "RoutingAutonomousSystem"):
+            peer = _stub_node(kind)
+            peer.id = f"{kind}-id"
+            return [peer]
+        # upsert lookups (InterfacePhysical, IpamIPAddress, ...) — nothing exists yet
+        return []
+
+    client = MagicMock()
+    client.create = AsyncMock(side_effect=lambda **kw: _stub_node(kw.get("kind", "node")))
+    client.filters = AsyncMock(side_effect=fake_filters)
+    return client
+
+
+class TestInterfaceSeeding:
+    """Milestone C — interfaces promoted from SEED_DEFERRED to SEED_ORDER."""
+
+    async def test_interface_device_relationship_resolved(self, tmp_path: Path):
+        dataset = {
+            "interfaces": [
+                {"device": "spine-01", "name": "ethernet-1/1", "role": "fabric"},
+            ]
+        }
+        path = tmp_path / "t.yml"
+        path.write_text(yaml.safe_dump(dataset))
+
+        client = _make_client_with_ns_and_peers(device_id="dev-1")
+        ingester = SeedIngester(client=client)
+        await ingester.seed(use_case="dcfabric", data_path=path)
+
+        iface_call = next(
+            c for c in client.create.await_args_list
+            if c.kwargs.get("kind") == "InterfacePhysical"
+        )
+        assert iface_call.kwargs["data"]["device"] == "dev-1"
+
+    async def test_interface_ip_address_materialised(self, tmp_path: Path):
+        """ip_address on an interface creates an IpamIPAddress node."""
+        dataset = {
+            "interfaces": [
+                {
+                    "device": "spine-01",
+                    "name": "ethernet-1/1",
+                    "role": "fabric",
+                    "ip_address": "10.10.1.0/31",
+                },
+            ]
+        }
+        path = tmp_path / "t.yml"
+        path.write_text(yaml.safe_dump(dataset))
+
+        client = _make_client_with_ns_and_peers()
+        ingester = SeedIngester(client=client)
+        await ingester.seed(use_case="dcfabric", data_path=path)
+
+        ip_call = next(
+            c for c in client.create.await_args_list
+            if c.kwargs.get("kind") == "IpamIPAddress"
+        )
+        assert ip_call.kwargs["data"]["address"] == "10.10.1.0/31"
+        assert ip_call.kwargs["data"]["ip_namespace"] == "ns-1"
+
+    async def test_interface_ip_addresses_rel_populated(self, tmp_path: Path):
+        """ip_address materialisation wires IpamIPAddress id into ip_addresses list."""
+        ip_node = _stub_node("ip")
+        ip_node.id = "ip-1"
+
+        async def fake_create(**kw: Any) -> MagicMock:
+            if kw.get("kind") == "IpamIPAddress":
+                return ip_node
+            return _stub_node(kw.get("kind", "node"))
+
+        dataset = {
+            "interfaces": [
+                {
+                    "device": "spine-01",
+                    "name": "ethernet-1/1",
+                    "role": "fabric",
+                    "ip_address": "10.10.1.0/31",
+                },
+            ]
+        }
+        path = tmp_path / "t.yml"
+        path.write_text(yaml.safe_dump(dataset))
+
+        client = _make_client_with_ns_and_peers()
+        client.create = AsyncMock(side_effect=fake_create)
+        ingester = SeedIngester(client=client)
+        await ingester.seed(use_case="dcfabric", data_path=path)
+
+        iface_call = next(
+            c for c in client.create.await_args_list
+            if c.kwargs.get("kind") == "InterfacePhysical"
+        )
+        assert iface_call.kwargs["data"].get("ip_addresses") == ["ip-1"]
+
+    async def test_interface_without_ip_skips_materialisation(self, tmp_path: Path):
+        """Interface with no ip_address creates no IpamIPAddress."""
+        dataset = {
+            "interfaces": [
+                {"device": "spine-01", "name": "loopback0", "role": "loopback"},
+            ]
+        }
+        path = tmp_path / "t.yml"
+        path.write_text(yaml.safe_dump(dataset))
+
+        client = _make_client_with_ns_and_peers()
+        ingester = SeedIngester(client=client)
+        await ingester.seed(use_case="dcfabric", data_path=path)
+
+        ip_creates = [
+            c for c in client.create.await_args_list
+            if c.kwargs.get("kind") == "IpamIPAddress"
+        ]
+        assert ip_creates == []
+
+    async def test_interface_lookup_uses_device_ids_filter(self, tmp_path: Path):
+        """Upsert lookup for existing InterfacePhysical uses device__ids, not device__value."""
+        dataset = {
+            "interfaces": [
+                {"device": "spine-01", "name": "ethernet-1/1", "role": "fabric"},
+            ]
+        }
+        path = tmp_path / "t.yml"
+        path.write_text(yaml.safe_dump(dataset))
+
+        client = _make_client_with_ns_and_peers(device_id="dev-42")
+        ingester = SeedIngester(client=client)
+        await ingester.seed(use_case="dcfabric", data_path=path)
+
+        iface_lookup = next(
+            c for c in client.filters.await_args_list
+            if c.kwargs.get("kind") == "InterfacePhysical"
+        )
+        assert iface_lookup.kwargs.get("device__ids") == ["dev-42"]
+        assert "device__value" not in iface_lookup.kwargs
+
+    async def test_interface_idempotency_on_second_run(self, tmp_path: Path):
+        """Second seed run finds existing InterfacePhysical and updates in place."""
+        dataset = {
+            "interfaces": [
+                {"device": "spine-01", "name": "ethernet-1/1", "role": "fabric"},
+            ]
+        }
+        path = tmp_path / "t.yml"
+        path.write_text(yaml.safe_dump(dataset))
+
+        existing_iface = _stub_node("existing-iface")
+
+        async def fake_filters_second(*, kind: str, **kwargs: Any) -> list[Any]:
+            ns = _stub_node("namespace")
+            ns.id = "ns-1"
+            device = _stub_node("device")
+            device.id = "dev-1"
+            if kind == "IpamNamespace":
+                return [ns]
+            if kind == "DcimDevice":
+                return [device]
+            if kind == "InterfacePhysical":
+                return [existing_iface]
+            return []
+
+        client = _make_client_with_ns_and_peers()
+        ingester = SeedIngester(client=client)
+        await ingester.seed(use_case="dcfabric", data_path=path)
+        creates_after_first = client.create.await_count
+
+        client.filters = AsyncMock(side_effect=fake_filters_second)
+        await ingester.seed(use_case="dcfabric", data_path=path)
+
+        # No new InterfacePhysical created on second run.
+        assert client.create.await_count == creates_after_first
+
+
+# ---------------------------------------------------------------------------
+# Milestone C (Broad) — management_ip → IpamIPAddress + primary_address
+# ---------------------------------------------------------------------------
+
+
+class TestDeviceManagementIP:
+    """management_ip on a device is materialised as IpamIPAddress and wired to primary_address."""
+
+    def _make_client(self, ns_id: str = "ns-1") -> MagicMock:
+        ns = _stub_node("namespace")
+        ns.id = ns_id
+
+        async def fake_filters(*, kind: str, **kwargs: Any) -> list[Any]:
+            if kind == "IpamNamespace":
+                return [ns]
+            if kind in ("DcimDeviceType", "DcimPlatform", "LocationSite", "RoutingAutonomousSystem"):
+                peer = _stub_node(kind)
+                peer.id = f"{kind}-id"
+                return [peer]
+            return []
+
+        client = MagicMock()
+        client.create = AsyncMock(side_effect=lambda **kw: _stub_node(kw.get("kind", "node")))
+        client.filters = AsyncMock(side_effect=fake_filters)
+        return client
+
+    def _minimal_device(self, *, management_ip: str | None = None) -> dict[str, Any]:
+        d: dict[str, Any] = {
+            "name": "spine-01",
+            "role": "spine",
+            "use_case": "dcfabric",
+            "device_type": "7220 IXR-D3",
+            "location": "local-lab",
+        }
+        if management_ip is not None:
+            d["management_ip"] = management_ip
+        return d
+
+    async def test_management_ip_creates_ipam_address(self, tmp_path: Path):
+        dataset = {"devices": [self._minimal_device(management_ip="10.0.0.1/24")]}
+        path = tmp_path / "t.yml"
+        path.write_text(yaml.safe_dump(dataset))
+
+        client = self._make_client()
+        ingester = SeedIngester(client=client)
+        await ingester.seed(use_case="dcfabric", data_path=path)
+
+        ip_call = next(
+            c for c in client.create.await_args_list
+            if c.kwargs.get("kind") == "IpamIPAddress"
+        )
+        assert ip_call.kwargs["data"]["address"] == "10.0.0.1/24"
+        assert ip_call.kwargs["data"]["ip_namespace"] == "ns-1"
+
+    async def test_management_ip_wires_primary_address(self, tmp_path: Path):
+        """primary_address on the DcimDevice is set to the IpamIPAddress id."""
+        ip_node = _stub_node("ip")
+        ip_node.id = "mgmt-ip-1"
+
+        async def fake_create(**kw: Any) -> MagicMock:
+            if kw.get("kind") == "IpamIPAddress":
+                return ip_node
+            return _stub_node(kw.get("kind", "node"))
+
+        dataset = {"devices": [self._minimal_device(management_ip="10.0.0.1/24")]}
+        path = tmp_path / "t.yml"
+        path.write_text(yaml.safe_dump(dataset))
+
+        client = self._make_client()
+        client.create = AsyncMock(side_effect=fake_create)
+        ingester = SeedIngester(client=client)
+        await ingester.seed(use_case="dcfabric", data_path=path)
+
+        device_call = next(
+            c for c in client.create.await_args_list
+            if c.kwargs.get("kind") == "DcimDevice"
+        )
+        assert device_call.kwargs["data"].get("primary_address") == "mgmt-ip-1"
+
+    async def test_device_without_management_ip_skips_materialisation(self, tmp_path: Path):
+        """Device without management_ip creates no IpamIPAddress."""
+        dataset = {"devices": [self._minimal_device()]}
+        path = tmp_path / "t.yml"
+        path.write_text(yaml.safe_dump(dataset))
+
+        client = self._make_client()
+        ingester = SeedIngester(client=client)
+        await ingester.seed(use_case="dcfabric", data_path=path)
+
+        ip_creates = [
+            c for c in client.create.await_args_list
+            if c.kwargs.get("kind") == "IpamIPAddress"
+        ]
+        assert ip_creates == []
