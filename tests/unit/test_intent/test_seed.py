@@ -87,6 +87,15 @@ class TestSeedOrder:
     def test_active_and_deferred_are_disjoint(self):
         assert set(SEED_ORDER).isdisjoint(SEED_DEFERRED)
 
+    def test_vrfs_precede_devices(self):
+        assert SEED_ORDER.index("vrfs") < SEED_ORDER.index("devices")
+
+    def test_ip_prefixes_precede_devices(self):
+        assert SEED_ORDER.index("ip_prefixes") < SEED_ORDER.index("devices")
+
+    def test_vrfs_follow_autonomous_systems(self):
+        assert SEED_ORDER.index("autonomous_systems") < SEED_ORDER.index("vrfs")
+
 
 # ---------------------------------------------------------------------------
 # Ingester — order, upsert, idempotency
@@ -239,3 +248,87 @@ class TestSeedIngester:
 
         with pytest.raises(IntentConnectionError):
             await ingester.seed(use_case="dcfabric", data_path=path)
+
+
+# ---------------------------------------------------------------------------
+# Namespace bootstrap (Milestone B)
+# ---------------------------------------------------------------------------
+
+
+class TestNamespaceBootstrap:
+    """Default IpamNamespace ID is looked up once and injected into vrfs/ip_prefixes."""
+
+    def _make_client_with_namespace(self, ns_id: str = "ns-1") -> MagicMock:
+        ns = _stub_node("namespace")
+        ns.id = ns_id
+
+        async def fake_filters(*, kind: str, **kwargs: Any) -> list[Any]:
+            if kind == "IpamNamespace":
+                return [ns]
+            return []
+
+        client = MagicMock()
+        client.create = AsyncMock(side_effect=lambda **kwargs: _stub_node(kwargs.get("kind", "node")))
+        client.filters = AsyncMock(side_effect=fake_filters)
+        return client
+
+    async def test_vrfs_inject_namespace_id(self, tmp_path: Path):
+        dataset = {"vrfs": [{"name": "default", "description": "Global VRF"}]}
+        path = tmp_path / "t.yml"
+        path.write_text(yaml.safe_dump(dataset))
+
+        client = self._make_client_with_namespace("ns-1")
+        ingester = SeedIngester(client=client)
+        await ingester.seed(use_case="dcfabric", data_path=path)
+
+        vrf_call = next(
+            c for c in client.create.await_args_list
+            if c.kwargs.get("kind") == "IpamVRF"
+        )
+        assert vrf_call.kwargs["data"]["namespace"] == "ns-1"
+
+    async def test_ip_prefixes_inject_namespace_id(self, tmp_path: Path):
+        dataset = {"ip_prefixes": [{"prefix": "10.0.0.0/8", "status": "active"}]}
+        path = tmp_path / "t.yml"
+        path.write_text(yaml.safe_dump(dataset))
+
+        client = self._make_client_with_namespace("ns-1")
+        ingester = SeedIngester(client=client)
+        await ingester.seed(use_case="dcfabric", data_path=path)
+
+        prefix_call = next(
+            c for c in client.create.await_args_list
+            if c.kwargs.get("kind") == "IpamPrefix"
+        )
+        assert prefix_call.kwargs["data"]["ip_namespace"] == "ns-1"
+
+    async def test_missing_namespace_raises_validation_error(self, tmp_path: Path):
+        dataset = {"vrfs": [{"name": "default"}]}
+        path = tmp_path / "t.yml"
+        path.write_text(yaml.safe_dump(dataset))
+
+        client = MagicMock()
+        client.filters = AsyncMock(return_value=[])
+        client.create = AsyncMock(side_effect=lambda **_: _stub_node())
+        ingester = SeedIngester(client=client)
+
+        with pytest.raises(IntentValidationError, match="namespace"):
+            await ingester.seed(use_case="dcfabric", data_path=path)
+
+    async def test_namespace_fetched_once_for_multiple_sections(self, tmp_path: Path):
+        dataset = {
+            "vrfs": [{"name": "default"}, {"name": "mgmt"}],
+            "ip_prefixes": [{"prefix": "10.0.0.0/8", "status": "active"}],
+        }
+        path = tmp_path / "t.yml"
+        path.write_text(yaml.safe_dump(dataset))
+
+        client = self._make_client_with_namespace("ns-1")
+        ingester = SeedIngester(client=client)
+        await ingester.seed(use_case="dcfabric", data_path=path)
+
+        ns_calls = [
+            c for c in client.filters.await_args_list
+            if c.kwargs.get("kind") == "IpamNamespace"
+        ]
+        assert len(ns_calls) == 1

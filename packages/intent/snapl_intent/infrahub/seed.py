@@ -54,15 +54,15 @@ SEED_ORDER: list[str] = [
     "platform",
     "device_types",
     "autonomous_systems",
+    "vrfs",        # requires default IpamNamespace (Milestone B)
+    "ip_prefixes", # requires default IpamNamespace (Milestone B)
     "devices",
 ]
 
 # Sections present in topology YAML but not yet loaded — each requires extra
-# scaffolding the ingester does not yet provide (IP-namespace bootstrap,
-# parent-pointer wiring, RoutingProtocol shadow copies).
+# scaffolding the ingester does not yet provide (parent-pointer wiring,
+# RoutingProtocol shadow copies).
 SEED_DEFERRED: list[str] = [
-    "vrfs",                # needs ip_namespace bootstrap
-    "ip_prefixes",         # needs ip_namespace bootstrap
     "interfaces",          # needs device Parent materialization + ip_address
     "bgp_peer_groups",     # inherits RoutingProtocol: needs device + vrf shadow copies
     "bgp_sessions",        # inherits RoutingProtocol: needs device + vrf shadow copies
@@ -97,6 +97,7 @@ class _Section:
     lookup: tuple[str, ...]  # Fields used as natural key for upsert
     list_valued: bool  # Whether the section holds a list (vs. a single dict)
     relationships: Mapping[str, _Rel] = field(default_factory=dict)
+    namespace_field: str | None = None  # if set, inject default IpamNamespace id here
 
 
 _SECTIONS: dict[str, _Section] = {
@@ -116,8 +117,8 @@ _SECTIONS: dict[str, _Section] = {
         True,
         relationships={"organization": _Rel("OrganizationProvider")},
     ),
-    "vrfs": _Section("IpamVRF", ("name",), True),
-    "ip_prefixes": _Section("IpamPrefix", ("prefix",), True),
+    "vrfs": _Section("IpamVRF", ("name",), True, namespace_field="namespace"),
+    "ip_prefixes": _Section("IpamPrefix", ("prefix",), True, namespace_field="ip_namespace"),
     "devices": _Section(
         "DcimDevice",
         ("name",),
@@ -170,6 +171,11 @@ class SeedIngester:
         dataset = load_seed_file(data_path)
         self._validate(dataset)
 
+        # Fetch the default IP namespace once if any namespace-bearing sections exist.
+        namespace_id: str | None = None
+        if {"vrfs", "ip_prefixes"}.intersection(dataset):
+            namespace_id = await self._get_default_namespace_id()
+
         devices_created = 0
         devices_updated = 0
         total_records = 0
@@ -185,6 +191,7 @@ class SeedIngester:
                         section=section,
                         item=item,
                         branch=branch,
+                        namespace_id=namespace_id,
                     )
                     total_records += 1
                     if section_name == "devices":
@@ -202,6 +209,15 @@ class SeedIngester:
             total_records=total_records,
             branch=branch,
         )
+
+    async def _get_default_namespace_id(self) -> str:
+        results = await self._client.filters(kind="IpamNamespace", default__value=True)
+        if not results:
+            raise IntentValidationError(
+                "Default IP namespace not found in Infrahub — "
+                "ensure Infrahub is fully initialized before seeding"
+            )
+        return results[0].id
 
     @staticmethod
     def _validate(dataset: dict[str, Any]) -> None:
@@ -227,9 +243,12 @@ class SeedIngester:
         section: _Section,
         item: dict[str, Any],
         branch: str,
+        namespace_id: str | None = None,
     ) -> bool:
         """Upsert one item. Returns ``True`` when a new node was created."""
         payload = await self._resolve_relationships(section, item)
+        if section.namespace_field and namespace_id:
+            payload[section.namespace_field] = namespace_id
 
         filters = {f"{key}__value": payload[key] for key in section.lookup if key in payload}
         existing = await self._client.filters(kind=section.kind, **filters)

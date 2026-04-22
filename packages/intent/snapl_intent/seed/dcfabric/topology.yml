@@ -74,10 +74,13 @@ vrfs:
 ip_prefixes:
   - prefix: "10.0.0.0/24"
     description: "Management network"
+    status: active
   - prefix: "10.1.0.0/24"
     description: "Loopback supernet"
+    status: active
   - prefix: "10.10.0.0/16"
     description: "Fabric underlay supernet"
+    status: active
 
 devices:
   - name: spine-01
