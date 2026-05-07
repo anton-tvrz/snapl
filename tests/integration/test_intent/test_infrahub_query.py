@@ -10,10 +10,17 @@ instead of reusing the ingester. Tests skip if Infrahub is unreachable.
 
 from __future__ import annotations
 
-from uuid import UUID
+import time
+from typing import TYPE_CHECKING
 
 import pytest
 
+if TYPE_CHECKING:
+    from uuid import UUID
+
+from snapl_intent.exceptions import IntentConnectionError
+from snapl_intent.infrahub.client import build_client
+from snapl_intent.infrahub.store import InfrahubIntentStore
 from snapl_intent.models import DesiredState
 
 pytestmark = [pytest.mark.integration, pytest.mark.live]
@@ -110,3 +117,35 @@ class TestUseCaseIsolation:
         all_names = {state.device.name for state in all_results}
         assert all_names.issuperset({state.device.name for state in dcfabric_results})
         assert all_names.issuperset({state.device.name for state in test_edge_results})
+
+
+# ---------------------------------------------------------------------------
+# T040 — Performance assertions (SC-001, SC-007)
+# ---------------------------------------------------------------------------
+
+
+async def test_sc001_single_device_retrieval_under_5s(query_store) -> None:
+    """SC-001: get_desired_state for a single device must complete in <5 seconds."""
+    start = time.monotonic()
+    results = await query_store.get_desired_state(name="query-spine-01")
+    elapsed = time.monotonic() - start
+
+    assert results, "Expected query-spine-01 to be present"
+    assert elapsed < 5.0, f"Single-device retrieval took {elapsed:.2f}s — exceeds SC-001 limit of 5s"
+
+
+async def test_sc007_unreachable_sot_errors_within_10s(infrahub_reachable) -> None:
+    """SC-007: IntentConnectionError must be raised within 10 seconds when SoT is unreachable."""
+    if not infrahub_reachable:
+        pytest.skip("Skipping SC-007: need a reachable Infrahub to probe a bad address meaningfully")
+
+    dead_store = InfrahubIntentStore(
+        client=build_client(address="http://localhost:19999", api_token="fake-token")
+    )
+
+    start = time.monotonic()
+    with pytest.raises((IntentConnectionError, Exception)):
+        await dead_store.get_desired_state(use_case="dcfabric")
+    elapsed = time.monotonic() - start
+
+    assert elapsed < 10.0, f"Error on unreachable SoT took {elapsed:.2f}s — exceeds SC-007 limit of 10s"

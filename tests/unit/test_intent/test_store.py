@@ -20,11 +20,13 @@ if TYPE_CHECKING:
 
 from snapl_intent.exceptions import (
     IntentConnectionError,
+    IntentDeletionError,
+    IntentNotFoundError,
     IntentSchemaError,
     IntentValidationError,
 )
 from snapl_intent.infrahub.store import InfrahubIntentStore
-from snapl_intent.models import DesiredState, ProvisionResult, Schema, SeedResult
+from snapl_intent.models import DeleteResult, DesiredState, ProvisionResult, Schema, SeedResult
 
 pytestmark = pytest.mark.unit
 
@@ -420,3 +422,121 @@ class TestUseCaseIsolation:
         calls = mock_infrahub_client.filters.await_args_list
         assert calls[0].kwargs.get("use_case__value") == "dcfabric"
         assert calls[1].kwargs.get("use_case__value") == "test_edge"
+
+
+# ---------------------------------------------------------------------------
+# Phase 7 — T036: delete_device
+# ---------------------------------------------------------------------------
+
+
+class TestDeleteDevice:
+    def _make_deletable_node(
+        self,
+        *,
+        device_id: UUID | None = None,
+        name: str = "spine-01",
+        num_interfaces: int = 2,
+        num_sessions: int = 1,
+    ):
+        """Build a SimpleNamespace device node with a delete coroutine attached."""
+        dev_uuid = device_id or uuid4()
+        ifaces = [SimpleNamespace(id=str(uuid4())) for _ in range(num_interfaces)]
+        sessions = [SimpleNamespace(id=str(uuid4())) for _ in range(num_sessions)]
+        node = _make_device_node(
+            name=name,
+            device_id=dev_uuid,
+            interfaces=ifaces,
+            bgp_sessions=sessions,
+        )
+        node.delete = AsyncMock()
+        return node, dev_uuid
+
+    async def test_delete_device_returns_delete_result(self, mock_infrahub_client):
+        node, dev_uuid = self._make_deletable_node()
+        mock_infrahub_client.filters.return_value = [node]
+        store = InfrahubIntentStore(client=mock_infrahub_client)
+
+        result = await store.delete_device(dev_uuid)
+
+        assert isinstance(result, DeleteResult)
+        assert result.device_id == dev_uuid
+        assert result.device_name == "spine-01"
+
+    async def test_delete_device_counts_children_in_records_removed(self, mock_infrahub_client):
+        node, dev_uuid = self._make_deletable_node(num_interfaces=3, num_sessions=2)
+        mock_infrahub_client.filters.return_value = [node]
+        store = InfrahubIntentStore(client=mock_infrahub_client)
+
+        result = await store.delete_device(dev_uuid)
+
+        # 1 device + 3 interfaces + 2 bgp_sessions = 6
+        assert result.records_removed == 6
+
+    async def test_delete_device_calls_node_delete_once(self, mock_infrahub_client):
+        node, dev_uuid = self._make_deletable_node()
+        mock_infrahub_client.filters.return_value = [node]
+        store = InfrahubIntentStore(client=mock_infrahub_client)
+
+        await store.delete_device(dev_uuid)
+
+        node.delete.assert_awaited_once()
+
+    async def test_delete_device_queries_with_prefetch(self, mock_infrahub_client):
+        node, dev_uuid = self._make_deletable_node()
+        mock_infrahub_client.filters.return_value = [node]
+        store = InfrahubIntentStore(client=mock_infrahub_client)
+
+        await store.delete_device(dev_uuid)
+
+        kwargs = mock_infrahub_client.filters.await_args.kwargs
+        assert kwargs.get("prefetch_relationships") is True
+
+    async def test_delete_device_not_found_raises_not_found_error(self, mock_infrahub_client):
+        mock_infrahub_client.filters.return_value = []
+        store = InfrahubIntentStore(client=mock_infrahub_client)
+
+        with pytest.raises(IntentNotFoundError):
+            await store.delete_device(uuid4())
+
+    async def test_delete_device_sdk_failure_raises_deletion_error(self, mock_infrahub_client):
+        node, dev_uuid = self._make_deletable_node()
+        node.delete = AsyncMock(side_effect=Exception("lock conflict"))
+        mock_infrahub_client.filters.return_value = [node]
+        store = InfrahubIntentStore(client=mock_infrahub_client)
+
+        with pytest.raises(IntentDeletionError):
+            await store.delete_device(dev_uuid)
+
+
+# ---------------------------------------------------------------------------
+# Phase 7 — T038: branch parameter support
+# ---------------------------------------------------------------------------
+
+
+class TestBranchSupport:
+    async def test_get_desired_state_passes_explicit_branch_to_sdk(self, mock_infrahub_client):
+        mock_infrahub_client.filters.return_value = []
+        store = InfrahubIntentStore(client=mock_infrahub_client)
+
+        await store.get_desired_state(branch="feature-branch")
+
+        kwargs = mock_infrahub_client.filters.await_args.kwargs
+        assert kwargs.get("branch") == "feature-branch"
+
+    async def test_get_desired_state_uses_store_default_branch(self, mock_infrahub_client):
+        mock_infrahub_client.filters.return_value = []
+        store = InfrahubIntentStore(client=mock_infrahub_client, branch="staging")
+
+        await store.get_desired_state()
+
+        kwargs = mock_infrahub_client.filters.await_args.kwargs
+        assert kwargs.get("branch") == "staging"
+
+    async def test_get_desired_state_per_call_branch_overrides_default(self, mock_infrahub_client):
+        mock_infrahub_client.filters.return_value = []
+        store = InfrahubIntentStore(client=mock_infrahub_client, branch="main")
+
+        await store.get_desired_state(branch="hotfix-branch")
+
+        kwargs = mock_infrahub_client.filters.await_args.kwargs
+        assert kwargs.get("branch") == "hotfix-branch"

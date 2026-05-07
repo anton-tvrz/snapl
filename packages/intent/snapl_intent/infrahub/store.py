@@ -17,7 +17,12 @@ from typing import Any
 from uuid import UUID
 
 from snapl_intent.abc import IntentStore
-from snapl_intent.exceptions import IntentConnectionError, IntentSchemaError
+from snapl_intent.exceptions import (
+    IntentConnectionError,
+    IntentDeletionError,
+    IntentNotFoundError,
+    IntentSchemaError,
+)
 from snapl_intent.infrahub.schema import SchemaLoader, discover_schema_batches
 from snapl_intent.infrahub.seed import SeedIngester
 from snapl_intent.models import (
@@ -113,6 +118,7 @@ class InfrahubIntentStore(IntentStore):
         use_case: str | None = None,
         role: str | None = None,
         name: str | None = None,
+        branch: str | None = None,
     ) -> list[DesiredState]:
         filters: dict[str, Any] = {}
         if device_id is not None:
@@ -125,7 +131,11 @@ class InfrahubIntentStore(IntentStore):
             filters["name__value"] = name
 
         try:
-            nodes = await self._client.filters(kind=DEVICE_KIND, **filters)
+            nodes = await self._client.filters(
+                kind=DEVICE_KIND,
+                branch=branch or self._default_branch,
+                **filters,
+            )
         except (OSError, TimeoutError) as exc:
             raise IntentConnectionError(f"Infrahub unreachable: {exc}") from exc
         except IntentConnectionError:
@@ -199,8 +209,36 @@ class InfrahubIntentStore(IntentStore):
         )
 
     async def delete_device(self, device_id: UUID) -> DeleteResult:
-        """Implemented in Phase 7 (polish)."""
-        raise NotImplementedError("delete_device is implemented in Phase 7")
+        try:
+            nodes = await self._client.filters(
+                kind=DEVICE_KIND,
+                ids=[str(device_id)],
+                prefetch_relationships=True,
+            )
+        except (OSError, TimeoutError) as exc:
+            raise IntentConnectionError(f"Infrahub unreachable: {exc}") from exc
+
+        if not nodes:
+            raise IntentNotFoundError(f"Device {device_id} not found")
+
+        node = nodes[0]
+        device_name = _value(node, "name", default="unknown")
+        interfaces = _peers(node, "interfaces")
+        bgp_sessions = _peers(node, "bgp_sessions")
+        records_removed = 1 + len(interfaces) + len(bgp_sessions)
+
+        try:
+            await node.delete()
+        except Exception as exc:
+            raise IntentDeletionError(
+                f"Failed to delete device {device_name!r}: {exc}"
+            ) from exc
+
+        return DeleteResult(
+            device_id=device_id,
+            device_name=device_name,
+            records_removed=records_removed,
+        )
 
     # ------------------------------------------------------------------ mapping helpers
 

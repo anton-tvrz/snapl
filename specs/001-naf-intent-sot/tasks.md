@@ -154,13 +154,13 @@
 
 **Purpose**: Coordinated deletion (completes FR-011), Infrahub branch support, missing integration test coverage, and end-to-end validation.
 
-- [ ] T036 [P] Write unit tests for InfrahubIntentStore.delete_device() (success removes device + interfaces + BGP sessions, not found raises IntentNotFoundError, deletion error raises IntentDeletionError) in tests/unit/test_intent/test_store.py (append to existing)
-- [ ] T037 Add delete_device() method to InfrahubIntentStore — fulfills FR-011. The method exposes deletion as an operation callers can gate; the Intent module itself does not query the Collector — coordination is the caller's (Orchestrator's) responsibility. File: packages/intent/snapl_intent/infrahub/store.py
-- [ ] T038 [P] Add Infrahub branch parameter support to seed() and get_desired_state() in packages/intent/snapl_intent/infrahub/store.py
-- [ ] T039 [P] Write integration test for get_schema() against live Infrahub (provision dcfabric schema, verify Schema object returned with correct entities and source files, verify unknown use case raises IntentSchemaError) in tests/integration/test_intent/test_infrahub_schema.py (append to existing)
-- [ ] T040 Add performance assertions to integration tests validating SC-001 (<5s single-device retrieval) and SC-007 (<10s error on unavailable SoT) in tests/integration/test_intent/test_infrahub_query.py
+- [X] T036 [P] Write unit tests for InfrahubIntentStore.delete_device() (success removes device + interfaces + BGP sessions, not found raises IntentNotFoundError, deletion error raises IntentDeletionError) in tests/unit/test_intent/test_store.py (append to existing)
+- [X] T037 Add delete_device() method to InfrahubIntentStore — fulfills FR-011. The method exposes deletion as an operation callers can gate; the Intent module itself does not query the Collector — coordination is the caller's (Orchestrator's) responsibility. File: packages/intent/snapl_intent/infrahub/store.py
+- [X] T038 [P] Add Infrahub branch parameter support to seed() and get_desired_state() in packages/intent/snapl_intent/infrahub/store.py — seed() already had it; get_desired_state() now accepts branch kwarg and passes to client.filters()
+- [X] T039 [P] Write integration test for get_schema() against live Infrahub (provision dcfabric schema, verify Schema object returned with correct entities and source files, verify unknown use case raises IntentSchemaError) in tests/integration/test_intent/test_infrahub_schema.py (append to existing)
+- [X] T040 Add performance assertions to integration tests validating SC-001 (<5s single-device retrieval) and SC-007 (<10s error on unavailable SoT) in tests/integration/test_intent/test_infrahub_query.py
 - [ ] T041 Run quickstart.md validation end-to-end against live Infrahub (provision -> seed -> query -> inspect schema)
-- [ ] T042 Verify all unit tests pass: uv run pytest tests/unit/test_intent/ -v
+- [X] T042 Verify all unit tests pass: uv run pytest tests/unit/test_intent/ -v — 120 passed, 87% coverage
 - [ ] T043 Verify all integration tests pass against live Infrahub: uv run pytest tests/integration/test_intent/ -v
 
 > **Note on SC-002 (<2min seed of 50 devices)**: Current dcfabric fixture (T020) has ~6 devices. A 50-device fixture is deferred to a follow-up feature — current seed implementation is measured against the 6-device topology, and scaling to 50 is an incremental data change (no new code).
