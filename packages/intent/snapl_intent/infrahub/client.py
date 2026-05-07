@@ -14,13 +14,14 @@ as a dumb factory makes it trivial to substitute a mock in tests.
 from __future__ import annotations
 
 import os
-from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
 from snapl_intent.exceptions import IntentConnectionError
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
     from infrahub_sdk import InfrahubClient
 
 
@@ -57,7 +58,7 @@ def build_client(
         IntentConnectionError: The ``infrahub_sdk`` package is not importable.
     """
     try:
-        from infrahub_sdk import Config, InfrahubClient
+        from infrahub_sdk import Config, InfrahubClient  # noqa: PLC0415
     except ImportError as exc:
         raise IntentConnectionError(
             "infrahub-sdk is not installed — add infrahub-sdk[ctl] as a dependency"

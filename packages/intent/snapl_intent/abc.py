@@ -9,16 +9,19 @@ rest of the NAF loop.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from pathlib import Path
-from uuid import UUID
+from typing import TYPE_CHECKING
 
-from snapl_intent.models import (
-    DeleteResult,
-    DesiredState,
-    ProvisionResult,
-    Schema,
-    SeedResult,
-)
+if TYPE_CHECKING:
+    from pathlib import Path
+    from uuid import UUID
+
+    from snapl_intent.models import (
+        DeleteResult,
+        DesiredState,
+        ProvisionResult,
+        Schema,
+        SeedResult,
+    )
 
 
 class IntentStore(ABC):

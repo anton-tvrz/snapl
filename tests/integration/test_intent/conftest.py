@@ -28,7 +28,7 @@ from snapl_intent.infrahub.client import build_client
 from snapl_intent.infrahub.store import InfrahubIntentStore
 
 DEFAULT_ADDRESS = "http://localhost:8001"
-DEFAULT_TOKEN = "06438eb2-8019-4776-878c-0941b1f1d1ec"  # pragma: allowlist secret
+DEFAULT_TOKEN = "06438eb2-8019-4776-878c-0941b1f1d1ec"  # pragma: allowlist secret  # noqa: S105
 
 
 def _resolved_address() -> str:

@@ -459,7 +459,7 @@ class SeedIngester:
 
         return pg_id_map, count
 
-    async def _seed_bgp_sessions(
+    async def _seed_bgp_sessions(  # noqa: PLR0912
         self,
         *,
         sessions: list[dict[str, Any]],

@@ -20,7 +20,7 @@ from snapl_intent.models import (
     SeedResult,
 )
 
-__all__ = [
+__all__ = [  # noqa: RUF022
     # ABC
     "IntentStore",
     # Exceptions

@@ -6,8 +6,11 @@ Tests run against a mock client — no Infrahub required.
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 import pytest
 
@@ -127,7 +130,7 @@ class TestSchemaLoader:
         second = await loader.load()
 
         assert first.schemas_loaded == second.schemas_loaded
-        assert client.schema.load.await_count == 6  # 3 batches × 2 invocations
+        assert client.schema.load.await_count == 6  # 3 batches x 2 invocations
 
 
 # ---------------------------------------------------------------------------

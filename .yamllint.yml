@@ -1,0 +1,22 @@
+# yamllint configuration
+# Run: uv run yamllint .
+
+extends: default
+
+rules:
+  line-length:
+    max: 260  # seed topology files use compact inline YAML (intentional)
+  comments:
+    min-spaces-from-content: 1
+  comments-indentation: disable
+  document-start: disable
+  truthy:
+    allowed-values: ["true", "false", "on", "off", "yes", "no"]
+
+ignore: |
+  .git/
+  .venv/
+  .specify/
+  library/
+  node_modules/
+  *.lock

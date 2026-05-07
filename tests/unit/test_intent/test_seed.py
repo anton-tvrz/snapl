@@ -7,9 +7,11 @@ SDK client so no Infrahub is needed.
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from unittest.mock import AsyncMock, MagicMock
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 import pytest
 import yaml
@@ -842,7 +844,7 @@ class TestBGPPeerGroupShadowCopies:
             return []
 
         client = MagicMock()
-        client.create = AsyncMock(side_effect=lambda **kw: _stub_node())
+        client.create = AsyncMock(side_effect=lambda **_: _stub_node())
         client.filters = AsyncMock(side_effect=no_vrf)
         ingester = SeedIngester(client=client)
 
