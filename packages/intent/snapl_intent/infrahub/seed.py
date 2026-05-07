@@ -15,15 +15,16 @@ key (e.g. ``manufacturer: "Nokia"`` → ``OrganizationManufacturer`` with
 calling ``client.create``. An unresolvable peer raises
 :class:`IntentValidationError` so seed files fail fast with a clear message.
 
-Deferred scope (see ``SEED_DEFERRED`` below)
---------------------------------------------
-Sections still parked in ``SEED_DEFERRED`` need extra wiring the ingester
-does not yet provide — IP-namespace bootstrap (``vrfs`` / ``ip_prefixes``),
-parent-pointer materialization (``interfaces``), or RoutingProtocol shadow
-copies (``bgp_peer_groups`` / ``bgp_sessions``). See
-``specs/001-naf-intent-sot/tasks.md`` T028-followup for the remaining
-milestones. The full topology YAML is authoritative; only the loader is
-partial.
+BGP peer groups and sessions (Milestone D)
+------------------------------------------
+``RoutingBGPPeerGroup`` and ``RoutingBGPSession`` both inherit from
+``RoutingProtocol``, which requires a ``device`` (Parent) and ``vrf``
+relationship on every row.  The topology YAML declares one logical peer group
+shared by all devices, so the ingester materialises N *shadow copies* — one
+``RoutingBGPPeerGroup`` row per (peer_group, local_device) pair — with the
+scoped name ``{pg_name}@{device_name}``.  ``RoutingBGPSession`` rows are
+keyed by their ``description`` field (unique on ``RoutingProtocol``).
+``peer_session`` cross-linking between the two sides of a session is deferred.
 """
 
 from __future__ import annotations
@@ -54,18 +55,19 @@ SEED_ORDER: list[str] = [
     "platform",
     "device_types",
     "autonomous_systems",
-    "vrfs",        # requires default IpamNamespace (Milestone B)
-    "ip_prefixes", # requires default IpamNamespace (Milestone B)
+    "vrfs",
+    "ip_prefixes",
     "devices",
-    "interfaces",  # Milestone C — device parent + ip_address materialisation
+    "interfaces",
+    "bgp_peer_groups",  # Milestone D — handled by _seed_bgp_peer_groups (shadow copies)
+    "bgp_sessions",     # Milestone D — handled by _seed_bgp_sessions
 ]
 
-# Sections present in topology YAML but not yet loaded — each requires extra
-# scaffolding the ingester does not yet provide (RoutingProtocol shadow copies).
-SEED_DEFERRED: list[str] = [
-    "bgp_peer_groups",     # inherits RoutingProtocol: needs device + vrf shadow copies
-    "bgp_sessions",        # inherits RoutingProtocol: needs device + vrf shadow copies
-]
+# All sections are now active; kept as an empty list for backwards compat with tests.
+SEED_DEFERRED: list[str] = []
+
+# Sections that need bespoke BGP logic rather than the generic _upsert_item path.
+_BGP_SECTIONS: frozenset[str] = frozenset({"bgp_peer_groups", "bgp_sessions"})
 
 
 DEVICE_REQUIRED_FIELDS: tuple[str, ...] = (
@@ -197,6 +199,8 @@ class SeedIngester:
             for section_name in SEED_ORDER:
                 if section_name not in dataset:
                     continue
+                if section_name in _BGP_SECTIONS:
+                    continue  # handled below via dedicated BGP methods
                 section = _SECTIONS[section_name]
                 items = self._items_for_section(section, dataset[section_name])
                 for item in items:
@@ -212,6 +216,26 @@ class SeedIngester:
                             devices_created += 1
                         else:
                             devices_updated += 1
+
+            if any(s in dataset for s in _BGP_SECTIONS):
+                vrf_id = await self._get_default_vrf_id()
+                pg_id_map: dict[str, dict[str, str]] = {}
+                if "bgp_peer_groups" in dataset:
+                    pg_id_map, pg_count = await self._seed_bgp_peer_groups(
+                        pg_declarations=dataset["bgp_peer_groups"],
+                        sessions=dataset.get("bgp_sessions", []),
+                        branch=branch,
+                        vrf_id=vrf_id,
+                    )
+                    total_records += pg_count
+                if "bgp_sessions" in dataset:
+                    session_count = await self._seed_bgp_sessions(
+                        sessions=dataset["bgp_sessions"],
+                        branch=branch,
+                        vrf_id=vrf_id,
+                        pg_id_map=pg_id_map,
+                    )
+                    total_records += session_count
         except (OSError, TimeoutError) as exc:
             raise IntentConnectionError(f"Infrahub unreachable: {exc}") from exc
 
@@ -355,3 +379,161 @@ class SeedIngester:
                 )
             resolved[field_name] = peers[0].id
         return resolved
+
+    async def _get_default_vrf_id(self) -> str:
+        results = await self._client.filters(kind="IpamVRF", name__value="default")
+        if not results:
+            raise IntentValidationError(
+                "Default VRF not found in Infrahub — "
+                "ensure VRFs are seeded before BGP sections"
+            )
+        return results[0].id
+
+    async def _seed_bgp_peer_groups(
+        self,
+        *,
+        pg_declarations: list[dict[str, Any]],
+        sessions: list[dict[str, Any]],
+        branch: str,
+        vrf_id: str,
+    ) -> tuple[dict[str, dict[str, str]], int]:
+        """Materialise one BGPPeerGroup shadow per (peer_group, device) pair.
+
+        Returns ``(pg_id_map, count)`` where ``pg_id_map`` is a nested dict
+        ``{pg_name: {device_name: shadow_node_id}}`` used by
+        ``_seed_bgp_sessions`` to wire the correct shadow into each session.
+        ``count`` is the number of shadow rows processed (created or updated).
+        """
+        # Collect unique local_devices per peer group name from sessions.
+        pg_devices: dict[str, set[str]] = {}
+        for session in sessions:
+            pg_name = session.get("peer_group")
+            if pg_name:
+                pg_devices.setdefault(pg_name, set()).add(session["local_device"])
+
+        pg_decl_map = {pg["name"]: pg for pg in pg_declarations}
+        pg_id_map: dict[str, dict[str, str]] = {}
+        count = 0
+
+        for pg_name, pg_decl in pg_decl_map.items():
+            for device_name in pg_devices.get(pg_name, set()):
+                device_peers = await self._client.filters(kind="DcimDevice", name__value=device_name)
+                if not device_peers:
+                    raise IntentValidationError(
+                        f"BGPPeerGroup shadow: device {device_name!r} not found",
+                        field="local_device",
+                    )
+                device_id = device_peers[0].id
+
+                shadow_name = f"{pg_name}@{device_name}"
+                shadow_desc = f"{pg_decl.get('description', pg_name)} ({device_name})"
+                payload: dict[str, Any] = {
+                    "name": shadow_name,
+                    "description": shadow_desc,
+                    "status": pg_decl.get("status", "active"),
+                    "device": device_id,
+                    "vrf": vrf_id,
+                }
+                for attr in (
+                    "address_family", "send_community", "import_policies",
+                    "export_policies", "maximum_routes", "local_pref",
+                ):
+                    if attr in pg_decl:
+                        payload[attr] = pg_decl[attr]
+
+                existing = await self._client.filters(kind="RoutingBGPPeerGroup", name__value=shadow_name)
+                if existing:
+                    node = existing[0]
+                    for attr, value in payload.items():
+                        attr_obj = getattr(node, attr, None)
+                        if attr_obj is not None and hasattr(attr_obj, "value"):
+                            with contextlib.suppress(AttributeError):
+                                attr_obj.value = value
+                    await node.save()
+                else:
+                    node = await self._client.create(kind="RoutingBGPPeerGroup", data=payload, branch=branch)
+                    await node.save()
+
+                pg_id_map.setdefault(pg_name, {})[device_name] = node.id
+                count += 1
+
+        return pg_id_map, count
+
+    async def _seed_bgp_sessions(
+        self,
+        *,
+        sessions: list[dict[str, Any]],
+        branch: str,
+        vrf_id: str,
+        pg_id_map: dict[str, dict[str, str]],
+    ) -> int:
+        """Upsert BGPSession rows, resolving all relationships.
+
+        Upsert key: ``description__value`` (unique on ``RoutingProtocol``).
+        ``peer_session`` cross-linking is deferred (T028-followup post-D).
+
+        Returns the count of sessions processed.
+        """
+        for session in sessions:
+            local_device_name = session["local_device"]
+
+            device_peers = await self._client.filters(kind="DcimDevice", name__value=local_device_name)
+            if not device_peers:
+                raise IntentValidationError(
+                    f"BGPSession: local_device {local_device_name!r} not found",
+                    field="local_device",
+                )
+            device_id = device_peers[0].id
+
+            payload: dict[str, Any] = {
+                "description": session["description"],
+                "status": session.get("status", "active"),
+                "device": device_id,
+                "vrf": vrf_id,
+            }
+            for attr in ("session_type", "role"):
+                if attr in session:
+                    payload[attr] = session[attr]
+
+            for field_name, kind, lookup_attr in (
+                ("local_as", "RoutingAutonomousSystem", "asn__value"),
+                ("remote_as", "RoutingAutonomousSystem", "asn__value"),
+            ):
+                if field_name in session:
+                    peers = await self._client.filters(kind=kind, **{lookup_attr: session[field_name]})
+                    if not peers:
+                        raise IntentValidationError(
+                            f"BGPSession: {field_name}={session[field_name]!r} not found",
+                            field=field_name,
+                        )
+                    payload[field_name] = peers[0].id
+
+            for field_name in ("local_ip", "remote_ip"):
+                if field_name in session:
+                    peers = await self._client.filters(
+                        kind="IpamIPAddress", address__value=session[field_name]
+                    )
+                    if peers:
+                        payload[field_name] = peers[0].id
+
+            if "peer_group" in session:
+                shadow_id = pg_id_map.get(session["peer_group"], {}).get(local_device_name)
+                if shadow_id:
+                    payload["peer_group"] = shadow_id
+
+            existing = await self._client.filters(
+                kind="RoutingBGPSession", description__value=session["description"]
+            )
+            if existing:
+                node = existing[0]
+                for attr, value in payload.items():
+                    attr_obj = getattr(node, attr, None)
+                    if attr_obj is not None and hasattr(attr_obj, "value"):
+                        with contextlib.suppress(AttributeError):
+                            attr_obj.value = value
+                await node.save()
+            else:
+                node = await self._client.create(kind="RoutingBGPSession", data=payload, branch=branch)
+                await node.save()
+
+        return len(sessions)

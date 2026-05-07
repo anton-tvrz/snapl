@@ -630,3 +630,360 @@ class TestDeviceManagementIP:
             if c.kwargs.get("kind") == "IpamIPAddress"
         ]
         assert ip_creates == []
+
+
+# ---------------------------------------------------------------------------
+# Milestone D — BGP peer-group shadow copies + BGP sessions
+# ---------------------------------------------------------------------------
+
+
+def _make_bgp_client(
+    ns_id: str = "ns-1",
+    vrf_id: str = "vrf-1",
+    spine01_id: str = "dev-s1",
+    spine02_id: str = "dev-s2",
+) -> MagicMock:
+    """Client stub that resolves namespace, VRF, spine devices, and AS nodes."""
+    ns = _stub_node("namespace")
+    ns.id = ns_id
+    vrf = _stub_node("vrf")
+    vrf.id = vrf_id
+    spine01 = _stub_node("spine-01")
+    spine01.id = spine01_id
+    spine02 = _stub_node("spine-02")
+    spine02.id = spine02_id
+
+    def _as_node(asn: int) -> MagicMock:
+        node = _stub_node(f"as-{asn}")
+        node.id = f"as-id-{asn}"
+        return node
+
+    async def fake_filters(*, kind: str, **kwargs: Any) -> list[Any]:
+        if kind == "IpamNamespace":
+            return [ns]
+        if kind == "IpamVRF":
+            return [vrf]
+        if kind == "DcimDevice":
+            name = kwargs.get("name__value")
+            if name == "spine-01":
+                return [spine01]
+            if name == "spine-02":
+                return [spine02]
+        if kind == "RoutingAutonomousSystem":
+            asn = kwargs.get("asn__value")
+            if asn is not None:
+                return [_as_node(asn)]
+        # upsert lookups (BGPPeerGroup, BGPSession, IpamIPAddress, ...) — nothing exists yet
+        return []
+
+    client = MagicMock()
+    client.create = AsyncMock(side_effect=lambda **kw: _stub_node(kw.get("kind", "node")))
+    client.filters = AsyncMock(side_effect=fake_filters)
+    return client
+
+
+def _minimal_bgp_dataset(*, num_spines: int = 2) -> dict[str, Any]:
+    """Two sessions (one per spine) using the same peer group."""
+    sessions = [
+        {
+            "description": f"spine-0{i} <-> leaf-01 eBGP",
+            "session_type": "EXTERNAL",
+            "role": "backbone",
+            "local_device": f"spine-0{i}",
+            "remote_device": "leaf-01",
+            "local_as": 65000 + i - 1,
+            "remote_as": 65011,
+            "peer_group": "underlay-ipv4",
+        }
+        for i in range(1, num_spines + 1)
+    ]
+    return {
+        "bgp_peer_groups": [
+            {
+                "name": "underlay-ipv4",
+                "description": "eBGP underlay peer group",
+                "address_family": "ipv4",
+                "send_community": True,
+            }
+        ],
+        "bgp_sessions": sessions,
+    }
+
+
+class TestBGPPeerGroupShadowCopies:
+    """Milestone D — one BGPPeerGroup shadow per (peer_group, device) pair."""
+
+    async def test_creates_one_shadow_per_device(self, tmp_path: Path):
+        """Two sessions with different local_devices → two BGPPeerGroup creates."""
+        dataset = _minimal_bgp_dataset(num_spines=2)
+        path = tmp_path / "t.yml"
+        path.write_text(yaml.safe_dump(dataset))
+
+        client = _make_bgp_client()
+        ingester = SeedIngester(client=client)
+        await ingester.seed(use_case="dcfabric", data_path=path)
+
+        pg_creates = [
+            c for c in client.create.await_args_list
+            if c.kwargs.get("kind") == "RoutingBGPPeerGroup"
+        ]
+        assert len(pg_creates) == 2
+
+    async def test_shadow_name_is_scoped_to_device(self, tmp_path: Path):
+        """Shadow name = '{pg_name}@{device_name}'."""
+        dataset = _minimal_bgp_dataset(num_spines=1)
+        path = tmp_path / "t.yml"
+        path.write_text(yaml.safe_dump(dataset))
+
+        client = _make_bgp_client()
+        ingester = SeedIngester(client=client)
+        await ingester.seed(use_case="dcfabric", data_path=path)
+
+        pg_call = next(
+            c for c in client.create.await_args_list
+            if c.kwargs.get("kind") == "RoutingBGPPeerGroup"
+        )
+        assert pg_call.kwargs["data"]["name"] == "underlay-ipv4@spine-01"
+
+    async def test_shadow_description_is_scoped(self, tmp_path: Path):
+        """Shadow description includes device name for RoutingProtocol uniqueness."""
+        dataset = _minimal_bgp_dataset(num_spines=1)
+        path = tmp_path / "t.yml"
+        path.write_text(yaml.safe_dump(dataset))
+
+        client = _make_bgp_client()
+        ingester = SeedIngester(client=client)
+        await ingester.seed(use_case="dcfabric", data_path=path)
+
+        pg_call = next(
+            c for c in client.create.await_args_list
+            if c.kwargs.get("kind") == "RoutingBGPPeerGroup"
+        )
+        desc = pg_call.kwargs["data"]["description"]
+        assert "spine-01" in desc
+
+    async def test_shadow_wires_device_and_vrf(self, tmp_path: Path):
+        """Shadow has device=dev_id and vrf=vrf_id in payload."""
+        dataset = _minimal_bgp_dataset(num_spines=1)
+        path = tmp_path / "t.yml"
+        path.write_text(yaml.safe_dump(dataset))
+
+        client = _make_bgp_client(vrf_id="vrf-42", spine01_id="dev-99")
+        ingester = SeedIngester(client=client)
+        await ingester.seed(use_case="dcfabric", data_path=path)
+
+        pg_call = next(
+            c for c in client.create.await_args_list
+            if c.kwargs.get("kind") == "RoutingBGPPeerGroup"
+        )
+        assert pg_call.kwargs["data"]["device"] == "dev-99"
+        assert pg_call.kwargs["data"]["vrf"] == "vrf-42"
+
+    async def test_shadow_defaults_status_active(self, tmp_path: Path):
+        """YAML entry without status → shadow payload has status='active'."""
+        dataset = _minimal_bgp_dataset(num_spines=1)
+        path = tmp_path / "t.yml"
+        path.write_text(yaml.safe_dump(dataset))
+
+        client = _make_bgp_client()
+        ingester = SeedIngester(client=client)
+        await ingester.seed(use_case="dcfabric", data_path=path)
+
+        pg_call = next(
+            c for c in client.create.await_args_list
+            if c.kwargs.get("kind") == "RoutingBGPPeerGroup"
+        )
+        assert pg_call.kwargs["data"]["status"] == "active"
+
+    async def test_peer_group_idempotent(self, tmp_path: Path):
+        """Second seed run finds existing shadow by scoped name — no new BGPPeerGroup create."""
+        dataset = _minimal_bgp_dataset(num_spines=1)
+        path = tmp_path / "t.yml"
+        path.write_text(yaml.safe_dump(dataset))
+
+        client = _make_bgp_client()
+        ingester = SeedIngester(client=client)
+        await ingester.seed(use_case="dcfabric", data_path=path)
+        pg_creates_first_run = [
+            c for c in client.create.await_args_list
+            if c.kwargs.get("kind") == "RoutingBGPPeerGroup"
+        ]
+
+        existing_shadow = _stub_node("existing-shadow")
+        existing_shadow.id = "shadow-id"
+
+        original_filters = client.filters.side_effect
+
+        async def filters_with_existing(*, kind: str, **kwargs: Any) -> list[Any]:
+            if kind == "RoutingBGPPeerGroup" and kwargs.get("name__value") == "underlay-ipv4@spine-01":
+                return [existing_shadow]
+            return await original_filters(kind=kind, **kwargs)
+
+        client.filters = AsyncMock(side_effect=filters_with_existing)
+        await ingester.seed(use_case="dcfabric", data_path=path)
+
+        pg_creates_total = [
+            c for c in client.create.await_args_list
+            if c.kwargs.get("kind") == "RoutingBGPPeerGroup"
+        ]
+        assert len(pg_creates_total) == len(pg_creates_first_run)
+
+    async def test_missing_vrf_raises_validation_error(self, tmp_path: Path):
+        """No VRF in Infrahub → IntentValidationError before any BGP creates."""
+        dataset = _minimal_bgp_dataset(num_spines=1)
+        path = tmp_path / "t.yml"
+        path.write_text(yaml.safe_dump(dataset))
+
+        async def no_vrf(*, kind: str, **kwargs: Any) -> list[Any]:
+            if kind == "IpamNamespace":
+                ns = _stub_node("ns")
+                ns.id = "ns-1"
+                return [ns]
+            return []
+
+        client = MagicMock()
+        client.create = AsyncMock(side_effect=lambda **kw: _stub_node())
+        client.filters = AsyncMock(side_effect=no_vrf)
+        ingester = SeedIngester(client=client)
+
+        with pytest.raises(IntentValidationError, match="VRF"):
+            await ingester.seed(use_case="dcfabric", data_path=path)
+
+
+class TestBGPSessionSeeding:
+    """Milestone D — BGPSession upsert with full relationship resolution."""
+
+    async def test_session_device_resolved_from_local_device(self, tmp_path: Path):
+        """device in payload = resolved local_device DcimDevice id."""
+        dataset = _minimal_bgp_dataset(num_spines=1)
+        path = tmp_path / "t.yml"
+        path.write_text(yaml.safe_dump(dataset))
+
+        client = _make_bgp_client(spine01_id="dev-spine01")
+        ingester = SeedIngester(client=client)
+        await ingester.seed(use_case="dcfabric", data_path=path)
+
+        session_call = next(
+            c for c in client.create.await_args_list
+            if c.kwargs.get("kind") == "RoutingBGPSession"
+        )
+        assert session_call.kwargs["data"]["device"] == "dev-spine01"
+
+    async def test_session_local_as_resolved_by_asn(self, tmp_path: Path):
+        """local_as integer → RoutingAutonomousSystem id."""
+        as_node = _stub_node("as")
+        as_node.id = "as-65000"
+
+        original_client = _make_bgp_client()
+        original_side = original_client.filters.side_effect
+
+        async def with_as(*, kind: str, **kwargs: Any) -> list[Any]:
+            if kind == "RoutingAutonomousSystem" and kwargs.get("asn__value") == 65000:
+                return [as_node]
+            return await original_side(kind=kind, **kwargs)
+
+        original_client.filters = AsyncMock(side_effect=with_as)
+        dataset = _minimal_bgp_dataset(num_spines=1)
+        path = tmp_path / "t.yml"
+        path.write_text(yaml.safe_dump(dataset))
+        ingester = SeedIngester(client=original_client)
+        await ingester.seed(use_case="dcfabric", data_path=path)
+
+        session_call = next(
+            c for c in original_client.create.await_args_list
+            if c.kwargs.get("kind") == "RoutingBGPSession"
+        )
+        assert session_call.kwargs["data"]["local_as"] == "as-65000"
+
+    async def test_session_peer_group_resolves_to_device_shadow(self, tmp_path: Path):
+        """peer_group in session payload = shadow id for local_device, not the prototype."""
+        shadow_node = _stub_node("shadow")
+        shadow_node.id = "shadow-spine01"
+
+        original_client = _make_bgp_client()
+        original_side = original_client.filters.side_effect
+
+        async def with_shadow(*, kind: str, **kwargs: Any) -> list[Any]:
+            if kind == "RoutingBGPPeerGroup" and kwargs.get("name__value") == "underlay-ipv4@spine-01":
+                return [shadow_node]
+            return await original_side(kind=kind, **kwargs)
+
+        original_client.filters = AsyncMock(side_effect=with_shadow)
+        dataset = _minimal_bgp_dataset(num_spines=1)
+        path = tmp_path / "t.yml"
+        path.write_text(yaml.safe_dump(dataset))
+        ingester = SeedIngester(client=original_client)
+        await ingester.seed(use_case="dcfabric", data_path=path)
+
+        session_call = next(
+            c for c in original_client.create.await_args_list
+            if c.kwargs.get("kind") == "RoutingBGPSession"
+        )
+        assert session_call.kwargs["data"].get("peer_group") == "shadow-spine01"
+
+    async def test_session_uses_description_for_upsert_lookup(self, tmp_path: Path):
+        """Upsert lookup uses description__value, not local_device/remote_device."""
+        dataset = _minimal_bgp_dataset(num_spines=1)
+        path = tmp_path / "t.yml"
+        path.write_text(yaml.safe_dump(dataset))
+
+        client = _make_bgp_client()
+        ingester = SeedIngester(client=client)
+        await ingester.seed(use_case="dcfabric", data_path=path)
+
+        session_lookups = [
+            c for c in client.filters.await_args_list
+            if c.kwargs.get("kind") == "RoutingBGPSession"
+        ]
+        assert session_lookups, "Expected at least one RoutingBGPSession filter call"
+        assert all("description__value" in c.kwargs for c in session_lookups)
+
+    async def test_session_idempotent(self, tmp_path: Path):
+        """Second seed run finds existing session by description — no new create."""
+        dataset = _minimal_bgp_dataset(num_spines=1)
+        path = tmp_path / "t.yml"
+        path.write_text(yaml.safe_dump(dataset))
+
+        client = _make_bgp_client()
+        ingester = SeedIngester(client=client)
+        await ingester.seed(use_case="dcfabric", data_path=path)
+        creates_after_first = client.create.await_count
+
+        existing_session = _stub_node("existing-session")
+
+        original_side = client.filters.side_effect
+
+        async def filters_with_existing_session(*, kind: str, **kwargs: Any) -> list[Any]:
+            if kind == "RoutingBGPSession":
+                return [existing_session]
+            return await original_side(kind=kind, **kwargs)
+
+        client.filters = AsyncMock(side_effect=filters_with_existing_session)
+        await ingester.seed(use_case="dcfabric", data_path=path)
+
+        session_creates = [
+            c for c in client.create.await_args_list
+            if c.kwargs.get("kind") == "RoutingBGPSession"
+        ]
+        first_run_session_count = sum(
+            1 for c in client.create.await_args_list[:creates_after_first]
+            if c.kwargs.get("kind") == "RoutingBGPSession"
+        )
+        total_session_creates = len(session_creates)
+        assert total_session_creates == first_run_session_count
+
+    async def test_session_vrf_wired(self, tmp_path: Path):
+        """vrf in session payload = resolved default VRF id."""
+        dataset = _minimal_bgp_dataset(num_spines=1)
+        path = tmp_path / "t.yml"
+        path.write_text(yaml.safe_dump(dataset))
+
+        client = _make_bgp_client(vrf_id="vrf-xyz")
+        ingester = SeedIngester(client=client)
+        await ingester.seed(use_case="dcfabric", data_path=path)
+
+        session_call = next(
+            c for c in client.create.await_args_list
+            if c.kwargs.get("kind") == "RoutingBGPSession"
+        )
+        assert session_call.kwargs["data"]["vrf"] == "vrf-xyz"
