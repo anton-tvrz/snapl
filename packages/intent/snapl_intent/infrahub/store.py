@@ -170,9 +170,7 @@ class InfrahubIntentStore(IntentStore):
 
         project_kinds = sorted(k for k in (registry or {}) if _is_project_kind(k))
         if not project_kinds:
-            raise IntentSchemaError(
-                f"No schema provisioned for use case {use_case!r} — run provision_schema first"
-            )
+            raise IntentSchemaError(f"No schema provisioned for use case {use_case!r} — run provision_schema first")
 
         batches = discover_schema_batches(_SCHEMAS_ROOT)
         source_files = sorted(path.name for batch in batches for path in batch)
@@ -230,9 +228,7 @@ class InfrahubIntentStore(IntentStore):
         try:
             await node.delete()
         except Exception as exc:
-            raise IntentDeletionError(
-                f"Failed to delete device {device_name!r}: {exc}"
-            ) from exc
+            raise IntentDeletionError(f"Failed to delete device {device_name!r}: {exc}") from exc
 
         return DeleteResult(
             device_id=device_id,
@@ -245,12 +241,10 @@ class InfrahubIntentStore(IntentStore):
     def _node_to_desired_state(self, node: Any) -> DesiredState:
         device = self._node_to_device(node)
         interfaces = [
-            self._node_to_interface(iface, fallback_device_id=device.id)
-            for iface in _peers(node, "interfaces")
+            self._node_to_interface(iface, fallback_device_id=device.id) for iface in _peers(node, "interfaces")
         ]
         sessions = [
-            self._node_to_bgp_session(session, fallback_device_id=device.id)
-            for session in _peers(node, "bgp_sessions")
+            self._node_to_bgp_session(session, fallback_device_id=device.id) for session in _peers(node, "bgp_sessions")
         ]
         return DesiredState(device=device, interfaces=interfaces, bgp_sessions=sessions)
 

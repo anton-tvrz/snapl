@@ -99,9 +99,7 @@ class TestSchemaLoader:
         assert result.use_case == "dcfabric"
         assert result.schemas_loaded == 4 + 3 + 3  # base + extensions + project
 
-    async def test_load_raises_schema_error_on_validation_failure(
-        self, intent_package_root: Path
-    ):
+    async def test_load_raises_schema_error_on_validation_failure(self, intent_package_root: Path):
         client = self._make_client()
         client.schema.load.return_value = {"errors": [{"message": "bad kind"}]}
         loader = SchemaLoader(client=client, schemas_root=intent_package_root / "schemas")

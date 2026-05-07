@@ -60,9 +60,7 @@ def build_client(
     try:
         from infrahub_sdk import Config, InfrahubClient  # noqa: PLC0415
     except ImportError as exc:
-        raise IntentConnectionError(
-            "infrahub-sdk is not installed — add infrahub-sdk[ctl] as a dependency"
-        ) from exc
+        raise IntentConnectionError("infrahub-sdk is not installed — add infrahub-sdk[ctl] as a dependency") from exc
 
     resolved_address = address or _get_env("INFRAHUB_ADDRESS", default=DEFAULT_ADDRESS)
     resolved_token = api_token or _get_env("INFRAHUB_API_TOKEN")

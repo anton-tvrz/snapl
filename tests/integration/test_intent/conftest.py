@@ -86,18 +86,14 @@ async def _provisioned_once(infrahub_address: str, infrahub_reachable: bool) -> 
 
 
 @pytest.fixture
-async def provisioned_store(
-    live_infrahub_client, _provisioned_once: bool
-) -> InfrahubIntentStore:
+async def provisioned_store(live_infrahub_client, _provisioned_once: bool) -> InfrahubIntentStore:
     if not _provisioned_once:
         pytest.skip("Schema provisioning unavailable (Infrahub not reachable)")
     return InfrahubIntentStore(client=live_infrahub_client)
 
 
 @pytest.fixture(scope="session")
-async def _seeded_once(
-    infrahub_address: str, infrahub_reachable: bool, _provisioned_once: bool
-) -> bool:
+async def _seeded_once(infrahub_address: str, infrahub_reachable: bool, _provisioned_once: bool) -> bool:
     if not (infrahub_reachable and _provisioned_once):
         return False
     client = build_client(address=infrahub_address, api_token=_resolved_token())
@@ -123,9 +119,7 @@ _QUERY_TEST_DEVICES: list[dict[str, str]] = [
 
 
 @pytest.fixture(scope="session")
-async def _test_edge_seeded_once(
-    infrahub_address: str, infrahub_reachable: bool, _provisioned_once: bool
-) -> bool:
+async def _test_edge_seeded_once(infrahub_address: str, infrahub_reachable: bool, _provisioned_once: bool) -> bool:
     """Seed the test_edge topology exactly once per test session."""
     if not (infrahub_reachable and _provisioned_once):
         return False
@@ -168,11 +162,7 @@ async def _query_devices_seeded(
 
 
 @pytest.fixture
-async def query_store(
-    live_infrahub_client, _query_devices_seeded: bool
-) -> InfrahubIntentStore:
+async def query_store(live_infrahub_client, _query_devices_seeded: bool) -> InfrahubIntentStore:
     if not _query_devices_seeded:
-        pytest.skip(
-            "Query-test devices unavailable (Infrahub not reachable or schema/seed missing)"
-        )
+        pytest.skip("Query-test devices unavailable (Infrahub not reachable or schema/seed missing)")
     return InfrahubIntentStore(client=live_infrahub_client)

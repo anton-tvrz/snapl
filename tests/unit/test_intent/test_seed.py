@@ -180,9 +180,7 @@ class TestSeedIngester:
         await ingester.seed(use_case="dcfabric", data_path=path)
 
         device_type_call = next(
-            call
-            for call in client.create.await_args_list
-            if call.kwargs.get("kind") == "DcimDeviceType"
+            call for call in client.create.await_args_list if call.kwargs.get("kind") == "DcimDeviceType"
         )
         assert device_type_call.kwargs["data"]["manufacturer"] == "mfr-1"
 
@@ -292,10 +290,7 @@ class TestNamespaceBootstrap:
         ingester = SeedIngester(client=client)
         await ingester.seed(use_case="dcfabric", data_path=path)
 
-        vrf_call = next(
-            c for c in client.create.await_args_list
-            if c.kwargs.get("kind") == "IpamVRF"
-        )
+        vrf_call = next(c for c in client.create.await_args_list if c.kwargs.get("kind") == "IpamVRF")
         assert vrf_call.kwargs["data"]["namespace"] == "ns-1"
 
     async def test_ip_prefixes_inject_namespace_id(self, tmp_path: Path):
@@ -307,10 +302,7 @@ class TestNamespaceBootstrap:
         ingester = SeedIngester(client=client)
         await ingester.seed(use_case="dcfabric", data_path=path)
 
-        prefix_call = next(
-            c for c in client.create.await_args_list
-            if c.kwargs.get("kind") == "IpamPrefix"
-        )
+        prefix_call = next(c for c in client.create.await_args_list if c.kwargs.get("kind") == "IpamPrefix")
         assert prefix_call.kwargs["data"]["ip_namespace"] == "ns-1"
 
     async def test_missing_namespace_raises_validation_error(self, tmp_path: Path):
@@ -338,10 +330,7 @@ class TestNamespaceBootstrap:
         ingester = SeedIngester(client=client)
         await ingester.seed(use_case="dcfabric", data_path=path)
 
-        ns_calls = [
-            c for c in client.filters.await_args_list
-            if c.kwargs.get("kind") == "IpamNamespace"
-        ]
+        ns_calls = [c for c in client.filters.await_args_list if c.kwargs.get("kind") == "IpamNamespace"]
         assert len(ns_calls) == 1
 
 
@@ -394,10 +383,7 @@ class TestInterfaceSeeding:
         ingester = SeedIngester(client=client)
         await ingester.seed(use_case="dcfabric", data_path=path)
 
-        iface_call = next(
-            c for c in client.create.await_args_list
-            if c.kwargs.get("kind") == "InterfacePhysical"
-        )
+        iface_call = next(c for c in client.create.await_args_list if c.kwargs.get("kind") == "InterfacePhysical")
         assert iface_call.kwargs["data"]["device"] == "dev-1"
 
     async def test_interface_ip_address_materialised(self, tmp_path: Path):
@@ -419,10 +405,7 @@ class TestInterfaceSeeding:
         ingester = SeedIngester(client=client)
         await ingester.seed(use_case="dcfabric", data_path=path)
 
-        ip_call = next(
-            c for c in client.create.await_args_list
-            if c.kwargs.get("kind") == "IpamIPAddress"
-        )
+        ip_call = next(c for c in client.create.await_args_list if c.kwargs.get("kind") == "IpamIPAddress")
         assert ip_call.kwargs["data"]["address"] == "10.10.1.0/31"
         assert ip_call.kwargs["data"]["ip_namespace"] == "ns-1"
 
@@ -454,10 +437,7 @@ class TestInterfaceSeeding:
         ingester = SeedIngester(client=client)
         await ingester.seed(use_case="dcfabric", data_path=path)
 
-        iface_call = next(
-            c for c in client.create.await_args_list
-            if c.kwargs.get("kind") == "InterfacePhysical"
-        )
+        iface_call = next(c for c in client.create.await_args_list if c.kwargs.get("kind") == "InterfacePhysical")
         assert iface_call.kwargs["data"].get("ip_addresses") == ["ip-1"]
 
     async def test_interface_without_ip_skips_materialisation(self, tmp_path: Path):
@@ -474,10 +454,7 @@ class TestInterfaceSeeding:
         ingester = SeedIngester(client=client)
         await ingester.seed(use_case="dcfabric", data_path=path)
 
-        ip_creates = [
-            c for c in client.create.await_args_list
-            if c.kwargs.get("kind") == "IpamIPAddress"
-        ]
+        ip_creates = [c for c in client.create.await_args_list if c.kwargs.get("kind") == "IpamIPAddress"]
         assert ip_creates == []
 
     async def test_interface_lookup_uses_device_ids_filter(self, tmp_path: Path):
@@ -494,10 +471,7 @@ class TestInterfaceSeeding:
         ingester = SeedIngester(client=client)
         await ingester.seed(use_case="dcfabric", data_path=path)
 
-        iface_lookup = next(
-            c for c in client.filters.await_args_list
-            if c.kwargs.get("kind") == "InterfacePhysical"
-        )
+        iface_lookup = next(c for c in client.filters.await_args_list if c.kwargs.get("kind") == "InterfacePhysical")
         assert iface_lookup.kwargs.get("device__ids") == ["dev-42"]
         assert "device__value" not in iface_lookup.kwargs
 
@@ -585,10 +559,7 @@ class TestDeviceManagementIP:
         ingester = SeedIngester(client=client)
         await ingester.seed(use_case="dcfabric", data_path=path)
 
-        ip_call = next(
-            c for c in client.create.await_args_list
-            if c.kwargs.get("kind") == "IpamIPAddress"
-        )
+        ip_call = next(c for c in client.create.await_args_list if c.kwargs.get("kind") == "IpamIPAddress")
         assert ip_call.kwargs["data"]["address"] == "10.0.0.1/24"
         assert ip_call.kwargs["data"]["ip_namespace"] == "ns-1"
 
@@ -611,10 +582,7 @@ class TestDeviceManagementIP:
         ingester = SeedIngester(client=client)
         await ingester.seed(use_case="dcfabric", data_path=path)
 
-        device_call = next(
-            c for c in client.create.await_args_list
-            if c.kwargs.get("kind") == "DcimDevice"
-        )
+        device_call = next(c for c in client.create.await_args_list if c.kwargs.get("kind") == "DcimDevice")
         assert device_call.kwargs["data"].get("primary_address") == "mgmt-ip-1"
 
     async def test_device_without_management_ip_skips_materialisation(self, tmp_path: Path):
@@ -627,10 +595,7 @@ class TestDeviceManagementIP:
         ingester = SeedIngester(client=client)
         await ingester.seed(use_case="dcfabric", data_path=path)
 
-        ip_creates = [
-            c for c in client.create.await_args_list
-            if c.kwargs.get("kind") == "IpamIPAddress"
-        ]
+        ip_creates = [c for c in client.create.await_args_list if c.kwargs.get("kind") == "IpamIPAddress"]
         assert ip_creates == []
 
 
@@ -725,10 +690,7 @@ class TestBGPPeerGroupShadowCopies:
         ingester = SeedIngester(client=client)
         await ingester.seed(use_case="dcfabric", data_path=path)
 
-        pg_creates = [
-            c for c in client.create.await_args_list
-            if c.kwargs.get("kind") == "RoutingBGPPeerGroup"
-        ]
+        pg_creates = [c for c in client.create.await_args_list if c.kwargs.get("kind") == "RoutingBGPPeerGroup"]
         assert len(pg_creates) == 2
 
     async def test_shadow_name_is_scoped_to_device(self, tmp_path: Path):
@@ -741,10 +703,7 @@ class TestBGPPeerGroupShadowCopies:
         ingester = SeedIngester(client=client)
         await ingester.seed(use_case="dcfabric", data_path=path)
 
-        pg_call = next(
-            c for c in client.create.await_args_list
-            if c.kwargs.get("kind") == "RoutingBGPPeerGroup"
-        )
+        pg_call = next(c for c in client.create.await_args_list if c.kwargs.get("kind") == "RoutingBGPPeerGroup")
         assert pg_call.kwargs["data"]["name"] == "underlay-ipv4@spine-01"
 
     async def test_shadow_description_is_scoped(self, tmp_path: Path):
@@ -757,10 +716,7 @@ class TestBGPPeerGroupShadowCopies:
         ingester = SeedIngester(client=client)
         await ingester.seed(use_case="dcfabric", data_path=path)
 
-        pg_call = next(
-            c for c in client.create.await_args_list
-            if c.kwargs.get("kind") == "RoutingBGPPeerGroup"
-        )
+        pg_call = next(c for c in client.create.await_args_list if c.kwargs.get("kind") == "RoutingBGPPeerGroup")
         desc = pg_call.kwargs["data"]["description"]
         assert "spine-01" in desc
 
@@ -774,10 +730,7 @@ class TestBGPPeerGroupShadowCopies:
         ingester = SeedIngester(client=client)
         await ingester.seed(use_case="dcfabric", data_path=path)
 
-        pg_call = next(
-            c for c in client.create.await_args_list
-            if c.kwargs.get("kind") == "RoutingBGPPeerGroup"
-        )
+        pg_call = next(c for c in client.create.await_args_list if c.kwargs.get("kind") == "RoutingBGPPeerGroup")
         assert pg_call.kwargs["data"]["device"] == "dev-99"
         assert pg_call.kwargs["data"]["vrf"] == "vrf-42"
 
@@ -791,10 +744,7 @@ class TestBGPPeerGroupShadowCopies:
         ingester = SeedIngester(client=client)
         await ingester.seed(use_case="dcfabric", data_path=path)
 
-        pg_call = next(
-            c for c in client.create.await_args_list
-            if c.kwargs.get("kind") == "RoutingBGPPeerGroup"
-        )
+        pg_call = next(c for c in client.create.await_args_list if c.kwargs.get("kind") == "RoutingBGPPeerGroup")
         assert pg_call.kwargs["data"]["status"] == "active"
 
     async def test_peer_group_idempotent(self, tmp_path: Path):
@@ -807,8 +757,7 @@ class TestBGPPeerGroupShadowCopies:
         ingester = SeedIngester(client=client)
         await ingester.seed(use_case="dcfabric", data_path=path)
         pg_creates_first_run = [
-            c for c in client.create.await_args_list
-            if c.kwargs.get("kind") == "RoutingBGPPeerGroup"
+            c for c in client.create.await_args_list if c.kwargs.get("kind") == "RoutingBGPPeerGroup"
         ]
 
         existing_shadow = _stub_node("existing-shadow")
@@ -824,10 +773,7 @@ class TestBGPPeerGroupShadowCopies:
         client.filters = AsyncMock(side_effect=filters_with_existing)
         await ingester.seed(use_case="dcfabric", data_path=path)
 
-        pg_creates_total = [
-            c for c in client.create.await_args_list
-            if c.kwargs.get("kind") == "RoutingBGPPeerGroup"
-        ]
+        pg_creates_total = [c for c in client.create.await_args_list if c.kwargs.get("kind") == "RoutingBGPPeerGroup"]
         assert len(pg_creates_total) == len(pg_creates_first_run)
 
     async def test_missing_vrf_raises_validation_error(self, tmp_path: Path):
@@ -865,10 +811,7 @@ class TestBGPSessionSeeding:
         ingester = SeedIngester(client=client)
         await ingester.seed(use_case="dcfabric", data_path=path)
 
-        session_call = next(
-            c for c in client.create.await_args_list
-            if c.kwargs.get("kind") == "RoutingBGPSession"
-        )
+        session_call = next(c for c in client.create.await_args_list if c.kwargs.get("kind") == "RoutingBGPSession")
         assert session_call.kwargs["data"]["device"] == "dev-spine01"
 
     async def test_session_local_as_resolved_by_asn(self, tmp_path: Path):
@@ -892,8 +835,7 @@ class TestBGPSessionSeeding:
         await ingester.seed(use_case="dcfabric", data_path=path)
 
         session_call = next(
-            c for c in original_client.create.await_args_list
-            if c.kwargs.get("kind") == "RoutingBGPSession"
+            c for c in original_client.create.await_args_list if c.kwargs.get("kind") == "RoutingBGPSession"
         )
         assert session_call.kwargs["data"]["local_as"] == "as-65000"
 
@@ -918,8 +860,7 @@ class TestBGPSessionSeeding:
         await ingester.seed(use_case="dcfabric", data_path=path)
 
         session_call = next(
-            c for c in original_client.create.await_args_list
-            if c.kwargs.get("kind") == "RoutingBGPSession"
+            c for c in original_client.create.await_args_list if c.kwargs.get("kind") == "RoutingBGPSession"
         )
         assert session_call.kwargs["data"].get("peer_group") == "shadow-spine01"
 
@@ -933,10 +874,7 @@ class TestBGPSessionSeeding:
         ingester = SeedIngester(client=client)
         await ingester.seed(use_case="dcfabric", data_path=path)
 
-        session_lookups = [
-            c for c in client.filters.await_args_list
-            if c.kwargs.get("kind") == "RoutingBGPSession"
-        ]
+        session_lookups = [c for c in client.filters.await_args_list if c.kwargs.get("kind") == "RoutingBGPSession"]
         assert session_lookups, "Expected at least one RoutingBGPSession filter call"
         assert all("description__value" in c.kwargs for c in session_lookups)
 
@@ -963,12 +901,10 @@ class TestBGPSessionSeeding:
         client.filters = AsyncMock(side_effect=filters_with_existing_session)
         await ingester.seed(use_case="dcfabric", data_path=path)
 
-        session_creates = [
-            c for c in client.create.await_args_list
-            if c.kwargs.get("kind") == "RoutingBGPSession"
-        ]
+        session_creates = [c for c in client.create.await_args_list if c.kwargs.get("kind") == "RoutingBGPSession"]
         first_run_session_count = sum(
-            1 for c in client.create.await_args_list[:creates_after_first]
+            1
+            for c in client.create.await_args_list[:creates_after_first]
             if c.kwargs.get("kind") == "RoutingBGPSession"
         )
         total_session_creates = len(session_creates)
@@ -984,8 +920,5 @@ class TestBGPSessionSeeding:
         ingester = SeedIngester(client=client)
         await ingester.seed(use_case="dcfabric", data_path=path)
 
-        session_call = next(
-            c for c in client.create.await_args_list
-            if c.kwargs.get("kind") == "RoutingBGPSession"
-        )
+        session_call = next(c for c in client.create.await_args_list if c.kwargs.get("kind") == "RoutingBGPSession")
         assert session_call.kwargs["data"]["vrf"] == "vrf-xyz"

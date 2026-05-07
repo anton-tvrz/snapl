@@ -216,9 +216,7 @@ class TestProvisionSchema:
         assert result.schemas_loaded >= 7
 
     async def test_translates_schema_validation_failure(self, mock_infrahub_client):
-        mock_infrahub_client.schema.load.return_value = {
-            "errors": [{"message": "unknown kind"}]
-        }
+        mock_infrahub_client.schema.load.return_value = {"errors": [{"message": "unknown kind"}]}
         store = InfrahubIntentStore(client=mock_infrahub_client)
 
         with pytest.raises(IntentSchemaError) as exc_info:
@@ -281,9 +279,7 @@ class TestSeed:
         store = InfrahubIntentStore(client=mock_infrahub_client)
         data_path = self._write_dataset(tmp_path)
 
-        result = await store.seed(
-            "dcfabric", data_path=data_path, branch="feature-branch"
-        )
+        result = await store.seed("dcfabric", data_path=data_path, branch="feature-branch")
 
         assert isinstance(result, SeedResult)
         assert result.use_case == "dcfabric"

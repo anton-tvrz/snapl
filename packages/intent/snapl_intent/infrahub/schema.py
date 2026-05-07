@@ -52,19 +52,13 @@ def discover_schema_batches(schemas_root: Path) -> list[list[Path]]:
 
 def _extract_errors(response: Any) -> str | None:
     """Return a concatenated error string from an SDK response, or ``None``."""
-    errors = (
-        response.get("errors")
-        if isinstance(response, dict)
-        else getattr(response, "errors", None)
-    )
+    errors = response.get("errors") if isinstance(response, dict) else getattr(response, "errors", None)
 
     if not errors:
         return None
 
     if isinstance(errors, list):
-        return "; ".join(
-            (e.get("message") or str(e)) if isinstance(e, dict) else str(e) for e in errors
-        )
+        return "; ".join((e.get("message") or str(e)) if isinstance(e, dict) else str(e) for e in errors)
     if isinstance(errors, dict):
         parts = []
         for key, value in errors.items():

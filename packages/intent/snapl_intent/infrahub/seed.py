@@ -60,7 +60,7 @@ SEED_ORDER: list[str] = [
     "devices",
     "interfaces",
     "bgp_peer_groups",  # Milestone D — handled by _seed_bgp_peer_groups (shadow copies)
-    "bgp_sessions",     # Milestone D — handled by _seed_bgp_sessions
+    "bgp_sessions",  # Milestone D — handled by _seed_bgp_sessions
 ]
 
 # All sections are now active; kept as an empty list for backwards compat with tests.
@@ -247,9 +247,7 @@ class SeedIngester:
             branch=branch,
         )
 
-    async def _materialise_ip_address(
-        self, *, address: str, namespace_id: str, branch: str
-    ) -> str:
+    async def _materialise_ip_address(self, *, address: str, namespace_id: str, branch: str) -> str:
         """Upsert an IpamIPAddress node and return its id."""
         existing = await self._client.filters(
             kind="IpamIPAddress",
@@ -270,8 +268,7 @@ class SeedIngester:
         results = await self._client.filters(kind="IpamNamespace", default__value=True)
         if not results:
             raise IntentValidationError(
-                "Default IP namespace not found in Infrahub — "
-                "ensure Infrahub is fully initialized before seeding"
+                "Default IP namespace not found in Infrahub — ensure Infrahub is fully initialized before seeding"
             )
         return results[0].id
 
@@ -281,8 +278,7 @@ class SeedIngester:
             missing = [f for f in DEVICE_REQUIRED_FIELDS if f not in device]
             if missing:
                 raise IntentValidationError(
-                    f"Device {device.get('name', '<unknown>')} missing required fields: "
-                    + ", ".join(missing),
+                    f"Device {device.get('name', '<unknown>')} missing required fields: " + ", ".join(missing),
                     field=missing[0],
                 )
 
@@ -309,9 +305,7 @@ class SeedIngester:
         # Materialise per-item IP address into IpamIPAddress, wire to ip_addresses list.
         if section.ip_field and section.ip_field in payload and namespace_id:
             ip_str = payload.pop(section.ip_field)
-            ip_id = await self._materialise_ip_address(
-                address=ip_str, namespace_id=namespace_id, branch=branch
-            )
+            ip_id = await self._materialise_ip_address(address=ip_str, namespace_id=namespace_id, branch=branch)
             payload["ip_addresses"] = [ip_id]
 
         # Materialise management IP into IpamIPAddress, wire to primary_address.
@@ -351,9 +345,7 @@ class SeedIngester:
         await node.save()
         return True
 
-    async def _resolve_relationships(
-        self, section: _Section, item: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def _resolve_relationships(self, section: _Section, item: dict[str, Any]) -> dict[str, Any]:
         """Return a copy of ``item`` with relationship fields rewritten to peer ids.
 
         Looks up each declared relationship peer via its natural key. Raises
@@ -384,8 +376,7 @@ class SeedIngester:
         results = await self._client.filters(kind="IpamVRF", name__value="default")
         if not results:
             raise IntentValidationError(
-                "Default VRF not found in Infrahub — "
-                "ensure VRFs are seeded before BGP sections"
+                "Default VRF not found in Infrahub — ensure VRFs are seeded before BGP sections"
             )
         return results[0].id
 
@@ -435,8 +426,12 @@ class SeedIngester:
                     "vrf": vrf_id,
                 }
                 for attr in (
-                    "address_family", "send_community", "import_policies",
-                    "export_policies", "maximum_routes", "local_pref",
+                    "address_family",
+                    "send_community",
+                    "import_policies",
+                    "export_policies",
+                    "maximum_routes",
+                    "local_pref",
                 ):
                     if attr in pg_decl:
                         payload[attr] = pg_decl[attr]
@@ -510,9 +505,7 @@ class SeedIngester:
 
             for field_name in ("local_ip", "remote_ip"):
                 if field_name in session:
-                    peers = await self._client.filters(
-                        kind="IpamIPAddress", address__value=session[field_name]
-                    )
+                    peers = await self._client.filters(kind="IpamIPAddress", address__value=session[field_name])
                     if peers:
                         payload[field_name] = peers[0].id
 
@@ -521,9 +514,7 @@ class SeedIngester:
                 if shadow_id:
                     payload["peer_group"] = shadow_id
 
-            existing = await self._client.filters(
-                kind="RoutingBGPSession", description__value=session["description"]
-            )
+            existing = await self._client.filters(kind="RoutingBGPSession", description__value=session["description"])
             if existing:
                 node = existing[0]
                 for attr, value in payload.items():

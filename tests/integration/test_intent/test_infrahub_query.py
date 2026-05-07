@@ -139,9 +139,7 @@ async def test_sc007_unreachable_sot_errors_within_10s(infrahub_reachable) -> No
     if not infrahub_reachable:
         pytest.skip("Skipping SC-007: need a reachable Infrahub to probe a bad address meaningfully")
 
-    dead_store = InfrahubIntentStore(
-        client=build_client(address="http://localhost:19999", api_token="fake-token")
-    )
+    dead_store = InfrahubIntentStore(client=build_client(address="http://localhost:19999", api_token="fake-token"))
 
     start = time.monotonic()
     with pytest.raises((IntentConnectionError, Exception)):

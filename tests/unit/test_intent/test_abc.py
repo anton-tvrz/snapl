@@ -32,9 +32,7 @@ class TestIntentStoreABC:
     )
     def test_exposes_required_abstract_method(self, method_name: str):
         method = getattr(IntentStore, method_name)
-        assert getattr(method, "__isabstractmethod__", False), (
-            f"{method_name} must be marked @abstractmethod"
-        )
+        assert getattr(method, "__isabstractmethod__", False), f"{method_name} must be marked @abstractmethod"
 
     @pytest.mark.parametrize(
         "method_name",
