@@ -91,8 +91,8 @@ A datacenter fabric bring-up or use-case-wide reconfiguration event requires app
 - **FR-005**: System MUST return structured error results — not raised exceptions — for device connectivity failures, authentication failures, render errors, and device-side validation errors. Exceptions are reserved for programming errors (invalid arguments, broken internal state).
 - **FR-006**: System MUST expose a `GnmiExecutor` (concrete implementation of the `Executor` ABC) as its primary entry point, accepting device address, port, and credentials alongside the desired state.
 - **FR-007**: System MUST use SR Linux YANG-modelled JSON as the gNMI payload format. CLI-style commands are not acceptable.
-- **FR-008**: System MUST be independently testable without a live device — unit tests mock the gNMI client; integration tests require a running Containerlab SR Linux node.
-- **FR-009**: Config templates MUST be maintainable as Jinja2 files packaged with the module. Template selection is driven by the desired state's use case and entity type (device, interface, BGP session).
+- **FR-008**: System MUST be independently testable without live network infrastructure — unit tests require no physical or virtual devices; integration tests require a running lab node.
+- **FR-009**: Config templates MUST be maintainable as structured text files packaged with the module. Template selection is driven by the desired state's use case and entity type (device, interface, BGP session).
 - **FR-010**: System MUST consume desired state from the `snapl_intent` package via its `DesiredState` model — the Executor does not duplicate the data model.
 - **FR-011**: System MUST time out gNMI operations that do not complete within a configurable deadline (default: 30 seconds). Timed-out operations MUST return a timeout error result, not hang indefinitely.
 
