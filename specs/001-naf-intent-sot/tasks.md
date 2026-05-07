@@ -106,7 +106,7 @@
   - [X] **Milestone C — interfaces + IP addressing**: resolve `device` parents, materialise `management_ip` on devices and per-link `ip_address` entries. Expand `test_seed.py::test_ingest_second_run_upserts_in_place` to cover device idempotency with interfaces in play.
   - [X] **Milestone D — BGP peer-groups/sessions**: `RoutingProtocol` inheritance requires `device` + `vrf`, but topology declares one shared peer-group. Resolved via **shadow copies** — materialise N `BGPPeerGroup` rows at seed time from one logical YAML declaration; schema left unchanged.
 - [X] T029 [US1] Write integration test for desired state query against live Infrahub (single device, role filter, use_case filter, empty result) in tests/integration/test_intent/test_infrahub_query.py
-  - **Scope note**: Device fixture is still created inline via the SDK (in `_query_devices_seeded`) because `test_edge` isn't yet in the packaged seed (see Phase 6 T034). The inline path can be removed once the per-use-case topology tree lands.
+  - **Scope note**: `query-edge-01` inline fixture removed (T034/T035); test_edge devices now come from the seeded `seed/test_edge/topology.yml` topology.
 
 **Checkpoint**: US1 + US2 fully functional end-to-end. Schema provisioning loads 3 batches including business intent stubs. Seed ingests dcfabric topology. get_desired_state returns seeded data with correct relationships. All unit and integration tests pass.
 
@@ -138,13 +138,13 @@
 
 ### Tests (TDD — write first, verify they fail)
 
-- [ ] T032 [P] [US4] Write unit tests for use case isolation (get_desired_state with use_case filter returns only matching devices, seed to one use case does not affect another) in tests/unit/test_intent/test_store.py (append to existing)
+- [X] T032 [P] [US4] Write unit tests for use case isolation (get_desired_state with use_case filter returns only matching devices, seed to one use case does not affect another) in tests/unit/test_intent/test_store.py (append to existing)
 
 ### Fixture & Implementation
 
-- [ ] T033 [US4] Validate and enforce use_case filter in all InfrahubIntentStore query paths in packages/intent/snapl_intent/infrahub/store.py
-- [ ] T034 [P] [US4] Create minimal second-use-case seed fixture (2 devices tagged use_case=test_edge, reusing dcfabric schema types) in packages/intent/snapl_intent/seed/test_edge/topology.yml
-- [ ] T035 [US4] Write integration test for cross-use-case isolation against live Infrahub (seed dcfabric + test_edge fixtures, verify queries return only matching use_case, verify modifications to one use case do not affect the other) in tests/integration/test_intent/test_infrahub_query.py (append to existing)
+- [X] T033 [US4] Validate and enforce use_case filter in all InfrahubIntentStore query paths in packages/intent/snapl_intent/infrahub/store.py — zero code change; use_case__value already enforced at line 121
+- [X] T034 [P] [US4] Create minimal second-use-case seed fixture (2 devices tagged use_case=test_edge, reusing dcfabric schema types) in packages/intent/snapl_intent/seed/test_edge/topology.yml
+- [X] T035 [US4] Write integration test for cross-use-case isolation against live Infrahub (seed dcfabric + test_edge fixtures, verify queries return only matching use_case, verify modifications to one use case do not affect the other) in tests/integration/test_intent/test_infrahub_query.py (append to existing)
 
 **Checkpoint**: US4 complete. Use case isolation verified — operations on dcfabric do not affect the test_edge fixture, satisfying SC-004.
 

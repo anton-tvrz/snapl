@@ -114,22 +114,33 @@ async def seeded_store(live_infrahub_client, _seeded_once: bool) -> InfrahubInte
 
 
 # ---------------------------------------------------------------------------
-# Query-test devices
+# Query-test devices (dcfabric only — inline for T029 backward compat)
 # ---------------------------------------------------------------------------
-# Until the seed ingester's relationship-resolution layer lands
-# (``SEED_DEFERRED`` in ``snapl_intent.infrahub.seed``), devices are created
-# inline here so T029 has something to query. The fixture is idempotent: it
-# looks up each device by name before creating.
 _QUERY_TEST_DEVICES: list[dict[str, str]] = [
     {"name": "query-spine-01", "role": "spine", "use_case": "dcfabric"},
     {"name": "query-leaf-01", "role": "leaf", "use_case": "dcfabric"},
-    {"name": "query-edge-01", "role": "core", "use_case": "test_edge"},
 ]
 
 
 @pytest.fixture(scope="session")
+async def _test_edge_seeded_once(
+    infrahub_address: str, infrahub_reachable: bool, _provisioned_once: bool
+) -> bool:
+    """Seed the test_edge topology exactly once per test session."""
+    if not (infrahub_reachable and _provisioned_once):
+        return False
+    client = build_client(address=infrahub_address, api_token=_resolved_token())
+    store = InfrahubIntentStore(client=client)
+    await store.seed("test_edge")
+    return True
+
+
+@pytest.fixture(scope="session")
 async def _query_devices_seeded(
-    infrahub_address: str, infrahub_reachable: bool, _seeded_once: bool
+    infrahub_address: str,
+    infrahub_reachable: bool,
+    _seeded_once: bool,
+    _test_edge_seeded_once: bool,
 ) -> bool:
     if not (infrahub_reachable and _seeded_once):
         return False

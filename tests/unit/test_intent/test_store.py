@@ -371,3 +371,52 @@ class TestGetSchema:
 
         with pytest.raises(IntentConnectionError):
             await store.get_schema("dcfabric")
+
+
+# ---------------------------------------------------------------------------
+# US4 — use-case isolation
+# ---------------------------------------------------------------------------
+
+
+class TestUseCaseIsolation:
+    async def test_get_desired_state_passes_use_case_filter_to_sdk(self, mock_infrahub_client):
+        mock_infrahub_client.filters.return_value = []
+        store = InfrahubIntentStore(client=mock_infrahub_client)
+
+        await store.get_desired_state(use_case="dcfabric")
+
+        kwargs = mock_infrahub_client.filters.await_args.kwargs
+        assert kwargs.get("use_case__value") == "dcfabric"
+
+    async def test_get_desired_state_without_use_case_sends_no_filter(self, mock_infrahub_client):
+        mock_infrahub_client.filters.return_value = []
+        store = InfrahubIntentStore(client=mock_infrahub_client)
+
+        await store.get_desired_state()
+
+        kwargs = mock_infrahub_client.filters.await_args.kwargs
+        assert "use_case__value" not in kwargs
+        assert "use_case" not in kwargs
+
+    async def test_get_desired_state_returns_only_sdk_result_for_use_case(self, mock_infrahub_client):
+        dev_uuid = uuid4()
+        dcfabric_node = _make_device_node(name="spine-01", use_case="dcfabric", device_id=dev_uuid)
+        mock_infrahub_client.filters.return_value = [dcfabric_node]
+        store = InfrahubIntentStore(client=mock_infrahub_client)
+
+        result = await store.get_desired_state(use_case="dcfabric")
+
+        assert len(result) == 1
+        assert result[0].device.use_case == "dcfabric"
+        assert result[0].device.name == "spine-01"
+
+    async def test_different_use_cases_produce_independent_queries(self, mock_infrahub_client):
+        mock_infrahub_client.filters.return_value = []
+        store = InfrahubIntentStore(client=mock_infrahub_client)
+
+        await store.get_desired_state(use_case="dcfabric")
+        await store.get_desired_state(use_case="test_edge")
+
+        calls = mock_infrahub_client.filters.await_args_list
+        assert calls[0].kwargs.get("use_case__value") == "dcfabric"
+        assert calls[1].kwargs.get("use_case__value") == "test_edge"
