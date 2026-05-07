@@ -159,9 +159,9 @@
 - [X] T038 [P] Add Infrahub branch parameter support to seed() and get_desired_state() in packages/intent/snapl_intent/infrahub/store.py — seed() already had it; get_desired_state() now accepts branch kwarg and passes to client.filters()
 - [X] T039 [P] Write integration test for get_schema() against live Infrahub (provision dcfabric schema, verify Schema object returned with correct entities and source files, verify unknown use case raises IntentSchemaError) in tests/integration/test_intent/test_infrahub_schema.py (append to existing)
 - [X] T040 Add performance assertions to integration tests validating SC-001 (<5s single-device retrieval) and SC-007 (<10s error on unavailable SoT) in tests/integration/test_intent/test_infrahub_query.py
-- [ ] T041 Run quickstart.md validation end-to-end against live Infrahub (provision -> seed -> query -> inspect schema)
+- [X] T041 Run quickstart.md validation end-to-end against live Infrahub (provision -> seed -> query -> inspect schema) — all flows pass; seed idempotent (0 created, 6 updated); branch seed confirmed
 - [X] T042 Verify all unit tests pass: uv run pytest tests/unit/test_intent/ -v — 120 passed, 87% coverage
-- [ ] T043 Verify all integration tests pass against live Infrahub: uv run pytest tests/integration/test_intent/ -v
+- [X] T043 Verify all integration tests pass against live Infrahub: uv run pytest tests/integration/test_intent/ -v — 20 passed in 96s
 
 > **Note on SC-002 (<2min seed of 50 devices)**: Current dcfabric fixture (T020) has ~6 devices. A 50-device fixture is deferred to a follow-up feature — current seed implementation is measured against the 6-device topology, and scaling to 50 is an incremental data change (no new code).
 
