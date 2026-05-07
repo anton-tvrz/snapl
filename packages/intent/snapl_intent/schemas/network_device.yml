@@ -1,0 +1,42 @@
+# Infrahub schema — Batch 3: snapl project-specific DcimDevice extensions.
+#
+# Extends the base `DcimDevice` (Batch 1, schema-library) with attributes
+# the Intent module needs for the datacenter fabric use case:
+#   - management_ip: reachable address for operator / Collector access
+#   - lab_node_name: Containerlab identifier for lab-integrated use cases
+#   - use_case: which NAF scenario this device belongs to (dcfabric, etc.)
+#   - asn: primary AutonomousSystem relation
+#
+# Dependencies: Batch 1 (dcim, organization) and Batch 2 (routing_bgp) must
+# be loaded first. A device belongs to exactly one use case — see spec FR-006.
+---
+# yaml-language-server: $schema=https://schema.infrahub.app/infrahub/schema/latest.json
+version: "1.0"
+
+extensions:
+  nodes:
+    - kind: DcimDevice
+      attributes:
+        - name: management_ip
+          kind: IPHost
+          optional: true
+          description: "Out-of-band management IP address"
+          order_weight: 1500
+        - name: lab_node_name
+          kind: Text
+          optional: true
+          description: "Containerlab node name (e.g. clab-dcfabric-spine-01)"
+          order_weight: 1510
+        - name: use_case
+          kind: Text
+          optional: false
+          description: "NAF use case this device belongs to (e.g. dcfabric)"
+          order_weight: 1520
+      relationships:
+        - name: asn
+          peer: RoutingAutonomousSystem
+          optional: true
+          cardinality: one
+          kind: Attribute
+          description: "Primary ASN assigned to this device"
+          order_weight: 1600

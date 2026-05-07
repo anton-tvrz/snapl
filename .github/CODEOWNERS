@@ -1,0 +1,24 @@
+# CODEOWNERS — defines code ownership for PR reviews
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owner for everything
+* @anton-tvrz
+
+# Packages
+/packages/ @anton-tvrz
+
+# Infrastructure
+/development/ @anton-tvrz
+docker-compose*.yml @anton-tvrz
+
+# CI/CD
+/.github/ @anton-tvrz
+
+# Documentation
+/docs/ @anton-tvrz
+/dev/ @anton-tvrz
+
+# Root configs — changes here affect the whole project
+pyproject.toml @anton-tvrz
+uv.lock @anton-tvrz
+.pre-commit-config.yaml @anton-tvrz

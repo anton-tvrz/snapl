@@ -1,0 +1,24 @@
+# Gitleaks configuration — secrets detection
+# https://github.com/gitleaks/gitleaks
+
+title = "snapl — Gitleaks Config"
+
+[extend]
+# Use the default gitleaks rules as a base
+useDefault = true
+
+[allowlist]
+description = "Known safe patterns"
+paths = [
+    '''\.venv/''',
+    '''uv\.lock''',
+    '''development/docker-compose.*\.yml''',
+    '''\.secrets\.baseline''',
+]
+
+# Allow dev/test tokens and IP addresses that appear in fixtures
+regexTarget = "match"
+regexes = [
+    '''06438eb2-8019-4776-878c-0941b1f1d1ec''',  # Infrahub dev admin token (docker-compose default)
+    '''10\.\d+\.\d+\.\d+''',                       # Fabric/management IPs in seed fixtures
+]

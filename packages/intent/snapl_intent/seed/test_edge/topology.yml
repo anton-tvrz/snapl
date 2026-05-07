@@ -1,0 +1,97 @@
+# test_edge seed — 2 edge devices tagged use_case=test_edge.
+#
+# Self-contained: declares its own org/location/manufacturer/platform so it
+# does not depend on dcfabric seed being present. Used exclusively in US4
+# integration tests to verify use-case isolation (dcfabric data never appears
+# in test_edge queries and vice versa).
+---
+
+organization:
+  name: "snapl Test Edge"
+  description: "Isolated test-edge use-case organisation"
+
+manufacturer:
+  name: "Nokia"
+  description: "Nokia Corporation — SR Linux network operating system"
+
+location:
+  name: "Test Edge Lab"
+  shortname: "test-edge-lab"
+  description: "Isolated test-edge location"
+
+platform:
+  name: "Nokia SR Linux"
+  description: "Nokia Service Router Linux"
+  nornir_platform: "srlinux"
+  napalm_driver: "srl"
+  containerlab_os: "nokia_srlinux"
+  ansible_network_os: "nokia.srlinux.srlinux"
+  netmiko_device_type: "nokia_srl"
+
+device_types:
+  - name: "7220 IXR-D2"
+    description: "Nokia 7220 IXR-D2 — Leaf"
+    part_number: "7220-IXR-D2"
+    manufacturer: "Nokia"
+
+autonomous_systems:
+  - name: "edge-01 AS"
+    asn: 65100
+    description: "Edge-01 autonomous system"
+    organization: "snapl Test Edge"
+  - name: "edge-02 AS"
+    asn: 65101
+    description: "Edge-02 autonomous system"
+    organization: "snapl Test Edge"
+
+vrfs:
+  - name: "default"
+    description: "Global routing table / default VRF"
+
+ip_prefixes:
+  - prefix: "10.200.0.0/24"
+    description: "test-edge management network"
+    status: active
+  - prefix: "10.201.0.0/24"
+    description: "test-edge loopback supernet"
+    status: active
+  - prefix: "10.210.0.0/30"
+    description: "test-edge fabric link"
+    status: active
+
+devices:
+  - name: edge-01
+    role: leaf
+    status: active
+    use_case: test_edge
+    device_type: "7220 IXR-D2"
+    location: "test-edge-lab"
+    platform: "Nokia SR Linux"
+    management_ip: "10.200.0.1/24"
+    asn: 65100
+    description: "Edge 01 — test_edge use case"
+  - name: edge-02
+    role: leaf
+    status: active
+    use_case: test_edge
+    device_type: "7220 IXR-D2"
+    location: "test-edge-lab"
+    platform: "Nokia SR Linux"
+    management_ip: "10.200.0.2/24"
+    asn: 65101
+    description: "Edge 02 — test_edge use case"
+
+interfaces:
+  - {device: edge-01, name: ethernet-1/1, role: fabric, mtu: 9214, ip_address: "10.210.0.0/30", peer_device: edge-02, peer_interface: ethernet-1/1, description: "to edge-02:ethernet-1/1"}
+  - {device: edge-01, name: loopback0, role: loopback, ip_address: "10.201.0.1/32", description: "Router ID edge-01"}
+  - {device: edge-02, name: ethernet-1/1, role: fabric, mtu: 9214, ip_address: "10.210.0.1/30", peer_device: edge-01, peer_interface: ethernet-1/1, description: "to edge-01:ethernet-1/1"}
+  - {device: edge-02, name: loopback0, role: loopback, ip_address: "10.201.0.2/32", description: "Router ID edge-02"}
+
+bgp_peer_groups:
+  - name: "edge-underlay-ipv4"
+    description: "eBGP underlay peer group for test-edge fabric"
+    address_family: ipv4
+    send_community: true
+
+bgp_sessions:
+  - {description: "edge-01 <-> edge-02 eBGP", session_type: EXTERNAL, role: backbone, local_device: edge-01, remote_device: edge-02, local_as: 65100, remote_as: 65101, local_ip: "10.210.0.0/30", remote_ip: "10.210.0.1/30", peer_group: edge-underlay-ipv4}

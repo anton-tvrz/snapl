@@ -1,0 +1,201 @@
+# snapl development stack — Infrahub Source of Truth + dependencies
+#
+# Adapted from OpsMill's stable docker-compose set:
+#   - development/docker-compose.yml          (server + task-worker)
+#   - development/docker-compose-deps.yml     (cache + message-queue + task-manager + task-manager-db)
+#   - development/docker-compose-database-neo4j.yml
+#
+# Usage:
+#   docker compose -f development/docker-compose.yml up -d
+#
+# Ports (override in development/.env):
+#   Infrahub:  http://localhost:${INFRAHUB_PORT:-8000}
+#   Neo4j:     bolt://localhost:${NEO4J_BOLT_PORT:-7687} (browser :${NEO4J_HTTP_PORT:-7474})
+#   Redis:     localhost:${REDIS_PORT:-6379}
+#   RabbitMQ:  localhost:${RABBITMQ_PORT:-5672} (mgmt :${RABBITMQ_MGMT_PORT:-15672})
+#   Prefect:   localhost:${PREFECT_PORT:-4200}
+#
+# Default admin login: admin / infrahub
+# Default API token:   06438eb2-8019-4776-878c-0941b1f1d1ec
+
+name: snapl
+
+x-infrahub-env: &infrahub_env
+  INFRAHUB_DB_ADDRESS: database
+  INFRAHUB_DB_USERNAME: neo4j
+  INFRAHUB_DB_PASSWORD: admin
+  INFRAHUB_DB_PORT: 7687
+  INFRAHUB_DB_PROTOCOL: bolt
+  INFRAHUB_DB_TYPE: neo4j
+  INFRAHUB_BROKER_ADDRESS: message-queue
+  INFRAHUB_BROKER_USERNAME: infrahub
+  INFRAHUB_BROKER_PASSWORD: infrahub
+  INFRAHUB_CACHE_ADDRESS: cache
+  INFRAHUB_WORKFLOW_ADDRESS: task-manager
+  INFRAHUB_WORKFLOW_PORT: 4200
+  INFRAHUB_PRODUCTION: "false"
+  INFRAHUB_INITIAL_ADMIN_TOKEN: 06438eb2-8019-4776-878c-0941b1f1d1ec
+  INFRAHUB_INITIAL_ADMIN_PASSWORD: infrahub
+  INFRAHUB_SECURITY_SECRET_KEY: 327f747f-efac-42be-9e73-999f08f86b92
+  INFRAHUB_STORAGE_DRIVER: local
+  INFRAHUB_ALLOW_ANONYMOUS_ACCESS: "true"
+  PREFECT_API_URL: http://task-manager:4200/api
+
+services:
+  # ---------------------------------------------------------------------------
+  # Neo4j — graph database backing Infrahub
+  # ---------------------------------------------------------------------------
+  database:
+    image: neo4j:5-community
+    environment:
+      NEO4J_AUTH: neo4j/admin
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_dbms_security_procedures_unrestricted: apoc.*
+      NEO4J_dbms_security_auth__minimum__password__length: "4"
+    ports:
+      - "${NEO4J_BOLT_PORT:-7687}:7687"
+      - "${NEO4J_HTTP_PORT:-7474}:7474"
+    volumes:
+      - database_data:/data
+      - database_logs:/logs
+    healthcheck:
+      test: wget -qO /dev/null http://localhost:7474 || exit 1
+      interval: 2s
+      timeout: 10s
+      retries: 40
+      start_period: 5s
+
+  # ---------------------------------------------------------------------------
+  # Redis — cache
+  # ---------------------------------------------------------------------------
+  cache:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+
+  # ---------------------------------------------------------------------------
+  # RabbitMQ — message queue
+  # ---------------------------------------------------------------------------
+  message-queue:
+    image: rabbitmq:3-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: infrahub
+      RABBITMQ_DEFAULT_PASS: infrahub
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MGMT_PORT:-15672}:15672"
+    healthcheck:
+      test: rabbitmq-diagnostics -q check_port_connectivity
+      interval: 5s
+      timeout: 30s
+      retries: 10
+      start_period: 5s
+
+  # ---------------------------------------------------------------------------
+  # Postgres — backing store for Prefect (task-manager)
+  # ---------------------------------------------------------------------------
+  task-manager-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: prefect
+    volumes:
+      - task_manager_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -q -d prefect -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # Prefect — task orchestration (shipped inside the Infrahub image)
+  # ---------------------------------------------------------------------------
+  task-manager:
+    image: registry.opsmill.io/opsmill/infrahub:stable
+    command: uvicorn --host 0.0.0.0 --port 4200 --factory infrahub.prefect_server.app:create_infrahub_prefect
+    environment:
+      <<: *infrahub_env
+      PREFECT_API_DATABASE_CONNECTION_URL: postgresql+asyncpg://postgres:postgres@task-manager-db:5432/prefect
+      PREFECT_LOCAL_STORAGE_PATH: /opt/prefect/
+    ports:
+      - "${PREFECT_PORT:-4200}:4200"
+    depends_on:
+      task-manager-db:
+        condition: service_healthy
+    healthcheck:
+      test: curl -sf http://localhost:4200/api/health || exit 1
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  # ---------------------------------------------------------------------------
+  # Infrahub API / UI
+  # ---------------------------------------------------------------------------
+  server:
+    image: registry.opsmill.io/opsmill/infrahub:stable
+    command:
+      - gunicorn
+      - --config
+      - backend/infrahub/serve/gunicorn_config.py
+      - -w
+      - "${WEB_CONCURRENCY:-2}"
+      - --logger-class
+      - infrahub.serve.log.GunicornLogger
+      - infrahub.server:app
+    environment:
+      <<: *infrahub_env
+      INFRAHUB_INTERNAL_ADDRESS: http://server:8000
+    ports:
+      - "${INFRAHUB_PORT:-8000}:8000"
+    depends_on:
+      database:
+        condition: service_healthy
+      message-queue:
+        condition: service_healthy
+      cache:
+        condition: service_healthy
+      task-manager:
+        condition: service_healthy
+    volumes:
+      - storage_data:/opt/infrahub/storage
+    tty: true
+    healthcheck:
+      test: curl -sf http://localhost:8000/api/config || exit 1
+      interval: 5s
+      timeout: 5s
+      retries: 40
+      start_period: 15s
+
+  # ---------------------------------------------------------------------------
+  # Prefect worker — runs git-sync, checks, generators, etc.
+  # ---------------------------------------------------------------------------
+  task-worker:
+    image: registry.opsmill.io/opsmill/infrahub:stable
+    command: prefect worker start --type infrahubasync --pool infrahub-worker --with-healthcheck
+    restart: unless-stopped
+    environment:
+      <<: *infrahub_env
+      INFRAHUB_ADDRESS: http://server:8000
+      INFRAHUB_INTERNAL_ADDRESS: http://server:8000
+      INFRAHUB_API_TOKEN: 06438eb2-8019-4776-878c-0941b1f1d1ec
+      INFRAHUB_TIMEOUT: "60"
+    depends_on:
+      server:
+        condition: service_healthy
+    volumes:
+      - git_remote_data:/remote
+    tty: true
+
+volumes:
+  database_data:
+  database_logs:
+  storage_data:
+  task_manager_db:
+  git_remote_data:
