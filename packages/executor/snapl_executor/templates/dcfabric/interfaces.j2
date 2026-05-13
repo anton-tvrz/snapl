@@ -1,0 +1,22 @@
+[
+{% for iface in interfaces if iface.ip_address %}
+  {
+    "name": "{{ iface.name }}",
+    "admin-state": "{{ 'enable' if iface.enabled else 'disable' }}",
+    "subinterface": [
+      {
+        "index": 0,
+        "admin-state": "enable",
+        "ipv4": {
+          "admin-state": "enable",
+          "address": [
+            {
+              "ip-prefix": "{{ iface.ip_address }}/{{ iface.prefix_length }}"
+            }
+          ]
+        }
+      }
+    ]
+  }{% if not loop.last %},{% endif %}
+{% endfor %}
+]

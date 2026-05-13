@@ -159,3 +159,117 @@ def spine_leaf_topology() -> dict:
 def intent_package_root() -> Path:
     """Absolute path to the packages/intent/snapl_intent directory."""
     return Path(__file__).resolve().parent.parent / "packages" / "intent" / "snapl_intent"
+
+
+# ---------------------------------------------------------------------------
+# Executor module fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def mock_gnmi_client() -> MagicMock:
+    """A mock gNMIclient with a synchronous set() method.
+
+    The set() method returns a dict resembling a gNMI SET response.
+    Tests override set.side_effect to simulate errors.
+    """
+    client = MagicMock(name="gNMIclient")
+    client.set = MagicMock(name="gNMIclient.set", return_value={"response": [{"timestamp": 0}]})
+    client.__enter__ = MagicMock(return_value=client)
+    client.__exit__ = MagicMock(return_value=False)
+    return client
+
+
+@pytest.fixture
+def dcfabric_desired_state():
+    """A minimal DesiredState for a dcfabric spine device with 2 interfaces and 1 BGP session."""
+    from snapl_intent.models import BGPSession, DesiredState, Device, Interface
+
+    device_id = UUID("00000000-0000-0000-0000-000000000001")
+    device = Device(
+        id=device_id,
+        name="spine-01",
+        management_address="10.0.0.1",
+        role="spine",
+        use_case="dcfabric",
+        platform="nokia-srlinux",
+    )
+    interfaces = [
+        Interface(
+            id=UUID("00000000-0000-0000-0000-000000000011"),
+            device_id=device_id,
+            name="ethernet-1/1",
+            ip_address="10.1.1.0",
+            prefix_length=31,
+            enabled=True,
+            mtu=9232,
+        ),
+        Interface(
+            id=UUID("00000000-0000-0000-0000-000000000012"),
+            device_id=device_id,
+            name="ethernet-1/2",
+            ip_address="10.1.2.0",
+            prefix_length=31,
+            enabled=True,
+            mtu=9232,
+        ),
+    ]
+    bgp_sessions = [
+        BGPSession(
+            id=UUID("00000000-0000-0000-0000-000000000021"),
+            device_id=device_id,
+            local_asn=65000,
+            peer_address="10.1.1.1",
+            peer_asn=65001,
+            peer_group="underlay-ipv4",
+            address_family="ipv4_unicast",
+            enabled=True,
+        )
+    ]
+    return DesiredState(device=device, interfaces=interfaces, bgp_sessions=bgp_sessions)
+
+
+@pytest.fixture
+def make_desired():
+    """Factory fixture — returns a callable that builds a minimal DesiredState.
+
+    Usage: make_desired("spine-01") or make_desired("spine-01", device_id=uuid)
+    Useful for batch tests that need multiple distinct devices.
+    """
+    from snapl_intent.models import BGPSession, DesiredState, Device, Interface
+
+    def _factory(device_name: str, device_id: UUID | None = None) -> DesiredState:
+        dev_id = device_id or uuid4()
+        device = Device(
+            id=dev_id,
+            name=device_name,
+            management_address="127.0.0.1",
+            role="spine",
+            use_case="dcfabric",
+            platform="nokia-srlinux",
+        )
+        ifaces = [
+            Interface(
+                id=uuid4(),
+                device_id=dev_id,
+                name="ethernet-1/1",
+                ip_address="10.0.0.0",
+                prefix_length=31,
+                enabled=True,
+                mtu=9232,
+            )
+        ]
+        sessions = [
+            BGPSession(
+                id=uuid4(),
+                device_id=dev_id,
+                local_asn=65000,
+                peer_address="10.0.0.1",
+                peer_asn=65001,
+                enabled=True,
+                address_family="ipv4_unicast",
+            )
+        ]
+        return DesiredState(device=device, interfaces=ifaces, bgp_sessions=sessions)
+
+    return _factory
