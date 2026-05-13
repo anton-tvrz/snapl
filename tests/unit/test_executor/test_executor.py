@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import threading
 from unittest.mock import MagicMock, patch
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import pytest
 
 from snapl_executor.gnmi.executor import GnmiExecutor
 from snapl_executor.models import ApplyResult, BatchResult, DryRunResult
+
+pytestmark = pytest.mark.unit
 
 
 def _make_executor(**kwargs) -> GnmiExecutor:
@@ -142,47 +145,10 @@ class TestRollback:
 # ---------------------------------------------------------------------------
 
 
-def _make_desired(device_name: str, device_id: UUID | None = None):
-    from snapl_intent.models import BGPSession, DesiredState, Device, Interface
-
-    dev_id = device_id or uuid4()
-    device = Device(
-        id=dev_id,
-        name=device_name,
-        management_address="127.0.0.1",
-        role="spine",
-        use_case="dcfabric",
-        platform="nokia-srlinux",
-    )
-    ifaces = [
-        Interface(
-            id=uuid4(),
-            device_id=dev_id,
-            name="ethernet-1/1",
-            ip_address="10.0.0.0",
-            prefix_length=31,
-            enabled=True,
-            mtu=9232,
-        )
-    ]
-    sessions = [
-        BGPSession(
-            id=uuid4(),
-            device_id=dev_id,
-            local_asn=65000,
-            peer_address="10.0.0.1",
-            peer_asn=65001,
-            enabled=True,
-            address_family="ipv4_unicast",
-        )
-    ]
-    return DesiredState(device=device, interfaces=ifaces, bgp_sessions=sessions)
-
-
 class TestApplyBatch:
     @pytest.mark.asyncio
-    async def test_batch_all_succeed(self, mock_gnmi_client):
-        states = [_make_desired(f"dev-{i}") for i in range(3)]
+    async def test_batch_all_succeed(self, mock_gnmi_client, make_desired):
+        states = [make_desired(f"dev-{i}") for i in range(3)]
         executor = _make_executor()
         with patch("snapl_executor.gnmi.executor.gNMIclient", return_value=mock_gnmi_client):
             result = await executor.apply_batch(states)
@@ -192,15 +158,17 @@ class TestApplyBatch:
         assert result.failed == 0
 
     @pytest.mark.asyncio
-    async def test_batch_partial_failure(self, mock_gnmi_client):
-        states = [_make_desired(f"dev-{i}") for i in range(3)]
+    async def test_batch_partial_failure(self, mock_gnmi_client, make_desired):
+        states = [make_desired(f"dev-{i}") for i in range(3)]
         executor = _make_executor()
-        call_count = 0
+        _lock = threading.Lock()
+        _calls: list[int] = []
 
         def failing_set(*args, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 2:
+            with _lock:
+                n = len(_calls)
+                _calls.append(n)
+            if n == 0:
                 raise Exception("device rejected")
             return {"response": [{"timestamp": 0}]}
 
@@ -218,16 +186,16 @@ class TestApplyBatch:
             await executor.apply_batch([])
 
     @pytest.mark.asyncio
-    async def test_batch_duplicate_device_ids_raises(self):
+    async def test_batch_duplicate_device_ids_raises(self, make_desired):
         shared_id = UUID("00000000-0000-0000-0000-000000000001")
-        states = [_make_desired("d1", shared_id), _make_desired("d2", shared_id)]
+        states = [make_desired("d1", shared_id), make_desired("d2", shared_id)]
         executor = _make_executor()
         with pytest.raises(ValueError, match="duplicate"):
             await executor.apply_batch(states)
 
     @pytest.mark.asyncio
-    async def test_batch_results_keyed_by_device_id(self, mock_gnmi_client):
-        states = [_make_desired(f"dev-{i}") for i in range(2)]
+    async def test_batch_results_keyed_by_device_id(self, mock_gnmi_client, make_desired):
+        states = [make_desired(f"dev-{i}") for i in range(2)]
         executor = _make_executor()
         with patch("snapl_executor.gnmi.executor.gNMIclient", return_value=mock_gnmi_client):
             result = await executor.apply_batch(states)

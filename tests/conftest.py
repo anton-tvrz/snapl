@@ -227,3 +227,49 @@ def dcfabric_desired_state():
         )
     ]
     return DesiredState(device=device, interfaces=interfaces, bgp_sessions=bgp_sessions)
+
+
+@pytest.fixture
+def make_desired():
+    """Factory fixture — returns a callable that builds a minimal DesiredState.
+
+    Usage: make_desired("spine-01") or make_desired("spine-01", device_id=uuid)
+    Useful for batch tests that need multiple distinct devices.
+    """
+    from snapl_intent.models import BGPSession, DesiredState, Device, Interface
+
+    def _factory(device_name: str, device_id: UUID | None = None) -> DesiredState:
+        dev_id = device_id or uuid4()
+        device = Device(
+            id=dev_id,
+            name=device_name,
+            management_address="127.0.0.1",
+            role="spine",
+            use_case="dcfabric",
+            platform="nokia-srlinux",
+        )
+        ifaces = [
+            Interface(
+                id=uuid4(),
+                device_id=dev_id,
+                name="ethernet-1/1",
+                ip_address="10.0.0.0",
+                prefix_length=31,
+                enabled=True,
+                mtu=9232,
+            )
+        ]
+        sessions = [
+            BGPSession(
+                id=uuid4(),
+                device_id=dev_id,
+                local_asn=65000,
+                peer_address="10.0.0.1",
+                peer_asn=65001,
+                enabled=True,
+                address_family="ipv4_unicast",
+            )
+        ]
+        return DesiredState(device=device, interfaces=ifaces, bgp_sessions=sessions)
+
+    return _factory

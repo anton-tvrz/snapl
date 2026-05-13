@@ -6,6 +6,8 @@ import pytest
 
 from snapl_executor.abc import Executor
 
+pytestmark = pytest.mark.unit
+
 
 class TestExecutorABC:
     def test_cannot_instantiate_directly(self):

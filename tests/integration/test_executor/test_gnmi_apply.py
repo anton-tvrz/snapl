@@ -150,6 +150,8 @@ async def test_apply_batch(srlinux_executor):
     result = await srlinux_executor.apply_batch(states)
     assert isinstance(result, BatchResult)
     assert result.total == 2
+    assert result.succeeded == 2
+    assert result.failed == 0
 
 
 # ---------------------------------------------------------------------------

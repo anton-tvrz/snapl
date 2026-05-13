@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
-import pytest
+from unittest.mock import patch
 
-from snapl_executor.gnmi.renderer import ConfigRenderer
+import pytest
+from jinja2 import UndefinedError
+
+from snapl_executor.gnmi.renderer import RENDER_ERROR_KEY, ConfigRenderer
+
+pytestmark = pytest.mark.unit
 
 
 class TestConfigRendererLoad:
@@ -72,8 +77,10 @@ class TestConfigRendererRenderError:
     def test_missing_variable_returns_render_error(self, dcfabric_desired_state):
         """Undefined template variables must be caught — not raised."""
         r = ConfigRenderer(use_case="dcfabric")
-        result = r.render_safe(dcfabric_desired_state)
-        assert isinstance(result, dict)
+        with patch.object(r, "render", side_effect=UndefinedError("missing_field")):
+            result = r.render_safe(dcfabric_desired_state)
+        assert RENDER_ERROR_KEY in result
+        assert "missing_field" in result[RENDER_ERROR_KEY]
 
     def test_render_safe_returns_dict_on_success(self, dcfabric_desired_state):
         r = ConfigRenderer(use_case="dcfabric")

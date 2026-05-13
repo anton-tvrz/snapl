@@ -8,6 +8,8 @@ import pytest
 
 from snapl_executor.models import ApplyResult, BatchResult, DryRunResult
 
+pytestmark = pytest.mark.unit
+
 _DEV_ID = UUID("00000000-0000-0000-0000-000000000001")
 
 

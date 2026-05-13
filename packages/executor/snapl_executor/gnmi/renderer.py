@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from jinja2 import Environment, FileSystemLoader, StrictUndefined, UndefinedError
+from jinja2 import Environment, FileSystemLoader, StrictUndefined, TemplateError
 
 if TYPE_CHECKING:
     from snapl_intent.models import DesiredState
@@ -37,7 +37,7 @@ class ConfigRenderer:
     def render(self, desired: DesiredState) -> dict[str, Any]:
         """Render all templates and merge into one payload dict.
 
-        Raises UndefinedError if a template references a missing variable.
+        Raises TemplateError if a template references a missing or undefined variable.
         """
         ctx = {
             "device": desired.device,
@@ -47,28 +47,23 @@ class ConfigRenderer:
 
         ifaces_raw: list[dict] = json.loads(self._env.get_template("interfaces.j2").render(**ctx))
         loopback: dict = json.loads(self._env.get_template("system.j2").render(**ctx))
-        bgp_raw: dict = json.loads(self._env.get_template("bgp.j2").render(**ctx))
 
-        all_interfaces = [*ifaces_raw, loopback]
-
-        payload: dict[str, Any] = {
-            "interface": all_interfaces,
-            "network-instance": [
+        payload: dict[str, Any] = {"interface": [*ifaces_raw, loopback]}
+        if desired.bgp_sessions:
+            bgp_raw: dict = json.loads(self._env.get_template("bgp.j2").render(**ctx))
+            payload["network-instance"] = [
                 {
                     "name": "default",
-                    "protocols": {
-                        "bgp": bgp_raw,
-                    },
+                    "protocols": {"bgp": bgp_raw},
                 }
-            ],
-        }
+            ]
         return payload
 
     def render_safe(self, desired: DesiredState) -> dict[str, Any]:
         """Render without raising — returns {_render_error: msg} on failure."""
         try:
             return self.render(desired)
-        except (UndefinedError, Exception) as exc:
+        except (TemplateError, json.JSONDecodeError) as exc:
             return {_RENDER_ERROR_KEY: str(exc)}
 
 

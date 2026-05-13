@@ -7,7 +7,7 @@ asyncio.to_thread so the Executor ABC surface stays async.
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from typing import Any, cast
 
 from pygnmi.client import gNMIclient
 
@@ -37,6 +37,6 @@ async def gnmi_set(
             insecure=insecure,
             timeout=timeout,
         ) as gc:
-            return gc.set(update=[("/", payload)])
+            return cast("dict[str, Any]", gc.set(update=[("/", payload)]))
 
     return await asyncio.to_thread(_blocking_set)
