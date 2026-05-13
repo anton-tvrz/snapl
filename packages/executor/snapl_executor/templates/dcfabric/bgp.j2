@@ -1,0 +1,14 @@
+{
+  "autonomous-system": {{ sessions[0].local_asn if sessions else 0 }},
+  "neighbor": [
+{% for s in sessions %}
+    {
+      "peer-address": "{{ s.peer_address }}",
+      "peer-as": {{ s.peer_asn }},
+      "admin-state": "{{ 'enable' if s.enabled else 'disable' }}"{% if s.peer_group %},
+      "peer-group": "{{ s.peer_group }}"{% endif %}
+
+    }{% if not loop.last %},{% endif %}
+{% endfor %}
+  ]
+}

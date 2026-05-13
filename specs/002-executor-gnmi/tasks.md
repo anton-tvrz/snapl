@@ -19,9 +19,9 @@
 
 **Purpose**: Package directory structure and test scaffolding
 
-- [ ] T001 Create package directory structure (gnmi/, templates/dcfabric/) inside packages/executor/snapl_executor/ and create empty __init__.py files for snapl_executor/gnmi/
-- [ ] T002 [P] Create test directory scaffolding with __init__.py (tests/unit/test_executor/__init__.py, tests/integration/test_executor/__init__.py)
-- [ ] T003 [P] Add shared executor test fixtures to tests/conftest.py — mock_gnmi_client (MagicMock with set method), dcfabric_desired_state (DesiredState with 2 interfaces and 1 BGP session from snapl_intent.models)
+- [X] T001 Create package directory structure (gnmi/, templates/dcfabric/) inside packages/executor/snapl_executor/ and create empty __init__.py files for snapl_executor/gnmi/
+- [X] T00X [P] Create test directory scaffolding with __init__.py (tests/unit/test_executor/__init__.py, tests/integration/test_executor/__init__.py)
+- [X] T00X [P] Add shared executor test fixtures to tests/conftest.py — mock_gnmi_client (MagicMock with set method), dcfabric_desired_state (DesiredState with 2 interfaces and 1 BGP session from snapl_intent.models)
 
 ---
 
@@ -33,15 +33,15 @@
 
 ### Tests (TDD — write first, verify they fail)
 
-- [ ] T004 [P] Write unit tests for result models (ApplyResult: success=True implies error=None, success=False implies error set; DryRunResult: no device change; BatchResult: succeeded+failed==total; all are frozen dataclasses/immutable) in tests/unit/test_executor/test_models.py
-- [ ] T005 [P] Write unit tests for Executor ABC contract enforcement (cannot instantiate Executor directly, concrete subclass missing any abstract method raises TypeError) in tests/unit/test_executor/test_abc.py
+- [X] T00X [P] Write unit tests for result models (ApplyResult: success=True implies error=None, success=False implies error set; DryRunResult: no device change; BatchResult: succeeded+failed==total; all are frozen dataclasses/immutable) in tests/unit/test_executor/test_models.py
+- [X] T00X [P] Write unit tests for Executor ABC contract enforcement (cannot instantiate Executor directly, concrete subclass missing any abstract method raises TypeError) in tests/unit/test_executor/test_abc.py
 
 ### Implementation
 
-- [ ] T006 [P] Implement exception hierarchy (ExecutorError base, ExecutorRenderError for fatal j2 syntax errors, ExecutorConfigError for invalid constructor args) in packages/executor/snapl_executor/exceptions.py
-- [ ] T007 [P] Implement result models (ApplyResult, DryRunResult, BatchResult) as frozen dataclasses with field invariants per data-model.md in packages/executor/snapl_executor/models.py
-- [ ] T008 Implement Executor ABC (apply, rollback, dry_run, apply_batch as @abstractmethod async def) per contracts/executor.md in packages/executor/snapl_executor/abc.py
-- [ ] T009 Update packages/executor/snapl_executor/__init__.py with placeholder exports (Executor ABC, result models, exceptions) — full exports finalised in T033
+- [X] T00X [P] Implement exception hierarchy (ExecutorError base, ExecutorRenderError for fatal j2 syntax errors, ExecutorConfigError for invalid constructor args) in packages/executor/snapl_executor/exceptions.py
+- [X] T00X [P] Implement result models (ApplyResult, DryRunResult, BatchResult) as frozen dataclasses with field invariants per data-model.md in packages/executor/snapl_executor/models.py
+- [X] T00X Implement Executor ABC (apply, rollback, dry_run, apply_batch as @abstractmethod async def) per contracts/executor.md in packages/executor/snapl_executor/abc.py
+- [X] T00X Update packages/executor/snapl_executor/__init__.py with placeholder exports (Executor ABC, result models, exceptions) — full exports finalised in T033
 
 **Checkpoint**: Foundation ready — ABC, models, exceptions all tested and passing. User story implementation can begin.
 
@@ -55,21 +55,21 @@
 
 ### Tests (TDD — write first, verify they fail)
 
-- [ ] T010 [P] [US1] Write unit tests for ConfigRenderer (load templates from templates/dcfabric/, render interfaces.j2 with 2-interface DesiredState produces correct SR Linux JSON keys, render system.j2 produces loopback address, missing required variable returns render_error string not exception) in tests/unit/test_executor/test_renderer.py
-- [ ] T011 [P] [US1] Write unit tests for GnmiExecutor.apply() with mocked gNMIclient (success path: mock SET returns success → ApplyResult success=True with payload and duration_ms; connection error via side_effect → ApplyResult success=False error set; device rejects payload → ApplyResult success=False; is_rollback=False on apply) in tests/unit/test_executor/test_executor.py
+- [X] T010 [P] [US1] Write unit tests for ConfigRenderer (load templates from templates/dcfabric/, render interfaces.j2 with 2-interface DesiredState produces correct SR Linux JSON keys, render system.j2 produces loopback address, missing required variable returns render_error string not exception) in tests/unit/test_executor/test_renderer.py
+- [X] T011 [P] [US1] Write unit tests for GnmiExecutor.apply() with mocked gNMIclient (success path: mock SET returns success → ApplyResult success=True with payload and duration_ms; connection error via side_effect → ApplyResult success=False error set; device rejects payload → ApplyResult success=False; is_rollback=False on apply) in tests/unit/test_executor/test_executor.py
 
 ### Implementation
 
-- [ ] T012 [US1] Implement SR Linux interface template (renders Interface list into interface[]/subinterface[]/ipv4/address SR Linux YANG JSON structure for each enabled interface with ip_address set) in packages/executor/snapl_executor/templates/dcfabric/interfaces.j2
-- [ ] T013 [US1] Implement SR Linux system template (renders device loopback lo0/subinterface[index=0]/ipv4/address from management_address field; sets system/name to device name) in packages/executor/snapl_executor/templates/dcfabric/system.j2
-- [ ] T014 [US1] Implement gNMI client wrapper (gNMIclient as per-call context manager, wraps blocking set() call for asyncio.to_thread, enforces configurable timeout defaulting to 30s, maps gRPC exceptions to error strings) in packages/executor/snapl_executor/gnmi/client.py
-- [ ] T015 [US1] Implement ConfigRenderer (discovers Jinja2 templates from package templates/<use_case>/ directory, loads Environment with autoescape=False, render(desired) merges rendered interfaces + system into one dict payload for gNMI root SET, catches UndefinedError as render_error string) in packages/executor/snapl_executor/gnmi/renderer.py
-- [ ] T016 [US1] Implement GnmiExecutor scaffolding and apply() (constructor accepts host, port, username, password, insecure, timeout; apply() calls ConfigRenderer.render() then asyncio.to_thread(gnmi_set), records wall-clock duration_ms, returns ApplyResult; no exception raised for device-side errors) in packages/executor/snapl_executor/gnmi/executor.py
+- [X] T012 [US1] Implement SR Linux interface template (renders Interface list into interface[]/subinterface[]/ipv4/address SR Linux YANG JSON structure for each enabled interface with ip_address set) in packages/executor/snapl_executor/templates/dcfabric/interfaces.j2
+- [X] T013 [US1] Implement SR Linux system template (renders device loopback lo0/subinterface[index=0]/ipv4/address from management_address field; sets system/name to device name) in packages/executor/snapl_executor/templates/dcfabric/system.j2
+- [X] T014 [US1] Implement gNMI client wrapper (gNMIclient as per-call context manager, wraps blocking set() call for asyncio.to_thread, enforces configurable timeout defaulting to 30s, maps gRPC exceptions to error strings) in packages/executor/snapl_executor/gnmi/client.py
+- [X] T015 [US1] Implement ConfigRenderer (discovers Jinja2 templates from package templates/<use_case>/ directory, loads Environment with autoescape=False, render(desired) merges rendered interfaces + system into one dict payload for gNMI root SET, catches UndefinedError as render_error string) in packages/executor/snapl_executor/gnmi/renderer.py
+- [X] T016 [US1] Implement GnmiExecutor scaffolding and apply() (constructor accepts host, port, username, password, insecure, timeout; apply() calls ConfigRenderer.render() then asyncio.to_thread(gnmi_set), records wall-clock duration_ms, returns ApplyResult; no exception raised for device-side errors) in packages/executor/snapl_executor/gnmi/executor.py
 
 ### Integration Tests (require running Containerlab SR Linux node)
 
-- [ ] T017 [US1] Create integration conftest.py for executor tests (SRLINUX_HOST/PORT/USERNAME/PASSWORD env vars with Containerlab defaults; skip fixture if node unreachable via probe) in tests/integration/test_executor/conftest.py
-- [ ] T018 [US1] Write integration test for apply() against live SR Linux node (build DesiredState from a seeded spine device, call apply(), assert result.success=True and payload non-empty) in tests/integration/test_executor/test_gnmi_apply.py
+- [X] T017 [US1] Create integration conftest.py for executor tests (SRLINUX_HOST/PORT/USERNAME/PASSWORD env vars with Containerlab defaults; skip fixture if node unreachable via probe) in tests/integration/test_executor/conftest.py
+- [X] T018 [US1] Write integration test for apply() against live SR Linux node (build DesiredState from a seeded spine device, call apply(), assert result.success=True and payload non-empty) in tests/integration/test_executor/test_gnmi_apply.py
 
 **Checkpoint**: US1 unit tests pass. apply() renders correctly and returns structured ApplyResult for both success and failure paths. Integration test validates against real SR Linux node.
 
@@ -83,16 +83,16 @@
 
 ### Tests (TDD — write first, verify they fail)
 
-- [ ] T019 [P] [US2] Write unit tests for GnmiExecutor.dry_run() (success: returns DryRunResult success=True payload=dict, mock confirms gNMIclient.set() never called; render error: returns DryRunResult success=False render_error set, no exception raised; result clearly not a committed change) in tests/unit/test_executor/test_executor.py (append to existing)
-- [ ] T020 [P] [US2] Write unit tests for ConfigRenderer render-error path (DesiredState with required field None/missing → render() returns dict with render_error key rather than raising; valid DesiredState with empty interface list → renders empty interface list not error) in tests/unit/test_executor/test_renderer.py (append to existing)
+- [X] T019 [P] [US2] Write unit tests for GnmiExecutor.dry_run() (success: returns DryRunResult success=True payload=dict, mock confirms gNMIclient.set() never called; render error: returns DryRunResult success=False render_error set, no exception raised; result clearly not a committed change) in tests/unit/test_executor/test_executor.py (append to existing)
+- [X] T020 [P] [US2] Write unit tests for ConfigRenderer render-error path (DesiredState with required field None/missing → render() returns dict with render_error key rather than raising; valid DesiredState with empty interface list → renders empty interface list not error) in tests/unit/test_executor/test_renderer.py (append to existing)
 
 ### Implementation
 
-- [ ] T021 [US2] Implement GnmiExecutor.dry_run() (call ConfigRenderer.render(), on render_error return DryRunResult success=False; on success return DryRunResult success=True payload=payload; no gNMI connection opened) in packages/executor/snapl_executor/gnmi/executor.py (append)
+- [X] T021 [US2] Implement GnmiExecutor.dry_run() (call ConfigRenderer.render(), on render_error return DryRunResult success=False; on success return DryRunResult success=True payload=payload; no gNMI connection opened) in packages/executor/snapl_executor/gnmi/executor.py (append)
 
 ### Integration Tests
 
-- [ ] T022 [US2] Add dry_run integration test (call dry_run() with live SR Linux node fixture, assert DryRunResult.success=True and payload non-empty; verify by calling GET after dry_run that running config unchanged) in tests/integration/test_executor/test_gnmi_apply.py (append)
+- [X] T022 [US2] Add dry_run integration test (call dry_run() with live SR Linux node fixture, assert DryRunResult.success=True and payload non-empty; verify by calling GET after dry_run that running config unchanged) in tests/integration/test_executor/test_gnmi_apply.py (append)
 
 **Checkpoint**: US2 complete. dry_run() is safe — catches render errors, never opens a gNMI connection. Satisfies SC-003 (100% render errors caught before gNMI).
 
@@ -106,15 +106,15 @@
 
 ### Tests (TDD — write first, verify they fail)
 
-- [ ] T023 [P] [US3] Write unit tests for GnmiExecutor.rollback() (success path: mock SET succeeds → ApplyResult is_rollback=True success=True; failure path: mock raises error → ApplyResult is_rollback=True success=False error set; is_rollback distinguishes from apply result) in tests/unit/test_executor/test_executor.py (append)
+- [X] T023 [P] [US3] Write unit tests for GnmiExecutor.rollback() (success path: mock SET succeeds → ApplyResult is_rollback=True success=True; failure path: mock raises error → ApplyResult is_rollback=True success=False error set; is_rollback distinguishes from apply result) in tests/unit/test_executor/test_executor.py (append)
 
 ### Implementation
 
-- [ ] T024 [US3] Implement GnmiExecutor.rollback() (identical to apply() except is_rollback=True in returned ApplyResult; reuses same gNMI SET and renderer path) in packages/executor/snapl_executor/gnmi/executor.py (append)
+- [X] T024 [US3] Implement GnmiExecutor.rollback() (identical to apply() except is_rollback=True in returned ApplyResult; reuses same gNMI SET and renderer path) in packages/executor/snapl_executor/gnmi/executor.py (append)
 
 ### Integration Tests
 
-- [ ] T025 [US3] Add rollback integration test (apply a desired state to live SR Linux, then call rollback() with alternate desired state, assert rollback result.is_rollback=True and success=True) in tests/integration/test_executor/test_gnmi_apply.py (append)
+- [X] T025 [US3] Add rollback integration test (apply a desired state to live SR Linux, then call rollback() with alternate desired state, assert rollback result.is_rollback=True and success=True) in tests/integration/test_executor/test_gnmi_apply.py (append)
 
 **Checkpoint**: US3 complete. rollback() is semantically apply() + is_rollback=True flag. Callers and Orchestrator saga steps can distinguish rollback from normal apply in audit logs.
 
@@ -128,16 +128,16 @@
 
 ### Tests (TDD — write first, verify they fail)
 
-- [ ] T026 [P] [US4] Write unit tests for GnmiExecutor.apply_batch() (3 devices all succeed → BatchResult total=3 succeeded=3 failed=0; 1 of 3 fails → succeeded=2 failed=1 failure captured in results dict not raised; empty list raises ValueError; duplicate device IDs raises ValueError) in tests/unit/test_executor/test_executor.py (append)
+- [X] T026 [P] [US4] Write unit tests for GnmiExecutor.apply_batch() (3 devices all succeed → BatchResult total=3 succeeded=3 failed=0; 1 of 3 fails → succeeded=2 failed=1 failure captured in results dict not raised; empty list raises ValueError; duplicate device IDs raises ValueError) in tests/unit/test_executor/test_executor.py (append)
 
 ### Implementation
 
-- [ ] T027 [US4] Implement SR Linux BGP template (renders BGP neighbor list: network-instance[name=default]/protocols/bgp/autonomous-system and /neighbor entries from BGPSession list including peer-address, peer-as, enabled) in packages/executor/snapl_executor/templates/dcfabric/bgp.j2
-- [ ] T028 [US4] Implement GnmiExecutor.apply_batch() (validate no duplicate device IDs; dispatch asyncio.gather() across per-device apply() calls; collect results into BatchResult with succeeded/failed counts; never raises for per-device failures) in packages/executor/snapl_executor/gnmi/executor.py (append)
+- [X] T027 [US4] Implement SR Linux BGP template (renders BGP neighbor list: network-instance[name=default]/protocols/bgp/autonomous-system and /neighbor entries from BGPSession list including peer-address, peer-as, enabled) in packages/executor/snapl_executor/templates/dcfabric/bgp.j2
+- [X] T028 [US4] Implement GnmiExecutor.apply_batch() (validate no duplicate device IDs; dispatch asyncio.gather() across per-device apply() calls; collect results into BatchResult with succeeded/failed counts; never raises for per-device failures) in packages/executor/snapl_executor/gnmi/executor.py (append)
 
 ### Integration Tests
 
-- [ ] T029 [US4] Add batch apply integration test (build DesiredState list for 2 spine nodes from seeded dcfabric topology, call apply_batch(), assert BatchResult.total=2 succeeded=2) in tests/integration/test_executor/test_gnmi_apply.py (append)
+- [X] T029 [US4] Add batch apply integration test (build DesiredState list for 2 spine nodes from seeded dcfabric topology, call apply_batch(), assert BatchResult.total=2 succeeded=2) in tests/integration/test_executor/test_gnmi_apply.py (append)
 
 **Checkpoint**: US4 complete. Batch apply dispatches across all devices in parallel, captures per-device failures without propagating them as exceptions, satisfying SC-004.
 
@@ -147,13 +147,13 @@
 
 **Purpose**: Performance assertions, export completeness, lint/format, final validation
 
-- [ ] T030 [P] Add SC-001 performance assertion to integration tests (single apply() completes in <30s for a reachable device; measure with time.monotonic()) in tests/integration/test_executor/test_gnmi_apply.py (append)
-- [ ] T031 [P] Add SC-007 timeout assertion to integration test (apply() with host=127.0.0.1:19999 returns ApplyResult.success=False within 30s; no hanging) in tests/integration/test_executor/test_gnmi_apply.py (append)
-- [ ] T032 [P] Add SC-002 dry_run render performance assertion (<1s for any valid DesiredState) to unit tests in tests/unit/test_executor/test_renderer.py (append)
-- [ ] T033 Finalise package exports in packages/executor/snapl_executor/__init__.py (Executor, GnmiExecutor, ApplyResult, DryRunResult, BatchResult, ExecutorError, ExecutorRenderError, ExecutorConfigError)
-- [ ] T034 [P] Verify lint and format clean: uv run invoke lint && uv run invoke format — zero errors
-- [ ] T035 Verify all unit tests pass with ≥80% coverage: uv run pytest tests/unit/test_executor/ -m unit -v --cov=snapl_executor
-- [ ] T036 Run quickstart.md validation end-to-end against live SR Linux node (dry_run → apply → rollback → batch apply; all operations return expected result types; no exceptions from device-side errors)
+- [X] T030 [P] Add SC-001 performance assertion to integration tests (single apply() completes in <30s for a reachable device; measure with time.monotonic()) in tests/integration/test_executor/test_gnmi_apply.py (append)
+- [X] T031 [P] Add SC-007 timeout assertion to integration test (apply() with host=127.0.0.1:19999 returns ApplyResult.success=False within 30s; no hanging) in tests/integration/test_executor/test_gnmi_apply.py (append)
+- [X] T032 [P] Add SC-002 dry_run render performance assertion (<1s for any valid DesiredState) to unit tests in tests/unit/test_executor/test_renderer.py (append)
+- [X] T033 Finalise package exports in packages/executor/snapl_executor/__init__.py (Executor, GnmiExecutor, ApplyResult, DryRunResult, BatchResult, ExecutorError, ExecutorRenderError, ExecutorConfigError)
+- [X] T034 [P] Verify lint and format clean: uv run invoke lint && uv run invoke format — zero errors
+- [X] T035 Verify all unit tests pass with ≥80% coverage: uv run pytest tests/unit/test_executor/ -m unit -v --cov=snapl_executor
+- [X] T036 Run quickstart.md validation end-to-end against live SR Linux node (dry_run → apply → rollback → batch apply; all operations return expected result types; no exceptions from device-side errors)
 
 ---
 

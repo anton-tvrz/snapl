@@ -1,0 +1,18 @@
+{
+  "name": "lo0",
+  "admin-state": "enable",
+  "subinterface": [
+    {
+      "index": 0,
+      "admin-state": "enable",
+      "ipv4": {
+        "admin-state": "enable",
+        "address": [
+          {
+            "ip-prefix": "{{ device.management_address }}/32"
+          }
+        ]
+      }
+    }
+  ]
+}

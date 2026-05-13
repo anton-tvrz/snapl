@@ -43,8 +43,10 @@ Each package under `packages/` maps to one NAF block:
 - `presentation` — CLI interface
 
 ## Recent Changes
+- 002-executor-gnmi: Added Python 3.12+ + pygnmi>=0.8, grpcio>=1.60, jinja2>=3.1, pydantic>=2.5, snapl-intent (workspace dep)
 - 001-naf-intent-sot: Added Python 3.12+ + infrahub-sdk[ctl]>=1.0.0, pydantic>=2.5, httpx>=0.25, pyyaml>=6.0
 
 ## Active Technologies
 - Python 3.12+ + infrahub-sdk[ctl]>=1.0.0, pydantic>=2.5, httpx>=0.25, pyyaml>=6.0 (001-naf-intent-sot)
-- Infrahub (graph-native SoT, accessed via async Python SDK / GraphQL) (001-naf-intent-sot)
+- Python 3.12+ + pygnmi>=0.8, grpcio>=1.60, jinja2>=3.1, pydantic>=2.5, snapl-intent (workspace dep) (002-executor-gnmi)
+- None — Executor is stateless; reads from Intent, writes to devices (002-executor-gnmi)
