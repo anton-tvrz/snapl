@@ -25,7 +25,7 @@ jobs:
     if: github.event.action == 'opened'
     steps:
       - name: Apply labels and welcome comment
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             // Check if the issue has the "bug" label (from bug_report.yml template)
