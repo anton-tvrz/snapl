@@ -32,6 +32,12 @@ class CollectResult:
     duration_ms: int = 0
     timestamp: datetime = field(default_factory=_utc_now)
 
+    def __post_init__(self) -> None:
+        if self.success and self.error is not None:
+            raise ValueError("error must be None when success=True")
+        if not self.success and not self.error:
+            raise ValueError("error must be set when success=False")
+
 
 @dataclass(frozen=True)
 class BatchCollectResult:
@@ -44,3 +50,7 @@ class BatchCollectResult:
     total: int = 0
     succeeded: int = 0
     failed: int = 0
+
+    def __post_init__(self) -> None:
+        if self.succeeded + self.failed != self.total:
+            raise ValueError(f"succeeded ({self.succeeded}) + failed ({self.failed}) must equal total ({self.total})")

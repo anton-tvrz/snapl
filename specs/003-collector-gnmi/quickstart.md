@@ -79,11 +79,22 @@ asyncio.run(main())
 
 ```python
 import asyncio
+from uuid import uuid4
+
 from snapl_collector.gnmi.collector import GnmiCollector
+from snapl_intent.models import Device
 
 async def main():
+    device = Device(
+        id=uuid4(),
+        name="spine-01",
+        management_address="clab-dcfabric-spine-01",
+        role="spine",
+        use_case="dcfabric",
+        platform="nokia-srlinux",
+    )
     collector = GnmiCollector(
-        host="clab-dcfabric-spine-01",
+        host=device.management_address,
         port=57400,
         username="admin",
         password="<lab-password>",  # pragma: allowlist secret
@@ -112,24 +123,20 @@ asyncio.run(main())
 
 ```python
 import asyncio
+
 from snapl_collector.gnmi.collector import GnmiCollector
 
 async def collect_fabric(devices, paths):
-    # Each GnmiCollector is scoped to one device
-    collectors = {
-        device.id: GnmiCollector(
-            host=device.management_address,
-            port=57400,
-            username="admin",
-            password="<lab-password>",  # pragma: allowlist secret
-            insecure=True,
-        )
-        for device in devices
-    }
+    # A single GnmiCollector drives the batch; collect_batch() creates
+    # per-device collectors internally using each device's management_address.
+    collector = GnmiCollector(
+        host="unused-for-batch",
+        port=57400,
+        username="admin",
+        password="<lab-password>",  # pragma: allowlist secret
+        insecure=True,
+    )
 
-    # collect_batch dispatches concurrent GETs across all devices
-    # Use any collector — collect_batch takes the full device list
-    collector = next(iter(collectors.values()))
     batch = await collector.collect_batch(
         devices=devices,
         paths=["/interface", "/network-instance[name=default]/protocols/bgp/neighbor"],

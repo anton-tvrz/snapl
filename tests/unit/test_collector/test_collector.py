@@ -233,13 +233,12 @@ class TestCollect:
     async def test_empty_paths_raises_value_error_before_connection(self, make_device):
         device = make_device("spine-01")
         collector = _make_collector()
-        mock_get = AsyncMock()
         with (
-            patch("snapl_collector.gnmi.collector.gnmi_get", new_callable=AsyncMock, return_value=mock_get),
+            patch("snapl_collector.gnmi.collector.gnmi_get", new_callable=AsyncMock) as mock_gnmi_get,
             pytest.raises(ValueError, match="paths"),
         ):
             await collector.collect(device, paths=[])
-        mock_get.assert_not_called()
+        mock_gnmi_get.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_malformed_response_returns_parse_error(self, make_device):
