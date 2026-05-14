@@ -1741,7 +1741,7 @@ dependencies = [
     { name = "grpcio" },
     { name = "pydantic" },
     { name = "pygnmi" },
-    { name = "pyyaml" },
+    { name = "snapl-intent" },
 ]
 
 [package.metadata]
@@ -1749,7 +1749,7 @@ requires-dist = [
     { name = "grpcio", specifier = ">=1.60" },
     { name = "pydantic", specifier = ">=2.5" },
     { name = "pygnmi", specifier = ">=0.8" },
-    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "snapl-intent", editable = "packages/intent" },
 ]
 
 [[package]]

@@ -273,3 +273,33 @@ def make_desired():
         return DesiredState(device=device, interfaces=ifaces, bgp_sessions=sessions)
 
     return _factory
+
+
+# ---------------------------------------------------------------------------
+# Collector module fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def make_device():
+    """Factory fixture — returns a callable that builds a snapl_intent Device.
+
+    Usage: make_device("spine-01") or make_device("spine-01", device_id=uuid, address="10.0.0.1")
+    """
+    from snapl_intent.models import Device
+
+    def _factory(
+        name: str,
+        device_id: UUID | None = None,
+        address: str = "127.0.0.1",
+    ) -> Device:
+        return Device(
+            id=device_id or uuid4(),
+            name=name,
+            management_address=address,
+            role="spine",
+            use_case="dcfabric",
+            platform="nokia-srlinux",
+        )
+
+    return _factory
