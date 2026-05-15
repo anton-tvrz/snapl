@@ -1800,15 +1800,15 @@ version = "0.1.0"
 source = { editable = "packages/observability" }
 dependencies = [
     { name = "pydantic" },
-    { name = "pyyaml" },
     { name = "snapl-collector" },
+    { name = "snapl-intent" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "pydantic", specifier = ">=2.5" },
-    { name = "pyyaml", specifier = ">=6.0" },
     { name = "snapl-collector", editable = "packages/collector" },
+    { name = "snapl-intent", editable = "packages/intent" },
 ]
 
 [[package]]

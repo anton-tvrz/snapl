@@ -5,9 +5,9 @@ description = "NAF Observability building block — drift detection, metrics, au
 requires-python = ">=3.12"
 license = "Apache-2.0"
 dependencies = [
+    "snapl-intent",
     "snapl-collector",
     "pydantic>=2.5",
-    "pyyaml>=6.0",
 ]
 
 [build-system]
