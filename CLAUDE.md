@@ -43,10 +43,10 @@ Each package under `packages/` maps to one NAF block:
 - `presentation` — CLI interface
 
 ## Recent Changes
-- 004-observability-drift: Added Python 3.12+ + pydantic>=2.5, snapl-intent (workspace dep), snapl-collector (workspace dep)
+- 005-orchestrator-temporal: Added Python 3.12+ + temporalio>=1.7, pydantic>=2.5, aiosqlite>=0.19, snapl-intent (workspace dep), snapl-executor (workspace dep), snapl-collector (workspace dep), snapl-observability (workspace dep)
 - 003-collector-gnmi: Added Python 3.12+ + pygnmi>=0.8, grpcio>=1.60, pydantic>=2.5, snapl-intent (workspace dep)
 - 002-executor-gnmi: Added Python 3.12+ + pygnmi>=0.8, grpcio>=1.60, jinja2>=3.1, pydantic>=2.5, snapl-intent (workspace dep)
 
 ## Active Technologies
-- Python 3.12+ + pydantic>=2.5, snapl-intent (workspace dep), snapl-collector (workspace dep) (004-observability-drift)
-- In-memory `AuditLog` for this iteration; durable persistence is out of scope and deferred to the Orchestrator (004-observability-drift)
+- Python 3.12+ + temporalio>=1.7, pydantic>=2.5, aiosqlite>=0.19, snapl-intent (workspace dep), snapl-executor (workspace dep), snapl-collector (workspace dep), snapl-observability (workspace dep) (005-orchestrator-temporal)
+- SQLite (file-backed, async via aiosqlite) for the audit log projection; Temporal's own event history (provided by the Temporal cluster, not by snapl) for workflow durability (005-orchestrator-temporal)
