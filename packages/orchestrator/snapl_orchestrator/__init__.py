@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from snapl_orchestrator.audit.abc import AuditLog
 from snapl_orchestrator.audit.memory import InMemoryAuditLog
+from snapl_orchestrator.audit.sqlite import SqliteAuditLog
 from snapl_orchestrator.exceptions import (
     AuditLogError,
     OrchestratorConfigError,
@@ -28,6 +29,7 @@ __all__ = [
     "OrchestratorConfigError",
     "OrchestratorError",
     "ReconcileResult",
+    "SqliteAuditLog",
     "WorkflowReason",
     "WorkflowResult",
 ]
