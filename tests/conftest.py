@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
@@ -339,6 +340,56 @@ def make_device():
             role="spine",
             use_case="dcfabric",
             platform="nokia-srlinux",
+        )
+
+    return _factory
+
+
+# ---------------------------------------------------------------------------
+# Orchestrator module fixtures
+# ---------------------------------------------------------------------------
+
+
+_DEFAULT_AUDIT_TARGET = UUID("00000000-0000-0000-0000-000000000001")
+
+
+@pytest.fixture
+def make_audit_event():
+    """Factory fixture — returns a callable that builds an AuditEvent with defaults.
+
+    Usage:
+        make_audit_event(event_type=AuditEventType.WORKFLOW_STARTED)
+        make_audit_event(activity_name="apply_config", outcome="success")
+    """
+    from datetime import datetime
+
+    from snapl_orchestrator.models import AuditEvent, AuditEventType
+
+    def _factory(
+        *,
+        event_type: AuditEventType = AuditEventType.WORKFLOW_STARTED,
+        workflow_id: str = "deploy-intent-00000000-0000-0000-0000-000000000001",
+        workflow_type: str = "DeployIntent",
+        target_id: UUID | str | None = _DEFAULT_AUDIT_TARGET,
+        activity_name: str | None = None,
+        outcome: str | None = None,
+        reason=None,
+        payload: dict | None = None,
+        timestamp: datetime | None = None,
+        actor: str | None = None,
+    ) -> AuditEvent:
+        return AuditEvent(
+            event_id=uuid4(),
+            workflow_id=workflow_id,
+            workflow_type=workflow_type,
+            target_id=target_id,
+            event_type=event_type,
+            activity_name=activity_name,
+            outcome=outcome,
+            reason=reason,
+            payload=payload or {},
+            timestamp=timestamp or datetime.now(tz=UTC),
+            actor=actor,
         )
 
     return _factory
