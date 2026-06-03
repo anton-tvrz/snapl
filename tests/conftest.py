@@ -276,6 +276,45 @@ def make_desired():
 
 
 # ---------------------------------------------------------------------------
+# Observability module fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def make_collect_result():
+    """Factory fixture — returns a callable that builds a CollectResult.
+
+    Usage:
+        make_collect_result(device, success=True, data={"/interface": [...]})
+        make_collect_result(device, success=False, error="connectivity error")
+    """
+    from snapl_collector.models import CollectResult
+
+    def _factory(
+        device,
+        *,
+        success: bool = True,
+        data: dict | None = None,
+        error: str | None = None,
+        paths: list[str] | None = None,
+    ) -> CollectResult:
+        if success and error is not None:
+            raise ValueError("error must be None when success=True")
+        if not success and error is None:
+            error = "synthetic error"
+        return CollectResult(
+            device_id=device.id,
+            device_name=device.name,
+            success=success,
+            data=data if data is not None else ({} if not success else {"/": {}}),
+            paths=paths if paths is not None else ["/"],
+            error=error,
+        )
+
+    return _factory
+
+
+# ---------------------------------------------------------------------------
 # Collector module fixtures
 # ---------------------------------------------------------------------------
 
