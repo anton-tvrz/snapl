@@ -18,17 +18,23 @@ from snapl_orchestrator.models import (
     WorkflowReason,
     WorkflowResult,
 )
+from snapl_orchestrator.workflows.deploy_intent import DeployIntentWorkflow
+from snapl_orchestrator.workflows.reconcile_devices import ReconcileDevicesWorkflow
+from snapl_orchestrator.workflows.scan_drift import ScanDriftWorkflow
 
 __all__ = [
     "AuditEvent",
     "AuditEventType",
     "AuditLog",
     "AuditLogError",
+    "DeployIntentWorkflow",
     "DriftScanResult",
     "InMemoryAuditLog",
     "OrchestratorConfigError",
     "OrchestratorError",
+    "ReconcileDevicesWorkflow",
     "ReconcileResult",
+    "ScanDriftWorkflow",
     "SqliteAuditLog",
     "WorkflowReason",
     "WorkflowResult",
