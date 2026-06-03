@@ -1,8 +1,8 @@
 """Unit tests for ReconcileDevicesWorkflow.
 
-Workflow-environment tests are skipped pending the harness fix (see
-test_workflow_deploy_intent.py for context). The non-workflow validation tests
-(input validation, model invariants) run normally.
+Input-validation and class-registration tests run normally. The full
+WorkflowEnvironment per-device outcome test is a placeholder — real coverage
+is tracked in #11 (see test_workflow_deploy_intent.py for the reference pattern).
 """
 
 from __future__ import annotations
@@ -32,13 +32,7 @@ async def test_reconcile_devices_workflow_rejects_empty_device_ids() -> None:
         await wf.run([])
 
 
-@pytest.mark.skip(
-    reason=(
-        "ReconcileDevicesWorkflow tests rely on the same WorkflowEnvironment harness "
-        "that currently hangs on full activity graphs. Tracked alongside DeployIntent "
-        "workflow tests; Phase 7 integration tests exercise the full graph."
-    ),
-)
+@pytest.mark.skip(reason="Placeholder — real WorkflowEnvironment coverage tracked in #11")
 def test_reconcile_devices_workflow_per_device_outcomes() -> None:
     """Tracked: child workflow per device with USE_EXISTING serialization."""
     _ = uuid4()  # placeholder to mark referenced symbol

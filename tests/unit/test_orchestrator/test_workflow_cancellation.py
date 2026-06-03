@@ -1,4 +1,4 @@
-"""Cancellation handling — workflow tests skipped pending harness fix."""
+"""Cancellation handling — placeholders; real coverage tracked in #12."""
 
 from __future__ import annotations
 
@@ -6,15 +6,7 @@ import pytest
 
 pytestmark = [
     pytest.mark.unit,
-    pytest.mark.skip(
-        reason=(
-            "Cancellation tests use the same WorkflowEnvironment harness as the "
-            "DeployIntentWorkflow happy-path tests, which hangs on full activity "
-            "graphs. Smoke tests in test_workflow_smoke.py prove plumbing works. "
-            "Phase 7 integration tests will validate cancellation against a live "
-            "Temporal cluster."
-        ),
-    ),
+    pytest.mark.skip(reason="Placeholder — real WorkflowEnvironment coverage tracked in #12"),
 ]
 
 

@@ -25,6 +25,7 @@ from snapl_orchestrator.activities.intent import (
 from snapl_orchestrator.activities.observability import detect_drift
 from snapl_orchestrator.audit.sqlite import SqliteAuditLog
 from snapl_orchestrator.exceptions import OrchestratorConfigError
+from snapl_orchestrator.worker.sandbox import build_workflow_runner
 from snapl_orchestrator.workflows.deploy_intent import DeployIntentWorkflow
 from snapl_orchestrator.workflows.reconcile_devices import ReconcileDevicesWorkflow
 from snapl_orchestrator.workflows.scan_drift import ScanDriftWorkflow
@@ -65,6 +66,7 @@ async def run_worker(*, activities: Activities | None = None) -> None:
     worker = Worker(
         client,
         task_queue=task_queue,
+        workflow_runner=build_workflow_runner(),
         workflows=[
             DeployIntentWorkflow,
             ScanDriftWorkflow,

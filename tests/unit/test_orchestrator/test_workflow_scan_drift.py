@@ -1,4 +1,4 @@
-"""Unit tests for ScanDriftWorkflow — skipped pending workflow-test harness fix."""
+"""Unit tests for ScanDriftWorkflow — placeholders; real coverage tracked in #10."""
 
 from __future__ import annotations
 
@@ -6,15 +6,7 @@ import pytest
 
 pytestmark = [
     pytest.mark.unit,
-    pytest.mark.skip(
-        reason=(
-            "ScanDriftWorkflow tests use the same WorkflowEnvironment harness as "
-            "DeployIntentWorkflow, which hangs on full activity graphs in this "
-            "environment. Smoke tests in test_workflow_smoke.py prove each piece "
-            "works in isolation. Phase 7 integration tests will exercise the full "
-            "graph against a live Temporal cluster."
-        ),
-    ),
+    pytest.mark.skip(reason="Placeholder — real WorkflowEnvironment coverage tracked in #10"),
 ]
 
 

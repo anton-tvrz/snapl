@@ -25,21 +25,10 @@ from snapl_orchestrator.activities.observability import detect_drift
 from snapl_orchestrator.audit.memory import InMemoryAuditLog
 from snapl_orchestrator.exceptions import AuditLogError
 from snapl_orchestrator.models import AuditEventType, WorkflowReason
+from snapl_orchestrator.worker.sandbox import build_workflow_runner
 from snapl_orchestrator.workflows.deploy_intent import DeployIntentWorkflow
 
-pytestmark = [
-    pytest.mark.unit,
-    pytest.mark.skip(
-        reason=(
-            "DeployIntentWorkflow's full activity graph hangs in WorkflowEnvironment in "
-            "this environment. Smoke tests prove each piece works in isolation — see "
-            "test_workflow_smoke.py for the fetch + audit-event round-trips. Workflow "
-            "correctness is validated by the Phase 7 integration tests against a live "
-            "Temporal cluster. Tracked as follow-up; tests remain here as documentation "
-            "of the expected behavior."
-        ),
-    ),
-]
+pytestmark = pytest.mark.unit
 
 TASK_QUEUE = "test-orchestrator"
 
@@ -116,12 +105,15 @@ def _build_activities(
     observer=None,
     audit_log=None,
 ) -> Activities:
+    # NB: use `is None`, not `or` — an empty InMemoryAuditLog is falsy (it defines
+    # __len__), so `audit_log or InMemoryAuditLog()` would silently discard a passed-in
+    # but still-empty log and append to a throwaway instance.
     return Activities(
-        intent_store=intent_store or MagicMock(),
-        executor=executor or MagicMock(),
-        collector=collector or MagicMock(),
-        observer=observer or MagicMock(),
-        audit_log=audit_log or InMemoryAuditLog(),
+        intent_store=intent_store if intent_store is not None else MagicMock(),
+        executor=executor if executor is not None else MagicMock(),
+        collector=collector if collector is not None else MagicMock(),
+        observer=observer if observer is not None else MagicMock(),
+        audit_log=audit_log if audit_log is not None else InMemoryAuditLog(),
     )
 
 
@@ -137,6 +129,7 @@ async def _run_with(env: WorkflowEnvironment, deps: Activities, device_id: _uuid
         env.client,
         task_queue=TASK_QUEUE,
         workflows=[DeployIntentWorkflow],
+        workflow_runner=build_workflow_runner(),
         activities=[
             fetch_desired_state,
             apply_config,
@@ -346,5 +339,12 @@ async def test_audit_log_failure_yields_audit_failed_terminal(dcfabric_desired_s
                 device.id,
             )
     # The workflow propagates the failure of the audit activity as a WorkflowFailureError
-    # whose cause carries the AuditLogError detail.
-    assert "audit" in str(excinfo.value).lower() or "disk" in str(excinfo.value).lower()
+    # whose *cause chain* (ActivityError → ApplicationError) carries the AuditLogError
+    # detail — the top-level message is just "Workflow execution failed".
+    chain = []
+    err: BaseException | None = excinfo.value
+    while err is not None:
+        chain.append(str(err))
+        err = err.__cause__
+    joined = " ".join(chain).lower()
+    assert "audit" in joined or "disk" in joined
