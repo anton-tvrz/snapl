@@ -4,10 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    from uuid import UUID
+from typing import Any
+from uuid import UUID  # noqa: TC003 — runtime import: pydantic/Temporal resolve across workflow boundary
 
 
 def _utc_now() -> datetime:

@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(uv run pytest tests/unit/*)",
+      "Bash(uv run invoke lint)",
+      "Bash(uv run ruff check *)",
+      "Bash(uv run invoke test-unit)",
+      "Bash(uv run yamllint *)",
+      "Bash(uv run invoke backend.test-unit)"
+    ]
+  }
+}
