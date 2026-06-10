@@ -123,7 +123,7 @@ def _build_activities(states: list, *, drifted_ids: set | None = None) -> Activi
     executor.apply = AsyncMock(side_effect=lambda desired: _apply(desired.device))
     collector = MagicMock()
     collector.collect = AsyncMock(side_effect=lambda device, _paths: _collect(device))
-    collector.get_running_config = AsyncMock(side_effect=lambda device: _collect(device))
+    collector.get_running_config = AsyncMock(side_effect=_collect)
     observer = MagicMock()
     observer.detect_drift = AsyncMock(side_effect=_detect)
 

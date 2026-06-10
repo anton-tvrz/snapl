@@ -123,7 +123,7 @@ async def test_all_clean_returns_zero_drift(make_desired) -> None:
     states = [make_desired(f"spine-0{i}") for i in range(1, 4)]
     audit = InMemoryAuditLog()
     collector = MagicMock()
-    collector.get_running_config = AsyncMock(side_effect=lambda d: _collect(d))
+    collector.get_running_config = AsyncMock(side_effect=_collect)
     observer = MagicMock()
     observer.detect_drift = AsyncMock(side_effect=lambda desired, _c: _report(desired.device, DriftStatus.CLEAN))
 
@@ -149,7 +149,7 @@ async def test_one_drifted_device_identified(make_desired) -> None:
     drifted_device = states[1].device
     audit = InMemoryAuditLog()
     collector = MagicMock()
-    collector.get_running_config = AsyncMock(side_effect=lambda d: _collect(d))
+    collector.get_running_config = AsyncMock(side_effect=_collect)
 
     def _detect(desired, _c) -> DriftReport:
         if desired.device.id == drifted_device.id:
@@ -223,7 +223,7 @@ async def test_records_started_and_terminated_audit_events(make_desired) -> None
     states = [make_desired("spine-01")]
     audit = InMemoryAuditLog()
     collector = MagicMock()
-    collector.get_running_config = AsyncMock(side_effect=lambda d: _collect(d))
+    collector.get_running_config = AsyncMock(side_effect=_collect)
     observer = MagicMock()
     observer.detect_drift = AsyncMock(side_effect=lambda desired, _c: _report(desired.device, DriftStatus.CLEAN))
 
