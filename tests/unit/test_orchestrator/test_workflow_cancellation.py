@@ -82,7 +82,12 @@ def _install_blocking_intent(state, audit, started: asyncio.Event) -> None:
 
 
 async def _start_block_cancel(workflow_run, arg, *, workflows, started, task_queue, wf_id):
-    """Start a workflow, wait until its activity has begun, cancel, return the result."""
+    """Start a workflow, wait until its activity has begun, cancel, return the outcome.
+
+    Returns the workflow result, or the raised exception for workflows that
+    audit and re-raise on cancellation (reconcile) — callers can then assert
+    the audit trail regardless of how the workflow terminates.
+    """
     async with (
         await WorkflowEnvironment.start_time_skipping(data_converter=pydantic_data_converter) as env,
         Worker(
@@ -96,7 +101,10 @@ async def _start_block_cancel(workflow_run, arg, *, workflows, started, task_que
         handle = await env.client.start_workflow(workflow_run, arg, id=wf_id, task_queue=task_queue)
         await asyncio.wait_for(started.wait(), timeout=10)
         await handle.cancel()
-        return await handle.result()
+        try:
+            return await handle.result()
+        except Exception as exc:
+            return exc
 
 
 @_XFAIL_CANCEL
@@ -107,18 +115,19 @@ async def test_deploy_intent_cancellation_records_cancelled_event(dcfabric_desir
     started = asyncio.Event()
     _install_blocking_intent(dcfabric_desired_state, audit, started)
 
+    wf_id = f"deploy-cancel-{device.id}"
     result = await _start_block_cancel(
         DeployIntentWorkflow.run,
         device.id,
         workflows=[DeployIntentWorkflow],
         started=started,
         task_queue="test-cancel-deploy",
-        wf_id=f"deploy-cancel-{device.id}",
+        wf_id=wf_id,
     )
 
-    assert result.reason == WorkflowReason.CANCELLED
-    types = [e.event_type for e in await audit.query_by_workflow(result.workflow_id)]
+    types = [e.event_type for e in await audit.query_by_workflow(wf_id)]
     assert AuditEventType.WORKFLOW_CANCELLED in types
+    assert result.reason == WorkflowReason.CANCELLED
 
 
 @_XFAIL_CANCEL
@@ -128,16 +137,17 @@ async def test_scan_drift_cancellation_records_cancelled_event(make_desired) -> 
     started = asyncio.Event()
     _install_blocking_intent(make_desired("spine-01"), audit, started)
 
-    result = await _start_block_cancel(
+    wf_id = "scan-cancel-dcfabric"
+    await _start_block_cancel(
         ScanDriftWorkflow.run,
         "dcfabric",
         workflows=[ScanDriftWorkflow],
         started=started,
         task_queue="test-cancel-scan",
-        wf_id="scan-cancel-dcfabric",
+        wf_id=wf_id,
     )
 
-    types = [e.event_type for e in await audit.query_by_workflow(result.workflow_id)]
+    types = [e.event_type for e in await audit.query_by_workflow(wf_id)]
     assert AuditEventType.WORKFLOW_CANCELLED in types
 
 
@@ -150,14 +160,15 @@ async def test_reconcile_cancellation_propagates_to_children(make_desired) -> No
     started = asyncio.Event()
     _install_blocking_intent(state, audit, started)
 
-    result = await _start_block_cancel(
+    wf_id = f"reconcile-cancel-{device_id}"
+    await _start_block_cancel(
         ReconcileDevicesWorkflow.run,
         [device_id],
         workflows=[ReconcileDevicesWorkflow, DeployIntentWorkflow],
         started=started,
         task_queue="test-cancel-reconcile",
-        wf_id=f"reconcile-cancel-{device_id}",
+        wf_id=wf_id,
     )
 
-    types = [e.event_type for e in await audit.query_by_workflow(result.workflow_id)]
+    types = [e.event_type for e in await audit.query_by_workflow(wf_id)]
     assert AuditEventType.WORKFLOW_CANCELLED in types
