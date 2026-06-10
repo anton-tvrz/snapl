@@ -7,7 +7,7 @@ from datetime import timedelta
 from uuid import UUID
 
 from temporalio import workflow
-from temporalio.common import RetryPolicy, WorkflowIDConflictPolicy
+from temporalio.common import RetryPolicy
 from temporalio.exceptions import CancelledError, ChildWorkflowError
 
 with workflow.unsafe.imports_passed_through():
@@ -125,11 +125,14 @@ class ReconcileDevicesWorkflow:
     async def _deploy_one(self, device_id: UUID) -> WorkflowResult | None:
         """Run DeployIntent for one device. Returns None if the device is skipped."""
         try:
+            # Deterministic child id dedupes within this reconcile run. Cross-invocation
+            # per-device serialization (FR-009) is enforced at the entry point where the
+            # workflow is started (client id-conflict policy), not on the child call —
+            # execute_child_workflow has no id_conflict_policy parameter.
             result: WorkflowResult = await workflow.execute_child_workflow(
                 DeployIntentWorkflow.run,
                 device_id,
                 id=f"deploy-intent-{device_id}",
-                id_conflict_policy=WorkflowIDConflictPolicy.USE_EXISTING,
             )
         except ChildWorkflowError as exc:
             # Treat child-workflow init failures (device not found in SoT) as skipped.
