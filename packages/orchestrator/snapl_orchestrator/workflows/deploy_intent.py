@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import timedelta
 from uuid import UUID
 
 from temporalio import workflow
 from temporalio.common import RetryPolicy
-from temporalio.exceptions import ActivityError, ApplicationError, CancelledError
+from temporalio.exceptions import ActivityError, ApplicationError, is_cancelled_exception
 
 with workflow.unsafe.imports_passed_through():
     from snapl_intent.exceptions import (
@@ -106,19 +107,18 @@ class DeployIntentWorkflow:
                 start_to_close_timeout=timedelta(seconds=30),
                 retry_policy=_INTENT_RETRY,
             )
-        except CancelledError:
-            return await self._terminate_cancelled(
-                wf_id=wf_id,
-                device_id=device_id,
-                started_at=started_at,
-            )
-        except ActivityError as exc:
-            detail = _format_cause(exc, default="intent fetch failed")
+        except (asyncio.CancelledError, ActivityError) as exc:
+            if is_cancelled_exception(exc):
+                return await self._terminate_cancelled(
+                    wf_id=wf_id,
+                    device_id=device_id,
+                    started_at=started_at,
+                )
             return await self._terminate_failure(
                 wf_id=wf_id,
                 device_id=device_id,
                 reason=WorkflowReason.INTENT_UNAVAILABLE,
-                detail=detail,
+                detail=_format_cause(exc, default="intent fetch failed"),
                 started_at=started_at,
             )
 
@@ -138,13 +138,13 @@ class DeployIntentWorkflow:
                 start_to_close_timeout=timedelta(seconds=60),
                 retry_policy=_APPLY_RETRY,
             )
-        except CancelledError:
-            return await self._terminate_cancelled(
-                wf_id=wf_id,
-                device_id=device_id,
-                started_at=started_at,
-            )
-        except ActivityError as exc:
+        except (asyncio.CancelledError, ActivityError) as exc:
+            if is_cancelled_exception(exc):
+                return await self._terminate_cancelled(
+                    wf_id=wf_id,
+                    device_id=device_id,
+                    started_at=started_at,
+                )
             return await self._terminate_failure(
                 wf_id=wf_id,
                 device_id=device_id,
@@ -179,13 +179,13 @@ class DeployIntentWorkflow:
                 start_to_close_timeout=timedelta(seconds=30),
                 retry_policy=_COLLECT_RETRY,
             )
-        except CancelledError:
-            return await self._terminate_cancelled(
-                wf_id=wf_id,
-                device_id=device_id,
-                started_at=started_at,
-            )
-        except ActivityError as exc:
+        except (asyncio.CancelledError, ActivityError) as exc:
+            if is_cancelled_exception(exc):
+                return await self._terminate_cancelled(
+                    wf_id=wf_id,
+                    device_id=device_id,
+                    started_at=started_at,
+                )
             return await self._terminate_failure(
                 wf_id=wf_id,
                 device_id=device_id,
@@ -210,13 +210,13 @@ class DeployIntentWorkflow:
                 start_to_close_timeout=timedelta(seconds=30),
                 retry_policy=_DETECT_RETRY,
             )
-        except CancelledError:
-            return await self._terminate_cancelled(
-                wf_id=wf_id,
-                device_id=device_id,
-                started_at=started_at,
-            )
-        except ActivityError as exc:
+        except (asyncio.CancelledError, ActivityError) as exc:
+            if is_cancelled_exception(exc):
+                return await self._terminate_cancelled(
+                    wf_id=wf_id,
+                    device_id=device_id,
+                    started_at=started_at,
+                )
             return await self._terminate_failure(
                 wf_id=wf_id,
                 device_id=device_id,
@@ -363,7 +363,7 @@ class DeployIntentWorkflow:
         )
 
 
-def _format_cause(exc: ActivityError, *, default: str) -> str:
+def _format_cause(exc: BaseException, *, default: str) -> str:
     """Pull a human-readable detail string out of an ActivityError chain."""
     cause = exc.__cause__
     if isinstance(cause, ApplicationError):

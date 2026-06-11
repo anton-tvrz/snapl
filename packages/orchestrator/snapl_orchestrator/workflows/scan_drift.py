@@ -7,7 +7,7 @@ from datetime import timedelta
 
 from temporalio import workflow
 from temporalio.common import RetryPolicy
-from temporalio.exceptions import ActivityError, CancelledError
+from temporalio.exceptions import ActivityError, is_cancelled_exception
 
 with workflow.unsafe.imports_passed_through():
     from snapl_collector.models import CollectResult
@@ -85,18 +85,30 @@ class ScanDriftWorkflow:
                 start_to_close_timeout=timedelta(seconds=30),
                 retry_policy=_INTENT_RETRY,
             )
-        except CancelledError:
-            return await self._cancel(
-                wf_id=wf_id,
-                use_case_id=use_case_id,
-                started_at=started_at,
-                partial_reports={},
-            )
+        except (asyncio.CancelledError, ActivityError) as exc:
+            if is_cancelled_exception(exc):
+                return await self._cancel(
+                    wf_id=wf_id,
+                    use_case_id=use_case_id,
+                    started_at=started_at,
+                    partial_reports={},
+                )
+            raise
 
-        reports = await asyncio.gather(
-            *(self._evaluate_device(d) for d in devices),
-            return_exceptions=False,
-        )
+        try:
+            reports = await asyncio.gather(
+                *(self._evaluate_device(d) for d in devices),
+                return_exceptions=False,
+            )
+        except (asyncio.CancelledError, ActivityError) as exc:
+            if is_cancelled_exception(exc):
+                return await self._cancel(
+                    wf_id=wf_id,
+                    use_case_id=use_case_id,
+                    started_at=started_at,
+                    partial_reports={},
+                )
+            raise
         reports_map = {r.device_id: r for r in reports}
 
         clean = sum(1 for r in reports if r.status == DriftStatus.CLEAN)
@@ -138,6 +150,8 @@ class ScanDriftWorkflow:
                 retry_policy=_INTENT_RETRY,
             )
         except ActivityError as exc:
+            if is_cancelled_exception(exc):
+                raise
             return DriftReport(
                 device_id=device.id,
                 device_name=device.name,
@@ -155,6 +169,8 @@ class ScanDriftWorkflow:
                 retry_policy=_COLLECT_RETRY,
             )
         except ActivityError as exc:
+            if is_cancelled_exception(exc):
+                raise
             return DriftReport(
                 device_id=device.id,
                 device_name=device.name,
@@ -172,6 +188,8 @@ class ScanDriftWorkflow:
                 retry_policy=_DETECT_RETRY,
             )
         except ActivityError as exc:
+            if is_cancelled_exception(exc):
+                raise
             return DriftReport(
                 device_id=device.id,
                 device_name=device.name,
