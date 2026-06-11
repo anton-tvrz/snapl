@@ -15,6 +15,7 @@ from temporalio.worker import Worker
 
 from snapl_collector.models import CollectResult
 from snapl_executor.models import ApplyResult
+from snapl_intent.exceptions import IntentConnectionError
 from snapl_observability.models import DriftItem, DriftReport, DriftStatus
 from snapl_orchestrator.activities import Activities, set_activities
 from snapl_orchestrator.activities.audit import record_audit_event
@@ -209,9 +210,39 @@ async def test_intent_not_found_terminates_before_apply(dcfabric_desired_state) 
         )
 
     assert result.success is False
-    assert result.reason == WorkflowReason.INTENT_UNAVAILABLE
+    assert result.reason == WorkflowReason.DEVICE_NOT_FOUND
     executor.apply.assert_not_awaited()
     collector.collect.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_intent_connection_failure_reports_intent_unavailable(dcfabric_desired_state) -> None:
+    device = dcfabric_desired_state.device
+    audit = InMemoryAuditLog()
+    intent_store = MagicMock()
+    intent_store.get_desired_state = AsyncMock(side_effect=IntentConnectionError("SoT unreachable"))
+    executor = MagicMock()
+    executor.apply = AsyncMock()
+    collector = MagicMock()
+    collector.collect = AsyncMock()
+    observer = MagicMock()
+
+    async with await WorkflowEnvironment.start_time_skipping(data_converter=pydantic_data_converter) as env:
+        result = await _run_with(
+            env,
+            _build_activities(
+                intent_store=intent_store,
+                executor=executor,
+                collector=collector,
+                observer=observer,
+                audit_log=audit,
+            ),
+            device.id,
+        )
+
+    assert result.success is False
+    assert result.reason == WorkflowReason.INTENT_UNAVAILABLE
+    executor.apply.assert_not_awaited()
 
 
 @pytest.mark.asyncio

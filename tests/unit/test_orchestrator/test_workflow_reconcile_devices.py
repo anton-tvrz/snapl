@@ -197,10 +197,6 @@ async def test_one_device_verification_fails(make_desired) -> None:
     assert result.device_results[drifted].success is False
 
 
-@pytest.mark.xfail(
-    reason="SoT-missing device is counted as failed (INTENT_UNAVAILABLE), not skipped — bug tracked in #15",
-    strict=True,
-)
 @pytest.mark.asyncio
 async def test_missing_device_is_skipped(make_desired) -> None:
     """Spec FR-004: a device absent from the SoT should be skipped, not failed."""
