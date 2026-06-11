@@ -8,7 +8,7 @@ from uuid import UUID
 
 from temporalio import workflow
 from temporalio.common import RetryPolicy
-from temporalio.exceptions import CancelledError, ChildWorkflowError
+from temporalio.exceptions import ChildWorkflowError, is_cancelled_exception
 
 with workflow.unsafe.imports_passed_through():
     from snapl_orchestrator.activities.audit import record_audit_event
@@ -76,7 +76,9 @@ class ReconcileDevicesWorkflow:
             outcomes = await asyncio.gather(
                 *(self._deploy_one(device_id) for device_id in device_ids),
             )
-        except CancelledError:
+        except (asyncio.CancelledError, ChildWorkflowError) as exc:
+            if not is_cancelled_exception(exc):
+                raise
             await _audit(
                 workflow_id=wf_id,
                 event_type=AuditEventType.WORKFLOW_CANCELLED,
@@ -135,6 +137,8 @@ class ReconcileDevicesWorkflow:
                 id=f"deploy-intent-{device_id}",
             )
         except ChildWorkflowError as exc:
+            if is_cancelled_exception(exc):
+                raise
             # Treat child-workflow init failures (device not found in SoT) as skipped.
             message = str(exc.cause) if exc.cause else str(exc)
             if "device_not_found" in message.lower() or "not found" in message.lower():
