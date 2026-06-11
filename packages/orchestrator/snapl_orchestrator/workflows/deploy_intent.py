@@ -373,8 +373,9 @@ class DeployIntentWorkflow:
 
 def _is_intent_not_found(exc: BaseException) -> bool:
     """True if an activity failure originates from IntentNotFoundError (device absent from SoT)."""
-    cause = exc.__cause__
-    return isinstance(cause, ApplicationError) and cause.type == IntentNotFoundError.__name__
+    if not isinstance(exc, ActivityError):
+        return False
+    return isinstance(exc.cause, ApplicationError) and exc.cause.type == IntentNotFoundError.__name__
 
 
 def _format_cause(exc: BaseException, *, default: str) -> str:
