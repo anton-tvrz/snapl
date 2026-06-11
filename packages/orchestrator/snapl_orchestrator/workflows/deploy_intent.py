@@ -114,6 +114,14 @@ class DeployIntentWorkflow:
                     device_id=device_id,
                     started_at=started_at,
                 )
+            if _is_intent_not_found(exc):
+                return await self._terminate_failure(
+                    wf_id=wf_id,
+                    device_id=device_id,
+                    reason=WorkflowReason.DEVICE_NOT_FOUND,
+                    detail=_format_cause(exc, default="device not found in SoT"),
+                    started_at=started_at,
+                )
             return await self._terminate_failure(
                 wf_id=wf_id,
                 device_id=device_id,
@@ -361,6 +369,13 @@ class DeployIntentWorkflow:
             started_at=started_at,
             ended_at=workflow.now(),
         )
+
+
+def _is_intent_not_found(exc: BaseException) -> bool:
+    """True if an activity failure originates from IntentNotFoundError (device absent from SoT)."""
+    if not isinstance(exc, ActivityError):
+        return False
+    return isinstance(exc.cause, ApplicationError) and exc.cause.type == IntentNotFoundError.__name__
 
 
 def _format_cause(exc: BaseException, *, default: str) -> str:
