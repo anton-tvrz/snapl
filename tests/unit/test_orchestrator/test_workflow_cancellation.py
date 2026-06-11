@@ -3,11 +3,6 @@
 Each test starts a workflow, blocks it inside an activity until it has
 demonstrably begun, cancels the handle, and asserts the terminal cancellation
 behaviour (reason=CANCELLED / WORKFLOW_CANCELLED audit event).
-
-Cancellation is currently broken (the workflows catch
-``temporalio.exceptions.CancelledError``, which is neither ``asyncio.CancelledError``
-nor the ``ActivityError`` an in-flight activity raises on cancel), so these are
-marked ``xfail(strict=True)`` against bug #16. They flip to passing once #16 is fixed.
 """
 
 from __future__ import annotations
@@ -38,11 +33,6 @@ from snapl_orchestrator.workflows.reconcile_devices import ReconcileDevicesWorkf
 from snapl_orchestrator.workflows.scan_drift import ScanDriftWorkflow
 
 pytestmark = pytest.mark.unit
-
-_XFAIL_CANCEL = pytest.mark.xfail(
-    reason="Cancellation not handled (wrong CancelledError type) — bug tracked in #16",
-    strict=True,
-)
 
 _DEPLOY_ACTIVITIES = [
     fetch_desired_state,
@@ -107,7 +97,6 @@ async def _start_block_cancel(workflow_run, arg, *, workflows, started, task_que
             return exc
 
 
-@_XFAIL_CANCEL
 @pytest.mark.asyncio
 async def test_deploy_intent_cancellation_records_cancelled_event(dcfabric_desired_state) -> None:
     device = dcfabric_desired_state.device
@@ -130,7 +119,6 @@ async def test_deploy_intent_cancellation_records_cancelled_event(dcfabric_desir
     assert result.reason == WorkflowReason.CANCELLED
 
 
-@_XFAIL_CANCEL
 @pytest.mark.asyncio
 async def test_scan_drift_cancellation_records_cancelled_event(make_desired) -> None:
     audit = InMemoryAuditLog()
@@ -151,7 +139,6 @@ async def test_scan_drift_cancellation_records_cancelled_event(make_desired) -> 
     assert AuditEventType.WORKFLOW_CANCELLED in types
 
 
-@_XFAIL_CANCEL
 @pytest.mark.asyncio
 async def test_reconcile_cancellation_propagates_to_children(make_desired) -> None:
     state = make_desired("spine-01")
