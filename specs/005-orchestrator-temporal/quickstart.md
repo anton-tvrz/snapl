@@ -25,7 +25,7 @@ uv run pytest tests/unit/test_orchestrator/ -m unit -v
 The integration tests need a Temporal cluster and (optionally) Infrahub + Containerlab.
 
 ```bash
-# Starts Temporal, Infrahub, monitoring stack
+# Starts Temporal, Infrahub, and Infrahub's backing stores
 uv run invoke dev.deps
 
 # Bring up the dcfabric Containerlab topology
