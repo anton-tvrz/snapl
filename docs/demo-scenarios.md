@@ -4,7 +4,7 @@ Repeatable, demo-ready walkthroughs of the closed NAF loop: **Intent → Deploy 
 
 Each scenario states its preconditions, the exact steps, what you should see, and what to put on screen in the Temporal Web UI. They are ordered as a narrative — run top to bottom for a full demo, or cherry-pick.
 
-> **Current gaps** (tracked, with workarounds inlined below): `invoke dev.deps` does not exist yet and Temporal is not in the dev compose stack ([#23](https://github.com/anton-tvrz/snapl/issues/23)); the dcfabric Containerlab topology is not yet committed ([#24](https://github.com/anton-tvrz/snapl/issues/24)). Scenarios 1–5 and 7–8 work without real devices if you accept `apply`/`collect` failing — but for a convincing demo, bring up the lab.
+> **Current gap** (tracked, with workaround inlined below): the dcfabric Containerlab topology is not yet committed ([#24](https://github.com/anton-tvrz/snapl/issues/24)). Scenarios 1–5 and 7–8 work without real devices if you accept `apply`/`collect` failing — but for a convincing demo, bring up the lab.
 
 ---
 
@@ -14,13 +14,11 @@ Each scenario states its preconditions, the exact steps, what you should see, an
 # 1. Dependencies
 uv sync --all-groups
 
-# 2. Infrahub + backing stores (Neo4j, Redis, RabbitMQ, Postgres)
-docker compose -f development/docker-compose.yml up -d
+# 2. Infrahub + backing stores (Neo4j, Redis, RabbitMQ, Postgres) + Temporal
+#    (Temporal Web UI on http://localhost:8233)
+uv run invoke dev.deps
 
-# 3. Temporal dev server — NOT in the compose stack (#23). Web UI on http://localhost:8233
-temporal server start-dev
-
-# 4. SR Linux fabric (2 spines, 4 leaves) — topology pending #24
+# 3. SR Linux fabric (2 spines, 4 leaves) — topology pending #24
 cd containerlab && sudo containerlab deploy -t dcfabric.yml
 ```
 

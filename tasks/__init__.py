@@ -9,7 +9,7 @@ Usage:
 
 from invoke import Collection
 
-from . import main, orchestrator
+from . import dev, main, orchestrator
 
 ns = Collection()
 
@@ -19,6 +19,9 @@ ns.add_task(main.lint, name="lint")
 ns.add_task(main.scan, name="scan")
 ns.add_task(main.test_unit, name="test-unit")
 ns.add_task(main.check_all, name="check-all")
+
+# Dev environment namespace (deps, stop, down)
+ns.add_collection(Collection.from_module(dev, name="dev"))
 
 # Orchestrator namespace
 ns.add_collection(Collection.from_module(orchestrator, name="orchestrator"))
