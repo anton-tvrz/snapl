@@ -1,0 +1,53 @@
+# snapl dcfabric lab — 2 spines x 4 leaves, Nokia SR Linux.
+#
+# Node names deliberately match the SoT seed data
+# (packages/intent/snapl_intent/seed/dcfabric/topology.yml), so container
+# hostnames come out as clab-dcfabric-spine-01 ... clab-dcfabric-leaf-04 —
+# exactly the integration-test defaults (SRLINUX_HOST=clab-dcfabric-spine-01,
+# gNMI on 57400).
+#
+# Deploy / destroy (see README.md in this directory):
+#   uv run invoke dev.lab-deploy
+#   uv run invoke dev.lab-destroy
+
+name: dcfabric
+
+topology:
+  defaults:
+    kind: nokia_srlinux
+    # Strips TLS from the mgmt grpc-server: the snapl executor/collector
+    # and the integration tests dial gNMI in plaintext (insecure=True).
+    startup-config: srlinux-insecure-gnmi.partial.cfg
+
+  kinds:
+    nokia_srlinux:
+      image: ghcr.io/nokia/srlinux:latest
+
+  nodes:
+    # Spines: 7220 IXR-D3 (matches seed device_type)
+    spine-01:
+      type: ixr-d3
+    spine-02:
+      type: ixr-d3
+    # Leaves: 7220 IXR-D2 (matches seed device_type)
+    leaf-01:
+      type: ixr-d2
+    leaf-02:
+      type: ixr-d2
+    leaf-03:
+      type: ixr-d2
+    leaf-04:
+      type: ixr-d2
+
+  # Cabling plan mirrors the seed interface data: each spine has one link to
+  # each leaf on ethernet-1/1..4; leaf uplinks are ethernet-1/49 (to spine-01)
+  # and ethernet-1/50 (to spine-02).
+  links:
+    - endpoints: ["spine-01:e1-1", "leaf-01:e1-49"]
+    - endpoints: ["spine-01:e1-2", "leaf-02:e1-49"]
+    - endpoints: ["spine-01:e1-3", "leaf-03:e1-49"]
+    - endpoints: ["spine-01:e1-4", "leaf-04:e1-49"]
+    - endpoints: ["spine-02:e1-1", "leaf-01:e1-50"]
+    - endpoints: ["spine-02:e1-2", "leaf-02:e1-50"]
+    - endpoints: ["spine-02:e1-3", "leaf-03:e1-50"]
+    - endpoints: ["spine-02:e1-4", "leaf-04:e1-50"]

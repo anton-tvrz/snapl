@@ -42,6 +42,9 @@ class GnmiExecutor(Executor):
         self._password = password
         self._insecure = insecure
         self._timeout = timeout
+        # One instance targets one device; SR Linux rejects concurrent
+        # exclusive config sessions, so gNMI sets are serialized per instance.
+        self._set_lock = asyncio.Lock()
 
     # ------------------------------------------------------------------ US1
 
@@ -123,7 +126,8 @@ class GnmiExecutor(Executor):
     async def _gnmi_set(self, desired: DesiredState, payload: dict[str, Any], *, is_rollback: bool) -> ApplyResult:
         start = time.monotonic()
         try:
-            response = await asyncio.to_thread(self._blocking_set, payload)
+            async with self._set_lock:
+                response = await asyncio.to_thread(self._blocking_set, payload)
             duration_ms = int((time.monotonic() - start) * 1000)
             return ApplyResult(
                 device_id=desired.device.id,

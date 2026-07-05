@@ -28,8 +28,8 @@ The integration tests need a Temporal cluster and (optionally) Infrahub + Contai
 # Starts Temporal, Infrahub, and Infrahub's backing stores
 uv run invoke dev.deps
 
-# Bring up the dcfabric Containerlab topology
-cd containerlab && sudo containerlab deploy -t dcfabric.yml
+# Bring up the dcfabric Containerlab topology (dockerized clab, no native install)
+uv run invoke dev.lab-deploy
 ```
 
 ## Running Integration Tests
