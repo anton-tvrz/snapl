@@ -332,6 +332,7 @@ def make_device():
         name: str,
         device_id: UUID | None = None,
         address: str = "127.0.0.1",
+        lab_node_name: str | None = None,
     ) -> Device:
         return Device(
             id=device_id or uuid4(),
@@ -340,6 +341,7 @@ def make_device():
             role="spine",
             use_case="dcfabric",
             platform="nokia-srlinux",
+            lab_node_name=lab_node_name,
         )
 
     return _factory

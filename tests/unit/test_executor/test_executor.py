@@ -206,9 +206,9 @@ class TestApplyBatch:
 class TestApplyBatchSerialization:
     @pytest.mark.asyncio
     async def test_apply_batch_serializes_sets_to_same_target(self, make_desired):
-        """One executor instance targets one device; SR Linux rejects
-        concurrent exclusive config sessions, so batch applies through the
-        same instance must run the gNMI sets one at a time."""
+        """SR Linux rejects concurrent exclusive config sessions, so batch
+        applies that resolve to the same dial host must run the gNMI sets
+        one at a time."""
         import time as _time
 
         executor = _make_executor()
@@ -216,7 +216,7 @@ class TestApplyBatchSerialization:
         max_in_flight = 0
         lock = threading.Lock()
 
-        def fake_set(payload):
+        def fake_set(host, payload):
             nonlocal in_flight, max_in_flight
             with lock:
                 in_flight += 1
@@ -226,9 +226,75 @@ class TestApplyBatchSerialization:
                 in_flight -= 1
             return "ok"
 
+        # make_desired gives every device the same management_address, so
+        # both applies resolve to one host and must share its lock.
         states = [make_desired("spine-01"), make_desired("spine-02")]
         with patch.object(executor, "_blocking_set", side_effect=fake_set):
             result = await executor.apply_batch(states)
 
         assert result.succeeded == 2
         assert max_in_flight == 1, "gNMI sets to the same target overlapped"
+
+
+# ---------------------------------------------------------------------------
+# #30 — per-device dial-host resolution
+# ---------------------------------------------------------------------------
+
+
+class TestDialHostResolution:
+    """The dial target comes from the Device: lab_node_name first, then
+    management_address, then the constructor host as a last-resort fallback
+    (regression for #30 — a worker-wide instance must reach every device)."""
+
+    @pytest.mark.asyncio
+    async def test_apply_dials_lab_node_name_first(self, dcfabric_desired_state, mock_gnmi_client):
+        dcfabric_desired_state.device.lab_node_name = "clab-dcfabric-spine-01"
+        executor = _make_executor(host=None)
+        with patch("snapl_executor.gnmi.executor.gNMIclient", return_value=mock_gnmi_client) as mock_cls:
+            result = await executor.apply(dcfabric_desired_state)
+        assert result.success is True
+        assert mock_cls.call_args.kwargs["target"] == ("clab-dcfabric-spine-01", 57400)
+
+    @pytest.mark.asyncio
+    async def test_apply_dials_management_address_without_lab_node_name(self, dcfabric_desired_state, mock_gnmi_client):
+        executor = _make_executor(host=None)
+        with patch("snapl_executor.gnmi.executor.gNMIclient", return_value=mock_gnmi_client) as mock_cls:
+            result = await executor.apply(dcfabric_desired_state)
+        assert result.success is True
+        assert mock_cls.call_args.kwargs["target"] == ("10.0.0.1", 57400)
+
+    @pytest.mark.asyncio
+    async def test_apply_falls_back_to_constructor_host(self, dcfabric_desired_state, mock_gnmi_client):
+        dcfabric_desired_state.device.management_address = ""
+        executor = _make_executor(host="192.0.2.7")
+        with patch("snapl_executor.gnmi.executor.gNMIclient", return_value=mock_gnmi_client) as mock_cls:
+            result = await executor.apply(dcfabric_desired_state)
+        assert result.success is True
+        assert mock_cls.call_args.kwargs["target"] == ("192.0.2.7", 57400)
+
+    @pytest.mark.asyncio
+    async def test_apply_without_any_dial_target_fails(self, dcfabric_desired_state):
+        dcfabric_desired_state.device.management_address = ""
+        executor = _make_executor(host=None)
+        with patch("snapl_executor.gnmi.executor.gNMIclient") as mock_cls:
+            result = await executor.apply(dcfabric_desired_state)
+            mock_cls.assert_not_called()
+        assert result.success is False
+        assert "dial target" in (result.error or "")
+
+    @pytest.mark.asyncio
+    async def test_constructor_host_is_optional(self):
+        executor = GnmiExecutor(password="test")  # pragma: allowlist secret
+        assert executor is not None
+
+    @pytest.mark.asyncio
+    async def test_apply_batch_dials_each_device(self, make_desired, mock_gnmi_client):
+        states = [make_desired("spine-01"), make_desired("leaf-01")]
+        states[0].device.lab_node_name = "clab-dcfabric-spine-01"
+        states[1].device.lab_node_name = "clab-dcfabric-leaf-01"
+        executor = _make_executor(host=None)
+        with patch("snapl_executor.gnmi.executor.gNMIclient", return_value=mock_gnmi_client) as mock_cls:
+            result = await executor.apply_batch(states)
+        assert result.succeeded == 2
+        targets = {call.kwargs["target"] for call in mock_cls.call_args_list}
+        assert targets == {("clab-dcfabric-spine-01", 57400), ("clab-dcfabric-leaf-01", 57400)}

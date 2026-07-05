@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import time
 
 import pytest
@@ -16,7 +17,13 @@ pytestmark = pytest.mark.integration
 # ---------------------------------------------------------------------------
 
 
-def _make_spine_desired():
+def _lab_host() -> str:
+    """The executor dials the device's own addressing (see #30), so test
+    devices must carry the reachable lab host, not the seed mgmt IP."""
+    return os.environ.get("SRLINUX_HOST", "clab-dcfabric-spine-01")
+
+
+def _make_spine_desired(management_address: str | None = None):
     """Build a minimal DesiredState for spine-01 from the dcfabric topology."""
     from uuid import UUID
 
@@ -26,7 +33,7 @@ def _make_spine_desired():
     device = Device(
         id=device_id,
         name="spine-01",
-        management_address="10.0.0.1",
+        management_address=management_address or _lab_host(),
         role="spine",
         use_case="dcfabric",
         platform="nokia-srlinux",
@@ -117,7 +124,7 @@ async def test_apply_batch(srlinux_executor):
         device = Device(
             id=dev_id,
             name=device_name,
-            management_address="10.0.0.1",
+            management_address=_lab_host(),
             role="spine",
             use_case="dcfabric",
             platform="nokia-srlinux",
@@ -186,7 +193,7 @@ async def test_unreachable_device_returns_failure_within_timeout():
         insecure=True,
         timeout=5,
     )
-    desired = _make_spine_desired()
+    desired = _make_spine_desired(management_address="127.0.0.1")
     start = time.monotonic()
     result = await executor.apply(desired)
     elapsed = time.monotonic() - start
