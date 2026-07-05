@@ -46,6 +46,21 @@ gNMI is deliberately insecure: the snapl executor/collector connect with
 generated TLS profile from the `mgmt` grpc-server. Lab use only — don't reuse
 this config anywhere reachable.
 
+## Device addressing: how snapl dials the lab (#30/#31)
+
+The seed `management_ip` values (`10.0.0.x/24`) are **intent data only** —
+router-id, loopback address, documentation. They deliberately do *not* match
+the containerlab management network (`172.20.20.0/24`, addresses assigned
+dynamically), and pinning them there would collide with docker's `10.0.0.1`
+gateway default.
+
+Instead, each dcfabric device in the SoT carries `lab_node_name`
+(`clab-dcfabric-<name>`), and the executor/collector dial
+`device.lab_node_name` when set, falling back to `device.management_address`
+otherwise. Containerlab writes those hostnames to `/etc/hosts` (in the VM on
+macOS — see the OrbStack note below), so name-based dialing works wherever the
+lab is reachable.
+
 ## Running the integration tests against the lab
 
 ```bash
