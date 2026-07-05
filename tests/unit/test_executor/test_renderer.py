@@ -86,3 +86,37 @@ class TestConfigRendererRenderError:
         r = ConfigRenderer(use_case="dcfabric")
         result = r.render_safe(dcfabric_desired_state)
         assert "error" not in result or result.get("error") is None
+
+
+class TestConfigRendererBgp:
+    """The rendered BGP config must be valid against SR Linux's YANG model:
+    router-id and an enabled address family are mandatory, and any peer-group
+    referenced by a neighbor must be defined as a group."""
+
+    def _bgp(self, desired_state):
+        payload = ConfigRenderer(use_case="dcfabric").render(desired_state)
+        return payload["network-instance"][0]["protocols"]["bgp"]
+
+    def test_bgp_has_router_id(self, dcfabric_desired_state):
+        bgp = self._bgp(dcfabric_desired_state)
+        assert bgp["router-id"] == "10.0.0.1"
+
+    def test_bgp_enables_session_address_family(self, dcfabric_desired_state):
+        bgp = self._bgp(dcfabric_desired_state)
+        afis = {af["afi-safi-name"]: af["admin-state"] for af in bgp["afi-safi"]}
+        assert afis == {"ipv4-unicast": "enable"}
+
+    def test_bgp_defines_referenced_peer_group(self, dcfabric_desired_state):
+        bgp = self._bgp(dcfabric_desired_state)
+        groups = {g["group-name"] for g in bgp["group"]}
+        assert groups == {"underlay-ipv4"}
+
+    def test_bgp_without_peer_group_renders_no_group_list(self, dcfabric_desired_state):
+        dcfabric_desired_state.bgp_sessions[0].peer_group = None
+        bgp = self._bgp(dcfabric_desired_state)
+        assert "group" not in bgp
+        assert "peer-group" not in bgp["neighbor"][0]
+
+    def test_bgp_is_admin_enabled(self, dcfabric_desired_state):
+        bgp = self._bgp(dcfabric_desired_state)
+        assert bgp["admin-state"] == "enable"

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 from typing import TYPE_CHECKING, Any
 
@@ -57,17 +58,57 @@ class GnmiCollector(Collector):
             "timeout": self._timeout,
         }
 
-    def _parse_response(self, response: dict[str, Any]) -> dict[str, Any]:
+    def _parse_response(self, response: dict[str, Any], paths: list[str]) -> dict[str, Any]:
         """Extract path→value mapping from a pygnmi GET response.
+
+        SR Linux often leaves the update path empty and answers with one
+        notification per requested path; recover the requested path by
+        position in that case.
 
         Raises KeyError/TypeError if the response structure is unexpected.
         """
         data: dict[str, Any] = {}
-        for notification in response["notification"]:
+        notifications = response["notification"]
+        for index, notification in enumerate(notifications):
             for update in notification.get("update", []):
                 path = update["path"]
-                data[path] = update["val"]
+                if not path or path == "/":
+                    if len(paths) == 1:
+                        key = self._normalize_path(paths[0])
+                    elif len(notifications) == len(paths):
+                        key = self._normalize_path(paths[index])
+                    else:
+                        key = "/"
+                else:
+                    key = self._normalize_path(path)
+                data[key] = update["val"]
         return data
+
+    @staticmethod
+    def _normalize_path(path: str | None) -> str:
+        """Normalize a device-reported path to the form callers request.
+
+        SR Linux keys the root GET response with an empty path and prefixes
+        targeted paths with YANG module names without a leading slash
+        (``srl_nokia-interfaces:interface``); strip the prefixes (only outside
+        ``[key=value]`` brackets) and anchor at ``/``.
+        """
+        if not path or path == "/":
+            return "/"
+        elements: list[str] = []
+        depth = 0
+        start = 0
+        for i, char in enumerate(path):
+            if char == "[":
+                depth += 1
+            elif char == "]":
+                depth -= 1
+            elif char == "/" and depth == 0:
+                elements.append(path[start:i])
+                start = i + 1
+        elements.append(path[start:])
+        stripped = [re.sub(r"^[\w.-]+:", "", el, count=1) for el in elements if el]
+        return "/" + "/".join(stripped)
 
     def _classify_error(self, exc: Exception, timeout: int) -> str:
         if isinstance(exc, grpc.RpcError):
@@ -93,7 +134,7 @@ class GnmiCollector(Collector):
         start = time.monotonic()
         try:
             response = await gnmi_get(**self._conn_kwargs(), paths=paths)
-            data = self._parse_response(response)
+            data = self._parse_response(response, paths)
             duration_ms = int((time.monotonic() - start) * 1000)
             return CollectResult(
                 device_id=device.id,

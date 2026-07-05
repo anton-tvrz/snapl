@@ -1,5 +1,26 @@
 {
+  "admin-state": "enable",
   "autonomous-system": {{ sessions[0].local_asn if sessions else 0 }},
+  "router-id": "{{ device.management_address }}",
+  "afi-safi": [
+{% for af in sessions | map(attribute='address_family') | unique | list %}
+    {
+      "afi-safi-name": "{{ af | replace('_', '-') }}",
+      "admin-state": "enable"
+    }{% if not loop.last %},{% endif %}
+{% endfor %}
+  ],
+{% set groups = sessions | selectattr('peer_group') | map(attribute='peer_group') | unique | list %}
+{% if groups %}
+  "group": [
+{% for g in groups %}
+    {
+      "group-name": "{{ g }}",
+      "admin-state": "enable"
+    }{% if not loop.last %},{% endif %}
+{% endfor %}
+  ],
+{% endif %}
   "neighbor": [
 {% for s in sessions %}
     {

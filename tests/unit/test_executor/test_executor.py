@@ -201,3 +201,34 @@ class TestApplyBatch:
             result = await executor.apply_batch(states)
         for ds in states:
             assert ds.device.id in result.results
+
+
+class TestApplyBatchSerialization:
+    @pytest.mark.asyncio
+    async def test_apply_batch_serializes_sets_to_same_target(self, make_desired):
+        """One executor instance targets one device; SR Linux rejects
+        concurrent exclusive config sessions, so batch applies through the
+        same instance must run the gNMI sets one at a time."""
+        import time as _time
+
+        executor = _make_executor()
+        in_flight = 0
+        max_in_flight = 0
+        lock = threading.Lock()
+
+        def fake_set(payload):
+            nonlocal in_flight, max_in_flight
+            with lock:
+                in_flight += 1
+                max_in_flight = max(max_in_flight, in_flight)
+            _time.sleep(0.05)
+            with lock:
+                in_flight -= 1
+            return "ok"
+
+        states = [make_desired("spine-01"), make_desired("spine-02")]
+        with patch.object(executor, "_blocking_set", side_effect=fake_set):
+            result = await executor.apply_batch(states)
+
+        assert result.succeeded == 2
+        assert max_in_flight == 1, "gNMI sets to the same target overlapped"

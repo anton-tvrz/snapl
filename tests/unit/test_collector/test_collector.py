@@ -411,3 +411,89 @@ class TestErrorClassification:
             result = await collector.collect(device, paths=["/"])
         assert result.success is False
         assert "parse" in result.error.lower()
+
+
+class TestPathNormalization:
+    """Live SR Linux responses key updates differently than the idealized
+    forms: the root path comes back as None, and targeted paths come back
+    module-prefixed without a leading slash (srl_nokia-interfaces:interface).
+    The collector normalizes them so callers can look up the paths they asked
+    for."""
+
+    @pytest.mark.asyncio
+    async def test_none_path_normalized_to_root(self, make_device):
+        device = make_device("spine-01")
+        collector = _make_collector()
+        notification = {"notification": [{"timestamp": 1, "update": [{"path": None, "val": {"interface": []}}]}]}
+        with patch(
+            "snapl_collector.gnmi.collector.gnmi_get",
+            new_callable=AsyncMock,
+            return_value=notification,
+        ):
+            result = await collector.collect(device, paths=["/"])
+        assert result.success is True
+        assert "/" in result.data
+
+    @pytest.mark.asyncio
+    async def test_module_prefixed_path_normalized(self, make_device):
+        device = make_device("spine-01")
+        collector = _make_collector()
+        notification = {
+            "notification": [
+                {
+                    "timestamp": 1,
+                    "update": [
+                        {
+                            "path": "srl_nokia-interfaces:interface",
+                            "val": [{"name": "ethernet-1/1"}],
+                        }
+                    ],
+                }
+            ]
+        }
+        with patch(
+            "snapl_collector.gnmi.collector.gnmi_get",
+            new_callable=AsyncMock,
+            return_value=notification,
+        ):
+            result = await collector.collect(device, paths=["/interface"])
+        assert result.success is True
+        assert "/interface" in result.data
+
+    @pytest.mark.asyncio
+    async def test_module_prefix_stripped_only_outside_brackets(self, make_device):
+        device = make_device("spine-01")
+        collector = _make_collector()
+        path = "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp"
+        notification = {"notification": [{"timestamp": 1, "update": [{"path": path, "val": {}}]}]}
+        with patch(
+            "snapl_collector.gnmi.collector.gnmi_get",
+            new_callable=AsyncMock,
+            return_value=notification,
+        ):
+            result = await collector.collect(device, paths=["/network-instance[name=default]/protocols/bgp"])
+        assert "/network-instance[name=default]/protocols/bgp" in result.data
+
+    @pytest.mark.asyncio
+    async def test_empty_update_paths_recovered_from_requested_paths(self, make_device):
+        """SR Linux answers multi-path GETs with one notification per
+        requested path, each update carrying an empty path; the collector
+        recovers the requested path by position."""
+        device = make_device("spine-01")
+        collector = _make_collector()
+        bgp_path = "/network-instance[name=default]/protocols/bgp/neighbor"
+        notification = {
+            "notification": [
+                {"timestamp": 1, "update": [{"path": None, "val": {"srl_nokia-interfaces:interface": []}}]},
+                {"timestamp": 1, "update": [{"path": None, "val": {"neighbor": []}}]},
+            ]
+        }
+        with patch(
+            "snapl_collector.gnmi.collector.gnmi_get",
+            new_callable=AsyncMock,
+            return_value=notification,
+        ):
+            result = await collector.collect(device, paths=["/interface", bgp_path])
+        assert result.success is True
+        assert "/interface" in result.data
+        assert bgp_path in result.data

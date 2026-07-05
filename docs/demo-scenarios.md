@@ -4,7 +4,7 @@ Repeatable, demo-ready walkthroughs of the closed NAF loop: **Intent → Deploy 
 
 Each scenario states its preconditions, the exact steps, what you should see, and what to put on screen in the Temporal Web UI. They are ordered as a narrative — run top to bottom for a full demo, or cherry-pick.
 
-> **Current gap** (tracked, with workaround inlined below): the dcfabric Containerlab topology is not yet committed ([#24](https://github.com/anton-tvrz/snapl/issues/24)). Scenarios 1–5 and 7–8 work without real devices if you accept `apply`/`collect` failing — but for a convincing demo, bring up the lab.
+> Scenarios 1–5 and 7–8 work without real devices if you accept `apply`/`collect` failing — but for a convincing demo, bring up the lab (`uv run invoke dev.lab-deploy`, see `containerlab/README.md`).
 
 ---
 
@@ -18,8 +18,8 @@ uv sync --all-groups
 #    (Temporal Web UI on http://localhost:8233)
 uv run invoke dev.deps
 
-# 3. SR Linux fabric (2 spines, 4 leaves) — topology pending #24
-cd containerlab && sudo containerlab deploy -t dcfabric.yml
+# 3. SR Linux fabric (2 spines, 4 leaves) — no native containerlab needed
+uv run invoke dev.lab-deploy
 ```
 
 Seed the Source of Truth (idempotent, safe to re-run):
