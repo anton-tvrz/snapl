@@ -125,12 +125,13 @@ def _build_intent_store():
 
 
 def _build_executor():
+    # No fixed host: the executor resolves the dial target per device
+    # (lab_node_name, then management_address).
     username = os.environ.get("SRLINUX_USERNAME", "admin")
     password = os.environ.get("SRLINUX_PASSWORD")
     if not password:
         raise OrchestratorConfigError("SRLINUX_PASSWORD is required")
     return GnmiExecutor(
-        host="placeholder",  # GnmiExecutor expects per-device construction; orchestrator wraps it.
         port=57400,
         username=username,
         password=password,
@@ -144,7 +145,6 @@ def _build_collector():
     if not password:
         raise OrchestratorConfigError("SRLINUX_PASSWORD is required")
     return GnmiCollector(
-        host="placeholder",
         port=57400,
         username=username,
         password=password,
