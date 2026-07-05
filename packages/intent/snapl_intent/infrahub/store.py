@@ -249,14 +249,15 @@ class InfrahubIntentStore(IntentStore):
         return DesiredState(device=device, interfaces=interfaces, bgp_sessions=sessions)
 
     def _node_to_device(self, node: Any) -> Device:
-        # Schema attribute is ``management_ip`` (IPHost — value carries a
-        # /prefix); the Device contract wants a bare address usable as
-        # router-id, loopback, or dial target.
+        # Schema attribute is ``management_ip`` (IPHost — the live SDK yields
+        # an ipaddress interface object, mocks a CIDR string); the Device
+        # contract wants a bare address usable as router-id, loopback, or
+        # dial target, so stringify and strip the /prefix.
         management_ip = _value(node, "management_ip", default="") or ""
         return Device(
             id=UUID(str(node.id)),
             name=_value(node, "name"),
-            management_address=management_ip.split("/", 1)[0],
+            management_address=str(management_ip).split("/", 1)[0],
             role=_value(node, "role", default=""),
             use_case=_value(node, "use_case", default=""),
             platform=_value(node, "platform"),

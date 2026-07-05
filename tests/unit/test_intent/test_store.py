@@ -160,6 +160,19 @@ class TestGetDesiredState:
 
         assert result[0].device.management_address == "10.0.0.1"
 
+    async def test_management_ip_as_ip_interface_object(self, mock_infrahub_client):
+        """The live SDK materialises IPHost attributes as ipaddress objects,
+        not strings — the mapping must cope with both."""
+        from ipaddress import IPv4Interface
+
+        node = _make_device_node(name="spine-01", management=IPv4Interface("10.0.0.1/24"))
+        mock_infrahub_client.filters.return_value = [node]
+        store = InfrahubIntentStore(client=mock_infrahub_client)
+
+        result = await store.get_desired_state(use_case="dcfabric")
+
+        assert result[0].device.management_address == "10.0.0.1"
+
     async def test_management_ip_missing_yields_empty_address(self, mock_infrahub_client):
         node = _make_device_node(name="spine-01", management=None)
         mock_infrahub_client.filters.return_value = [node]
