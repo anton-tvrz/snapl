@@ -91,6 +91,7 @@ devices:
     location: "local-lab"
     platform: "Nokia SR Linux"
     management_ip: "10.0.0.1/24"
+    lab_node_name: "clab-dcfabric-spine-01"
     asn: 65000
     description: "Spine 01"
   - name: spine-02
@@ -101,6 +102,7 @@ devices:
     location: "local-lab"
     platform: "Nokia SR Linux"
     management_ip: "10.0.0.2/24"
+    lab_node_name: "clab-dcfabric-spine-02"
     asn: 65001
     description: "Spine 02"
   - name: leaf-01
@@ -111,6 +113,7 @@ devices:
     location: "local-lab"
     platform: "Nokia SR Linux"
     management_ip: "10.0.0.11/24"
+    lab_node_name: "clab-dcfabric-leaf-01"
     asn: 65011
     description: "Leaf 01"
   - name: leaf-02
@@ -121,6 +124,7 @@ devices:
     location: "local-lab"
     platform: "Nokia SR Linux"
     management_ip: "10.0.0.12/24"
+    lab_node_name: "clab-dcfabric-leaf-02"
     asn: 65012
     description: "Leaf 02"
   - name: leaf-03
@@ -131,6 +135,7 @@ devices:
     location: "local-lab"
     platform: "Nokia SR Linux"
     management_ip: "10.0.0.13/24"
+    lab_node_name: "clab-dcfabric-leaf-03"
     asn: 65013
     description: "Leaf 03"
   - name: leaf-04
@@ -141,6 +146,7 @@ devices:
     location: "local-lab"
     platform: "Nokia SR Linux"
     management_ip: "10.0.0.14/24"
+    lab_node_name: "clab-dcfabric-leaf-04"
     asn: 65014
     description: "Leaf 04"
 

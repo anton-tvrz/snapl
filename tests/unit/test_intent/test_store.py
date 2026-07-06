@@ -87,16 +87,21 @@ def _make_device_node(
     name: str,
     role: str = "spine",
     use_case: str = "dcfabric",
-    management: str = "10.0.0.1",
+    management: str | None = "10.0.0.1/24",
+    lab_node_name: str | None = None,
     interfaces: list | None = None,
     bgp_sessions: list | None = None,
     device_id: UUID | None = None,
 ):
+    # Mirrors the real Infrahub schema (schemas/network_device.yml): the
+    # attribute is ``management_ip`` (IPHost, so CIDR-suffixed), not
+    # ``management_address`` — that mismatch is what issue #31 fixed.
     dev_uuid = device_id or uuid4()
     return SimpleNamespace(
         id=str(dev_uuid),
         name=_attr(name),
-        management_address=_attr(management),
+        management_ip=_attr(management),
+        lab_node_name=_attr(lab_node_name),
         role=_attr(role),
         use_case=_attr(use_case),
         platform=_attr("nokia-srlinux"),
@@ -143,6 +148,57 @@ class TestGetDesiredState:
         assert len(state.interfaces) == 1
         assert state.interfaces[0].device_id == dev_uuid
         assert len(state.bgp_sessions) == 1
+
+    async def test_management_address_reads_management_ip_and_strips_prefix(self, mock_infrahub_client):
+        """Regression for #31: the schema attribute is management_ip (IPHost,
+        CIDR-suffixed); the Device contract carries a prefix-free address."""
+        node = _make_device_node(name="spine-01", management="10.0.0.1/24")
+        mock_infrahub_client.filters.return_value = [node]
+        store = InfrahubIntentStore(client=mock_infrahub_client)
+
+        result = await store.get_desired_state(use_case="dcfabric")
+
+        assert result[0].device.management_address == "10.0.0.1"
+
+    async def test_management_ip_as_ip_interface_object(self, mock_infrahub_client):
+        """The live SDK materialises IPHost attributes as ipaddress objects,
+        not strings — the mapping must cope with both."""
+        from ipaddress import IPv4Interface
+
+        node = _make_device_node(name="spine-01", management=IPv4Interface("10.0.0.1/24"))
+        mock_infrahub_client.filters.return_value = [node]
+        store = InfrahubIntentStore(client=mock_infrahub_client)
+
+        result = await store.get_desired_state(use_case="dcfabric")
+
+        assert result[0].device.management_address == "10.0.0.1"
+
+    async def test_management_ip_missing_yields_empty_address(self, mock_infrahub_client):
+        node = _make_device_node(name="spine-01", management=None)
+        mock_infrahub_client.filters.return_value = [node]
+        store = InfrahubIntentStore(client=mock_infrahub_client)
+
+        result = await store.get_desired_state(use_case="dcfabric")
+
+        assert result[0].device.management_address == ""
+
+    async def test_lab_node_name_mapped(self, mock_infrahub_client):
+        node = _make_device_node(name="spine-01", lab_node_name="clab-dcfabric-spine-01")
+        mock_infrahub_client.filters.return_value = [node]
+        store = InfrahubIntentStore(client=mock_infrahub_client)
+
+        result = await store.get_desired_state(use_case="dcfabric")
+
+        assert result[0].device.lab_node_name == "clab-dcfabric-spine-01"
+
+    async def test_lab_node_name_absent_defaults_to_none(self, mock_infrahub_client):
+        node = _make_device_node(name="spine-01")
+        mock_infrahub_client.filters.return_value = [node]
+        store = InfrahubIntentStore(client=mock_infrahub_client)
+
+        result = await store.get_desired_state(use_case="dcfabric")
+
+        assert result[0].device.lab_node_name is None
 
     async def test_filters_by_role(self, mock_infrahub_client):
         spine_nodes = [_make_device_node(name=f"spine-{i:02d}", role="spine") for i in range(1, 3)]

@@ -29,6 +29,9 @@ class Device(BaseModel):
     use_case: str
     platform: str | None = None
     description: str | None = None
+    lab_node_name: str | None = None
+    """Containerlab hostname (e.g. clab-dcfabric-spine-01). When set, it is
+    the gNMI dial target; management_address stays intent-only data."""
 
 
 class Interface(BaseModel):
