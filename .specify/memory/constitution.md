@@ -86,6 +86,15 @@ All prototyping uses Nokia SR Linux via Containerlab. Vendor-specific code is be
 
 Start simple, add complexity only when needed. Three similar lines of code are better than a premature abstraction. No speculative features, no unnecessary configurability. Each module should do one thing well.
 
+### VIII. Intent-First Correctness
+
+"Source of Truth" conflates two concepts that must never be merged: **intent** (what the network is supposed to look like) and **operational state** (what it actually looks like right now). Drift is the gap between them, and it is daily reality, not an edge case. (See ADR-0003.)
+
+1. **Authority split** — The SoT is authoritative for intended state; the live network is authoritative only for operational reality. Device state is never silently promoted to truth: no automatic reverse-sync of running config into the SoT. Promoting observed state into intent is an explicit, reviewed operation. A manual device change that "works" is still drift. Intent attributes and operational addressing are distinct even when they look alike (e.g. `management_ip` is intent data for rendering; the gNMI dial target is operational addressing resolved at call time).
+2. **Drift response is part of drift detection** — Every drift-detection path has a defined response: `report` (default), `remediate` (operator-triggered or explicitly automated), or `suppress` (e.g. maintenance windows). Detecting drift without a defined response is an incomplete feature. Auto-remediation is never the silent default.
+3. **Intent extends beyond configuration** — Intent may declare operational expectations (BGP sessions established, interfaces oper-up, thresholds), not only config. Verification compares reality against intent; liveness alone never passes verification ("operationally up" ≠ "correct").
+4. **Executor idempotency** — `Executor.apply()` is idempotent: applying the same intent twice yields the same device state with no additional change. Workflows may safely retry applies. Destructive or uncertain changes go through `dry_run()` first.
+
 ## Use Cases
 
 ### Datacenter Fabric (Primary)
@@ -159,4 +168,4 @@ This Constitution supersedes all other development practices. Amendments require
 
 All PRs and code reviews must verify compliance with this Constitution.
 
-**Version**: 1.0.0 | **Ratified**: 2026-04-14 | **Last Amended**: 2026-04-14
+**Version**: 1.1.0 | **Ratified**: 2026-04-14 | **Last Amended**: 2026-07-06 (ADR-0003: Core Principle VIII — Intent-First Correctness)
