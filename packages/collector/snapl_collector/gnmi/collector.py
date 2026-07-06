@@ -20,8 +20,13 @@ if TYPE_CHECKING:
 class GnmiCollector(Collector):
     """Nokia SR Linux Collector implementation using gNMI (pygnmi).
 
+    One instance serves any number of devices: the dial target is resolved
+    per call from the Device — ``lab_node_name`` first, then
+    ``management_address`` — with the constructor ``host`` as a last-resort
+    fallback for single-target use (tests, ad-hoc scripts).
+
     Args:
-        host: Device hostname or IP address.
+        host: Fallback hostname or IP when the device carries no addressing.
         port: gNMI port (SR Linux default: 57400).
         username: gNMI username.
         password: gNMI password.
@@ -32,7 +37,7 @@ class GnmiCollector(Collector):
     def __init__(
         self,
         *,
-        host: str,
+        host: str | None = None,
         port: int = 57400,
         username: str = "admin",
         password: str,
@@ -48,9 +53,12 @@ class GnmiCollector(Collector):
 
     # ── Internal helpers ─────────────────────────────────────────────────
 
-    def _conn_kwargs(self) -> dict[str, Any]:
+    def _dial_host(self, device: Device) -> str | None:
+        return device.lab_node_name or device.management_address or self._host
+
+    def _conn_kwargs(self, host: str) -> dict[str, Any]:
         return {
-            "host": self._host,
+            "host": host,
             "port": self._port,
             "username": self._username,
             "password": self._password,
@@ -131,9 +139,22 @@ class GnmiCollector(Collector):
         if not paths:
             raise ValueError("paths must not be empty")
 
+        host = self._dial_host(device)
+        if not host:
+            return CollectResult(
+                device_id=device.id,
+                device_name=device.name,
+                success=False,
+                paths=paths,
+                error=(
+                    f"no gNMI dial target for device {device.name!r}: "
+                    "lab_node_name and management_address are empty and no fallback host is configured"
+                ),
+            )
+
         start = time.monotonic()
         try:
-            response = await gnmi_get(**self._conn_kwargs(), paths=paths)
+            response = await gnmi_get(**self._conn_kwargs(host), paths=paths)
             data = self._parse_response(response, paths)
             duration_ms = int((time.monotonic() - start) * 1000)
             return CollectResult(
@@ -182,16 +203,8 @@ class GnmiCollector(Collector):
             raise ValueError("duplicate device IDs in devices list")
 
         async def _collect_one(device: Device) -> CollectResult:
-            collector = GnmiCollector(
-                host=device.management_address,
-                port=self._port,
-                username=self._username,
-                password=self._password,
-                insecure=self._insecure,
-                timeout=self._timeout,
-            )
             try:
-                return await collector.collect(device, paths)
+                return await self.collect(device, paths)
             except Exception as exc:
                 return CollectResult(
                     device_id=device.id,

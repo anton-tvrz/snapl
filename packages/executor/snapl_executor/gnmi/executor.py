@@ -16,24 +16,28 @@ from snapl_executor.models import ApplyResult, BatchResult, DryRunResult
 if TYPE_CHECKING:
     from uuid import UUID
 
-    from snapl_intent.models import DesiredState
+    from snapl_intent.models import DesiredState, Device
 
 
 class GnmiExecutor(Executor):
-    """Nokia SR Linux Executor using gNMI (pygnmi) + Jinja2 templates."""
+    """Nokia SR Linux Executor using gNMI (pygnmi) + Jinja2 templates.
+
+    One instance serves any number of devices: the dial target is resolved
+    per call from the Device — ``lab_node_name`` first, then
+    ``management_address`` — with the constructor ``host`` as a last-resort
+    fallback for single-target use (tests, ad-hoc scripts).
+    """
 
     def __init__(
         self,
         *,
-        host: str,
+        host: str | None = None,
         port: int = 57400,
         username: str = "admin",
         password: str,
         insecure: bool = True,
         timeout: int = 30,
     ) -> None:
-        if not host:
-            raise ExecutorConfigError("host is required")
         if not password:
             raise ExecutorConfigError("password is required")
         self._host = host
@@ -42,9 +46,18 @@ class GnmiExecutor(Executor):
         self._password = password
         self._insecure = insecure
         self._timeout = timeout
-        # One instance targets one device; SR Linux rejects concurrent
-        # exclusive config sessions, so gNMI sets are serialized per instance.
-        self._set_lock = asyncio.Lock()
+        # SR Linux rejects concurrent exclusive config sessions, so gNMI
+        # sets are serialized per dial host.
+        self._set_locks: dict[str, asyncio.Lock] = {}
+
+    def _dial_host(self, device: Device) -> str:
+        host = device.lab_node_name or device.management_address or self._host
+        if not host:
+            raise ExecutorConfigError(
+                f"no gNMI dial target for device {device.name!r}: "
+                "lab_node_name and management_address are empty and no fallback host is configured"
+            )
+        return host
 
     # ------------------------------------------------------------------ US1
 
@@ -126,8 +139,9 @@ class GnmiExecutor(Executor):
     async def _gnmi_set(self, desired: DesiredState, payload: dict[str, Any], *, is_rollback: bool) -> ApplyResult:
         start = time.monotonic()
         try:
-            async with self._set_lock:
-                response = await asyncio.to_thread(self._blocking_set, payload)
+            host = self._dial_host(desired.device)
+            async with self._set_locks.setdefault(host, asyncio.Lock()):
+                response = await asyncio.to_thread(self._blocking_set, host, payload)
             duration_ms = int((time.monotonic() - start) * 1000)
             return ApplyResult(
                 device_id=desired.device.id,
@@ -150,9 +164,9 @@ class GnmiExecutor(Executor):
                 duration_ms=duration_ms,
             )
 
-    def _blocking_set(self, payload: dict[str, Any]) -> Any:
+    def _blocking_set(self, host: str, payload: dict[str, Any]) -> Any:
         with gNMIclient(
-            target=(self._host, self._port),
+            target=(host, self._port),
             username=self._username,
             password=self._password,
             insecure=self._insecure,

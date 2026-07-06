@@ -497,3 +497,90 @@ class TestPathNormalization:
         assert result.success is True
         assert "/interface" in result.data
         assert bgp_path in result.data
+
+
+# ---------------------------------------------------------------------------
+# #30 — per-device dial-host resolution
+# ---------------------------------------------------------------------------
+
+
+class TestDialHostResolution:
+    """The dial target comes from the Device: lab_node_name first, then
+    management_address, then the constructor host as a last-resort fallback
+    (regression for #30 — a worker-wide instance must reach every device)."""
+
+    @pytest.mark.asyncio
+    async def test_collect_dials_lab_node_name_first(self, make_device):
+        device = make_device("spine-01", address="10.0.0.1", lab_node_name="clab-dcfabric-spine-01")
+        collector = _make_collector(host=None)
+        with patch(
+            "snapl_collector.gnmi.collector.gnmi_get",
+            new_callable=AsyncMock,
+            return_value=_NOTIFICATION_ROOT,
+        ) as mock_get:
+            result = await collector.collect(device, paths=["/"])
+        assert result.success is True
+        assert mock_get.call_args.kwargs["host"] == "clab-dcfabric-spine-01"
+
+    @pytest.mark.asyncio
+    async def test_collect_dials_management_address_without_lab_node_name(self, make_device):
+        device = make_device("spine-01", address="10.0.0.1")
+        collector = _make_collector(host=None)
+        with patch(
+            "snapl_collector.gnmi.collector.gnmi_get",
+            new_callable=AsyncMock,
+            return_value=_NOTIFICATION_ROOT,
+        ) as mock_get:
+            result = await collector.collect(device, paths=["/"])
+        assert result.success is True
+        assert mock_get.call_args.kwargs["host"] == "10.0.0.1"
+
+    @pytest.mark.asyncio
+    async def test_collect_falls_back_to_constructor_host(self, make_device):
+        device = make_device("spine-01", address="")
+        collector = _make_collector(host="192.0.2.7")
+        with patch(
+            "snapl_collector.gnmi.collector.gnmi_get",
+            new_callable=AsyncMock,
+            return_value=_NOTIFICATION_ROOT,
+        ) as mock_get:
+            result = await collector.collect(device, paths=["/"])
+        assert result.success is True
+        assert mock_get.call_args.kwargs["host"] == "192.0.2.7"
+
+    @pytest.mark.asyncio
+    async def test_collect_without_any_dial_target_errors_not_raises(self, make_device):
+        device = make_device("spine-01", address="")
+        collector = _make_collector(host=None)
+        with patch(
+            "snapl_collector.gnmi.collector.gnmi_get",
+            new_callable=AsyncMock,
+        ) as mock_get:
+            result = await collector.collect(device, paths=["/"])
+            mock_get.assert_not_called()
+        assert result.success is False
+        assert "dial target" in (result.error or "")
+
+    @pytest.mark.asyncio
+    async def test_constructor_host_is_optional(self):
+        from snapl_collector.gnmi.collector import GnmiCollector
+
+        collector = GnmiCollector(password="test")  # pragma: allowlist secret
+        assert collector is not None
+
+    @pytest.mark.asyncio
+    async def test_collect_batch_dials_each_device(self, make_device):
+        devices = [
+            make_device("spine-01", lab_node_name="clab-dcfabric-spine-01"),
+            make_device("leaf-01", lab_node_name="clab-dcfabric-leaf-01"),
+        ]
+        collector = _make_collector(host=None)
+        with patch(
+            "snapl_collector.gnmi.collector.gnmi_get",
+            new_callable=AsyncMock,
+            return_value=_NOTIFICATION_ROOT,
+        ) as mock_get:
+            batch = await collector.collect_batch(devices, paths=["/"])
+        assert batch.succeeded == 2
+        hosts = {call.kwargs["host"] for call in mock_get.call_args_list}
+        assert hosts == {"clab-dcfabric-spine-01", "clab-dcfabric-leaf-01"}
