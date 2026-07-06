@@ -127,6 +127,10 @@ Each NAF block exposes an abstract base class + Pydantic models as its public in
 - `Observer` ABC: `detect_drift()`, `emit_event()`, `log_audit()`
 - Orchestrator: Temporal workflows composing the above
 
+## Work Tracking
+
+Issues live in `anton-tvrz/snapl`; the board is https://github.com/users/anton-tvrz/projects/4. New issues are not auto-added to the board — see `dev/guides/tracking-work.md` for the labeling convention and the `gh project item-add` step.
+
 ## Conventions
 
 - **Commits:** Conventional commits (`feat:`, `fix:`, `docs:`, etc.)
