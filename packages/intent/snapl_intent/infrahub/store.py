@@ -48,6 +48,12 @@ _SEED_ROOT = _PACKAGE_ROOT / "seed"
 # the kind.
 DEVICE_KIND = "DcimDevice"
 
+# Child kinds carrying a device's config intent. Live device nodes expose no
+# usable interface/session peers, so desired state is assembled from
+# child-side queries filtered by ``device__ids`` (#33).
+INTERFACE_KIND = "InterfacePhysical"
+SESSION_KIND = "RoutingBGPSession"
+
 # Schema namespaces declared in the packaged YAML tree. ``get_schema`` uses
 # this set to filter out Infrahub built-ins (Core*, Builtin*, Profile*) from
 # the provisioned kind list.
@@ -87,13 +93,42 @@ def _peers(node: Any, attr: str) -> list[Any]:
     return list(peers) if peers is not None else []
 
 
-def _peer_id(node: Any, attr: str) -> str | None:
-    """Read the id of the peer on a cardinality-one relation."""
+def _peer_node(node: Any, attr: str) -> Any | None:
+    """Resolve a cardinality-one relation's peer node, or None.
+
+    The live SDK's ``RelatedNode.peer`` is a property that *raises* when the
+    relation is unset or the peer isn't in the SDK store — degrade to None.
+    """
     obj = getattr(node, attr, None)
     if obj is None:
         return None
-    peer = getattr(obj, "peer", None)
+    try:
+        return obj.peer
+    except Exception:
+        return None
+
+
+def _peer_id(node: Any, attr: str) -> str | None:
+    """Read the id of the peer on a cardinality-one relation."""
+    peer = _peer_node(node, attr)
     return getattr(peer, "id", None) if peer is not None else None
+
+
+def _peer_value(node: Any, rel_attr: str, value_attr: str, default: Any = None) -> Any:
+    """Read a scalar attribute off a cardinality-one relation's peer."""
+    peer = _peer_node(node, rel_attr)
+    if peer is None:
+        return default
+    return _value(peer, value_attr, default=default)
+
+
+def _split_cidr(raw: Any) -> tuple[str | None, int | None]:
+    """Split a CIDR value (str or ipaddress object) into (address, prefixlen)."""
+    if not raw:
+        return None, None
+    text = str(raw)
+    address, _, prefix = text.partition("/")
+    return address or None, int(prefix) if prefix.isdigit() else None
 
 
 class InfrahubIntentStore(IntentStore):
@@ -130,12 +165,58 @@ class InfrahubIntentStore(IntentStore):
         if name is not None:
             filters["name__value"] = name
 
-        try:
-            nodes = await self._client.filters(
-                kind=DEVICE_KIND,
-                branch=branch or self._default_branch,
-                **filters,
+        resolved_branch = branch or self._default_branch
+        device_nodes = await self._filters(kind=DEVICE_KIND, branch=resolved_branch, **filters)
+        if not device_nodes:
+            return []
+
+        # Live device nodes carry no usable interface/session peers, so the
+        # config intent is queried from the child side in two batch calls
+        # and grouped back onto the devices (#33).
+        device_ids = [str(node.id) for node in device_nodes]
+        relation_kwargs: dict[str, Any] = {
+            "branch": resolved_branch,
+            "device__ids": device_ids,
+            "prefetch_relationships": True,
+            "populate_store": True,
+        }
+        iface_nodes = await self._filters(kind=INTERFACE_KIND, **relation_kwargs)
+        session_nodes = await self._filters(kind=SESSION_KIND, **relation_kwargs)
+
+        ifaces_by_device: dict[str, list[Any]] = {}
+        for node in iface_nodes:
+            device_ref = _peer_id(node, "device")
+            if device_ref is not None:
+                ifaces_by_device.setdefault(device_ref, []).append(node)
+        sessions_by_device: dict[str, list[Any]] = {}
+        for node in session_nodes:
+            device_ref = _peer_id(node, "device")
+            if device_ref is not None:
+                sessions_by_device.setdefault(device_ref, []).append(node)
+
+        states: list[DesiredState] = []
+        for node in device_nodes:
+            device = self._node_to_device(node)
+            node_id = str(node.id)
+            states.append(
+                DesiredState(
+                    device=device,
+                    interfaces=[
+                        self._node_to_interface(iface, fallback_device_id=device.id)
+                        for iface in ifaces_by_device.get(node_id, [])
+                    ],
+                    bgp_sessions=[
+                        self._node_to_bgp_session(session, fallback_device_id=device.id)
+                        for session in sessions_by_device.get(node_id, [])
+                    ],
+                )
             )
+        return states
+
+    async def _filters(self, **kwargs: Any) -> list[Any]:
+        """Call ``client.filters`` translating SDK failures to domain errors."""
+        try:
+            return list(await self._client.filters(**kwargs) or [])
         except (OSError, TimeoutError) as exc:
             raise IntentConnectionError(f"Infrahub unreachable: {exc}") from exc
         except IntentConnectionError:
@@ -147,8 +228,6 @@ class InfrahubIntentStore(IntentStore):
             if exc.__class__.__module__.startswith("infrahub"):
                 raise IntentConnectionError(f"Infrahub error: {exc}") from exc
             raise
-
-        return [self._node_to_desired_state(node) for node in (nodes or [])]
 
     # ------------------------------------------------------------------ Phase stubs
     # These raise NotImplementedError until later tasks add them, but they
@@ -238,16 +317,6 @@ class InfrahubIntentStore(IntentStore):
 
     # ------------------------------------------------------------------ mapping helpers
 
-    def _node_to_desired_state(self, node: Any) -> DesiredState:
-        device = self._node_to_device(node)
-        interfaces = [
-            self._node_to_interface(iface, fallback_device_id=device.id) for iface in _peers(node, "interfaces")
-        ]
-        sessions = [
-            self._node_to_bgp_session(session, fallback_device_id=device.id) for session in _peers(node, "bgp_sessions")
-        ]
-        return DesiredState(device=device, interfaces=interfaces, bgp_sessions=sessions)
-
     def _node_to_device(self, node: Any) -> Device:
         # Schema attribute is ``management_ip`` (IPHost — the live SDK yields
         # an ipaddress interface object, mocks a CIDR string); the Device
@@ -266,16 +335,28 @@ class InfrahubIntentStore(IntentStore):
         )
 
     def _node_to_interface(self, node: Any, *, fallback_device_id: UUID) -> Interface:
+        # Live InterfacePhysical shape: the IP lives on the ``ip_addresses``
+        # relation (IpamIPAddress peer with a CIDR ``address``); enablement is
+        # the ``status`` attribute. There are no ip_address/prefix_length/
+        # enabled scalars (#33).
         peer_id = _peer_id(node, "device")
         device_id = UUID(peer_id) if peer_id else fallback_device_id
+        ip_address: str | None = None
+        prefix_length: int | None = None
+        for ip_rel in _peers(node, "ip_addresses"):
+            ip_peer = getattr(ip_rel, "peer", ip_rel)
+            ip_address, prefix_length = _split_cidr(_value(ip_peer, "address"))
+            if ip_address:
+                break
+        status = _value(node, "status")
         return Interface(
             id=UUID(str(node.id)),
             device_id=device_id,
             name=_value(node, "name", default=""),
             description=_value(node, "description"),
-            ip_address=_value(node, "ip_address"),
-            prefix_length=_value(node, "prefix_length"),
-            enabled=_value(node, "enabled", default=True),
+            ip_address=ip_address,
+            prefix_length=prefix_length,
+            enabled=True if status is None else status == "active",
             speed=_value(node, "speed"),
             mtu=_value(node, "mtu", default=9232),
             peer_device=_value(node, "peer_device"),
@@ -283,17 +364,22 @@ class InfrahubIntentStore(IntentStore):
         )
 
     def _node_to_bgp_session(self, node: Any, *, fallback_device_id: UUID) -> BGPSession:
+        # Live RoutingBGPSession shape: ASNs and endpoint IPs are relations
+        # (local_as/remote_as → RoutingAutonomousSystem, remote_ip →
+        # IpamIPAddress), and the policy attributes are plural (#33).
         peer_id = _peer_id(node, "device")
         device_id = UUID(peer_id) if peer_id else fallback_device_id
+        peer_address, _prefix = _split_cidr(_peer_value(node, "remote_ip", "address"))
+        status = _value(node, "status")
         return BGPSession(
             id=UUID(str(node.id)),
             device_id=device_id,
-            local_asn=_value(node, "local_asn", default=0),
-            peer_address=_value(node, "peer_address", default=""),
-            peer_asn=_value(node, "peer_asn", default=0),
-            peer_group=_value(node, "peer_group"),
+            local_asn=_peer_value(node, "local_as", "asn", default=0) or 0,
+            peer_address=peer_address or "",
+            peer_asn=_peer_value(node, "remote_as", "asn", default=0) or 0,
+            peer_group=_peer_value(node, "peer_group", "name"),
             address_family=_value(node, "address_family", default="ipv4_unicast"),
-            export_policy=_value(node, "export_policy"),
-            import_policy=_value(node, "import_policy"),
-            enabled=_value(node, "enabled", default=True),
+            export_policy=_value(node, "export_policies"),
+            import_policy=_value(node, "import_policies"),
+            enabled=True if status is None else status == "active",
         )
