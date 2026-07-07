@@ -10,6 +10,7 @@ See [AGENTS.md](AGENTS.md) for full project context.
 - Start worker: `uv run invoke orchestrator.start`
 - Branch from `main`, PR to `main`
 - Conventional commits (feat:, fix:, docs:, etc.)
+- Issues + project board: see `dev/guides/tracking-work.md` (board: https://github.com/users/anton-tvrz/projects/4)
 
 ## Spec-Driven Development
 
