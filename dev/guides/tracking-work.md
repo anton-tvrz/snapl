@@ -32,9 +32,11 @@ GitHub does **not** auto-add new repo issues to a user-level project. Every new 
 Two label families are in use:
 
 - **NAF block** — `intent`, `executor`, `collector`, `observability`, `orchestrator`, `presentation` (matches `packages/*`)
-- **Type** — `bug`, `enhancement`, `documentation`, `infrastructure`, `testing`, `config`, `triage`
+- **Type** — `bug`, `enhancement`, `documentation`, `infrastructure`, `tests`, `config`, `ci`, `triage`
 
 Apply one NAF-block label (where applicable) plus one or more type labels when filing an issue.
+
+One PR-only label exists besides these: `skip-changelog`. PR validation requires a `changelog/<issue>.<type>.md` fragment on every PR; for changes that don't warrant one (docs-only, CI-only, test-only), add the `skip-changelog` label to the PR instead.
 
 ## When to File an Issue vs. Run the SDD Workflow
 
