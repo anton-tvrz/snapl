@@ -51,35 +51,77 @@ def _rel_many(nodes):
     return SimpleNamespace(peers=list(nodes))
 
 
-def _make_interface_node(*, device_uuid: UUID, name: str, ip: str | None = None, prefix: int | None = None):
+def _make_interface_node(
+    *,
+    device_uuid: UUID,
+    name: str,
+    ip: str | None = None,
+    status: str = "active",
+    mtu: int = 9214,
+    description: str | None = None,
+    peer_device: str | None = None,
+    peer_interface: str | None = None,
+):
+    # Mirrors the live InterfacePhysical shape (#33): the IP lives on an
+    # ``ip_addresses`` relation whose peer carries a CIDR ``address``; there
+    # are no ``ip_address``/``prefix_length``/``enabled`` attributes.
+    ip_peers = [_rel_one(SimpleNamespace(address=_attr(ip)))] if ip else []
     return SimpleNamespace(
         id=str(uuid4()),
         device=_rel_one(SimpleNamespace(id=str(device_uuid))),
         name=_attr(name),
-        description=_attr(None),
-        ip_address=_attr(ip),
-        prefix_length=_attr(prefix),
-        enabled=_attr(True),
+        description=_attr(description),
+        status=_attr(status),
         speed=_attr(None),
-        mtu=_attr(9214),
-        peer_device=_attr(None),
-        peer_interface=_attr(None),
+        mtu=_attr(mtu),
+        peer_device=_attr(peer_device),
+        peer_interface=_attr(peer_interface),
+        ip_addresses=_rel_many(ip_peers),
     )
 
 
-def _make_bgp_session_node(*, device_uuid: UUID, local_asn: int, peer_address: str, peer_asn: int):
+def _make_bgp_session_node(
+    *,
+    device_uuid: UUID,
+    local_asn: int,
+    peer_address: str,
+    peer_asn: int,
+    peer_group: str | None = None,
+    status: str = "active",
+    export_policies: str | None = None,
+    import_policies: str | None = None,
+):
+    # Mirrors the live RoutingBGPSession shape (#33): ASNs and IPs are
+    # relations (local_as/remote_as → RoutingAutonomousSystem, remote_ip →
+    # IpamIPAddress with CIDR address), not scalar attributes.
     return SimpleNamespace(
         id=str(uuid4()),
         device=_rel_one(SimpleNamespace(id=str(device_uuid))),
-        local_asn=_attr(local_asn),
-        peer_address=_attr(peer_address),
-        peer_asn=_attr(peer_asn),
-        peer_group=_attr(None),
-        address_family=_attr("ipv4_unicast"),
-        export_policy=_attr(None),
-        import_policy=_attr(None),
-        enabled=_attr(True),
+        local_as=_rel_one(SimpleNamespace(asn=_attr(local_asn))),
+        remote_as=_rel_one(SimpleNamespace(asn=_attr(peer_asn))),
+        local_ip=_rel_one(SimpleNamespace(address=_attr(None))),
+        remote_ip=_rel_one(SimpleNamespace(address=_attr(peer_address))),
+        peer_group=_rel_one(SimpleNamespace(name=_attr(peer_group))) if peer_group else _rel_one(None),
+        status=_attr(status),
+        description=_attr(None),
+        export_policies=_attr(export_policies),
+        import_policies=_attr(import_policies),
     )
+
+
+def _dispatch_filters(mock, *, devices, interfaces=None, sessions=None):
+    """Route mock ``client.filters`` calls by kind, like the live SDK."""
+
+    async def _filters(kind=None, **kwargs):
+        if kind == "DcimDevice":
+            return list(devices)
+        if kind == "InterfacePhysical":
+            return list(interfaces or [])
+        if kind == "RoutingBGPSession":
+            return list(sessions or [])
+        return []
+
+    mock.filters = AsyncMock(name="client.filters", side_effect=_filters)
 
 
 def _make_device_node(
@@ -89,13 +131,13 @@ def _make_device_node(
     use_case: str = "dcfabric",
     management: str | None = "10.0.0.1/24",
     lab_node_name: str | None = None,
-    interfaces: list | None = None,
-    bgp_sessions: list | None = None,
     device_id: UUID | None = None,
 ):
     # Mirrors the real Infrahub schema (schemas/network_device.yml): the
     # attribute is ``management_ip`` (IPHost, so CIDR-suffixed), not
-    # ``management_address`` — that mismatch is what issue #31 fixed.
+    # ``management_address`` — that mismatch is what issue #31 fixed. Live
+    # device nodes carry no usable interface/session peers (#33): those are
+    # queried from the child side (InterfacePhysical / RoutingBGPSession).
     dev_uuid = device_id or uuid4()
     return SimpleNamespace(
         id=str(dev_uuid),
@@ -106,8 +148,7 @@ def _make_device_node(
         use_case=_attr(use_case),
         platform=_attr("nokia-srlinux"),
         description=_attr(None),
-        interfaces=_rel_many(interfaces or []),
-        bgp_sessions=_rel_many(bgp_sessions or []),
+        interfaces=_rel_many([]),
     )
 
 
@@ -127,15 +168,10 @@ class TestGetDesiredState:
 
     async def test_returns_single_device(self, mock_infrahub_client):
         dev_uuid = uuid4()
-        iface = _make_interface_node(device_uuid=dev_uuid, name="ethernet-1/1", ip="10.1.1.0", prefix=31)
-        bgp = _make_bgp_session_node(device_uuid=dev_uuid, local_asn=65000, peer_address="10.1.1.1", peer_asn=65001)
-        node = _make_device_node(
-            name="spine-01",
-            device_id=dev_uuid,
-            interfaces=[iface],
-            bgp_sessions=[bgp],
-        )
-        mock_infrahub_client.filters.return_value = [node]
+        iface = _make_interface_node(device_uuid=dev_uuid, name="ethernet-1/1", ip="10.1.1.0/31")
+        bgp = _make_bgp_session_node(device_uuid=dev_uuid, local_asn=65000, peer_address="10.1.1.1/31", peer_asn=65001)
+        node = _make_device_node(name="spine-01", device_id=dev_uuid)
+        _dispatch_filters(mock_infrahub_client, devices=[node], interfaces=[iface], sessions=[bgp])
         store = InfrahubIntentStore(client=mock_infrahub_client)
 
         result = await store.get_desired_state(device_id=dev_uuid)
@@ -210,7 +246,7 @@ class TestGetDesiredState:
         assert len(result) == 2
         assert all(state.device.role == "spine" for state in result)
         # The store must pass role to the SDK's filter call
-        kwargs = mock_infrahub_client.filters.await_args.kwargs
+        kwargs = mock_infrahub_client.filters.await_args_list[0].kwargs
         assert kwargs.get("role__value") == "spine" or kwargs.get("role") == "spine"
 
     async def test_filters_by_use_case(self, mock_infrahub_client):
@@ -219,7 +255,7 @@ class TestGetDesiredState:
 
         await store.get_desired_state(use_case="dcfabric")
 
-        kwargs = mock_infrahub_client.filters.await_args.kwargs
+        kwargs = mock_infrahub_client.filters.await_args_list[0].kwargs
         assert kwargs.get("use_case__value") == "dcfabric" or kwargs.get("use_case") == "dcfabric"
 
     async def test_filters_combine(self, mock_infrahub_client):
@@ -228,7 +264,7 @@ class TestGetDesiredState:
 
         await store.get_desired_state(use_case="dcfabric", role="leaf", name="leaf-01")
 
-        kwargs = mock_infrahub_client.filters.await_args.kwargs
+        kwargs = mock_infrahub_client.filters.await_args_list[0].kwargs
         # All three filter keys must be present; keys may use __value suffix for the SDK
         assert any(k.startswith("use_case") for k in kwargs)
         assert any(k.startswith("role") for k in kwargs)
@@ -248,7 +284,7 @@ class TestGetDesiredState:
 
         await store.get_desired_state(device_id=dev_uuid)
 
-        kwargs = mock_infrahub_client.filters.await_args.kwargs
+        kwargs = mock_infrahub_client.filters.await_args_list[0].kwargs
         # Infrahub's GraphQL expects ``ids: [String]`` rather than a single
         # ``id`` argument, so the store wraps the UUID in a one-element list.
         assert kwargs.get("ids") == [str(dev_uuid)]
@@ -432,6 +468,149 @@ class TestGetSchema:
 # ---------------------------------------------------------------------------
 
 
+class TestRelationshipQueries:
+    """Regression for #33: live device nodes carry no usable interface/session
+    peers, so get_desired_state must query InterfacePhysical and
+    RoutingBGPSession from the child side with prefetched relations."""
+
+    async def test_relation_queries_pin_call_signature(self, mock_infrahub_client):
+        dev_uuid = uuid4()
+        node = _make_device_node(name="spine-01", device_id=dev_uuid)
+        _dispatch_filters(mock_infrahub_client, devices=[node])
+        store = InfrahubIntentStore(client=mock_infrahub_client)
+
+        await store.get_desired_state(use_case="dcfabric")
+
+        calls = {c.kwargs.get("kind"): c.kwargs for c in mock_infrahub_client.filters.await_args_list}
+        assert set(calls) == {"DcimDevice", "InterfacePhysical", "RoutingBGPSession"}
+        for kind in ("InterfacePhysical", "RoutingBGPSession"):
+            kwargs = calls[kind]
+            assert kwargs.get("device__ids") == [str(dev_uuid)]
+            assert kwargs.get("prefetch_relationships") is True
+            assert kwargs.get("populate_store") is True
+
+    async def test_no_relation_queries_without_devices(self, mock_infrahub_client):
+        _dispatch_filters(mock_infrahub_client, devices=[])
+        store = InfrahubIntentStore(client=mock_infrahub_client)
+
+        result = await store.get_desired_state(use_case="dcfabric")
+
+        assert result == []
+        assert mock_infrahub_client.filters.await_count == 1
+
+    async def test_interface_mapped_from_live_shape(self, mock_infrahub_client):
+        dev_uuid = uuid4()
+        node = _make_device_node(name="spine-01", device_id=dev_uuid)
+        iface = _make_interface_node(
+            device_uuid=dev_uuid,
+            name="ethernet-1/1",
+            ip="10.10.1.0/31",
+            status="active",
+            mtu=9214,
+            description="to leaf-01:ethernet-1/49",
+            peer_device="leaf-01",
+            peer_interface="ethernet-1/49",
+        )
+        _dispatch_filters(mock_infrahub_client, devices=[node], interfaces=[iface])
+        store = InfrahubIntentStore(client=mock_infrahub_client)
+
+        result = await store.get_desired_state(use_case="dcfabric")
+
+        (mapped,) = result[0].interfaces
+        assert mapped.name == "ethernet-1/1"
+        assert mapped.ip_address == "10.10.1.0"
+        assert mapped.prefix_length == 31
+        assert mapped.enabled is True
+        assert mapped.mtu == 9214
+        assert mapped.description == "to leaf-01:ethernet-1/49"
+        assert mapped.peer_device == "leaf-01"
+        assert mapped.peer_interface == "ethernet-1/49"
+
+    async def test_interface_without_ip_and_inactive_status(self, mock_infrahub_client):
+        dev_uuid = uuid4()
+        node = _make_device_node(name="spine-01", device_id=dev_uuid)
+        iface = _make_interface_node(device_uuid=dev_uuid, name="ethernet-1/9", ip=None, status="disabled")
+        _dispatch_filters(mock_infrahub_client, devices=[node], interfaces=[iface])
+        store = InfrahubIntentStore(client=mock_infrahub_client)
+
+        result = await store.get_desired_state(use_case="dcfabric")
+
+        (mapped,) = result[0].interfaces
+        assert mapped.ip_address is None
+        assert mapped.prefix_length is None
+        assert mapped.enabled is False
+
+    async def test_bgp_session_mapped_from_live_shape(self, mock_infrahub_client):
+        dev_uuid = uuid4()
+        node = _make_device_node(name="spine-01", device_id=dev_uuid)
+        bgp = _make_bgp_session_node(
+            device_uuid=dev_uuid,
+            local_asn=65000,
+            peer_asn=65011,
+            peer_address="10.10.1.1/31",
+            peer_group="underlay-ipv4",
+            export_policies="export-all",
+        )
+        _dispatch_filters(mock_infrahub_client, devices=[node], sessions=[bgp])
+        store = InfrahubIntentStore(client=mock_infrahub_client)
+
+        result = await store.get_desired_state(use_case="dcfabric")
+
+        (mapped,) = result[0].bgp_sessions
+        assert mapped.local_asn == 65000
+        assert mapped.peer_asn == 65011
+        assert mapped.peer_address == "10.10.1.1"
+        assert mapped.peer_group == "underlay-ipv4"
+        assert mapped.export_policy == "export-all"
+        assert mapped.enabled is True
+
+    async def test_relations_grouped_by_device(self, mock_infrahub_client):
+        spine_id, leaf_id = uuid4(), uuid4()
+        spine = _make_device_node(name="spine-01", device_id=spine_id)
+        leaf = _make_device_node(name="leaf-01", role="leaf", device_id=leaf_id)
+        ifaces = [
+            _make_interface_node(device_uuid=spine_id, name="ethernet-1/1"),
+            _make_interface_node(device_uuid=leaf_id, name="ethernet-1/49"),
+            _make_interface_node(device_uuid=leaf_id, name="ethernet-1/50"),
+        ]
+        sessions = [
+            _make_bgp_session_node(device_uuid=spine_id, local_asn=65000, peer_address="10.10.1.1/31", peer_asn=65011)
+        ]
+        _dispatch_filters(mock_infrahub_client, devices=[spine, leaf], interfaces=ifaces, sessions=sessions)
+        store = InfrahubIntentStore(client=mock_infrahub_client)
+
+        result = {s.device.name: s for s in await store.get_desired_state(use_case="dcfabric")}
+
+        assert len(result["spine-01"].interfaces) == 1
+        assert len(result["leaf-01"].interfaces) == 2
+        assert len(result["spine-01"].bgp_sessions) == 1
+        assert len(result["leaf-01"].bgp_sessions) == 0
+
+    async def test_unresolvable_relation_peers_fall_back_to_defaults(self, mock_infrahub_client):
+        """Live RelatedNode.peer raises when the peer isn't in the SDK store —
+        mapping must degrade to defaults, not crash."""
+
+        class _RaisingRel:
+            @property
+            def peer(self):
+                raise ValueError("Unable to find the node in the store")
+
+        dev_uuid = uuid4()
+        node = _make_device_node(name="spine-01", device_id=dev_uuid)
+        bgp = _make_bgp_session_node(device_uuid=dev_uuid, local_asn=65000, peer_address="10.10.1.1/31", peer_asn=65011)
+        bgp.local_as = _RaisingRel()
+        bgp.peer_group = _RaisingRel()
+        _dispatch_filters(mock_infrahub_client, devices=[node], sessions=[bgp])
+        store = InfrahubIntentStore(client=mock_infrahub_client)
+
+        result = await store.get_desired_state(use_case="dcfabric")
+
+        (mapped,) = result[0].bgp_sessions
+        assert mapped.local_asn == 0
+        assert mapped.peer_group is None
+        assert mapped.peer_asn == 65011
+
+
 class TestUseCaseIsolation:
     async def test_get_desired_state_passes_use_case_filter_to_sdk(self, mock_infrahub_client):
         mock_infrahub_client.filters.return_value = []
@@ -439,7 +618,7 @@ class TestUseCaseIsolation:
 
         await store.get_desired_state(use_case="dcfabric")
 
-        kwargs = mock_infrahub_client.filters.await_args.kwargs
+        kwargs = mock_infrahub_client.filters.await_args_list[0].kwargs
         assert kwargs.get("use_case__value") == "dcfabric"
 
     async def test_get_desired_state_without_use_case_sends_no_filter(self, mock_infrahub_client):
@@ -448,7 +627,7 @@ class TestUseCaseIsolation:
 
         await store.get_desired_state()
 
-        kwargs = mock_infrahub_client.filters.await_args.kwargs
+        kwargs = mock_infrahub_client.filters.await_args_list[0].kwargs
         assert "use_case__value" not in kwargs
         assert "use_case" not in kwargs
 
@@ -494,12 +673,11 @@ class TestDeleteDevice:
         dev_uuid = device_id or uuid4()
         ifaces = [SimpleNamespace(id=str(uuid4())) for _ in range(num_interfaces)]
         sessions = [SimpleNamespace(id=str(uuid4())) for _ in range(num_sessions)]
-        node = _make_device_node(
-            name=name,
-            device_id=dev_uuid,
-            interfaces=ifaces,
-            bgp_sessions=sessions,
-        )
+        node = _make_device_node(name=name, device_id=dev_uuid)
+        # delete_device still reads embedded peers off the device node
+        # (prefetch path) — out of #33's scope, so keep that shape here.
+        node.interfaces = _rel_many(ifaces)
+        node.bgp_sessions = _rel_many(sessions)
         node.delete = AsyncMock()
         return node, dev_uuid
 
@@ -540,7 +718,7 @@ class TestDeleteDevice:
 
         await store.delete_device(dev_uuid)
 
-        kwargs = mock_infrahub_client.filters.await_args.kwargs
+        kwargs = mock_infrahub_client.filters.await_args_list[0].kwargs
         assert kwargs.get("prefetch_relationships") is True
 
     async def test_delete_device_not_found_raises_not_found_error(self, mock_infrahub_client):
@@ -572,7 +750,7 @@ class TestBranchSupport:
 
         await store.get_desired_state(branch="feature-branch")
 
-        kwargs = mock_infrahub_client.filters.await_args.kwargs
+        kwargs = mock_infrahub_client.filters.await_args_list[0].kwargs
         assert kwargs.get("branch") == "feature-branch"
 
     async def test_get_desired_state_uses_store_default_branch(self, mock_infrahub_client):
@@ -581,7 +759,7 @@ class TestBranchSupport:
 
         await store.get_desired_state()
 
-        kwargs = mock_infrahub_client.filters.await_args.kwargs
+        kwargs = mock_infrahub_client.filters.await_args_list[0].kwargs
         assert kwargs.get("branch") == "staging"
 
     async def test_get_desired_state_per_call_branch_overrides_default(self, mock_infrahub_client):
@@ -590,5 +768,5 @@ class TestBranchSupport:
 
         await store.get_desired_state(branch="hotfix-branch")
 
-        kwargs = mock_infrahub_client.filters.await_args.kwargs
+        kwargs = mock_infrahub_client.filters.await_args_list[0].kwargs
         assert kwargs.get("branch") == "hotfix-branch"
