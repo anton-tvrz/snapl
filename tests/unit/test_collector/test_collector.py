@@ -475,17 +475,19 @@ class TestPathNormalization:
         assert "/network-instance[name=default]/protocols/bgp" in result.data
 
     @pytest.mark.asyncio
-    async def test_empty_update_paths_recovered_from_requested_paths(self, make_device):
-        """SR Linux answers multi-path GETs with one notification per
-        requested path, each update carrying an empty path; the collector
-        recovers the requested path by position."""
+    async def test_multipath_data_keyed_by_stamped_path_regardless_of_order(self, make_device):
+        """gnmi_get stamps each subtree with its requested path, so collect keys
+        the data correctly even when notifications arrive in a different order
+        than the requested paths (#53) — no positional guessing."""
         device = make_device("spine-01")
         collector = _make_collector()
         bgp_path = "/network-instance[name=default]/protocols/bgp/neighbor"
+        # Notifications returned in the REVERSE of the requested-path order,
+        # each stamped (by gnmi_get) with the path it belongs to.
         notification = {
             "notification": [
-                {"timestamp": 1, "update": [{"path": None, "val": {"srl_nokia-interfaces:interface": []}}]},
-                {"timestamp": 1, "update": [{"path": None, "val": {"neighbor": []}}]},
+                {"timestamp": 1, "update": [{"path": bgp_path, "val": {"neighbor": []}}]},
+                {"timestamp": 1, "update": [{"path": "/interface", "val": {"srl_nokia-interfaces:interface": []}}]},
             ]
         }
         with patch(
@@ -495,8 +497,8 @@ class TestPathNormalization:
         ):
             result = await collector.collect(device, paths=["/interface", bgp_path])
         assert result.success is True
-        assert "/interface" in result.data
-        assert bgp_path in result.data
+        assert result.data["/interface"] == {"srl_nokia-interfaces:interface": []}
+        assert result.data[bgp_path] == {"neighbor": []}
 
 
 # ---------------------------------------------------------------------------
