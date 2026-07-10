@@ -610,6 +610,29 @@ class TestRelationshipQueries:
         assert mapped.peer_group is None
         assert mapped.peer_asn == 65011
 
+    async def test_unresolvable_interface_ip_peer_falls_back_to_none(self, mock_infrahub_client):
+        """A cardinality-many ip_addresses peer whose live .peer property raises
+        (SDK store miss) must degrade to ip_address=None, not crash the whole
+        get_desired_state call (#45)."""
+
+        class _RaisingRel:
+            @property
+            def peer(self):
+                raise ValueError("Unable to find the node in the store")
+
+        dev_uuid = uuid4()
+        node = _make_device_node(name="spine-01", device_id=dev_uuid)
+        iface = _make_interface_node(device_uuid=dev_uuid, name="ethernet-1/1")
+        iface.ip_addresses = _rel_many([_RaisingRel()])
+        _dispatch_filters(mock_infrahub_client, devices=[node], interfaces=[iface])
+        store = InfrahubIntentStore(client=mock_infrahub_client)
+
+        result = await store.get_desired_state(use_case="dcfabric")
+
+        (mapped,) = result[0].interfaces
+        assert mapped.ip_address is None
+        assert mapped.prefix_length is None
+
 
 class TestUseCaseIsolation:
     async def test_get_desired_state_passes_use_case_filter_to_sdk(self, mock_infrahub_client):

@@ -93,19 +93,25 @@ def _peers(node: Any, attr: str) -> list[Any]:
     return list(peers) if peers is not None else []
 
 
-def _peer_node(node: Any, attr: str) -> Any | None:
-    """Resolve a cardinality-one relation's peer node, or None.
+def _resolve_peer(rel: Any) -> Any | None:
+    """Resolve a ``RelatedNode``-like relation object to its peer node, or None.
 
-    The live SDK's ``RelatedNode.peer`` is a property that *raises* when the
-    relation is unset or the peer isn't in the SDK store — degrade to None.
+    The live SDK's ``.peer`` is a property that *raises* when the relation is
+    unset or the peer isn't in the SDK store — degrade to None rather than let
+    it propagate. Used for both cardinality-one relations and the individual
+    peers of a cardinality-many relation (#45).
     """
-    obj = getattr(node, attr, None)
-    if obj is None:
+    if rel is None:
         return None
     try:
-        return obj.peer
+        return rel.peer
     except Exception:
         return None
+
+
+def _peer_node(node: Any, attr: str) -> Any | None:
+    """Resolve a cardinality-one relation's peer node, or None."""
+    return _resolve_peer(getattr(node, attr, None))
 
 
 def _peer_id(node: Any, attr: str) -> str | None:
@@ -344,7 +350,7 @@ class InfrahubIntentStore(IntentStore):
         ip_address: str | None = None
         prefix_length: int | None = None
         for ip_rel in _peers(node, "ip_addresses"):
-            ip_peer = getattr(ip_rel, "peer", ip_rel)
+            ip_peer = _resolve_peer(ip_rel)
             ip_address, prefix_length = _split_cidr(_value(ip_peer, "address"))
             if ip_address:
                 break
