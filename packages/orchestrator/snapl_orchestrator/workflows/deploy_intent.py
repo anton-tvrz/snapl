@@ -22,6 +22,7 @@ with workflow.unsafe.imports_passed_through():
     from snapl_orchestrator.activities.executor import apply_config
     from snapl_orchestrator.activities.intent import fetch_desired_state
     from snapl_orchestrator.activities.observability import detect_drift
+    from snapl_orchestrator.adapters.srlinux import DRIFT_PATHS
     from snapl_orchestrator.models import (
         AuditEvent,
         AuditEventType,
@@ -179,11 +180,12 @@ class DeployIntentWorkflow:
         )
 
         # ---- Collect verification state ------------------------------------
-        applied_paths = list(apply_result.payload.keys()) if apply_result.payload else []
+        # Fetch the entity container paths the drift adapter expands, not the
+        # rendered payload's container names (which aren't valid gNMI paths).
         try:
             collected = await workflow.execute_activity(
                 collect_running_state,
-                args=[desired.device, applied_paths],
+                args=[desired.device, list(DRIFT_PATHS)],
                 start_to_close_timeout=timedelta(seconds=30),
                 retry_policy=_COLLECT_RETRY,
             )

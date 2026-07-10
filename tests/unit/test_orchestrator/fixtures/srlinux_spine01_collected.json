@@ -1,0 +1,440 @@
+{
+  "/interface": {
+    "srl_nokia-interfaces:interface": [
+      {
+        "name": "ethernet-1/1",
+        "admin-state": "enable",
+        "mtu": 9232,
+        "transceiver": {
+          "tx-laser": false,
+          "oper-state": "down",
+          "oper-down-reason": "not-present",
+          "ddm-events": true,
+          "srl_nokia-platform-healthz:healthz": {
+            "status": "unspecified"
+          }
+        },
+        "ethernet": {
+          "dac-link-training": false,
+          "lacp-port-priority": 32768,
+          "port-speed": "10G",
+          "hw-mac-address": "1A:5E:04:FF:00:01",
+          "flow-control": {
+            "receive": false
+          },
+          "forward-error-correction": {
+            "operational-host-if-fec": "disabled"
+          },
+          "hold-time": {
+            "up": 0,
+            "down": 0
+          },
+          "statistics": {
+            "in-mac-pause-frames": "0",
+            "in-oversize-frames": "0",
+            "in-undersize-frames": "0",
+            "in-jabber-frames": "0",
+            "in-fragment-frames": "0",
+            "in-crc-error-frames": "0",
+            "out-mac-pause-frames": "0",
+            "in-64b-frames": "0",
+            "in-65b-to-127b-frames": "7",
+            "in-128b-to-255b-frames": "49",
+            "in-256b-to-511b-frames": "0",
+            "in-512b-to-1023b-frames": "0",
+            "in-1024b-to-1518b-frames": "0",
+            "in-1519b-or-longer-frames": "0",
+            "out-64b-frames": "0",
+            "out-65b-to-127b-frames": "0",
+            "out-128b-to-255b-frames": "49",
+            "out-256b-to-511b-frames": "0",
+            "out-512b-to-1023b-frames": "0",
+            "out-1024b-to-1518b-frames": "0",
+            "out-1519b-or-longer-frames": "0"
+          },
+          "srl_nokia-dot1x:dot1x": {
+            "srl_nokia-dot1x-tunneling:tunnel": {
+              "tunnel-all": false,
+              "oper-rule": "trap-to-cpu-untagged"
+            }
+          },
+          "srl_nokia-interfaces-l2cp:l2cp-transparency": {
+            "tunnel-all-l2cp": false,
+            "lldp": {
+              "tunnel": false,
+              "oper-rule": "trap-to-cpu-untagged"
+            },
+            "lacp": {
+              "tunnel": false,
+              "oper-rule": "trap-to-cpu-untagged"
+            },
+            "xstp": {
+              "tunnel": false,
+              "oper-rule": "drop-tagged-and-untagged"
+            },
+            "ptp": {
+              "tunnel": false,
+              "oper-rule": "drop-tagged-and-untagged"
+            }
+          }
+        },
+        "subinterface": [
+          {
+            "index": 0,
+            "admin-state": "enable",
+            "ipv4": {
+              "admin-state": "enable",
+              "allow-directed-broadcast": false,
+              "address": [
+                {
+                  "ip-prefix": "10.10.1.0/31",
+                  "origin": "static"
+                }
+              ],
+              "unnumbered": {
+                "admin-state": "disable"
+              },
+              "srl_nokia-interfaces-nbr:arp": {
+                "duplicate-address-detection": true,
+                "timeout": 14400,
+                "learn-unsolicited": false,
+                "proxy-arp": false
+              }
+            }
+          }
+        ],
+        "sflow": {
+          "admin-state": "enable"
+        }
+      },
+      {
+        "name": "ethernet-1/2",
+        "admin-state": "enable",
+        "mtu": 9232,
+        "transceiver": {
+          "tx-laser": false,
+          "oper-state": "down",
+          "oper-down-reason": "not-present",
+          "ddm-events": true,
+          "srl_nokia-platform-healthz:healthz": {
+            "status": "unspecified"
+          }
+        },
+        "ethernet": {
+          "dac-link-training": false,
+          "lacp-port-priority": 32768,
+          "port-speed": "10G",
+          "hw-mac-address": "1A:5E:04:FF:00:02",
+          "flow-control": {
+            "receive": false
+          },
+          "forward-error-correction": {
+            "operational-host-if-fec": "disabled"
+          },
+          "hold-time": {
+            "up": 0,
+            "down": 0
+          },
+          "statistics": {
+            "in-mac-pause-frames": "0",
+            "in-oversize-frames": "0",
+            "in-undersize-frames": "0",
+            "in-jabber-frames": "0",
+            "in-fragment-frames": "0",
+            "in-crc-error-frames": "0",
+            "out-mac-pause-frames": "0",
+            "in-64b-frames": "0",
+            "in-65b-to-127b-frames": "7",
+            "in-128b-to-255b-frames": "49",
+            "in-256b-to-511b-frames": "0",
+            "in-512b-to-1023b-frames": "0",
+            "in-1024b-to-1518b-frames": "0",
+            "in-1519b-or-longer-frames": "0",
+            "out-64b-frames": "0",
+            "out-65b-to-127b-frames": "0",
+            "out-128b-to-255b-frames": "49",
+            "out-256b-to-511b-frames": "0",
+            "out-512b-to-1023b-frames": "0",
+            "out-1024b-to-1518b-frames": "0",
+            "out-1519b-or-longer-frames": "0"
+          },
+          "srl_nokia-dot1x:dot1x": {
+            "srl_nokia-dot1x-tunneling:tunnel": {
+              "tunnel-all": false,
+              "oper-rule": "trap-to-cpu-untagged"
+            }
+          },
+          "srl_nokia-interfaces-l2cp:l2cp-transparency": {
+            "tunnel-all-l2cp": false,
+            "lldp": {
+              "tunnel": false,
+              "oper-rule": "trap-to-cpu-untagged"
+            },
+            "lacp": {
+              "tunnel": false,
+              "oper-rule": "trap-to-cpu-untagged"
+            },
+            "xstp": {
+              "tunnel": false,
+              "oper-rule": "drop-tagged-and-untagged"
+            },
+            "ptp": {
+              "tunnel": false,
+              "oper-rule": "drop-tagged-and-untagged"
+            }
+          }
+        },
+        "subinterface": [
+          {
+            "index": 0,
+            "admin-state": "enable",
+            "ipv4": {
+              "admin-state": "enable",
+              "allow-directed-broadcast": false,
+              "address": [
+                {
+                  "ip-prefix": "10.10.1.2/31",
+                  "origin": "static"
+                }
+              ],
+              "unnumbered": {
+                "admin-state": "disable"
+              },
+              "srl_nokia-interfaces-nbr:arp": {
+                "duplicate-address-detection": true,
+                "timeout": 14400,
+                "learn-unsolicited": false,
+                "proxy-arp": false
+              }
+            }
+          }
+        ],
+        "sflow": {
+          "admin-state": "enable"
+        }
+      },
+      {
+        "name": "lo0",
+        "admin-state": "enable",
+        "ethernet": {
+          "hold-time": {
+            "up": 0,
+            "down": 0
+          }
+        },
+        "subinterface": [
+          {
+            "index": 0,
+            "admin-state": "enable",
+            "ipv4": {
+              "admin-state": "enable",
+              "allow-directed-broadcast": false,
+              "address": [
+                {
+                  "ip-prefix": "10.0.0.1/32",
+                  "origin": "static"
+                }
+              ],
+              "unnumbered": {
+                "admin-state": "disable"
+              },
+              "srl_nokia-interfaces-nbr:arp": {
+                "duplicate-address-detection": true,
+                "timeout": 14400,
+                "learn-unsolicited": false,
+                "proxy-arp": false
+              }
+            }
+          }
+        ],
+        "sflow": {
+          "admin-state": "disable"
+        }
+      },
+      {
+        "name": "mgmt0",
+        "admin-state": "enable",
+        "mtu": 1514,
+        "ethernet": {
+          "port-speed": "1G",
+          "hw-mac-address": "DA:8F:42:EF:7C:2D",
+          "flow-control": {
+            "receive": false
+          },
+          "hold-time": {
+            "up": 0,
+            "down": 0
+          },
+          "statistics": {
+            "in-mac-pause-frames": "0",
+            "in-oversize-frames": "0",
+            "in-undersize-frames": "0",
+            "in-jabber-frames": "0",
+            "in-fragment-frames": "0",
+            "in-crc-error-frames": "0",
+            "out-mac-pause-frames": "0",
+            "in-64b-frames": "45",
+            "in-65b-to-127b-frames": "490",
+            "in-128b-to-255b-frames": "347",
+            "in-256b-to-511b-frames": "7",
+            "in-512b-to-1023b-frames": "0",
+            "in-1024b-to-1518b-frames": "2",
+            "in-1519b-or-longer-frames": "0",
+            "out-64b-frames": "13",
+            "out-65b-to-127b-frames": "99",
+            "out-128b-to-255b-frames": "66",
+            "out-256b-to-511b-frames": "1",
+            "out-512b-to-1023b-frames": "3",
+            "out-1024b-to-1518b-frames": "577",
+            "out-1519b-or-longer-frames": "0"
+          }
+        },
+        "subinterface": [
+          {
+            "index": 0,
+            "admin-state": "enable",
+            "ipv4": {
+              "admin-state": "enable",
+              "allow-directed-broadcast": false,
+              "address": [
+                {
+                  "ip-prefix": "172.20.20.3/24",
+                  "origin": "dhcp",
+                  "status": "preferred"
+                }
+              ],
+              "unnumbered": {
+                "admin-state": "disable"
+              },
+              "srl_nokia-interfaces-ip-dhcp:dhcp-client": {},
+              "srl_nokia-interfaces-nbr:arp": {
+                "duplicate-address-detection": true,
+                "timeout": 14400,
+                "learn-unsolicited": false,
+                "proxy-arp": false,
+                "neighbor": [
+                  {
+                    "ipv4-address": "172.20.20.0",
+                    "link-layer-address": "A6:EA:69:79:38:9B",
+                    "origin": "dynamic",
+                    "expiration-time": "2026-07-10T14:44:36.615Z",
+                    "group-based-policy-tag": 0,
+                    "datapath-programming": {
+                      "status": "success"
+                    }
+                  },
+                  {
+                    "ipv4-address": "172.20.20.1",
+                    "link-layer-address": "A6:EA:69:79:38:9B",
+                    "origin": "dynamic",
+                    "expiration-time": "2026-07-10T15:03:20.898Z",
+                    "group-based-policy-tag": 0,
+                    "datapath-programming": {
+                      "status": "success"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        ],
+        "sflow": {
+          "admin-state": "disable"
+        }
+      }
+    ]
+  },
+  "/network-instance[name=default]/protocols/bgp": {
+    "admin-state": "enable",
+    "autonomous-system": 65001,
+    "router-id": "10.0.0.1",
+    "afi-safi": [
+      {
+        "afi-safi-name": "srl_nokia-common:evpn",
+        "admin-state": "disable",
+        "received-routes": "0",
+        "active-routes": "0"
+      },
+      {
+        "afi-safi-name": "srl_nokia-common:ipv4-unicast",
+        "admin-state": "enable",
+        "received-routes": "0",
+        "active-routes": "0",
+        "send-community-type": [
+          "standard",
+          "large",
+          "extended"
+        ],
+        "add-paths": {
+          "receive": false,
+          "send": false
+        },
+        "multipath": {
+          "allow-multiple-as": true,
+          "ebgp": {
+            "maximum-paths": 1
+          },
+          "ibgp": {
+            "maximum-paths": 1
+          }
+        },
+        "ipv4-unicast": {
+          "advertise-ipv6-next-hops": false,
+          "receive-ipv6-next-hops": false,
+          "convergence": {
+            "max-wait-to-advertise": 0,
+            "oper-max-wait-to-advertise": 0,
+            "up-peers-when-min-expired": 0,
+            "up-peers": 0,
+            "converged-peers": 0,
+            "first-up-peer-time": "0",
+            "last-up-peer-time": "0",
+            "convergence-state": "waiting",
+            "convergence-time": "0"
+          },
+          "group-based-policy": {
+            "add-community": false,
+            "install-from-community": false
+          }
+        },
+        "ipv6-unicast": {
+          "group-based-policy": {
+            "add-community": false,
+            "install-from-community": false
+          }
+        }
+      },
+      {
+        "afi-safi-name": "srl_nokia-common:ipv6-unicast",
+        "admin-state": "disable",
+        "received-routes": "0",
+        "active-routes": "0"
+      },
+      {
+        "afi-safi-name": "srl_nokia-common:route-target",
+        "admin-state": "disable",
+        "received-routes": "0",
+        "active-routes": "0"
+      }
+    ],
+    "group": [
+      {
+        "group-name": "underlay-ipv4",
+        "admin-state": "enable"
+      }
+    ],
+    "neighbor": [
+      {
+        "peer-address": "10.10.1.1",
+        "admin-state": "enable",
+        "peer-as": 65011,
+        "peer-group": "underlay-ipv4"
+      }
+    ]
+  },
+  "/system": {
+    "srl_nokia-system-name:name": {
+      "host-name": "spine-01"
+    }
+  }
+}

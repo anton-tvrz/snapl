@@ -124,6 +124,7 @@ async def test_all_clean_returns_zero_drift(make_desired) -> None:
     audit = InMemoryAuditLog()
     collector = MagicMock()
     collector.get_running_config = AsyncMock(side_effect=_collect)
+    collector.collect = AsyncMock(side_effect=lambda device, _paths: _collect(device))
     observer = MagicMock()
     observer.detect_drift = AsyncMock(side_effect=lambda desired, _c: _report(desired.device, DriftStatus.CLEAN))
 
@@ -150,6 +151,7 @@ async def test_one_drifted_device_identified(make_desired) -> None:
     audit = InMemoryAuditLog()
     collector = MagicMock()
     collector.get_running_config = AsyncMock(side_effect=_collect)
+    collector.collect = AsyncMock(side_effect=lambda device, _paths: _collect(device))
 
     def _detect(desired, _c) -> DriftReport:
         if desired.device.id == drifted_device.id:
@@ -198,7 +200,12 @@ async def test_collect_failure_isolated_to_errored_count(make_desired) -> None:
         return _collect(device)
 
     collector = MagicMock()
+
+    async def _grc_collect(device, paths):
+        return await _grc(device)
+
     collector.get_running_config = AsyncMock(side_effect=_grc)
+    collector.collect = AsyncMock(side_effect=_grc_collect)
     observer = MagicMock()
     observer.detect_drift = AsyncMock(side_effect=lambda desired, _c: _report(desired.device, DriftStatus.CLEAN))
 
@@ -224,6 +231,7 @@ async def test_records_started_and_terminated_audit_events(make_desired) -> None
     audit = InMemoryAuditLog()
     collector = MagicMock()
     collector.get_running_config = AsyncMock(side_effect=_collect)
+    collector.collect = AsyncMock(side_effect=lambda device, _paths: _collect(device))
     observer = MagicMock()
     observer.detect_drift = AsyncMock(side_effect=lambda desired, _c: _report(desired.device, DriftStatus.CLEAN))
 
