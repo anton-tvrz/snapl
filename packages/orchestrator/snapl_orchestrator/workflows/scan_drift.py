@@ -19,6 +19,7 @@ with workflow.unsafe.imports_passed_through():
         fetch_devices_for_use_case,
     )
     from snapl_orchestrator.activities.observability import detect_drift
+    from snapl_orchestrator.adapters.srlinux import DRIFT_PATHS
     from snapl_orchestrator.models import (
         AuditEvent,
         AuditEventType,
@@ -164,7 +165,7 @@ class ScanDriftWorkflow:
         try:
             collected: CollectResult = await workflow.execute_activity(
                 collect_running_state,
-                args=[device, []],
+                args=[device, list(DRIFT_PATHS)],
                 start_to_close_timeout=timedelta(seconds=30),
                 retry_policy=_COLLECT_RETRY,
             )
