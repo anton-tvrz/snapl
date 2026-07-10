@@ -57,12 +57,39 @@ class TestGnmiGet:
         assert "notification" in result
 
     @pytest.mark.asyncio
-    async def test_forwards_multiple_paths(self):
+    async def test_fetches_each_path_individually(self):
+        """Multi-path GETs are issued one path at a time so each response is
+        unambiguously tied to its requested path (#53)."""
         paths = ["/interface", "/network-instance[name=default]/protocols/bgp/neighbor"]
         gc = _mock_gc()
         with patch("snapl_collector.gnmi.client.gNMIclient", return_value=gc):
             await gnmi_get(**_CONN, paths=paths)
-        gc.get.assert_called_once_with(path=paths, datatype="all", encoding="json_ietf")
+        assert gc.get.call_count == len(paths)
+        gc.get.assert_any_call(path=["/interface"], datatype="all", encoding="json_ietf")
+        gc.get.assert_any_call(
+            path=["/network-instance[name=default]/protocols/bgp/neighbor"],
+            datatype="all",
+            encoding="json_ietf",
+        )
+
+    @pytest.mark.asyncio
+    async def test_empty_device_paths_are_stamped_with_requested_path(self):
+        """When the device answers with empty update paths, each per-path
+        response is stamped with its requested path — so the merged result
+        cannot be mis-keyed by notification order (#53)."""
+        paths = ["/interface", "/network-instance"]
+
+        def _per_path(path, datatype, encoding):
+            (requested,) = path
+            val = {"iface": True} if requested == "/interface" else {"ni": True}
+            return {"notification": [{"timestamp": 1, "update": [{"path": None, "val": val}]}]}
+
+        gc = _mock_gc(side_effect=_per_path)
+        with patch("snapl_collector.gnmi.client.gNMIclient", return_value=gc):
+            result = await gnmi_get(**_CONN, paths=paths)
+
+        stamped = {u["path"]: u["val"] for n in result["notification"] for u in n["update"]}
+        assert stamped == {"/interface": {"iface": True}, "/network-instance": {"ni": True}}
 
     @pytest.mark.asyncio
     async def test_propagates_os_error(self):

@@ -69,26 +69,23 @@ class GnmiCollector(Collector):
     def _parse_response(self, response: dict[str, Any], paths: list[str]) -> dict[str, Any]:
         """Extract path→value mapping from a pygnmi GET response.
 
-        SR Linux often leaves the update path empty and answers with one
-        notification per requested path; recover the requested path by
-        position in that case.
+        ``gnmi_get`` stamps every empty-path update with its requested path, so
+        each update here carries a usable path. A root ``/`` GET is the one case
+        that still reports an empty/root path; key it by the single requested
+        path.
 
         Raises KeyError/TypeError if the response structure is unexpected.
         """
         data: dict[str, Any] = {}
-        notifications = response["notification"]
-        for index, notification in enumerate(notifications):
+        for notification in response["notification"]:
             for update in notification.get("update", []):
                 path = update["path"]
-                if not path or path == "/":
-                    if len(paths) == 1:
-                        key = self._normalize_path(paths[0])
-                    elif len(notifications) == len(paths):
-                        key = self._normalize_path(paths[index])
-                    else:
-                        key = "/"
-                else:
+                if path and path != "/":
                     key = self._normalize_path(path)
+                elif len(paths) == 1:
+                    key = self._normalize_path(paths[0])
+                else:
+                    key = "/"
                 data[key] = update["val"]
         return data
 
