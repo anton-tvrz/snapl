@@ -3,13 +3,26 @@
 from __future__ import annotations
 
 from unittest.mock import patch
+from uuid import uuid4
 
 import pytest
-from jinja2 import UndefinedError
+from jinja2 import TemplateError, UndefinedError
 
 from snapl_executor.gnmi.renderer import RENDER_ERROR_KEY, ConfigRenderer
 
 pytestmark = pytest.mark.unit
+
+
+def _iface(**overrides):
+    from snapl_intent.models import Interface
+
+    defaults = {
+        "id": uuid4(),
+        "device_id": uuid4(),
+        "name": "ethernet-1/10",
+        "enabled": True,
+    }
+    return Interface(**{**defaults, **overrides})
 
 
 class TestConfigRendererLoad:
@@ -56,6 +69,61 @@ class TestConfigRendererInterfaces:
         payload = r.render(ds)
         non_loopback = [i for i in payload["interface"] if i["name"] != "lo0"]
         assert non_loopback == []
+
+
+class TestConfigRendererEntityAndFieldCoverage:
+    """Every intent interface is rendered (#64) with every diff-compared field (#59)."""
+
+    def test_ip_less_interface_is_rendered(self, dcfabric_desired_state):
+        ds = dcfabric_desired_state.model_copy(update={"interfaces": [_iface(name="ethernet-1/10")]})
+        payload = ConfigRenderer(use_case="dcfabric").render(ds)
+        entry = next(i for i in payload["interface"] if i["name"] == "ethernet-1/10")
+        assert entry["admin-state"] == "enable"
+        assert "subinterface" not in entry
+
+    def test_disabled_ip_less_interface_renders_shutdown(self, dcfabric_desired_state):
+        ds = dcfabric_desired_state.model_copy(update={"interfaces": [_iface(enabled=False)]})
+        payload = ConfigRenderer(use_case="dcfabric").render(ds)
+        entry = next(i for i in payload["interface"] if i["name"] == "ethernet-1/10")
+        assert entry["admin-state"] == "disable"
+
+    def test_interface_mtu_is_rendered(self, dcfabric_desired_state):
+        payload = ConfigRenderer(use_case="dcfabric").render(dcfabric_desired_state)
+        entry = next(i for i in payload["interface"] if i["name"] == "ethernet-1/1")
+        assert entry["mtu"] == 9232
+
+    def test_interface_description_is_rendered_when_set(self, dcfabric_desired_state):
+        ds = dcfabric_desired_state.model_copy(
+            update={"interfaces": [_iface(description='to leaf-01 "uplink"')]},
+        )
+        payload = ConfigRenderer(use_case="dcfabric").render(ds)
+        entry = next(i for i in payload["interface"] if i["name"] == "ethernet-1/10")
+        assert entry["description"] == 'to leaf-01 "uplink"'
+
+    def test_interface_description_omitted_when_unset(self, dcfabric_desired_state):
+        payload = ConfigRenderer(use_case="dcfabric").render(dcfabric_desired_state)
+        entry = next(i for i in payload["interface"] if i["name"] == "ethernet-1/1")
+        assert "description" not in entry
+
+
+class TestConfigRendererPrefixValidation:
+    """An IP without a prefix length is a render error, not an invalid SET (#72)."""
+
+    def test_ip_without_prefix_length_raises(self, dcfabric_desired_state):
+        ds = dcfabric_desired_state.model_copy(
+            update={"interfaces": [_iface(ip_address="10.10.1.0", prefix_length=None)]},
+        )
+        r = ConfigRenderer(use_case="dcfabric")
+        with pytest.raises(TemplateError, match="ethernet-1/10"):
+            r.render(ds)
+
+    def test_render_safe_reports_missing_prefix_as_render_error(self, dcfabric_desired_state):
+        ds = dcfabric_desired_state.model_copy(
+            update={"interfaces": [_iface(ip_address="10.10.1.0", prefix_length=None)]},
+        )
+        result = ConfigRenderer(use_case="dcfabric").render_safe(ds)
+        assert RENDER_ERROR_KEY in result
+        assert "ethernet-1/10" in result[RENDER_ERROR_KEY]
 
 
 class TestConfigRendererSystem:

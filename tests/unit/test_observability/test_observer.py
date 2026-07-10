@@ -26,7 +26,6 @@ def _matching_actual_data(desired):
             "peer_group": bgp.peer_group,
             "enabled": bgp.enabled,
         },
-        "/system": {"description": desired.device.description},
     }
 
 

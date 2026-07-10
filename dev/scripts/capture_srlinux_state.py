@@ -124,9 +124,6 @@ def _prune(data: dict) -> dict:
         b["group"] = [{k: v for k, v in g.items() if k in ("group-name", "admin-state")} for g in b["group"]]
     out[bgp_key] = b
 
-    sysd = data.get("/system", {})
-    name = sysd.get("srl_nokia-system-name:name") or sysd.get("name") or {"host-name": "spine-01"}
-    out["/system"] = {"srl_nokia-system-name:name": name}
     return out
 
 

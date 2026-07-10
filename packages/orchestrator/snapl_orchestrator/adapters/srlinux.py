@@ -6,19 +6,12 @@ keyed by **per-entity paths** with **flat snake_case field dicts**:
 - ``/interface[name=ethernet-1/1]`` → ``{"description", "ip_address", "prefix_length", "enabled", "mtu"}``
 - ``/network-instance[name=default]/protocols/bgp/neighbor[peer-address=10.10.1.1]``
   → ``{"peer_address", "peer_asn", "peer_group", "enabled"}``
-- ``/system`` → ``{"description"}``
 
 The Collector returns the opposite: raw SR Linux ``json_ietf`` values keyed by the
 requested container paths (``/interface`` → ``{"srl_nokia-interfaces:interface": [...]}``),
 with nested kebab-case fields (``admin-state``, ``subinterface[].ipv4.address[].ip-prefix``).
 This module is the pure, dependency-free translation between the two — the piece the
 diff docstring says "is the caller's responsibility (typically the Orchestrator)".
-
-Device ``description`` has no field in the config SR Linux is given (the renderer
-configures only a loopback under ``/system``), so it normalizes to ``None``. A
-converged device whose intent carries no description therefore diffs CLEAN; setting
-a device description in intent is a known limitation until a device-description
-target is modelled.
 """
 
 from __future__ import annotations
@@ -31,7 +24,6 @@ from typing import Any
 DRIFT_PATHS: tuple[str, ...] = (
     "/interface",
     "/network-instance[name=default]/protocols/bgp",
-    "/system",
 )
 
 _BGP_PATH = "/network-instance[name=default]/protocols/bgp"
@@ -110,8 +102,5 @@ def normalize_srlinux_state(data: dict[str, Any]) -> dict[str, Any]:
         peer = _get_local(neighbor, "peer-address")
         if peer is not None:
             out[f"{_BGP_PATH}/neighbor[peer-address={peer}]"] = _normalize_neighbor(neighbor)
-
-    # Device: SR Linux carries no description in the config it is given.
-    out["/system"] = {"description": None}
 
     return out
