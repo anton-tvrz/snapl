@@ -1,8 +1,10 @@
 [
-{% for iface in interfaces if iface.ip_address %}
+{% for iface in interfaces %}
   {
     "name": "{{ iface.name }}",
     "admin-state": "{{ 'enable' if iface.enabled else 'disable' }}",
+    "mtu": {{ iface.mtu }}{% if iface.description %},
+    "description": {{ iface.description | tojson }}{% endif %}{% if iface.ip_address %},
     "subinterface": [
       {
         "index": 0,
@@ -16,7 +18,7 @@
           ]
         }
       }
-    ]
+    ]{% endif %}
   }{% if not loop.last %},{% endif %}
 {% endfor %}
 ]

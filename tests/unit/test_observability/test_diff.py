@@ -62,19 +62,19 @@ def _matching_actual_data(desired):
             "peer_group": bgp.peer_group,
             "enabled": bgp.enabled,
         },
-        "/system": {
-            "description": desired.device.description,
-        },
     }
 
 
 class TestEntityFieldMap:
-    def test_map_has_all_three_entity_kinds(self):
+    def test_map_covers_the_managed_entity_kinds(self):
         from snapl_observability.structural.diff import ENTITY_FIELD_MAP
 
         assert "interface" in ENTITY_FIELD_MAP
         assert "bgp_session" in ENTITY_FIELD_MAP
-        assert "device" in ENTITY_FIELD_MAP
+        # The executor manages no device-level (/system) fields, so the diff
+        # must not compare any — a compared-but-never-rendered field is
+        # permanent phantom drift (#59).
+        assert "device" not in ENTITY_FIELD_MAP
 
     def test_interface_map_fields(self):
         from snapl_observability.structural.diff import ENTITY_FIELD_MAP
@@ -149,18 +149,18 @@ class TestDiffBGPMismatches:
         assert items[0].actual == 99999
 
 
-class TestDiffDeviceMismatches:
-    def test_device_description_mismatch(self):
+class TestDeviceDescriptionNotCompared:
+    def test_device_description_produces_no_drift(self):
+        """Nothing renders a device description, so the diff must not compare
+        one — seeded devices all carry descriptions and would otherwise drift
+        forever (#59)."""
         from snapl_observability.structural.diff import diff_desired_vs_actual
 
-        desired = _build_desired_state(description="orig")
+        desired = _build_desired_state(description="Spine 01")
         actual = _matching_actual_data(desired)
-        actual["/system"]["description"] = "changed"
+        assert "/system" not in actual
         items = diff_desired_vs_actual(desired, actual)
-        device_items = [i for i in items if i.entity_kind == "device"]
-        assert len(device_items) == 1
-        assert device_items[0].desired == "orig"
-        assert device_items[0].actual == "changed"
+        assert [i for i in items if i.entity_kind == "device"] == []
 
 
 class TestDiffMultipleEntityKinds:
@@ -172,8 +172,7 @@ class TestDiffMultipleEntityKinds:
         actual["/interface[name=ethernet-1/1]"]["mtu"] = 1500
         bgp_path = "/network-instance[name=default]/protocols/bgp/neighbor[peer-address=10.1.1.1]"
         actual[bgp_path]["enabled"] = False
-        actual["/system"]["description"] = "changed"
         items = diff_desired_vs_actual(desired, actual)
         kinds = {i.entity_kind for i in items}
-        assert kinds == {"interface", "bgp_session", "device"}
-        assert len(items) == 3
+        assert kinds == {"interface", "bgp_session"}
+        assert len(items) == 2

@@ -74,7 +74,8 @@ def test_drift_paths_match_the_diff_contract_entities() -> None:
     # The collector must fetch the container paths the adapter expands.
     assert "/interface" in DRIFT_PATHS
     assert "/network-instance[name=default]/protocols/bgp" in DRIFT_PATHS
-    assert "/system" in DRIFT_PATHS
+    # /system is no longer collected: the diff compares no device-level fields (#59).
+    assert "/system" not in DRIFT_PATHS
 
 
 def test_normalizes_interface_to_entity_keyed_flat_fields(collected: dict) -> None:
@@ -106,11 +107,7 @@ def test_normalized_output_yields_clean_diff_for_converged_device(collected: dic
 
     items = diff_desired_vs_actual(desired, normalized)
 
-    # No interface or bgp drift on a converged device.
-    drift_fields = {(i.entity_kind, i.path) for i in items}
-    assert not [f for k, f in drift_fields if k in ("interface", "bgp_session")], (
-        f"unexpected interface/bgp drift on converged device: {items}"
-    )
+    assert items == [], f"unexpected drift on converged device: {items}"
 
 
 def test_a_real_change_is_flagged_as_drift(collected: dict) -> None:

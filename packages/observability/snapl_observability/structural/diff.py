@@ -37,11 +37,10 @@ ENTITY_FIELD_MAP: dict[str, dict[str, Any]] = {
         "path_template": "/network-instance[name=default]/protocols/bgp/neighbor[peer-address={peer_address}]",
         "key_field": "peer_address",
     },
-    "device": {
-        "fields": ["description"],
-        "path_template": "/system",
-        "key_field": None,
-    },
+    # No device-level entry: the executor manages no /system fields, and a
+    # compared-but-never-rendered field is permanent phantom drift (#59).
+    # Every field listed here must be rendered by the executor's templates —
+    # enforced by tests/unit/test_orchestrator/test_render_diff_contract.py.
 }
 
 
@@ -74,10 +73,6 @@ def diff_desired_vs_actual(
     bgp_spec = ENTITY_FIELD_MAP["bgp_session"]
     for session in desired.bgp_sessions:
         items.extend(_diff_entity(session, bgp_spec, actual_data, kind="bgp_session"))
-
-    # device
-    dev_spec = ENTITY_FIELD_MAP["device"]
-    items.extend(_diff_entity(desired.device, dev_spec, actual_data, kind="device"))
 
     return items
 

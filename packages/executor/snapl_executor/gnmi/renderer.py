@@ -37,8 +37,15 @@ class ConfigRenderer:
     def render(self, desired: DesiredState) -> dict[str, Any]:
         """Render all templates and merge into one payload dict.
 
-        Raises TemplateError if a template references a missing or undefined variable.
+        Raises TemplateError if a template references a missing or undefined
+        variable, or if an interface carries an IP address without a prefix
+        length — interpolating a None prefix would produce an invalid
+        ``ip-prefix`` the device rejects with an opaque error (#72).
         """
+        for iface in desired.interfaces:
+            if iface.ip_address and iface.prefix_length is None:
+                raise TemplateError(f"interface {iface.name!r}: ip_address {iface.ip_address!r} has no prefix_length")
+
         ctx = {
             "device": desired.device,
             "interfaces": desired.interfaces,
