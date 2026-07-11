@@ -41,11 +41,18 @@ async def run_worker(*, activities: Activities | None = None) -> None:
             reads env vars and constructs concrete downstream blocks. Tests
             pass their own container with mocks/stubs.
 
-    Required env vars (when activities is None):
+    Env vars (when activities is None):
         TEMPORAL_HOST           — frontend gRPC endpoint (default localhost:7233)
         TEMPORAL_NAMESPACE      — Temporal namespace (default 'default')
         TEMPORAL_TASK_QUEUE     — task queue (default 'snapl-orchestrator')
         SNAPL_AUDIT_DB          — SQLite path for the durable audit log
+        INFRAHUB_ADDRESS        — Source of Truth address (default: the intent
+                                  client's DEFAULT_ADDRESS, http://localhost:8000)
+        INFRAHUB_API_TOKEN      — required
+        SRLINUX_USERNAME        — gNMI username (default 'admin')
+        SRLINUX_PASSWORD        — required
+        SRLINUX_PORT            — gNMI port (default 57400)
+        SRLINUX_INSECURE        — plaintext gNMI (default 'true'; set 'false' for TLS)
     """
     temporal_host = os.environ.get("TEMPORAL_HOST", "localhost:7233")
     namespace = os.environ.get("TEMPORAL_NAMESPACE", "default")
@@ -116,40 +123,43 @@ async def _build_default_activities(*, audit_db: str) -> Activities:
 
 
 def _build_intent_store():
-    address = os.environ.get("INFRAHUB_ADDRESS", "http://localhost:8001")
     token = os.environ.get("INFRAHUB_API_TOKEN")
     if not token:
         raise OrchestratorConfigError("INFRAHUB_API_TOKEN is required")
-    client = build_infrahub_client(address=address, api_token=token)
+    # No worker-level address default: build_client resolves INFRAHUB_ADDRESS
+    # itself and falls back to the intent client's DEFAULT_ADDRESS, so there is
+    # a single source of truth for where the SoT lives (#61).
+    client = build_infrahub_client(api_token=token)
     return InfrahubIntentStore(client=client)
+
+
+def _srlinux_conn_env() -> dict:
+    """Shared gNMI connection settings for the executor and collector builders."""
+    password = os.environ.get("SRLINUX_PASSWORD")
+    if not password:
+        raise OrchestratorConfigError("SRLINUX_PASSWORD is required")
+    raw_port = os.environ.get("SRLINUX_PORT", "57400")
+    try:
+        port = int(raw_port)
+    except ValueError as exc:
+        raise OrchestratorConfigError(f"SRLINUX_PORT must be an integer, got {raw_port!r}") from exc
+    insecure = os.environ.get("SRLINUX_INSECURE", "true").strip().lower() not in ("false", "0", "no")
+    return {
+        "username": os.environ.get("SRLINUX_USERNAME", "admin"),
+        "password": password,
+        "port": port,
+        "insecure": insecure,
+    }
 
 
 def _build_executor():
     # No fixed host: the executor resolves the dial target per device
     # (lab_node_name, then management_address).
-    username = os.environ.get("SRLINUX_USERNAME", "admin")
-    password = os.environ.get("SRLINUX_PASSWORD")
-    if not password:
-        raise OrchestratorConfigError("SRLINUX_PASSWORD is required")
-    return GnmiExecutor(
-        port=57400,
-        username=username,
-        password=password,
-        insecure=True,
-    )
+    return GnmiExecutor(**_srlinux_conn_env())
 
 
 def _build_collector():
-    username = os.environ.get("SRLINUX_USERNAME", "admin")
-    password = os.environ.get("SRLINUX_PASSWORD")
-    if not password:
-        raise OrchestratorConfigError("SRLINUX_PASSWORD is required")
-    return GnmiCollector(
-        port=57400,
-        username=username,
-        password=password,
-        insecure=True,
-    )
+    return GnmiCollector(**_srlinux_conn_env())
 
 
 def _build_observer():
