@@ -58,7 +58,7 @@ def build_client(
         IntentConnectionError: The ``infrahub_sdk`` package is not importable.
     """
     try:
-        from infrahub_sdk import Config, InfrahubClient
+        from infrahub_sdk import Config, InfrahubClient  # noqa: PLC0415 — deliberate lazy import, see docstring
     except ImportError as exc:
         raise IntentConnectionError("infrahub-sdk is not installed — add infrahub-sdk[ctl] as a dependency") from exc
 

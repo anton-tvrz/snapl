@@ -20,8 +20,10 @@ repos:
       - id: no-commit-to-branch
         args: [--branch, main]
 
+  # Keep this rev in step with the ruff version in uv.lock — a skewed pair
+  # auto-"fixes" noqa comments locally that CI's ruff then flags as missing.
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.11.12
+    rev: v0.15.10
     hooks:
       - id: ruff
         args: [--fix]
