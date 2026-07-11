@@ -37,8 +37,15 @@ presentation:
   - "pyproject.toml"
   - "uv.lock"
 
+# Everything the unit suite exercises — not just .py files. Jinja templates
+# are the executor's config output (snapshot-tested), and schema/seed YAML
+# feeds the intent tests; changes to any of them must run the tests (#73).
 python:
   - "**/*.py"
+  - "**/*.j2"
+  - "packages/*/*/templates/**"
+  - "packages/intent/snapl_intent/schemas/**"
+  - "packages/intent/snapl_intent/seed/**"
   - "pyproject.toml"
   - "uv.lock"
 

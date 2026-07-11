@@ -255,14 +255,14 @@ class SeedIngester:
             ip_namespace__ids=[namespace_id],
         )
         if existing:
-            return existing[0].id
+            return str(existing[0].id)
         node = await self._client.create(
             kind="IpamIPAddress",
             data={"address": address, "ip_namespace": namespace_id},
             branch=branch,
         )
         await node.save()
-        return node.id
+        return str(node.id)
 
     async def _get_default_namespace_id(self) -> str:
         results = await self._client.filters(kind="IpamNamespace", default__value=True)
@@ -270,7 +270,7 @@ class SeedIngester:
             raise IntentValidationError(
                 "Default IP namespace not found in Infrahub — ensure Infrahub is fully initialized before seeding"
             )
-        return results[0].id
+        return str(results[0].id)
 
     @staticmethod
     def _validate(dataset: dict[str, Any]) -> None:
@@ -378,7 +378,7 @@ class SeedIngester:
             raise IntentValidationError(
                 "Default VRF not found in Infrahub — ensure VRFs are seeded before BGP sections"
             )
-        return results[0].id
+        return str(results[0].id)
 
     async def _seed_bgp_peer_groups(
         self,
