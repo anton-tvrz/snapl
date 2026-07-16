@@ -9,11 +9,16 @@ from __future__ import annotations
 
 import asyncio
 import json
+from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 import aiosqlite
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
 
 from snapl_orchestrator.audit.abc import AuditLog
 from snapl_orchestrator.exceptions import AuditLogError
@@ -39,6 +44,10 @@ class SqliteAuditLog(AuditLog):
     def __init__(self, *, database_url: str) -> None:
         self._database_url = database_url
         self._write_lock = asyncio.Lock()
+        # ":memory:" needs one persistent connection — every new connection to
+        # ":memory:" opens a brand-new empty database, so per-operation
+        # connections silently lose the schema and all rows (#60).
+        self._memory_conn: aiosqlite.Connection | None = None
 
     @property
     def database_url(self) -> str:
@@ -48,17 +57,43 @@ class SqliteAuditLog(AuditLog):
         """Apply the schema and set WAL journal mode. Call once at boot."""
         ddl = _SCHEMA_PATH.read_text()
         try:
+            if self._is_memory:
+                conn = await aiosqlite.connect(self._database_url)
+                await conn.executescript(ddl)
+                await conn.commit()
+                self._memory_conn = conn
+                return
             async with aiosqlite.connect(self._database_url) as conn:
-                if self._database_url != ":memory:":
-                    await conn.execute("PRAGMA journal_mode=WAL;")
+                await conn.execute("PRAGMA journal_mode=WAL;")
                 await conn.executescript(ddl)
                 await conn.commit()
         except aiosqlite.Error as exc:
             raise AuditLogError(f"failed to initialize audit log: {exc}") from exc
 
+    @property
+    def _is_memory(self) -> bool:
+        return self._database_url == ":memory:"
+
+    @asynccontextmanager
+    async def _connect(self) -> AsyncIterator[aiosqlite.Connection]:
+        """Yield the persistent connection (":memory:") or a short-lived one (file)."""
+        if self._is_memory:
+            if self._memory_conn is None:
+                raise AuditLogError('":memory:" audit log used before initialize()')
+            yield self._memory_conn
+            return
+        async with aiosqlite.connect(self._database_url) as conn:
+            yield conn
+
+    async def close(self) -> None:
+        """Release the persistent ":memory:" connection. No-op for file-backed logs."""
+        if self._memory_conn is not None:
+            await self._memory_conn.close()
+            self._memory_conn = None
+
     async def append(self, event: AuditEvent) -> None:
         try:
-            async with self._write_lock, aiosqlite.connect(self._database_url) as conn:
+            async with self._write_lock, self._connect() as conn:
                 await conn.execute(
                     """
                     INSERT INTO audit_events (
@@ -114,7 +149,7 @@ class SqliteAuditLog(AuditLog):
         # where_clause is a hard-coded string from the public query methods, never user input.
         sql = _SELECT_SQL + where_clause
         try:
-            async with aiosqlite.connect(self._database_url) as conn:
+            async with self._connect() as conn:
                 conn.row_factory = aiosqlite.Row
                 cursor = await conn.execute(sql, params)
                 rows = await cursor.fetchall()

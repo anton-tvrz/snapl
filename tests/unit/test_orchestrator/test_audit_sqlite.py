@@ -186,3 +186,58 @@ async def test_query_returns_event_for_use_case_target(tmp_db_path: str) -> None
     out = await log.query_by_workflow("scan-wf")
     assert len(out) == 1
     assert out[0].target_id == "dcfabric"
+
+
+# ---------------------------------------------------------------------------
+# ":memory:" mode (#60) — must behave like a real in-process store, not a
+# fresh empty database per operation.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_memory_mode_append_then_query() -> None:
+    log = SqliteAuditLog(database_url=":memory:")
+    await log.initialize()
+    event = _event(workflow_id="wf-mem")
+    await log.append(event)
+    events = await log.query_by_workflow("wf-mem")
+    assert [e.event_id for e in events] == [event.event_id]
+    await log.close()
+
+
+@pytest.mark.asyncio
+async def test_memory_mode_persists_across_many_operations() -> None:
+    log = SqliteAuditLog(database_url=":memory:")
+    await log.initialize()
+    for _ in range(5):
+        await log.append(_event(workflow_id="wf-mem"))
+    assert len(await log.query_by_workflow("wf-mem")) == 5
+    assert len(await log.query_by_workflow("wf-mem")) == 5  # reads don't wipe it either
+    await log.close()
+
+
+@pytest.mark.asyncio
+async def test_memory_mode_duplicate_event_id_still_raises() -> None:
+    log = SqliteAuditLog(database_url=":memory:")
+    await log.initialize()
+    event = _event()
+    await log.append(event)
+    with pytest.raises(AuditLogError, match="already persisted"):
+        await log.append(event)
+    await log.close()
+
+
+@pytest.mark.asyncio
+async def test_memory_mode_requires_initialize() -> None:
+    log = SqliteAuditLog(database_url=":memory:")
+    with pytest.raises(AuditLogError, match="initialize"):
+        await log.append(_event())
+
+
+@pytest.mark.asyncio
+async def test_close_is_safe_for_file_mode(tmp_db_path: str) -> None:
+    log = SqliteAuditLog(database_url=tmp_db_path)
+    await log.initialize()
+    await log.append(_event(workflow_id="wf-file"))
+    await log.close()  # no-op for file mode
+    assert len(await log.query_by_workflow("wf-file")) == 1
