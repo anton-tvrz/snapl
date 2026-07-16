@@ -46,7 +46,7 @@ def _get_local(container: Any, local: str, default: Any = None) -> Any:
 
 def _enabled(node: dict[str, Any]) -> bool:
     """SR Linux ``admin-state`` (``enable``/``disable``) → bool."""
-    return _get_local(node, "admin-state") == "enable"
+    return bool(_get_local(node, "admin-state") == "enable")
 
 
 def _interface_ip(iface: dict[str, Any]) -> tuple[str | None, int | None]:

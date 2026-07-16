@@ -234,6 +234,9 @@ omit = [
 [tool.coverage.report]
 show_missing = true
 skip_empty = true
+# Constitution target (>=80% on new code) — enforced repo-wide so a PR
+# cannot silently drop coverage (#70).
+fail_under = 80
 exclude_lines = [
     "pragma: no cover",
     "if __name__ == .__main__.",

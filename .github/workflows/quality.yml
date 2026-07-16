@@ -15,11 +15,6 @@ name: Quality Checks
 
 on:
   workflow_call:
-    inputs:
-      run-integration-hygiene:
-        description: "Run offline integration tests (hygiene only)"
-        type: boolean
-        default: false
     secrets:
       CODECOV_TOKEN:
         required: false
@@ -85,7 +80,6 @@ jobs:
 
       - name: MyPy type checking
         run: uv run mypy packages/
-        continue-on-error: true
 
   # ---------------------------------------------------------------------------
   # YAML lint
@@ -231,34 +225,6 @@ jobs:
           path: test-results.xml
 
   # ---------------------------------------------------------------------------
-  # Integration tests (offline hygiene only) — opt-in via input
-  # ---------------------------------------------------------------------------
-  integration-hygiene:
-    name: Integration Tests (Hygiene)
-    runs-on: ubuntu-latest
-    needs: [unit-tests]
-    if: inputs.run-integration-hygiene
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: astral-sh/setup-uv@v7
-        with:
-          version: ${{ env.UV_VERSION }}
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Install dependencies
-        run: uv sync --all-groups
-
-      - name: Run integration tests (offline only)
-        run: |
-          uv run pytest tests/integration/ -v --timeout=60 \
-            -k "hygiene" \
-            --tb=short
-
-  # ---------------------------------------------------------------------------
   # Quality gate — aggregates all job results
   # ---------------------------------------------------------------------------
   quality-gate:
@@ -273,7 +239,6 @@ jobs:
       - secrets-detection
       - uv-lock-check
       - unit-tests
-      - integration-hygiene
     if: always()
     steps:
       - name: Check job results
@@ -289,7 +254,6 @@ jobs:
           echo "| Secrets Detection | ${{ needs.secrets-detection.result }} |"
           echo "| uv Lock Check | ${{ needs.uv-lock-check.result }} |"
           echo "| Unit Tests | ${{ needs.unit-tests.result }} |"
-          echo "| Integration Hygiene | ${{ needs.integration-hygiene.result }} |"
           echo ""
 
           # Fail if any required job failed (skipped is OK — means path filter excluded it)
@@ -299,8 +263,7 @@ jobs:
              [[ "${{ needs.security-scanning.result }}" == "failure" ]] || \
              [[ "${{ needs.secrets-detection.result }}" == "failure" ]] || \
              [[ "${{ needs.uv-lock-check.result }}" == "failure" ]] || \
-             [[ "${{ needs.unit-tests.result }}" == "failure" ]] || \
-             [[ "${{ needs.integration-hygiene.result }}" == "failure" ]]; then
+             [[ "${{ needs.unit-tests.result }}" == "failure" ]]; then
             echo "Required quality checks failed — blocking pipeline."
             exit 1
           fi
