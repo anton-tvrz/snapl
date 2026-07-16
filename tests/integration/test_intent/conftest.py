@@ -6,14 +6,14 @@ Bring up the stack with::
 
 Then run::
 
-    INFRAHUB_ADDRESS=http://localhost:8001 uv run pytest tests/integration -m integration
+    INFRAHUB_ADDRESS=http://localhost:8000 uv run pytest tests/integration -m integration
 
 If no Infrahub is reachable, the ``live_infrahub_client`` fixture skips the
 test rather than failing — so ``pytest`` is always green on a plain dev box.
 
 Env overrides (defaults match ``development/.env``):
 
-- ``INFRAHUB_ADDRESS``    — default ``http://localhost:8001``
+- ``INFRAHUB_ADDRESS``    — default: the intent client default (http://localhost:8000)
 - ``INFRAHUB_API_TOKEN``  — default dev admin token from docker-compose.yml
 """
 
@@ -24,10 +24,12 @@ import os
 import httpx
 import pytest
 
-from snapl_intent.infrahub.client import build_client
+from snapl_intent.infrahub.client import (
+    DEFAULT_ADDRESS,  # single source of truth (#61/#74)
+    build_client,
+)
 from snapl_intent.infrahub.store import InfrahubIntentStore
 
-DEFAULT_ADDRESS = "http://localhost:8001"
 DEFAULT_TOKEN = "06438eb2-8019-4776-878c-0941b1f1d1ec"  # pragma: allowlist secret  # noqa: S105
 
 

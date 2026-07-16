@@ -45,6 +45,14 @@ Start the worker in its own terminal (leave it visible — its log narrates ever
 INFRAHUB_API_TOKEN=<token> SRLINUX_PASSWORD=<lab-password> uv run invoke orchestrator.start
 ```
 
+> Defaults assume the committed compose ports (Infrahub 8000, Temporal 7233). If your
+> `development/.env` offsets them (e.g. `INFRAHUB_PORT=8001`, `TEMPORAL_PORT=7234`),
+> also export `INFRAHUB_ADDRESS=http://localhost:<port>` and `TEMPORAL_HOST=localhost:<port>`
+> for the worker, and use those ports in the snippets below.
+
+```bash
+```
+
 Shared snippet used by every scenario — a client plus the device inventory:
 
 ```python
