@@ -99,7 +99,9 @@ class TestInterface:
             name="ethernet-1/1",
         )
         assert iface.enabled is True
-        assert iface.mtu == 9232
+        # No mtu default: intent must be able to express "no mtu" — SR Linux
+        # rejects mtu on loopbacks outright (#78).
+        assert iface.mtu is None
         assert iface.ip_address is None
 
     def test_interface_with_ip(self):

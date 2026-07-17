@@ -159,34 +159,34 @@ interfaces:
   - {device: spine-01, name: ethernet-1/2, role: fabric, mtu: 9214, ip_address: "10.10.1.2/31", peer_device: leaf-02, peer_interface: ethernet-1/49, description: "to leaf-02:ethernet-1/49"}
   - {device: spine-01, name: ethernet-1/3, role: fabric, mtu: 9214, ip_address: "10.10.1.4/31", peer_device: leaf-03, peer_interface: ethernet-1/49, description: "to leaf-03:ethernet-1/49"}
   - {device: spine-01, name: ethernet-1/4, role: fabric, mtu: 9214, ip_address: "10.10.1.6/31", peer_device: leaf-04, peer_interface: ethernet-1/49, description: "to leaf-04:ethernet-1/49"}
-  - {device: spine-01, name: loopback0, role: loopback, ip_address: "10.1.0.1/32", description: "Router ID spine-01"}
+  - {device: spine-01, name: lo0, role: loopback, ip_address: "10.1.0.1/32", description: "Router ID spine-01"}
 
   # spine-02 to leaves
   - {device: spine-02, name: ethernet-1/1, role: fabric, mtu: 9214, ip_address: "10.10.2.0/31", peer_device: leaf-01, peer_interface: ethernet-1/50, description: "to leaf-01:ethernet-1/50"}
   - {device: spine-02, name: ethernet-1/2, role: fabric, mtu: 9214, ip_address: "10.10.2.2/31", peer_device: leaf-02, peer_interface: ethernet-1/50, description: "to leaf-02:ethernet-1/50"}
   - {device: spine-02, name: ethernet-1/3, role: fabric, mtu: 9214, ip_address: "10.10.2.4/31", peer_device: leaf-03, peer_interface: ethernet-1/50, description: "to leaf-03:ethernet-1/50"}
   - {device: spine-02, name: ethernet-1/4, role: fabric, mtu: 9214, ip_address: "10.10.2.6/31", peer_device: leaf-04, peer_interface: ethernet-1/50, description: "to leaf-04:ethernet-1/50"}
-  - {device: spine-02, name: loopback0, role: loopback, ip_address: "10.1.0.2/32", description: "Router ID spine-02"}
+  - {device: spine-02, name: lo0, role: loopback, ip_address: "10.1.0.2/32", description: "Router ID spine-02"}
 
   # leaf-01 uplinks + loopback
   - {device: leaf-01, name: ethernet-1/49, role: fabric, mtu: 9214, ip_address: "10.10.1.1/31", peer_device: spine-01, peer_interface: ethernet-1/1, description: "to spine-01:ethernet-1/1"}
   - {device: leaf-01, name: ethernet-1/50, role: fabric, mtu: 9214, ip_address: "10.10.2.1/31", peer_device: spine-02, peer_interface: ethernet-1/1, description: "to spine-02:ethernet-1/1"}
-  - {device: leaf-01, name: loopback0, role: loopback, ip_address: "10.1.0.11/32", description: "Router ID leaf-01"}
+  - {device: leaf-01, name: lo0, role: loopback, ip_address: "10.1.0.11/32", description: "Router ID leaf-01"}
 
   # leaf-02 uplinks + loopback
   - {device: leaf-02, name: ethernet-1/49, role: fabric, mtu: 9214, ip_address: "10.10.1.3/31", peer_device: spine-01, peer_interface: ethernet-1/2, description: "to spine-01:ethernet-1/2"}
   - {device: leaf-02, name: ethernet-1/50, role: fabric, mtu: 9214, ip_address: "10.10.2.3/31", peer_device: spine-02, peer_interface: ethernet-1/2, description: "to spine-02:ethernet-1/2"}
-  - {device: leaf-02, name: loopback0, role: loopback, ip_address: "10.1.0.12/32", description: "Router ID leaf-02"}
+  - {device: leaf-02, name: lo0, role: loopback, ip_address: "10.1.0.12/32", description: "Router ID leaf-02"}
 
   # leaf-03 uplinks + loopback
   - {device: leaf-03, name: ethernet-1/49, role: fabric, mtu: 9214, ip_address: "10.10.1.5/31", peer_device: spine-01, peer_interface: ethernet-1/3, description: "to spine-01:ethernet-1/3"}
   - {device: leaf-03, name: ethernet-1/50, role: fabric, mtu: 9214, ip_address: "10.10.2.5/31", peer_device: spine-02, peer_interface: ethernet-1/3, description: "to spine-02:ethernet-1/3"}
-  - {device: leaf-03, name: loopback0, role: loopback, ip_address: "10.1.0.13/32", description: "Router ID leaf-03"}
+  - {device: leaf-03, name: lo0, role: loopback, ip_address: "10.1.0.13/32", description: "Router ID leaf-03"}
 
   # leaf-04 uplinks + loopback
   - {device: leaf-04, name: ethernet-1/49, role: fabric, mtu: 9214, ip_address: "10.10.1.7/31", peer_device: spine-01, peer_interface: ethernet-1/4, description: "to spine-01:ethernet-1/4"}
   - {device: leaf-04, name: ethernet-1/50, role: fabric, mtu: 9214, ip_address: "10.10.2.7/31", peer_device: spine-02, peer_interface: ethernet-1/4, description: "to spine-02:ethernet-1/4"}
-  - {device: leaf-04, name: loopback0, role: loopback, ip_address: "10.1.0.14/32", description: "Router ID leaf-04"}
+  - {device: leaf-04, name: lo0, role: loopback, ip_address: "10.1.0.14/32", description: "Router ID leaf-04"}
 
 bgp_peer_groups:
   - name: "underlay-ipv4"

@@ -2,8 +2,8 @@
 {% for iface in interfaces %}
   {
     "name": "{{ iface.name }}",
-    "admin-state": "{{ 'enable' if iface.enabled else 'disable' }}",
-    "mtu": {{ iface.mtu }}{% if iface.description %},
+    "admin-state": "{{ 'enable' if iface.enabled else 'disable' }}"{% if iface.mtu is not none %},
+    "mtu": {{ iface.mtu }}{% endif %}{% if iface.description %},
     "description": {{ iface.description | tojson }}{% endif %}{% if iface.ip_address %},
     "subinterface": [
       {

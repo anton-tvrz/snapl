@@ -57,7 +57,7 @@ def _make_interface_node(
     name: str,
     ip: str | None = None,
     status: str = "active",
-    mtu: int = 9214,
+    mtu: int | None = 9214,
     description: str | None = None,
     peer_device: str | None = None,
     peer_interface: str | None = None,
@@ -525,6 +525,26 @@ class TestRelationshipQueries:
         assert mapped.description == "to leaf-01:ethernet-1/49"
         assert mapped.peer_device == "leaf-01"
         assert mapped.peer_interface == "ethernet-1/49"
+
+    async def test_interface_without_mtu_maps_to_none(self, mock_infrahub_client):
+        """A null mtu in the SoT stays None — loopbacks must not inherit a
+        fabric-port default the renderer would push to the device (#78)."""
+        dev_uuid = uuid4()
+        node = _make_device_node(name="spine-01", device_id=dev_uuid)
+        iface = _make_interface_node(
+            device_uuid=dev_uuid,
+            name="lo0",
+            ip="10.1.0.1/32",
+            status="active",
+            mtu=None,
+        )
+        _dispatch_filters(mock_infrahub_client, devices=[node], interfaces=[iface])
+        store = InfrahubIntentStore(client=mock_infrahub_client)
+
+        result = await store.get_desired_state(use_case="dcfabric")
+
+        (mapped,) = result[0].interfaces
+        assert mapped.mtu is None
 
     async def test_interface_without_ip_and_inactive_status(self, mock_infrahub_client):
         dev_uuid = uuid4()

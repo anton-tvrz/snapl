@@ -149,7 +149,10 @@ generics:
       - name: mtu
         label: MTU
         kind: Number
-        default_value: 1514
+        # Optional with no default: loopbacks must materialize as "no mtu" —
+        # SR Linux rejects mtu on them, and a schema default poisons every
+        # mtu-less seed row in the SoT (#78).
+        optional: true
         order_weight: 1300
       - name: status
         kind: Dropdown

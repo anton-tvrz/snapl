@@ -71,6 +71,18 @@ def _full_desired_state() -> DesiredState:
             name="ethernet-1/11",
             enabled=False,
         ),
+        # Loopback — mtu-less, must render without an mtu key and round-trip
+        # clean as mtu None == None (#78).
+        Interface(
+            id=uuid4(),
+            device_id=dev_id,
+            name="lo0",
+            description="Router ID spine-01",
+            ip_address="10.1.0.1",
+            prefix_length=32,
+            enabled=True,
+            mtu=None,
+        ),
     ]
     sessions = [
         BGPSession(

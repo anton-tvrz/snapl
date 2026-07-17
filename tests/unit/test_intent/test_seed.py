@@ -7,6 +7,8 @@ SDK client so no Infrahub is needed.
 
 from __future__ import annotations
 
+import pathlib
+import re
 from typing import TYPE_CHECKING, Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -444,7 +446,7 @@ class TestInterfaceSeeding:
         """Interface with no ip_address creates no IpamIPAddress."""
         dataset = {
             "interfaces": [
-                {"device": "spine-01", "name": "loopback0", "role": "loopback"},
+                {"device": "spine-01", "name": "lo0", "role": "loopback"},
             ]
         }
         path = tmp_path / "t.yml"
@@ -922,3 +924,51 @@ class TestBGPSessionSeeding:
 
         session_call = next(c for c in client.create.await_args_list if c.kwargs.get("kind") == "RoutingBGPSession")
         assert session_call.kwargs["data"]["vrf"] == "vrf-xyz"
+
+
+# ---------------------------------------------------------------------------
+# Repo seed content guards (#78)
+# ---------------------------------------------------------------------------
+
+
+class TestRepoSeedContent:
+    """Guards on the shipped seed/schema files.
+
+    The dcfabric seed shipped an invalid ``loopback0`` name (SR Linux only
+    accepts ``lo0``-``lo255``) and the schema's mtu default poisoned loopbacks
+    with an mtu the device rejects — every deploy failed at apply (#78)."""
+
+    @staticmethod
+    def _package_root():
+        import snapl_intent
+
+        return pathlib.Path(snapl_intent.__file__).resolve().parent
+
+    def _seed_interface_rows(self):
+        for topo in sorted(self._package_root().glob("seed/*/topology.yml")):
+            data = yaml.safe_load(topo.read_text())
+            for row in data.get("interfaces", []):
+                yield topo.parent.name, row
+
+    def test_seed_interface_names_are_valid_srlinux(self):
+        pattern = re.compile(r"^(ethernet-\d+/\d+|lo\d+|mgmt0)$")
+        rows = list(self._seed_interface_rows())
+        assert rows, "no seed interface rows found — glob broken?"
+        for use_case, row in rows:
+            assert pattern.match(row["name"]), (
+                f"{use_case}: interface name {row['name']!r} is not a valid "
+                "SR Linux interface name (device rejects the whole SET)"
+            )
+
+    def test_seed_loopbacks_carry_no_mtu(self):
+        loopbacks = [(uc, row) for uc, row in self._seed_interface_rows() if row.get("role") == "loopback"]
+        assert loopbacks, "expected loopback rows in the shipped seeds"
+        for use_case, row in loopbacks:
+            assert "mtu" not in row, f"{use_case}: loopback {row['name']!r} has an mtu — SR Linux rejects it"
+
+    def test_schema_mtu_is_optional_without_default(self):
+        dcim = yaml.safe_load((self._package_root() / "schemas" / "base" / "dcim.yml").read_text())
+        generic = next(g for g in dcim["generics"] if g["name"] == "Interface" and g["namespace"] == "Dcim")
+        mtu_attr = next(a for a in generic["attributes"] if a["name"] == "mtu")
+        assert mtu_attr.get("optional") is True, "mtu must be optional — loopbacks cannot carry one (#78)"
+        assert "default_value" not in mtu_attr, "an mtu default poisons mtu-less seed rows in the SoT (#78)"
