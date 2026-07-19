@@ -126,6 +126,7 @@ def _build_activities(states: list, *, drifted_ids: set | None = None) -> Activi
     collector.get_running_config = AsyncMock(side_effect=_collect)
     observer = MagicMock()
     observer.detect_drift = AsyncMock(side_effect=_detect)
+    observer.emit_event = AsyncMock()
 
     return Activities(
         intent_store=intent_store,

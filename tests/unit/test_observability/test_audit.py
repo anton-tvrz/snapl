@@ -116,3 +116,56 @@ class TestAuditLog:
         for t in threads:
             t.join()
         assert len(log) == per_thread * n_threads
+
+
+class TestBoundedAuditLog:
+    """Fixed-capacity variant for long-running processes (#67) — the Temporal
+    worker's observer must not grow memory linearly forever."""
+
+    def test_append_beyond_maxlen_evicts_oldest(self):
+        from snapl_observability.audit import BoundedAuditLog
+
+        log = BoundedAuditLog(maxlen=3)
+        ids = [uuid4() for _ in range(5)]
+        for i, device_id in enumerate(ids):
+            log.append(_entry(device_id, offset_s=i))
+
+        assert len(log) == 3
+        kept = [e.device_id for e in log.all()]
+        assert kept == ids[2:]
+
+    def test_below_capacity_behaves_like_audit_log(self):
+        from snapl_observability.audit import AuditLog, BoundedAuditLog
+
+        log = BoundedAuditLog(maxlen=10)
+        assert isinstance(log, AuditLog)
+        device_id = uuid4()
+        log.append(_entry(device_id))
+        log.append(_entry(uuid4()))
+
+        assert len(log) == 2
+        assert [e.device_id for e in log.query_by_device(device_id)] == [device_id]
+
+    def test_non_positive_maxlen_rejected(self):
+        from snapl_observability.audit import BoundedAuditLog
+
+        with pytest.raises(ValueError, match="maxlen"):
+            BoundedAuditLog(maxlen=0)
+
+    def test_concurrent_appends_stay_bounded(self):
+        from snapl_observability.audit import BoundedAuditLog
+
+        log = BoundedAuditLog(maxlen=50)
+        per_thread = 100
+        n_threads = 8
+
+        def worker():
+            for _ in range(per_thread):
+                log.append(_entry(uuid4()))
+
+        threads = [threading.Thread(target=worker) for _ in range(n_threads)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert len(log) == 50

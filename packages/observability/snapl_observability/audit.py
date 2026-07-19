@@ -42,3 +42,24 @@ class AuditLog:
     def __len__(self) -> int:
         with self._lock:
             return len(self._entries)
+
+
+class BoundedAuditLog(AuditLog):
+    """AuditLog with a fixed capacity — appends beyond ``maxlen`` evict the oldest.
+
+    For long-running processes whose durable audit sink lives elsewhere (the
+    Temporal worker writes the Orchestrator's AuditLog): an unbounded observer
+    log there is a linear memory leak nothing ever reads (#67).
+    """
+
+    def __init__(self, *, maxlen: int = 1000) -> None:
+        if maxlen <= 0:
+            raise ValueError(f"maxlen must be positive, got {maxlen}")
+        super().__init__()
+        self._maxlen = maxlen
+
+    def append(self, entry: AuditEntry) -> None:
+        with self._lock:
+            self._entries.append(entry)
+            if len(self._entries) > self._maxlen:
+                del self._entries[0]

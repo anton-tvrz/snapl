@@ -94,3 +94,87 @@ class TestBuildIntentStore:
         monkeypatch.delenv("INFRAHUB_API_TOKEN", raising=False)
         with pytest.raises(OrchestratorConfigError, match="INFRAHUB_API_TOKEN"):
             _build_intent_store()
+
+
+class TestBuildObserver:
+    """The worker's observer must not leak memory or emit into the void (#67):
+    a bare StructuralObserver() self-provisions an unbounded in-memory audit
+    log nothing reads, and an EventBus nothing subscribes to."""
+
+    def test_audit_log_is_bounded(self):
+        from snapl_observability.audit import BoundedAuditLog
+        from snapl_orchestrator.worker.run import _build_observer
+
+        observer = _build_observer()
+        assert isinstance(observer.audit_log, BoundedAuditLog)
+
+    def test_event_bus_has_a_registered_handler(self):
+        from snapl_orchestrator.worker.run import _build_observer
+
+        observer = _build_observer()
+        assert len(observer.event_bus.handlers) >= 1
+
+
+class TestLogDriftEvent:
+    def _event(self, status):
+        from datetime import UTC, datetime
+        from uuid import uuid4
+
+        from snapl_observability.models import (
+            STATUS_TO_EVENT_TYPE,
+            DriftItem,
+            DriftReport,
+            DriftStatus,
+            ObservabilityEvent,
+        )
+
+        items = (
+            [DriftItem(path="/interface[name=ethernet-1/1]/mtu", desired=9214, actual=1500, entity_kind="interface")]
+            if status == DriftStatus.DRIFTED
+            else []
+        )
+        report = DriftReport(
+            device_id=uuid4(),
+            device_name="spine-01",
+            status=status,
+            items=items,
+            error="boom" if status.value == "error" else None,
+            timestamp=datetime.now(tz=UTC),
+        )
+        return ObservabilityEvent(
+            event_type=STATUS_TO_EVENT_TYPE[status],
+            device_id=report.device_id,
+            device_name=report.device_name,
+            report=report,
+            timestamp=report.timestamp,
+        )
+
+    def test_drifted_logs_warning(self, caplog):
+        import logging
+
+        from snapl_observability.models import DriftStatus
+        from snapl_orchestrator.worker.run import _log_drift_event
+
+        with caplog.at_level(logging.INFO, logger="snapl_orchestrator.worker.run"):
+            _log_drift_event(self._event(DriftStatus.DRIFTED))
+        assert any(r.levelno == logging.WARNING and "spine-01" in r.message for r in caplog.records)
+
+    def test_clean_logs_info(self, caplog):
+        import logging
+
+        from snapl_observability.models import DriftStatus
+        from snapl_orchestrator.worker.run import _log_drift_event
+
+        with caplog.at_level(logging.INFO, logger="snapl_orchestrator.worker.run"):
+            _log_drift_event(self._event(DriftStatus.CLEAN))
+        assert any(r.levelno == logging.INFO and "spine-01" in r.message for r in caplog.records)
+
+    def test_error_logs_warning(self, caplog):
+        import logging
+
+        from snapl_observability.models import DriftStatus
+        from snapl_orchestrator.worker.run import _log_drift_event
+
+        with caplog.at_level(logging.INFO, logger="snapl_orchestrator.worker.run"):
+            _log_drift_event(self._event(DriftStatus.ERROR))
+        assert any(r.levelno == logging.WARNING for r in caplog.records)
