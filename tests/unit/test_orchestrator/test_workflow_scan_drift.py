@@ -127,6 +127,7 @@ async def test_all_clean_returns_zero_drift(make_desired) -> None:
     collector.collect = AsyncMock(side_effect=lambda device, _paths: _collect(device))
     observer = MagicMock()
     observer.detect_drift = AsyncMock(side_effect=lambda desired, _c: _report(desired.device, DriftStatus.CLEAN))
+    observer.emit_event = AsyncMock()
 
     async with await WorkflowEnvironment.start_time_skipping(data_converter=pydantic_data_converter) as env:
         result = await _run(
@@ -171,6 +172,7 @@ async def test_one_drifted_device_identified(make_desired) -> None:
 
     observer = MagicMock()
     observer.detect_drift = AsyncMock(side_effect=_detect)
+    observer.emit_event = AsyncMock()
 
     async with await WorkflowEnvironment.start_time_skipping(data_converter=pydantic_data_converter) as env:
         result = await _run(
@@ -208,6 +210,7 @@ async def test_collect_failure_isolated_to_errored_count(make_desired) -> None:
     collector.collect = AsyncMock(side_effect=_grc_collect)
     observer = MagicMock()
     observer.detect_drift = AsyncMock(side_effect=lambda desired, _c: _report(desired.device, DriftStatus.CLEAN))
+    observer.emit_event = AsyncMock()
 
     async with await WorkflowEnvironment.start_time_skipping(data_converter=pydantic_data_converter) as env:
         result = await _run(
@@ -234,6 +237,7 @@ async def test_records_started_and_terminated_audit_events(make_desired) -> None
     collector.collect = AsyncMock(side_effect=lambda device, _paths: _collect(device))
     observer = MagicMock()
     observer.detect_drift = AsyncMock(side_effect=lambda desired, _c: _report(desired.device, DriftStatus.CLEAN))
+    observer.emit_event = AsyncMock()
 
     async with await WorkflowEnvironment.start_time_skipping(data_converter=pydantic_data_converter) as env:
         result = await _run(

@@ -22,8 +22,14 @@ async def detect_drift(desired: DesiredState, collected: CollectResult) -> Drift
     successful collections through the adapter before handing them to the Observer
     (#32). Failed collections carry no data and pass straight through so the
     Observer still emits an ERROR report.
+
+    Every completed check emits an ObservabilityEvent (FR-004) — this activity
+    is the production emission point (#67). Delivery is at-least-once: a
+    Temporal retry of this activity re-emits.
     """
     activities = get_activities()
     if collected.success:
         collected = dataclasses.replace(collected, data=normalize_srlinux_state(collected.data))
-    return await activities.observer.detect_drift(desired, collected)
+    report = await activities.observer.detect_drift(desired, collected)
+    await activities.observer.emit_event(report)
+    return report

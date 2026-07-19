@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from snapl_collector.models import CollectResult
-from snapl_observability.models import DriftReport, DriftStatus
+from snapl_observability.models import DriftItem, DriftReport, DriftStatus
 from snapl_orchestrator.activities import Activities, set_activities
 from snapl_orchestrator.activities.observability import detect_drift
 
@@ -60,6 +60,7 @@ async def test_detect_drift_normalizes_collected_state_before_observer(dcfabric_
     )
     observer = MagicMock()
     observer.detect_drift = AsyncMock(return_value=report)
+    observer.emit_event = AsyncMock()
     _install(observer)
 
     out = await detect_drift(dcfabric_desired_state, collected)
@@ -94,9 +95,42 @@ async def test_detect_drift_passes_failed_collection_through_unchanged(dcfabric_
     )
     observer = MagicMock()
     observer.detect_drift = AsyncMock(return_value=report)
+    observer.emit_event = AsyncMock()
     _install(observer)
 
     out = await detect_drift(dcfabric_desired_state, collected)
 
     assert out is report
     observer.detect_drift.assert_awaited_once_with(dcfabric_desired_state, collected)
+    # FR-004: an event is emitted for every completed check — ERROR included.
+    observer.emit_event.assert_awaited_once_with(report)
+
+
+@pytest.mark.asyncio
+async def test_detect_drift_emits_event_for_completed_check(dcfabric_desired_state) -> None:
+    # The drift event path was dead in production wiring (#67): the activity is
+    # the emission point, so every deploy verification and scan emits.
+    device_id = dcfabric_desired_state.device.id
+    collected = CollectResult(
+        device_id=device_id,
+        device_name=dcfabric_desired_state.device.name,
+        success=True,
+        data={},
+        paths=["/interface"],
+    )
+    report = DriftReport(
+        device_id=device_id,
+        device_name=dcfabric_desired_state.device.name,
+        status=DriftStatus.DRIFTED,
+        items=[DriftItem(path="/interface[name=ethernet-1/1]/mtu", desired=9214, actual=1500, entity_kind="interface")],
+        timestamp=datetime.now(tz=UTC),
+    )
+    observer = MagicMock()
+    observer.detect_drift = AsyncMock(return_value=report)
+    observer.emit_event = AsyncMock()
+    _install(observer)
+
+    out = await detect_drift(dcfabric_desired_state, collected)
+
+    assert out is report
+    observer.emit_event.assert_awaited_once_with(report)

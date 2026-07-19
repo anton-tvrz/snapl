@@ -13,6 +13,9 @@ from snapl_collector.gnmi.collector import GnmiCollector
 from snapl_executor.gnmi.executor import GnmiExecutor
 from snapl_intent.infrahub.client import build_client as build_infrahub_client
 from snapl_intent.infrahub.store import InfrahubIntentStore
+from snapl_observability.audit import BoundedAuditLog
+from snapl_observability.events import EventBus
+from snapl_observability.models import EventType, ObservabilityEvent
 from snapl_observability.structural.observer import StructuralObserver
 from snapl_orchestrator.activities import Activities, set_activities
 from snapl_orchestrator.activities.audit import record_audit_event
@@ -162,5 +165,25 @@ def _build_collector():
     return GnmiCollector(**_srlinux_conn_env())
 
 
+def _log_drift_event(event: ObservabilityEvent) -> None:
+    """Structured-log handler for drift events — the worker's minimal real
+    subscriber, so the notification surface is exercised in production (#67)."""
+    if event.event_type is EventType.STATE_CLEAN:
+        logger.info("drift check clean: device=%s", event.device_name)
+    else:
+        logger.warning(
+            "drift event %s: device=%s items=%d error=%s",
+            event.event_type.value,
+            event.device_name,
+            len(event.report.items),
+            event.report.error,
+        )
+
+
 def _build_observer():
-    return StructuralObserver()
+    # Not a bare StructuralObserver(): that self-provisions an unbounded
+    # in-memory audit log nothing reads (the Orchestrator's AuditLog is the
+    # durable sink) and an EventBus nothing subscribes to (#67).
+    event_bus = EventBus()
+    event_bus.register(_log_drift_event)
+    return StructuralObserver(event_bus=event_bus, audit_log=BoundedAuditLog())

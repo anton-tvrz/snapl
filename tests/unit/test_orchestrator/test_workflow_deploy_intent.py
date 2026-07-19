@@ -160,6 +160,7 @@ async def test_happy_path_returns_succeeded(dcfabric_desired_state) -> None:
     collector.get_running_config = AsyncMock(return_value=_collect(device))
     observer = MagicMock()
     observer.detect_drift = AsyncMock(return_value=_clean_report(device))
+    observer.emit_event = AsyncMock()
 
     async with await WorkflowEnvironment.start_time_skipping(data_converter=pydantic_data_converter) as env:
         result = await _run_with(
@@ -257,6 +258,7 @@ async def test_apply_failure_short_circuits_collect_and_verify(dcfabric_desired_
     collector.collect = AsyncMock()
     observer = MagicMock()
     observer.detect_drift = AsyncMock()
+    observer.emit_event = AsyncMock()
 
     async with await WorkflowEnvironment.start_time_skipping(data_converter=pydantic_data_converter) as env:
         result = await _run_with(
@@ -289,6 +291,7 @@ async def test_verification_drifted_yields_verification_failed(dcfabric_desired_
     collector.collect = AsyncMock(return_value=_collect(device))
     observer = MagicMock()
     observer.detect_drift = AsyncMock(return_value=_drifted_report(device))
+    observer.emit_event = AsyncMock()
 
     async with await WorkflowEnvironment.start_time_skipping(data_converter=pydantic_data_converter) as env:
         result = await _run_with(
@@ -320,6 +323,7 @@ async def test_collect_failure_yields_collect_failed(dcfabric_desired_state) -> 
     collector.collect = AsyncMock(return_value=_collect(device, success=False, error="timeout"))
     observer = MagicMock()
     observer.detect_drift = AsyncMock(return_value=_error_report(device, error="timeout"))
+    observer.emit_event = AsyncMock()
 
     async with await WorkflowEnvironment.start_time_skipping(data_converter=pydantic_data_converter) as env:
         result = await _run_with(
@@ -355,6 +359,7 @@ async def test_audit_log_failure_yields_audit_failed_terminal(dcfabric_desired_s
     collector.collect = AsyncMock(return_value=_collect(device))
     observer = MagicMock()
     observer.detect_drift = AsyncMock(return_value=_clean_report(device))
+    observer.emit_event = AsyncMock()
 
     async with await WorkflowEnvironment.start_time_skipping(data_converter=pydantic_data_converter) as env:
         with pytest.raises(WorkflowFailureError) as excinfo:
