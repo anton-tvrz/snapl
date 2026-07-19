@@ -55,6 +55,16 @@ def _desired_matching_fixture() -> DesiredState:
             enabled=True,
             mtu=9232,
         ),
+        # Loopback: no mtu in intent, and the device reports none either (#78).
+        Interface(
+            id=uuid4(),
+            device_id=dev_id,
+            name="lo0",
+            ip_address="10.0.0.1",
+            prefix_length=32,
+            enabled=True,
+            mtu=None,
+        ),
     ]
     sessions = [
         BGPSession(
@@ -86,6 +96,17 @@ def test_normalizes_interface_to_entity_keyed_flat_fields(collected: dict) -> No
     assert eth1["prefix_length"] == 31
     assert eth1["enabled"] is True
     assert eth1["mtu"] == 9232
+
+
+def test_normalizes_mtu_less_loopback_to_none(collected: dict) -> None:
+    # SR Linux reports no mtu on lo0; the adapter must yield None so an
+    # mtu-less loopback intent compares clean (#78).
+    out = normalize_srlinux_state(collected)
+
+    lo0 = out["/interface[name=lo0]"]
+    assert lo0["mtu"] is None
+    assert lo0["ip_address"] == "10.0.0.1"
+    assert lo0["prefix_length"] == 32
 
 
 def test_normalizes_bgp_neighbor_to_entity_keyed_flat_fields(collected: dict) -> None:

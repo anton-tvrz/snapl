@@ -53,9 +53,10 @@ class ConfigRenderer:
         }
 
         ifaces_raw: list[dict] = json.loads(self._env.get_template("interfaces.j2").render(**ctx))
-        loopback: dict = json.loads(self._env.get_template("system.j2").render(**ctx))
 
-        payload: dict[str, Any] = {"interface": [*ifaces_raw, loopback]}
+        # Intent-first: no synthetic entities — the seeded lo0 is the loopback,
+        # a hardcoded one collided with it and carried the wrong address (#78).
+        payload: dict[str, Any] = {"interface": ifaces_raw}
         if desired.bgp_sessions:
             bgp_raw: dict = json.loads(self._env.get_template("bgp.j2").render(**ctx))
             payload["network-instance"] = [

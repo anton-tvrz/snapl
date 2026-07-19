@@ -364,7 +364,7 @@ class InfrahubIntentStore(IntentStore):
             prefix_length=prefix_length,
             enabled=True if status is None else status == "active",
             speed=_value(node, "speed"),
-            mtu=_value(node, "mtu", default=9232),
+            mtu=_value(node, "mtu"),
             peer_device=_value(node, "peer_device"),
             peer_interface=_value(node, "peer_interface"),
         )

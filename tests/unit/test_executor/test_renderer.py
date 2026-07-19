@@ -44,8 +44,8 @@ class TestConfigRendererInterfaces:
     def test_render_produces_correct_interface_count(self, dcfabric_desired_state):
         r = ConfigRenderer(use_case="dcfabric")
         payload = r.render(dcfabric_desired_state)
-        # 2 fabric interfaces + 1 loopback (lo0 from system.j2)
-        assert len(payload["interface"]) == 3
+        # Exactly the intent's interfaces — no synthetic loopback (#78).
+        assert len(payload["interface"]) == 2
 
     def test_interface_has_name(self, dcfabric_desired_state):
         r = ConfigRenderer(use_case="dcfabric")
@@ -63,12 +63,11 @@ class TestConfigRendererInterfaces:
         address = subif["ipv4"]["address"][0]
         assert address["ip-prefix"] == "10.1.1.0/31"
 
-    def test_empty_interfaces_renders_no_fabric_interfaces(self, dcfabric_desired_state):
+    def test_empty_interfaces_renders_empty_interface_list(self, dcfabric_desired_state):
         ds = dcfabric_desired_state.model_copy(update={"interfaces": []})
         r = ConfigRenderer(use_case="dcfabric")
         payload = r.render(ds)
-        non_loopback = [i for i in payload["interface"] if i["name"] != "lo0"]
-        assert non_loopback == []
+        assert payload["interface"] == []
 
 
 class TestConfigRendererEntityAndFieldCoverage:
@@ -87,10 +86,19 @@ class TestConfigRendererEntityAndFieldCoverage:
         entry = next(i for i in payload["interface"] if i["name"] == "ethernet-1/10")
         assert entry["admin-state"] == "disable"
 
-    def test_interface_mtu_is_rendered(self, dcfabric_desired_state):
+    def test_interface_mtu_is_rendered_when_set(self, dcfabric_desired_state):
         payload = ConfigRenderer(use_case="dcfabric").render(dcfabric_desired_state)
         entry = next(i for i in payload["interface"] if i["name"] == "ethernet-1/1")
         assert entry["mtu"] == 9232
+
+    def test_interface_mtu_omitted_when_unset(self, dcfabric_desired_state):
+        """SR Linux rejects mtu on loopbacks — mtu-less intent must not render one (#78)."""
+        ds = dcfabric_desired_state.model_copy(
+            update={"interfaces": [_iface(name="lo0", ip_address="10.1.0.1", prefix_length=32, mtu=None)]},
+        )
+        payload = ConfigRenderer(use_case="dcfabric").render(ds)
+        entry = next(i for i in payload["interface"] if i["name"] == "lo0")
+        assert "mtu" not in entry
 
     def test_interface_description_is_rendered_when_set(self, dcfabric_desired_state):
         ds = dcfabric_desired_state.model_copy(
@@ -126,19 +134,25 @@ class TestConfigRendererPrefixValidation:
         assert "ethernet-1/10" in result[RENDER_ERROR_KEY]
 
 
-class TestConfigRendererSystem:
-    def test_render_produces_system_loopback(self, dcfabric_desired_state):
-        r = ConfigRenderer(use_case="dcfabric")
-        payload = r.render(dcfabric_desired_state)
-        lo_list = [i for i in payload.get("interface", []) if i["name"] == "lo0"]
-        assert lo_list, "loopback lo0 should be in interface list"
+class TestConfigRendererLoopback:
+    """The seeded lo0 is *the* loopback — no synthetic system.j2 injection (#78).
 
-    def test_loopback_has_management_address(self, dcfabric_desired_state):
-        r = ConfigRenderer(use_case="dcfabric")
-        payload = r.render(dcfabric_desired_state)
-        lo = next(i for i in payload["interface"] if i["name"] == "lo0")
+    Intent-first (Constitution VIII): every rendered entity comes from the
+    DesiredState. A hardcoded lo0 collided with seeded loopback rows and
+    carried the management address instead of the intended router-id."""
+
+    def test_no_loopback_is_injected_without_intent(self, dcfabric_desired_state):
+        payload = ConfigRenderer(use_case="dcfabric").render(dcfabric_desired_state)
+        assert [i for i in payload["interface"] if i["name"] == "lo0"] == []
+
+    def test_seeded_loopback_renders_from_intent(self, dcfabric_desired_state):
+        ds = dcfabric_desired_state.model_copy(
+            update={"interfaces": [_iface(name="lo0", ip_address="10.1.0.1", prefix_length=32, mtu=None)]},
+        )
+        payload = ConfigRenderer(use_case="dcfabric").render(ds)
+        (lo,) = [i for i in payload["interface"] if i["name"] == "lo0"]
         address = lo["subinterface"][0]["ipv4"]["address"][0]["ip-prefix"]
-        assert address.startswith("10.0.0.1")
+        assert address == "10.1.0.1/32"
 
 
 class TestConfigRendererRenderError:

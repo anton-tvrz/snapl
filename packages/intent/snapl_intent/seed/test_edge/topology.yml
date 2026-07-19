@@ -83,9 +83,9 @@ devices:
 
 interfaces:
   - {device: edge-01, name: ethernet-1/1, role: fabric, mtu: 9214, ip_address: "10.210.0.0/30", peer_device: edge-02, peer_interface: ethernet-1/1, description: "to edge-02:ethernet-1/1"}
-  - {device: edge-01, name: loopback0, role: loopback, ip_address: "10.201.0.1/32", description: "Router ID edge-01"}
+  - {device: edge-01, name: lo0, role: loopback, ip_address: "10.201.0.1/32", description: "Router ID edge-01"}
   - {device: edge-02, name: ethernet-1/1, role: fabric, mtu: 9214, ip_address: "10.210.0.1/30", peer_device: edge-01, peer_interface: ethernet-1/1, description: "to edge-01:ethernet-1/1"}
-  - {device: edge-02, name: loopback0, role: loopback, ip_address: "10.201.0.2/32", description: "Router ID edge-02"}
+  - {device: edge-02, name: lo0, role: loopback, ip_address: "10.201.0.2/32", description: "Router ID edge-02"}
 
 bgp_peer_groups:
   - name: "edge-underlay-ipv4"

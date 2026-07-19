@@ -47,7 +47,9 @@ class Interface(BaseModel):
     prefix_length: int | None = None
     enabled: bool = True
     speed: str | None = None
-    mtu: int = 9232
+    mtu: int | None = None
+    """None means "no mtu in intent" — rendered as no mtu key, so devices that
+    reject mtu on an interface class (SR Linux loopbacks) still converge (#78)."""
     peer_device: str | None = None
     peer_interface: str | None = None
 
