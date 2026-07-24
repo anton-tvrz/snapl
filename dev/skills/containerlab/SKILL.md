@@ -69,9 +69,11 @@ clab-dc-fabric-leaf02
 
 ## Management Network
 
-- Network: `172.20.20.0/24` (DHCP by Containerlab)
+- Network: `clab-snapl` / `172.20.21.0/24` — dedicated bridge, static per-node
+  pins .11–.16 (Issue #90; isolated from other labs on this host)
 - Access from macOS host via OrbStack network bridge
-- gNMI ports: spine01=57400, leaf01=57401, leaf02=57402
+- gNMI: plaintext on port 57400 on every node, reached by container DNS name
+  (`clab-dcfabric-spine-01` … `clab-dcfabric-leaf-04`)
 
 ## OrbStack-Specific Notes (macOS)
 

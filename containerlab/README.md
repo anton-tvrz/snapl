@@ -50,9 +50,9 @@ this config anywhere reachable.
 
 The seed `management_ip` values (`10.0.0.x/24`) are **intent data only** —
 router-id, loopback address, documentation. They deliberately do *not* match
-the containerlab management network (`172.20.20.0/24`, addresses assigned
-dynamically), and pinning them there would collide with docker's `10.0.0.1`
-gateway default.
+the containerlab management network (`clab-snapl` / `172.20.21.0/24`,
+statically pinned per node — see Issue #90), and pinning them there would
+collide with docker's `10.0.0.1` gateway default.
 
 Instead, each dcfabric device in the SoT carries `lab_node_name`
 (`clab-dcfabric-<name>`), and the executor/collector dial

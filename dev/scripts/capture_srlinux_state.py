@@ -8,11 +8,11 @@ configured interfaces and a BGP neighbor, then collects DRIFT_PATHS and prunes
 the volumetric, adapter-irrelevant subtrees.
 
 Usage:
-    uv run python dev/scripts/capture_srlinux_state.py [--node 172.20.20.3]
+    uv run python dev/scripts/capture_srlinux_state.py [--node 172.20.21.11]
 
-The node IP is the containerlab mgmt address of clab-dcfabric-spine-01; check it
-with `docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' clab-dcfabric-spine-01`
-(or the containerlab deploy output).
+The node IP is the containerlab mgmt address of clab-dcfabric-spine-01. It is
+now statically pinned in containerlab/dcfabric.yml (spine-01 = 172.20.21.11,
+… leaf-04 = 172.20.21.16); pass a container DNS name instead if you prefer.
 """
 
 from __future__ import annotations
@@ -129,7 +129,7 @@ def _prune(data: dict) -> dict:
 
 async def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--node", default="172.20.20.3")
+    ap.add_argument("--node", default="172.20.21.11")
     args = ap.parse_args()
 
     desired = _desired(args.node)
