@@ -20,7 +20,7 @@ def sample_device_config() -> dict:
     return {
         "hostname": "spine01",
         "platform": "nokia_srlinux",
-        "management_ip": "172.20.20.11",
+        "management_ip": "172.20.21.11",
         "role": "spine",
     }
 

@@ -12,6 +12,24 @@
 
 name: dcfabric
 
+# Dedicated management network (Issue #90). Without this block the lab would
+# inherit containerlab's global default (`clab` / 172.20.20.0/24), which is
+# shared with other labs on the same host — notably the
+# project-network-synapse-quattro spine-leaf-lab. On a shared bridge docker
+# hands out addresses dynamically and the two labs interleave, so one
+# project's SoT address could resolve to the other's SR Linux nodes (same
+# default credentials; this lab's gNMI is plaintext).
+#
+# A dedicated bridge + static pins gives each lab its own non-overlapping,
+# deterministic address block, so an address belongs to exactly one lab.
+# NOTE: on OrbStack all container bridges are mutually routable (verified),
+# so this is address isolation, not L3 isolation — the guarantee is "no
+# collision", not "no route". Subnet registry: quattro owns 172.20.20.0/24,
+# snapl owns 172.20.21.0/24.
+mgmt:
+  network: clab-snapl
+  ipv4-subnet: 172.20.21.0/24
+
 topology:
   defaults:
     kind: nokia_srlinux
@@ -27,17 +45,23 @@ topology:
     # Spines: 7220 IXR-D3 (matches seed device_type)
     spine-01:
       type: ixr-d3
+      mgmt-ipv4: 172.20.21.11
     spine-02:
       type: ixr-d3
+      mgmt-ipv4: 172.20.21.12
     # Leaves: 7220 IXR-D2 (matches seed device_type)
     leaf-01:
       type: ixr-d2
+      mgmt-ipv4: 172.20.21.13
     leaf-02:
       type: ixr-d2
+      mgmt-ipv4: 172.20.21.14
     leaf-03:
       type: ixr-d2
+      mgmt-ipv4: 172.20.21.15
     leaf-04:
       type: ixr-d2
+      mgmt-ipv4: 172.20.21.16
 
   # Cabling plan mirrors the seed interface data: each spine has one link to
   # each leaf on ethernet-1/1..4; leaf uplinks are ethernet-1/49 (to spine-01)
