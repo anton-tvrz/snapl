@@ -31,6 +31,15 @@ ENTITY_FIELD_MAP: dict[str, dict[str, Any]] = {
         "fields": ["description", "ip_address", "prefix_length", "enabled", "mtu"],
         "path_template": "/interface[name={name}]",
         "key_field": "name",
+        # Fields the renderer omits when unset in intent ("not managed"), where
+        # the device nonetheless reports an operational value. Comparing them
+        # against a None desired would phantom-drift on every scan: an mtu-less
+        # ethernet interface renders no mtu but the device reports e.g. 9232
+        # (#84). Scoped per-field rather than a blanket None rule so a set field
+        # (e.g. description) still drifts once merge-only-apply deletion lands
+        # (#65). Only applies when desired is None — a set value is always
+        # compared strictly.
+        "skip_when_none": ("mtu",),
     },
     "bgp_session": {
         "fields": ["peer_address", "peer_asn", "peer_group", "enabled"],
@@ -88,6 +97,7 @@ def _diff_entity(
     template: str = spec["path_template"]
     key_field: str | None = spec["key_field"]
     fields: list[str] = spec["fields"]
+    skip_when_none: tuple[str, ...] = spec.get("skip_when_none", ())
 
     if key_field is None:
         path = template
@@ -100,6 +110,10 @@ def _diff_entity(
     items: list[DriftItem] = []
     for field in fields:
         desired_value = getattr(entity, field, None)
+        # An unset ("not managed") field the renderer omits must not drift
+        # against an operational value the device reports on its own (#84).
+        if desired_value is None and field in skip_when_none:
+            continue
         actual_value = actual_entry.get(field) if isinstance(actual_entry, dict) else None
         if desired_value == actual_value:
             continue

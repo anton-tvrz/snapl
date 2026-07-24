@@ -9,7 +9,7 @@ import pytest
 pytestmark = pytest.mark.unit
 
 
-def _build_desired_state(*, mtu: int = 9000, description: str | None = "spine link"):
+def _build_desired_state(*, mtu: int | None = 9000, description: str | None = "spine link"):
     from snapl_intent.models import BGPSession, DesiredState, Device, Interface
 
     dev_id = UUID("00000000-0000-0000-0000-000000000001")
@@ -107,6 +107,18 @@ class TestDiffInterfaceMismatches:
         assert items[0].entity_kind == "interface"
         assert items[0].desired == 9000
         assert items[0].actual == 1500
+
+    def test_mtu_unset_in_intent_does_not_drift_against_operational_default(self):
+        """An ethernet interface with no mtu in intent renders without one, but
+        the device still reports an operational mtu (e.g. 9232). An unset mtu
+        means 'not managed' — it must not phantom-drift on every scan (#84)."""
+        from snapl_observability.structural.diff import diff_desired_vs_actual
+
+        desired = _build_desired_state(mtu=None)
+        actual = _matching_actual_data(desired)
+        actual["/interface[name=ethernet-1/1]"]["mtu"] = 9232
+        items = diff_desired_vs_actual(desired, actual)
+        assert [i for i in items if i.path.endswith("/mtu")] == []
 
     def test_description_mismatch(self):
         from snapl_observability.structural.diff import diff_desired_vs_actual
