@@ -115,9 +115,18 @@ def _peer_node(node: Any, attr: str) -> Any | None:
 
 
 def _peer_id(node: Any, attr: str) -> str | None:
-    """Read the id of the peer on a cardinality-one relation."""
+    """Read the id of the peer on a cardinality-one relation.
+
+    Stringify the id: some SDK nodes expose ``id`` as a ``uuid.UUID`` object
+    rather than a string, and both grouping keys (``str(node.id)``) and
+    ``UUID(peer_id)`` downstream assume str — a raw UUID silently drops the
+    child from its device group or raises (#48).
+    """
     peer = _peer_node(node, attr)
-    return getattr(peer, "id", None) if peer is not None else None
+    if peer is None:
+        return None
+    peer_id = getattr(peer, "id", None)
+    return str(peer_id) if peer_id is not None else None
 
 
 def _peer_value(node: Any, rel_attr: str, value_attr: str, default: Any = None) -> Any:
@@ -135,6 +144,22 @@ def _split_cidr(raw: Any) -> tuple[str | None, int | None]:
     text = str(raw)
     address, _, prefix = text.partition("/")
     return address or None, int(prefix) if prefix.isdigit() else None
+
+
+def _select_interface_ip(
+    candidates: list[tuple[str, int | None]],
+) -> tuple[str | None, int | None]:
+    """Pick a deterministic address from an interface's ``ip_addresses``.
+
+    A dual-stack interface exposes both an IPv4 and an IPv6 peer, and SDK
+    relation order isn't stable — taking the first truthy address flips the
+    rendered config and drift comparison between runs. Prefer IPv4 (no ``:``),
+    falling back to the first candidate (#48).
+    """
+    for address, prefix in candidates:
+        if ":" not in address:
+            return address, prefix
+    return candidates[0] if candidates else (None, None)
 
 
 class InfrahubIntentStore(IntentStore):
@@ -347,13 +372,13 @@ class InfrahubIntentStore(IntentStore):
         # enabled scalars (#33).
         peer_id = _peer_id(node, "device")
         device_id = UUID(peer_id) if peer_id else fallback_device_id
-        ip_address: str | None = None
-        prefix_length: int | None = None
+        ip_candidates: list[tuple[str, int | None]] = []
         for ip_rel in _peers(node, "ip_addresses"):
             ip_peer = _resolve_peer(ip_rel)
-            ip_address, prefix_length = _split_cidr(_value(ip_peer, "address"))
-            if ip_address:
-                break
+            address, prefix = _split_cidr(_value(ip_peer, "address"))
+            if address:
+                ip_candidates.append((address, prefix))
+        ip_address, prefix_length = _select_interface_ip(ip_candidates)
         status = _value(node, "status")
         return Interface(
             id=UUID(str(node.id)),
