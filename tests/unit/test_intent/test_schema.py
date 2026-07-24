@@ -73,10 +73,16 @@ class TestDiscoverSchemaBatches:
 
 
 class TestSchemaLoader:
-    def _make_client(self) -> MagicMock:
+    def _make_client(self, *, registry: dict | None = None) -> MagicMock:
+        from tests.conftest import ready_schema_registry
+
         client = MagicMock()
         client.schema = MagicMock()
         client.schema.load = AsyncMock(return_value={"errors": []})
+        # Post-load readiness poll (#87) — default to a fully-registered schema.
+        client.schema.all = AsyncMock(
+            return_value=ready_schema_registry() if registry is None else registry,
+        )
         return client
 
     async def test_load_calls_client_three_times_in_order(self, intent_package_root: Path):
@@ -129,6 +135,84 @@ class TestSchemaLoader:
 
         assert first.schemas_loaded == second.schemas_loaded
         assert client.schema.load.await_count == 6  # 3 batches x 2 invocations
+
+
+class TestSchemaReadiness:
+    """After loading, the loader must block until Infrahub has actually
+    registered the extension attributes — otherwise a following seed races the
+    async schema apply and the SDK silently drops unknown attributes (#87)."""
+
+    def _make_client(self, *, all_side_effect=None, all_return=None) -> MagicMock:
+        client = MagicMock()
+        client.schema = MagicMock()
+        client.schema.load = AsyncMock(return_value={"errors": []})
+        if all_side_effect is not None:
+            client.schema.all = AsyncMock(side_effect=all_side_effect)
+        else:
+            client.schema.all = AsyncMock(return_value=all_return)
+        return client
+
+    async def test_load_polls_until_extension_attributes_registered(self, intent_package_root: Path):
+        from tests.conftest import ready_schema_registry
+
+        # First poll: schema not yet applied (empty). Second: fully registered.
+        client = self._make_client(all_side_effect=[{}, ready_schema_registry()])
+        loader = SchemaLoader(
+            client=client,
+            schemas_root=intent_package_root / "schemas",
+            readiness_interval=0,
+        )
+
+        result = await loader.load()
+
+        assert result.schemas_loaded == 4 + 3 + 3
+        assert client.schema.all.await_count == 2
+        # Each poll must force a server refresh — the SDK's cached schema is the
+        # thing lagging, so a cache read would loop forever.
+        for call in client.schema.all.await_args_list:
+            assert call.kwargs.get("refresh") is True
+
+    async def test_load_raises_when_schema_never_becomes_ready(self, intent_package_root: Path):
+        client = self._make_client(all_return={})  # schema never registers
+        loader = SchemaLoader(
+            client=client,
+            schemas_root=intent_package_root / "schemas",
+            readiness_timeout=0.05,
+            readiness_interval=0.01,
+        )
+
+        with pytest.raises(IntentSchemaError, match="not ready"):
+            await loader.load()
+
+    async def test_load_without_extension_attributes_skips_the_poll(self, tmp_path: Path):
+        # A schemas tree with no extension attributes has nothing to wait on.
+        (tmp_path / "base").mkdir()
+        (tmp_path / "extensions").mkdir()
+        (tmp_path / "empty.yml").write_text("nodes: []\n")
+        client = self._make_client(all_side_effect=[{}])
+        loader = SchemaLoader(client=client, schemas_root=tmp_path)
+
+        await loader.load()
+
+        client.schema.all.assert_not_awaited()
+
+
+class TestCollectExtensionAttributes:
+    def test_collects_project_extension_attributes(self, intent_package_root: Path):
+        import yaml
+
+        from snapl_intent.infrahub.schema import collect_extension_attributes, discover_schema_batches
+
+        parsed = [
+            yaml.safe_load(p.read_text()) or {}
+            for batch in discover_schema_batches(intent_package_root / "schemas")
+            for p in batch
+        ]
+        expected = collect_extension_attributes(parsed)
+
+        # The exact silently-dropped attributes from #87.
+        assert "use_case" in expected["DcimDevice"]
+        assert "lab_node_name" in expected["DcimDevice"]
 
 
 # ---------------------------------------------------------------------------
