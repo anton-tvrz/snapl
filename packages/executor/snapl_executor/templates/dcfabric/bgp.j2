@@ -1,7 +1,7 @@
 {
   "admin-state": "enable",
   "autonomous-system": {{ sessions[0].local_asn if sessions else 0 }},
-  "router-id": "{{ device.management_address }}",
+  "router-id": "{{ router_id }}",
   "afi-safi": [
 {% for af in sessions | map(attribute='address_family') | unique | list %}
     {

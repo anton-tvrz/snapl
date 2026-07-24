@@ -20,6 +20,22 @@ _TEMPLATES_ROOT = Path(__file__).resolve().parent.parent / "templates"
 _RENDER_ERROR_KEY = "_render_error"
 
 
+def _select_router_id(desired: DesiredState) -> str:
+    """BGP router-id for a device.
+
+    The seed designates the loopback address as the router ID (lo0 carries a
+    /32 that is *the* loopback actually configured since #82), and per the lab
+    addressing decision management IPs are intent-only data that never needs to
+    be live on the device — a poor router-id source. Prefer the loopback
+    interface's address, falling back to ``management_address`` only when no
+    loopback in intent carries an address (#83).
+    """
+    for iface in desired.interfaces:
+        if iface.name.lower().startswith("lo") and iface.ip_address:
+            return str(iface.ip_address)
+    return str(desired.device.management_address)
+
+
 class ConfigRenderer:
     """Renders a DesiredState into a SR Linux YANG-modelled JSON payload."""
 
@@ -50,6 +66,7 @@ class ConfigRenderer:
             "device": desired.device,
             "interfaces": desired.interfaces,
             "sessions": desired.bgp_sessions,
+            "router_id": _select_router_id(desired),
         }
 
         ifaces_raw: list[dict] = json.loads(self._env.get_template("interfaces.j2").render(**ctx))

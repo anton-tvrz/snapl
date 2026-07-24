@@ -179,8 +179,25 @@ class TestConfigRendererBgp:
         payload = ConfigRenderer(use_case="dcfabric").render(desired_state)
         return payload["network-instance"][0]["protocols"]["bgp"]
 
-    def test_bgp_has_router_id(self, dcfabric_desired_state):
-        bgp = self._bgp(dcfabric_desired_state)
+    def test_bgp_router_id_from_loopback(self, dcfabric_desired_state):
+        """router-id derives from the seeded loopback address, not the
+        management IP — the seed designates lo0's IP as the router ID and
+        management IPs are intent-only, never live on the device (#83)."""
+        ds = dcfabric_desired_state.model_copy(
+            update={
+                "interfaces": [
+                    *dcfabric_desired_state.interfaces,
+                    _iface(name="lo0", ip_address="10.1.0.5", prefix_length=32, mtu=None),
+                ]
+            }
+        )
+        bgp = self._bgp(ds)
+        assert bgp["router-id"] == "10.1.0.5"
+
+    def test_bgp_router_id_falls_back_to_management_without_loopback(self, dcfabric_desired_state):
+        """No loopback carries an address in intent → fall back to
+        management_address so a unique router-id still renders (#83)."""
+        bgp = self._bgp(dcfabric_desired_state)  # fixture has no loopback
         assert bgp["router-id"] == "10.0.0.1"
 
     def test_bgp_enables_session_address_family(self, dcfabric_desired_state):
