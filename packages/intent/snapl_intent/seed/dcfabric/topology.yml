@@ -6,11 +6,22 @@
 #   AutonomousSystem -> VRF -> IPPrefix -> Device -> IPAddress ->
 #   Interface -> BGPPeerGroup -> BGPSession
 #
-# Addressing plan (self-contained, not tied to containerlab):
+# Addressing plan (intent-only, not tied to containerlab):
 #   - Management:       10.0.0.0/24          (spines .1-.2, leaves .11-.14)
 #   - Loopbacks:        10.1.0.0/24          (one /32 per device)
 #   - Fabric underlay:  10.10.0.0/16         (/31 links, 2 per spine-leaf pair)
 #   - BGP ASNs:         spine 65000-65001, leaves 65011-65014 (eBGP)
+#
+# ``lab_node_name`` is the exception: it is the gNMI DIAL TARGET, resolved
+# ahead of management_address by both the executor and the collector, so it
+# has to be something the worker's host can actually reach (Issue #96). It
+# carries each node's static pin from containerlab/dcfabric.yml — clab
+# hostnames are only resolvable inside the docker network, and seeding one
+# here makes every apply and collect fail until the SoT is hand-patched.
+#
+# The pins here and in containerlab/dcfabric.yml are ONE address registry
+# split across two files; tests/unit/test_containerlab/test_topology.py
+# fails if they drift apart. Change both together.
 ---
 
 organization:
@@ -91,7 +102,7 @@ devices:
     location: "local-lab"
     platform: "Nokia SR Linux"
     management_ip: "10.0.0.1/24"
-    lab_node_name: "clab-dcfabric-spine-01"
+    lab_node_name: "172.20.21.11"  # clab-dcfabric-spine-01
     asn: 65000
     description: "Spine 01"
   - name: spine-02
@@ -102,7 +113,7 @@ devices:
     location: "local-lab"
     platform: "Nokia SR Linux"
     management_ip: "10.0.0.2/24"
-    lab_node_name: "clab-dcfabric-spine-02"
+    lab_node_name: "172.20.21.12"  # clab-dcfabric-spine-02
     asn: 65001
     description: "Spine 02"
   - name: leaf-01
@@ -113,7 +124,7 @@ devices:
     location: "local-lab"
     platform: "Nokia SR Linux"
     management_ip: "10.0.0.11/24"
-    lab_node_name: "clab-dcfabric-leaf-01"
+    lab_node_name: "172.20.21.13"  # clab-dcfabric-leaf-01
     asn: 65011
     description: "Leaf 01"
   - name: leaf-02
@@ -124,7 +135,7 @@ devices:
     location: "local-lab"
     platform: "Nokia SR Linux"
     management_ip: "10.0.0.12/24"
-    lab_node_name: "clab-dcfabric-leaf-02"
+    lab_node_name: "172.20.21.14"  # clab-dcfabric-leaf-02
     asn: 65012
     description: "Leaf 02"
   - name: leaf-03
@@ -135,7 +146,7 @@ devices:
     location: "local-lab"
     platform: "Nokia SR Linux"
     management_ip: "10.0.0.13/24"
-    lab_node_name: "clab-dcfabric-leaf-03"
+    lab_node_name: "172.20.21.15"  # clab-dcfabric-leaf-03
     asn: 65013
     description: "Leaf 03"
   - name: leaf-04
@@ -146,7 +157,7 @@ devices:
     location: "local-lab"
     platform: "Nokia SR Linux"
     management_ip: "10.0.0.14/24"
-    lab_node_name: "clab-dcfabric-leaf-04"
+    lab_node_name: "172.20.21.16"  # clab-dcfabric-leaf-04
     asn: 65014
     description: "Leaf 04"
 

@@ -9,7 +9,7 @@ Usage:
 
 from invoke import Collection
 
-from . import dev, main, orchestrator
+from . import demo, dev, main, orchestrator
 
 ns = Collection()
 
@@ -25,3 +25,6 @@ ns.add_collection(Collection.from_module(dev, name="dev"))
 
 # Orchestrator namespace
 ns.add_collection(Collection.from_module(orchestrator, name="orchestrator"))
+
+# Demo namespace (up, seed, check, reset) — see docs/demo-scenarios.md
+ns.add_collection(Collection.from_module(demo, name="demo"))

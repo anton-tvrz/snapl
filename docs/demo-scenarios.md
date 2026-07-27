@@ -4,7 +4,7 @@ Repeatable, demo-ready walkthroughs of the closed NAF loop: **Intent → Deploy 
 
 Each scenario states its preconditions, the exact steps, what you should see, and what to put on screen in the Temporal Web UI. They are ordered as a narrative — run top to bottom for a full demo, or cherry-pick.
 
-> Scenarios 1–5 and 7–8 work without real devices if you accept `apply`/`collect` failing — but for a convincing demo, bring up the lab (`uv run invoke dev.lab-deploy`, see `containerlab/README.md`).
+> **Only scenarios 5 and 8 work without the lab** — cancellation resolves before any device call has to succeed, and the audit log is read from SQLite. Every other scenario asserts a successful deploy or a real drift reading, including scenario 4, whose "1/2 succeeded" needs the one real device to actually reconcile. Bring the fabric up.
 
 ---
 
@@ -14,60 +14,65 @@ Each scenario states its preconditions, the exact steps, what you should see, an
 # 1. Dependencies
 uv sync --all-groups
 
-# 2. Infrahub + backing stores (Neo4j, Redis, RabbitMQ, Postgres) + Temporal
-#    (Temporal Web UI on http://localhost:8233)
-uv run invoke dev.deps
+# 2. Environment — the committed defaults work as-is
+cp development/.env.example development/.env
 
-# 3. SR Linux fabric (2 spines, 4 leaves) — no native containerlab needed
-uv run invoke dev.lab-deploy
+# 3. Everything else: compose stack + SR Linux fabric + seeded SoT + preflight
+uv run invoke demo.up
 ```
 
-Seed the Source of Truth (idempotent, safe to re-run):
+`demo.up` is `dev.deps` → `dev.lab-deploy` → `demo.seed` → `demo.check`. Each is
+runnable on its own; all are idempotent, so re-run any of them freely. It ends
+by printing a preflight report — do not start demoing until every line is `ok`:
 
-```python
-# uv run python - <<'PY' ... PY, or paste into a REPL
-import asyncio
-from snapl_intent.infrahub.client import build_client
-from snapl_intent.infrahub.store import InfrahubIntentStore
-
-async def main():
-    client = build_client(address="http://localhost:8001", api_token="<INFRAHUB_API_TOKEN>")
-    store = InfrahubIntentStore(client=client)
-    print(await store.provision_schema("dcfabric"))
-    print(await store.seed("dcfabric"))
-
-asyncio.run(main())
+```
+Demo preflight:
+  [ok] temporal reachable — localhost:7233
+  [ok] source of truth reachable — http://localhost:8000
+  [ok] 'dcfabric' seeded — 6 devices
+  [ok] gnmi spine-01 — 172.20.21.11:57400
+  ...
+All 9 checks passed — ready to demo.
 ```
 
 Start the worker in its own terminal (leave it visible — its log narrates every demo):
 
 ```bash
-INFRAHUB_API_TOKEN=<token> SRLINUX_PASSWORD=<lab-password> uv run invoke orchestrator.start
+uv run invoke orchestrator.start
 ```
 
-> Defaults assume the committed compose ports (Infrahub 8000, Temporal 7233). If your
-> `development/.env` offsets them (e.g. `INFRAHUB_PORT=8001`, `TEMPORAL_PORT=7234`),
-> also export `INFRAHUB_ADDRESS=http://localhost:<port>` and `TEMPORAL_HOST=localhost:<port>`
-> for the worker, and use those ports in the snippets below.
+### Ports and credentials
 
-```bash
-```
+Everything below assumes the **committed defaults**: Infrahub on `8000`, Temporal
+on `7233` (Web UI `8233`), SR Linux gNMI on `57400` with `admin` / `NokiaSrl1!`.
+Those are what a clean checkout gets, and `development/.env.example` sets them.
+
+If you offset the host ports to run alongside another project's stack, set
+`INFRAHUB_ADDRESS` and `TEMPORAL_HOST` in `development/.env` to match — the
+worker and the demo tasks both read them, and `demo.check` will tell you if
+they disagree with what is actually listening.
+
+Device dial targets come from the SoT (`lab_node_name`, seeded as each node's
+static `172.20.21.x` address) — nothing to configure, and nothing to patch by
+hand. See `containerlab/README.md` for the addressing rationale.
 
 Shared snippet used by every scenario — a client plus the device inventory:
 
 ```python
-import asyncio
-from temporalio.client import Client
+import asyncio, os
 from snapl_intent.infrahub.client import build_client
 from snapl_intent.infrahub.store import InfrahubIntentStore
+from snapl_orchestrator.worker.client import build_client as build_temporal_client
 
 TASK_QUEUE = "snapl-orchestrator"
 
 async def connect():
-    return await Client.connect("localhost:7233", namespace="default")
+    # build_client, not Client.connect — it registers the pydantic data
+    # converter the workflows' payloads are encoded with.
+    return await build_temporal_client(target=os.environ.get("TEMPORAL_HOST", "localhost:7233"))
 
 async def device_ids():
-    client = build_client(address="http://localhost:8001", api_token="<INFRAHUB_API_TOKEN>")
+    client = build_client()   # reads INFRAHUB_ADDRESS / INFRAHUB_API_TOKEN
     store = InfrahubIntentStore(client=client)
     states = await store.get_desired_state(use_case="dcfabric")
     return {s.device.name: s.device.id for s in states}
@@ -237,7 +242,8 @@ asyncio.run(main())
 from snapl_orchestrator.audit.sqlite import SqliteAuditLog
 
 async def main():
-    log = SqliteAuditLog(database_url="./snapl-audit.sqlite")
+    # Same DB the worker writes to — SNAPL_AUDIT_DB, default ./snapl-audit.sqlite
+    log = SqliteAuditLog(database_url=os.environ.get("SNAPL_AUDIT_DB", "./snapl-audit.sqlite"))
     await log.initialize()
     ids = await device_ids()
 
@@ -262,3 +268,36 @@ asyncio.run(main())
 5. **Audit log** (Scenario 8) — everything you just did, replayed from SQLite. *2 min*
 
 Scenarios 4–6 are the Q&A reserve: "what if the SoT is stale / someone cancels / a device is down?"
+
+---
+
+## Between rehearsals
+
+```bash
+uv run invoke demo.check     # is it still ready? (safe anytime, changes nothing)
+uv run invoke demo.reset     # destroy lab + stack + volumes
+uv run invoke demo.up        # rebuild from scratch
+```
+
+Two things reset on their own and will surprise you otherwise:
+
+- **Temporal is an in-memory dev server** — restarting the container empties the
+  Web UI of all history (#81). Re-run a scan and a reconcile to repopulate it
+  before demoing the UI.
+- **SR Linux nodes keep their pushed config** across a container restart, but
+  not across `lab-destroy`. After a redeploy the fabric is unconfigured, so
+  Scenario 1's deploy is doing real work again — which is what you want.
+
+If a scenario misbehaves, run `demo.check` first: an unseeded SoT, a stopped
+node, or a port mismatch all show up there as a named failing line.
+
+## Known limitations to name before you are asked
+
+- **Config removed from intent is not removed from the device** — apply is a
+  merge-only gNMI update at `/` (#65).
+- **Config that exists only on the device is never flagged** — the drift diff
+  compares intent against live for paths intent knows about, so an
+  operator-added interface or BGP neighbor goes unreported (#54).
+
+Together these mean "we converge to intent" is currently true for additions and
+changes, not deletions. Say it before the audience finds it.
