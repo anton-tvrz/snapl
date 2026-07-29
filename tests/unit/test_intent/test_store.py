@@ -653,6 +653,46 @@ class TestRelationshipQueries:
         assert mapped.ip_address is None
         assert mapped.prefix_length is None
 
+    async def test_dual_stack_interface_prefers_ipv4_deterministically(self, mock_infrahub_client):
+        """A dual-stack interface exposes both a v6 and a v4 ip_addresses peer in
+        unstable relation order; mapping must deterministically pick the IPv4
+        address so rendered config and drift comparison don't flip (#48)."""
+        dev_uuid = uuid4()
+        node = _make_device_node(name="spine-01", device_id=dev_uuid)
+        iface = _make_interface_node(device_uuid=dev_uuid, name="ethernet-1/1")
+        # v6 peer listed *before* the v4 peer — the first-truthy loop would pick v6.
+        iface.ip_addresses = _rel_many(
+            [
+                _rel_one(SimpleNamespace(address=_attr("2001:db8::1/64"))),
+                _rel_one(SimpleNamespace(address=_attr("10.10.1.0/31"))),
+            ]
+        )
+        _dispatch_filters(mock_infrahub_client, devices=[node], interfaces=[iface])
+        store = InfrahubIntentStore(client=mock_infrahub_client)
+
+        result = await store.get_desired_state(use_case="dcfabric")
+
+        (mapped,) = result[0].interfaces
+        assert mapped.ip_address == "10.10.1.0"
+        assert mapped.prefix_length == 31
+
+    async def test_interface_device_peer_id_as_uuid_object(self, mock_infrahub_client):
+        """Some SDK nodes expose ``id`` as a ``uuid.UUID`` object rather than a
+        string; the peer side must stringify it (as the device side already does)
+        or ``UUID(peer_id)`` raises and the interface is dropped (#48)."""
+        dev_uuid = uuid4()
+        node = _make_device_node(name="spine-01", device_id=dev_uuid)
+        iface = _make_interface_node(device_uuid=dev_uuid, name="ethernet-1/1", ip="10.10.1.0/31")
+        # Live SDK sometimes hands back a UUID object, not str.
+        iface.device = _rel_one(SimpleNamespace(id=dev_uuid))
+        _dispatch_filters(mock_infrahub_client, devices=[node], interfaces=[iface])
+        store = InfrahubIntentStore(client=mock_infrahub_client)
+
+        result = await store.get_desired_state(use_case="dcfabric")
+
+        (mapped,) = result[0].interfaces
+        assert mapped.device_id == dev_uuid
+
 
 class TestUseCaseIsolation:
     async def test_get_desired_state_passes_use_case_filter_to_sdk(self, mock_infrahub_client):
