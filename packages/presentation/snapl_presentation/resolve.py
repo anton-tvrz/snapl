@@ -15,11 +15,12 @@ from snapl_presentation.exceptions import AmbiguousDeviceError, ConnectionCliErr
 if TYPE_CHECKING:
     from uuid import UUID
 
+    from snapl_intent.abc import IntentStore
     from snapl_intent.models import DesiredState
     from snapl_presentation.settings import CliSettings
 
 
-def build_store(settings: CliSettings):
+def build_store(settings: CliSettings) -> IntentStore:
     """An InfrahubIntentStore from resolved settings."""
     from snapl_intent.infrahub.client import build_client  # noqa: PLC0415
     from snapl_intent.infrahub.store import InfrahubIntentStore  # noqa: PLC0415
@@ -28,7 +29,7 @@ def build_store(settings: CliSettings):
     return InfrahubIntentStore(client=client)
 
 
-async def load_states(store, settings: CliSettings, *, use_case: str | None = None) -> list[DesiredState]:
+async def load_states(store: IntentStore, settings: CliSettings, *, use_case: str | None = None) -> list[DesiredState]:
     """Fetch desired state, converting SoT failures into an operator message."""
     try:
         return await store.get_desired_state(use_case=use_case)

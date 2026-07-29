@@ -36,7 +36,7 @@ _STATUS_STYLE = {
 
 
 def _seconds(result: Any) -> float:
-    return (result.ended_at - result.started_at).total_seconds()
+    return float((result.ended_at - result.started_at).total_seconds())
 
 
 def _esc(value: Any) -> str:
