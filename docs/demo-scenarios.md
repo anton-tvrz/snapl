@@ -56,27 +56,16 @@ Device dial targets come from the SoT (`lab_node_name`, seeded as each node's
 static `172.20.21.x` address) — nothing to configure, and nothing to patch by
 hand. See `containerlab/README.md` for the addressing rationale.
 
-Shared snippet used by every scenario — a client plus the device inventory:
+Every scenario below is a `snapl` command. The CLI resolves device names, wires
+the Temporal client correctly, and maps outcomes onto a uniform exit code:
 
-```python
-import asyncio, os
-from snapl_intent.infrahub.client import build_client
-from snapl_intent.infrahub.store import InfrahubIntentStore
-from snapl_orchestrator.worker.client import build_client as build_temporal_client
+| code | meaning |
+| --- | --- |
+| 0 | ran, found nothing wrong |
+| 1 | operational error — unreachable dependency, bad input, failed workflow |
+| 2 | ran fine, **found drift** |
 
-TASK_QUEUE = "snapl-orchestrator"
-
-async def connect():
-    # build_client, not Client.connect — it registers the pydantic data
-    # converter the workflows' payloads are encoded with.
-    return await build_temporal_client(target=os.environ.get("TEMPORAL_HOST", "localhost:7233"))
-
-async def device_ids():
-    client = build_client()   # reads INFRAHUB_ADDRESS / INFRAHUB_API_TOKEN
-    store = InfrahubIntentStore(client=client)
-    states = await store.get_desired_state(use_case="dcfabric")
-    return {s.device.name: s.device.id for s in states}
-```
+Add `--json` to any command to get the same result as machine-readable stdout.
 
 ---
 
@@ -84,22 +73,8 @@ async def device_ids():
 
 **Story:** "We declare intent in the Source of Truth; snapl makes it real and *proves* it took effect — deploy isn't done until the device's running config verifies clean."
 
-```python
-from snapl_orchestrator.workflows.deploy_intent import DeployIntentWorkflow
-from temporalio.client import WorkflowIDConflictPolicy
-
-async def main():
-    client, ids = await connect(), await device_ids()
-    result = await client.execute_workflow(
-        DeployIntentWorkflow.run,
-        ids["spine-01"],
-        id=f"deploy-intent-{ids['spine-01']}",
-        task_queue=TASK_QUEUE,
-        id_conflict_policy=WorkflowIDConflictPolicy.USE_EXISTING,
-    )
-    print(result.success, result.reason, result.ended_at - result.started_at)
-
-asyncio.run(main())
+```bash
+snapl deploy spine-01
 ```
 
 **Expect:** `True succeeded 0:00:0X`. The worker log shows the four activities in order: `fetch_desired_state → apply_config → collect_running_state → detect_drift`.
@@ -121,22 +96,8 @@ docker exec -it clab-dcfabric-spine-01 sr_cli \
 
 2. Scan the whole use case:
 
-```python
-from uuid import uuid4
-from snapl_orchestrator.workflows.scan_drift import ScanDriftWorkflow
-
-async def main():
-    client = await connect()
-    scan = await client.execute_workflow(
-        ScanDriftWorkflow.run, "dcfabric",
-        id=f"scan-drift-dcfabric-{uuid4()}", task_queue=TASK_QUEUE,
-    )
-    print(f"{scan.total} devices: {scan.clean} clean, {scan.drifted} drifted, {scan.errored} errored")
-    for report in scan.reports.values():
-        for item in report.items:
-            print(f"  {report.device_name}: {item.path} desired={item.desired} actual={item.actual}")
-
-asyncio.run(main())
+```bash
+snapl scan --use-case dcfabric   # exits 2 when drift is found
 ```
 
 **Expect:** `6 devices: 5 clean, 1 drifted, 0 errored` and the precise line:
@@ -150,20 +111,10 @@ asyncio.run(main())
 
 **Story:** "Detection without remediation is a dashboard. snapl closes the loop — and each repair is itself a full verified deploy."
 
-```python
-from uuid import uuid4
-from snapl_orchestrator.workflows.reconcile_devices import ReconcileDevicesWorkflow
-
-async def main():
-    client, ids = await connect(), await device_ids()
-    result = await client.execute_workflow(
-        ReconcileDevicesWorkflow.run,
-        [ids["spine-01"]],                      # the drifted device from Scenario 2
-        id=f"reconcile-{uuid4()}", task_queue=TASK_QUEUE,
-    )
-    print(f"{result.succeeded}/{result.total} succeeded, {result.failed} failed, {result.skipped} skipped")
-
-asyncio.run(main())
+```bash
+snapl reconcile spine-01 --yes
+# or, without naming names:
+snapl reconcile --use-case dcfabric --drifted --yes
 ```
 
 **Expect:** `1/1 succeeded, 0 failed, 0 skipped`. Re-run the Scenario 2 scan: `6 clean, 0 drifted` — the loop is closed.
@@ -174,16 +125,24 @@ asyncio.run(main())
 
 ## Scenario 4 — A device vanishes from the SoT (skip, not fail)
 
-**Story:** "Operational reality: the reconcile list can be stale. A device that no longer exists in the SoT is *skipped* with an audit note — not falsely reported as a failure." (Behaviour fixed in [#15](https://github.com/anton-tvrz/snapl/issues/15).)
+**Story:** "Operational reality: the reconcile list can be stale. A device that no longer exists in the SoT is *skipped* with an audit note — not falsely reported as a failure." (Behaviour fixed in [#15](https://github.com/anton-tvrz/snapl/issues/15); hardened in [#66](https://github.com/anton-tvrz/snapl/issues/66).)
 
-Run Scenario 3's snippet with one real id and one fabricated one:
+The CLI catches this one earlier than the workflow does — a name that is not in
+the SoT is refused before any workflow starts:
 
-```python
-from uuid import uuid4
-ids_list = [ids["leaf-01"], uuid4()]   # second id exists nowhere in the SoT
+```bash
+snapl deploy ghost
+# error: no device named 'ghost' in the Source of Truth
+#   Known devices: leaf-01, leaf-02, leaf-03, leaf-04, spine-01, spine-02
 ```
 
-**Expect:** `1/2 succeeded... 0 failed, 1 skipped` — and the missing id is absent from `result.device_results`. The real device still reconciled normally.
+That is the better operator experience, but it means the *workflow's* skip
+semantics are no longer reachable from the CLI. They still matter for API
+callers holding a stale device id, and they are covered by
+`tests/unit/test_orchestrator/test_workflow_reconcile_devices.py`
+(`test_missing_device_is_skipped`) — worth showing on screen if the question
+comes up, alongside the duplicate-id and in-flight-collision cases hardened in
+#66 and #35.
 
 ---
 
@@ -191,18 +150,10 @@ ids_list = [ids["leaf-01"], uuid4()]   # second id exists nowhere in the SoT
 
 **Story:** "An operator can pull the cord at any time, and the audit log shows the cancellation as a first-class event — not a mystery gap." (Behaviour fixed in [#16](https://github.com/anton-tvrz/snapl/issues/16).)
 
-```python
-async def main():
-    client, ids = await connect(), await device_ids()
-    handle = await client.start_workflow(          # start_, not execute_ — don't await completion
-        DeployIntentWorkflow.run, ids["leaf-02"],
-        id=f"deploy-intent-{ids['leaf-02']}", task_queue=TASK_QUEUE,
-    )
-    await handle.cancel()
-    result = await handle.result()
-    print(result.success, result.reason)           # False cancelled
-
-asyncio.run(main())
+```bash
+snapl deploy leaf-02
+# ...then Ctrl-C. The CLI says the workflow keeps running; cancel it for real
+# from the Temporal Web UI, or leave it and watch it finish.
 ```
 
 **Expect:** `False cancelled`, and Scenario 8's audit query for this workflow shows a `workflow_cancelled` event. (Cancelling a *Reconcile* propagates to its child deploys and re-raises — the workflow shows as Cancelled in the UI, with the audit event still recorded first.)
@@ -238,21 +189,9 @@ asyncio.run(main())
 
 **Story:** "Every demo above left a durable, queryable record — per workflow and per device, across workflow types."
 
-```python
-from snapl_orchestrator.audit.sqlite import SqliteAuditLog
-
-async def main():
-    # Same DB the worker writes to — SNAPL_AUDIT_DB, default ./snapl-audit.sqlite
-    log = SqliteAuditLog(database_url=os.environ.get("SNAPL_AUDIT_DB", "./snapl-audit.sqlite"))
-    await log.initialize()
-    ids = await device_ids()
-
-    for e in await log.query_by_workflow(f"deploy-intent-{ids['spine-01']}"):
-        print(f"[{e.timestamp}] {e.event_type} {e.activity_name or ''} {e.outcome or ''}")
-
-    print(len(await log.query_by_device(ids["spine-01"])), "events for spine-01 across all workflows")
-
-asyncio.run(main())
+```bash
+snapl audit --workflow deploy-intent-<device-id>
+snapl audit --device spine-01
 ```
 
 **Expect:** the deploy reads as a story — `workflow_started`, four `activity_completed`, `workflow_terminated outcome=success`; the cancelled workflow from Scenario 5 ends in `workflow_cancelled` instead. The per-device query aggregates deploys, scans and reconciles that touched the device.
@@ -261,15 +200,22 @@ asyncio.run(main())
 
 ## Suggested 10-minute demo arc
 
-1. **Deploy** (Scenario 1) — establish the loop. *2 min*
-2. **Break it by hand, detect** (Scenario 2) — the "aha": exact paths named. *2 min*
-3. **Reconcile, rescan clean** (Scenario 3) — closed loop. *2 min*
-4. **Kill the worker mid-deploy** (Scenario 7) — durability is the differentiator. *2 min*
-5. **Audit log** (Scenario 8) — everything you just did, replayed from SQLite. *2 min*
+| # | beat | command | *min* |
+| --- | --- | --- | --- |
+| 1 | **Deploy** — establish the loop | `snapl deploy spine-01` | 2 |
+| 2 | **Break it by hand, detect** — the "aha": exact paths named | `docker exec ... sr_cli`, then `snapl scan` | 2 |
+| 3 | **Reconcile, rescan clean** — closed loop | `snapl reconcile --drifted --yes`, then `snapl scan` | 2 |
+| 4 | **Kill the worker mid-deploy** — durability is the differentiator | `snapl deploy leaf-01`, Ctrl-C the worker | 2 |
+| 5 | **Audit log** — everything you just did, from SQLite | `snapl audit --device spine-01` | 2 |
 
 Scenarios 4–6 are the Q&A reserve: "what if the SoT is stale / someone cancels / a device is down?"
 
----
+Worth showing the exit codes if the audience is technical — it is the thing that
+makes the CLI scriptable rather than just pretty:
+
+```bash
+snapl scan; echo $?   # 0 clean, 2 drifted, 1 something broke
+```
 
 ## Between rehearsals
 
