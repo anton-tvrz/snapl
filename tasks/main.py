@@ -52,6 +52,19 @@ def test_unit(ctx):
     )
 
 
+@task
+def test_e2e(ctx):
+    """Run the end-to-end demo arc against a live stack (issue #100).
+
+    Opt-in and destructive: it provisions the schema, seeds the Source of
+    Truth, and pushes configuration to the lab devices. Bring the stack up
+    first with `invoke demo.up`, and make sure INFRAHUB_ADDRESS points at
+    snapl's own instance (see #107).
+    """
+    print("Running the end-to-end demo arc (seeds the SoT and writes to devices)...")
+    execute_command(ctx, "SNAPL_E2E=1 pytest tests/e2e -m e2e -v")
+
+
 @task(pre=[lint, scan])
 def check_all(ctx):
     """Run all quality checks (lint + security scan)."""

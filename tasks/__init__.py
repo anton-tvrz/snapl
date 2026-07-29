@@ -18,6 +18,7 @@ ns.add_task(main.format_code, name="format")
 ns.add_task(main.lint, name="lint")
 ns.add_task(main.scan, name="scan")
 ns.add_task(main.test_unit, name="test-unit")
+ns.add_task(main.test_e2e, name="test-e2e")
 ns.add_task(main.check_all, name="check-all")
 
 # Dev environment namespace (deps, stop, down)
