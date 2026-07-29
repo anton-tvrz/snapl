@@ -26,6 +26,13 @@ name: dcfabric
 # so this is address isolation, not L3 isolation — the guarantee is "no
 # collision", not "no route". Subnet registry: quattro owns 172.20.20.0/24,
 # snapl owns 172.20.21.0/24.
+#
+# The pins below are also the SoT's gNMI dial targets: they are seeded as each
+# device's ``lab_node_name`` in packages/intent/snapl_intent/seed/dcfabric/
+# topology.yml (Issue #96), because clab hostnames do not resolve from the
+# host where the worker runs. The two files are ONE address registry —
+# tests/unit/test_containerlab/test_topology.py fails if they drift apart.
+# Change both together, and re-seed after changing them.
 mgmt:
   network: clab-snapl
   ipv4-subnet: 172.20.21.0/24

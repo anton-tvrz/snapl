@@ -35,6 +35,15 @@ from snapl_orchestrator.workflows.scan_drift import ScanDriftWorkflow
 
 logger = logging.getLogger(__name__)
 
+# Exported so anything else that has to reach the same cluster — notably the
+# demo bootstrap tasks (#97) — resolves it from here rather than restating it
+# and silently drifting. The Infrahub equivalent already lives in the intent
+# client as DEFAULT_ADDRESS (#61).
+DEFAULT_TEMPORAL_HOST = "localhost:7233"
+DEFAULT_NAMESPACE = "default"
+DEFAULT_TASK_QUEUE = "snapl-orchestrator"
+DEFAULT_AUDIT_DB = "./snapl-audit.sqlite"
+
 
 async def run_worker(*, activities: Activities | None = None) -> None:
     """Bootstrap the Temporal worker.
@@ -57,10 +66,10 @@ async def run_worker(*, activities: Activities | None = None) -> None:
         SRLINUX_PORT            — gNMI port (default 57400)
         SRLINUX_INSECURE        — plaintext gNMI (default 'true'; set 'false' for TLS)
     """
-    temporal_host = os.environ.get("TEMPORAL_HOST", "localhost:7233")
-    namespace = os.environ.get("TEMPORAL_NAMESPACE", "default")
-    task_queue = os.environ.get("TEMPORAL_TASK_QUEUE", "snapl-orchestrator")
-    audit_db = os.environ.get("SNAPL_AUDIT_DB", "./snapl-audit.sqlite")
+    temporal_host = os.environ.get("TEMPORAL_HOST", DEFAULT_TEMPORAL_HOST)
+    namespace = os.environ.get("TEMPORAL_NAMESPACE", DEFAULT_NAMESPACE)
+    task_queue = os.environ.get("TEMPORAL_TASK_QUEUE", DEFAULT_TASK_QUEUE)
+    audit_db = os.environ.get("SNAPL_AUDIT_DB", DEFAULT_AUDIT_DB)
 
     if activities is None:
         activities = await _build_default_activities(audit_db=audit_db)

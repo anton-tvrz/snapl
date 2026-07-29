@@ -46,20 +46,33 @@ gNMI is deliberately insecure: the snapl executor/collector connect with
 generated TLS profile from the `mgmt` grpc-server. Lab use only — don't reuse
 this config anywhere reachable.
 
-## Device addressing: how snapl dials the lab (#30/#31)
+## Device addressing: how snapl dials the lab (#30/#31, #90, #96)
 
 The seed `management_ip` values (`10.0.0.x/24`) are **intent data only** —
 router-id, loopback address, documentation. They deliberately do *not* match
-the containerlab management network (`clab-snapl` / `172.20.21.0/24`,
-statically pinned per node — see Issue #90), and pinning them there would
-collide with docker's `10.0.0.1` gateway default.
+the containerlab management network, and pinning them there would collide with
+docker's `10.0.0.1` gateway default.
 
-Instead, each dcfabric device in the SoT carries `lab_node_name`
-(`clab-dcfabric-<name>`), and the executor/collector dial
-`device.lab_node_name` when set, falling back to `device.management_address`
-otherwise. Containerlab writes those hostnames to `/etc/hosts` (in the VM on
-macOS — see the OrbStack note below), so name-based dialing works wherever the
-lab is reachable.
+The dial target is `lab_node_name`: the executor and collector resolve
+`device.lab_node_name` first, falling back to `device.management_address` and
+then to the configured host. Each dcfabric device is seeded with its **static
+management address** from `dcfabric.yml`:
+
+| node | dial target | node | dial target |
+| --- | --- | --- | --- |
+| spine-01 | `172.20.21.11` | leaf-02 | `172.20.21.14` |
+| spine-02 | `172.20.21.12` | leaf-03 | `172.20.21.15` |
+| leaf-01 | `172.20.21.13` | leaf-04 | `172.20.21.16` |
+
+These are addresses rather than `clab-dcfabric-<name>` hostnames because
+containerlab writes those hostnames into the Linux VM's `/etc/hosts`, not
+macOS's — so a host-side worker cannot resolve them, and every apply and
+collect fails until the SoT is hand-patched (Issue #96). The pins are stable
+across redeploys (Issue #90) and OrbStack routes `172.20.21.0/24` directly.
+
+> `dcfabric.yml` and the seed's `lab_node_name` values are one address
+> registry split across two files. Change both together and re-seed;
+> `tests/unit/test_containerlab/test_topology.py` fails if they diverge.
 
 ## Running the integration tests against the lab
 
@@ -73,10 +86,19 @@ Tests skip automatically when no SR Linux node is reachable.
 
 ### macOS (OrbStack)
 
-Containerlab writes the `clab-dcfabric-*` host entries inside the Linux VM,
-not into macOS's `/etc/hosts`, so from the Mac use OrbStack's container DNS
-and gRPC's OS resolver (gRPC's default c-ares resolver can't see `.local`
-names):
+`SRLINUX_HOST` is only the *fallback* dial target — SoT-driven runs use the
+seeded addresses above and need nothing special. It matters for the integration
+tests, which default to the `clab-dcfabric-spine-01` hostname. Containerlab
+writes those host entries inside the Linux VM, not into macOS's `/etc/hosts`,
+so from the Mac point it at the node's address instead:
+
+```bash
+SRLINUX_HOST=172.20.21.11 \
+  SRLINUX_PASSWORD='NokiaSrl1!' uv run pytest tests/integration/ -m integration  # pragma: allowlist secret
+```
+
+Or use OrbStack's container DNS with gRPC's OS resolver (its default c-ares
+resolver can't see `.local` names):
 
 ```bash
 GRPC_DNS_RESOLVER=native SRLINUX_HOST=clab-dcfabric-spine-01.orb.local \
