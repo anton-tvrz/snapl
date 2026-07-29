@@ -213,3 +213,95 @@ async def test_missing_device_is_skipped(make_desired) -> None:
     assert result.skipped == 1
     assert result.failed == 0
     assert missing_id not in result.device_results
+
+
+# ---------------------------------------------------------------------------
+# Hardening: duplicate ids, child-id collisions, failure classification
+# (#66, #35)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_duplicate_device_ids_are_deduped(make_desired) -> None:
+    """#66: the same id twice used to kill the whole run.
+
+    Both `_deploy_one` calls started a child with the identical id, the second
+    raised WorkflowAlreadyStartedError past the `except ChildWorkflowError`
+    clause, and the exception escaped `asyncio.gather` — failing every device's
+    reconcile because one id was listed twice. Even serialized, ReconcileResult's
+    `len(device_results) + skipped == total` validator would then have raised.
+    """
+    state = make_desired("spine-01")
+    device_id = state.device.id
+
+    async with await WorkflowEnvironment.start_time_skipping(data_converter=pydantic_data_converter) as env:
+        result = await _run(env, _build_activities([state]), [device_id, device_id])
+
+    assert result.total == 1, "a device listed twice is still one device"
+    assert result.succeeded == 1
+    assert result.failed == 0
+    assert result.skipped == 0
+    assert len(result.device_results) == 1
+
+
+@pytest.mark.asyncio
+async def test_duplicate_ids_preserve_first_seen_order(make_desired) -> None:
+    """Dedupe must be order-preserving — reconcile results are read positionally."""
+    states = [make_desired(f"spine-0{i}") for i in range(1, 4)]
+    a, b, c = (s.device.id for s in states)
+
+    async with await WorkflowEnvironment.start_time_skipping(data_converter=pydantic_data_converter) as env:
+        result = await _run(env, _build_activities(states), [c, a, c, b, a])
+
+    assert result.total == 3
+    assert result.succeeded == 3
+    assert set(result.device_results) == {a, b, c}
+
+
+@pytest.mark.asyncio
+async def test_child_id_collision_with_a_running_deploy_is_skipped(make_desired) -> None:
+    """#35: an operator-started deploy for the same device must not fail the batch.
+
+    The operator entry point starts standalone deploys as `deploy-intent-<id>` —
+    the same id family reconcile's children use — so a deploy already in flight
+    collides. Reconcile's goal for that device is already being met, so it counts
+    as skipped and every other device still reconciles.
+    """
+    states = [make_desired("spine-01"), make_desired("leaf-01")]
+    busy, free = (s.device.id for s in states)
+
+    async with await WorkflowEnvironment.start_time_skipping(data_converter=pydantic_data_converter) as env:
+        set_activities(_build_activities(states))
+        async with Worker(
+            env.client,
+            task_queue=TASK_QUEUE,
+            workflows=[ReconcileDevicesWorkflow, DeployIntentWorkflow],
+            workflow_runner=build_workflow_runner(),
+            activities=[
+                fetch_desired_state,
+                apply_config,
+                collect_running_state,
+                detect_drift,
+                record_audit_event,
+            ],
+        ):
+            # Occupy the child id the way an operator-started deploy would.
+            await env.client.start_workflow(
+                DeployIntentWorkflow.run,
+                busy,
+                id=f"deploy-intent-{busy}",
+                task_queue=TASK_QUEUE,
+            )
+            result = await env.client.execute_workflow(
+                ReconcileDevicesWorkflow.run,
+                [busy, free],
+                id=f"reconcile-collision-{busy}",
+                task_queue=TASK_QUEUE,
+            )
+
+    assert result.total == 2
+    assert result.succeeded == 1, "the uncontended device still reconciles"
+    assert result.skipped == 1, "the in-flight device is skipped, not failed"
+    assert result.failed == 0
+    assert busy not in result.device_results
+    assert free in result.device_results
