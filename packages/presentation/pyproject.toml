@@ -11,6 +11,9 @@ dependencies = [
     "pydantic>=2.5",
 ]
 
+[project.scripts]
+snapl = "snapl_presentation.cli:main"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
