@@ -4,10 +4,34 @@ from __future__ import annotations
 
 from datetime import UTC
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
 import pytest
+
+_INTENT_SCHEMAS_ROOT = Path(__file__).resolve().parent.parent / "packages" / "intent" / "snapl_intent" / "schemas"
+
+
+def ready_schema_registry() -> dict:
+    """A ``schema.all()`` registry where every extension attribute our YAML adds
+    is registered — the realistic state once Infrahub finishes applying a loaded
+    schema, so ``provision_schema``'s readiness poll (#87) sees it as ready.
+    """
+    import yaml
+
+    from snapl_intent.infrahub.schema import collect_extension_attributes, discover_schema_batches
+
+    parsed = [
+        yaml.safe_load(path.read_text()) or {}
+        for batch in discover_schema_batches(_INTENT_SCHEMAS_ROOT)
+        for path in batch
+    ]
+    return {
+        kind: SimpleNamespace(kind=kind, attributes=[SimpleNamespace(name=name) for name in sorted(attrs)])
+        for kind, attrs in collect_extension_attributes(parsed).items()
+    }
+
 
 # ---------------------------------------------------------------------------
 # Legacy compatibility fixture (kept for packages that reference it by name).
@@ -49,7 +73,9 @@ def mock_infrahub_client() -> MagicMock:
     # Schema API
     client.schema = MagicMock(name="client.schema")
     client.schema.load = AsyncMock(name="client.schema.load", return_value={"errors": []})
-    client.schema.all = AsyncMock(name="client.schema.all", return_value={})
+    # Default to a fully-registered schema so provision_schema's readiness poll
+    # (#87) is satisfied immediately; get_schema tests override this per case.
+    client.schema.all = AsyncMock(name="client.schema.all", return_value=ready_schema_registry())
 
     # Branch API
     client.branch = MagicMock(name="client.branch")
