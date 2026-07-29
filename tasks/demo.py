@@ -117,6 +117,13 @@ def _build_store(settings: DemoSettings):
     return InfrahubIntentStore(client=client)
 
 
+def identify_sot(client, *, address: str):
+    """Classify the Infrahub behind ``client`` — see snapl_intent...identity (#107)."""
+    from snapl_intent.infrahub.identity import identify  # noqa: PLC0415
+
+    return identify(client, address=address)
+
+
 def _probe_tcp(host: str, port: int, *, timeout: float = _PROBE_TIMEOUT_SECONDS) -> bool:
     """True when a TCP connection to host:port completes."""
     with contextlib.suppress(OSError), socket.create_connection((host, port), timeout=timeout):
@@ -178,7 +185,7 @@ def check(ctx, use_case: str = DEFAULT_USE_CASE):
     results.append(
         CheckResult(
             name="temporal reachable",
-            ok=_probe_tcp(temporal_host or "localhost", int(temporal_port or 7233)),
+            ok=_probe_tcp(temporal_host or "localhost", int(temporal_port or 18033)),
             detail=settings.temporal_host,
         )
     )
@@ -194,6 +201,11 @@ def check(ctx, use_case: str = DEFAULT_USE_CASE):
             results.append(CheckResult("source of truth reachable", False, f"{type(exc).__name__}: {exc}"))
         else:
             results.append(CheckResult("source of truth reachable", True, settings.infrahub_address))
+            # Reachable is not the same as ours (#107): several sibling
+            # projects serve Infrahub, and pointing at one of theirs is a
+            # successful connection to the wrong Source of Truth.
+            identity = asyncio.run(identify_sot(store.client, address=settings.infrahub_address))
+            results.append(CheckResult("source of truth is snapl's", not identity.is_foreign, identity.detail))
             results.append(
                 CheckResult(
                     name=f"'{use_case}' seeded",

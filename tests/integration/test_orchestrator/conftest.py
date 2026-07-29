@@ -33,6 +33,7 @@ import pytest
 from snapl_intent.infrahub.client import DEFAULT_ADDRESS
 from snapl_intent.infrahub.client import build_client as build_infrahub_client
 from snapl_intent.infrahub.store import InfrahubIntentStore
+from snapl_orchestrator.worker.client import DEFAULT_TEMPORAL_HOST
 
 # Dev-compose admin token (matches development/docker-compose.yml and the
 # intent integration conftest).
@@ -56,7 +57,7 @@ def _can_reach(host: str, port: int, timeout: float = 1.5) -> bool:
 
 @pytest.fixture(scope="session")
 def temporal_endpoint() -> str:
-    return os.environ.get("TEMPORAL_HOST", "localhost:7233")
+    return os.environ.get("TEMPORAL_HOST", DEFAULT_TEMPORAL_HOST)
 
 
 @pytest.fixture(scope="session")

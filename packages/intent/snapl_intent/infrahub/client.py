@@ -26,7 +26,11 @@ if TYPE_CHECKING:
 
 
 DEFAULT_TIMEOUT_SECONDS = 10
-DEFAULT_ADDRESS = "http://localhost:8000"
+# snapl's stack owns the 18000-18099 port block and binds no conventional
+# default (#107): "localhost:8000" is also every sibling project's Infrahub,
+# and aiming there once reached another project's server. See
+# dev/knowledge/host-resource-registry.md.
+DEFAULT_ADDRESS = "http://localhost:18000"
 
 
 def _get_env(name: str, *, default: str | None = None) -> str | None:
@@ -45,7 +49,7 @@ def build_client(
     """Construct an :class:`InfrahubClient` from explicit args or env vars.
 
     Args:
-        address: Infrahub HTTP address (default: ``$INFRAHUB_ADDRESS`` or ``http://localhost:8000``).
+        address: Infrahub HTTP address (default: ``$INFRAHUB_ADDRESS`` or ``http://localhost:18000``).
         api_token: API token (default: ``$INFRAHUB_API_TOKEN``). Required for
             authenticated deployments; local Docker development may leave this
             unset.

@@ -177,6 +177,16 @@ class InfrahubIntentStore(IntentStore):
 
     # ------------------------------------------------------------------ US1
 
+    @property
+    def client(self):
+        """The underlying Infrahub SDK client.
+
+        Exposed so callers that need to interrogate the *instance* rather
+        than the data — the identity check in #107, for example — do not
+        have to reach into a private attribute.
+        """
+        return self._client
+
     async def get_desired_state(
         self,
         *,

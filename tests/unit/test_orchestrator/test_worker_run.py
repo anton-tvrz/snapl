@@ -76,7 +76,7 @@ class TestBuildIntentStore:
     def test_default_address_matches_intent_client_default(self, monkeypatch):
         """The worker must not define its own Infrahub default (#61) — an unset
         INFRAHUB_ADDRESS resolves through the intent client's single source of
-        truth (http://localhost:8000, matching the committed compose default)."""
+        truth (http://localhost:18000, matching the committed compose default)."""
         from snapl_intent.infrahub.client import DEFAULT_ADDRESS
 
         monkeypatch.setenv("INFRAHUB_API_TOKEN", "tok")

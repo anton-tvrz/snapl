@@ -77,7 +77,7 @@ async def _probe(host_port: str, timeout: float) -> str | None:
     host, _, port = host_port.rpartition(":")
     try:
         _, writer = await asyncio.wait_for(
-            asyncio.open_connection(host or "localhost", int(port or 7233)),
+            asyncio.open_connection(host or "localhost", int(port or 18033)),
             timeout=timeout,
         )
     except TimeoutError:
@@ -123,6 +123,13 @@ async def _connect(settings: CliSettings):
             env_var="TEMPORAL_HOST",
             cause=cause,
         ) from exc
+
+
+async def identify_sot(store, *, address: str):
+    """Classify the Infrahub a store points at (#107)."""
+    from snapl_intent.infrahub.identity import identify  # noqa: PLC0415
+
+    return await identify(store.client, address=address)
 
 
 async def count_pollers(client: Any, settings: CliSettings) -> int:
@@ -365,6 +372,9 @@ async def status(use_case: UseCaseOpt = DEFAULT_USE_CASE, as_json: JsonOpt = Fal
         checks.append(("source of truth", False, exc.message))
     else:
         checks.append(("source of truth", True, settings.infrahub_address))
+        # Reachable is not the same as ours (#107).
+        identity = await identify_sot(build_store(settings), address=settings.infrahub_address)
+        checks.append(("source of truth is snapl's", not identity.is_foreign, identity.detail))
         checks.append((f"'{use_case}' seeded", bool(states), f"{len(states)} devices"))
 
     build_renderer(as_json=as_json).status(checks, running)

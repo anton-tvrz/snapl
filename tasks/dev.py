@@ -36,9 +36,9 @@ def deps(ctx):
     print("Starting dev dependency stack...")
     execute_command(ctx, f"{COMPOSE} up -d --wait")
     print("Stack is healthy.")
-    print("  Infrahub:        http://localhost:8000  (admin / infrahub)")
-    print("  Temporal:        localhost:7233")
-    print("  Temporal Web UI: http://localhost:8233")
+    print("  Infrahub:        http://localhost:18000  (admin / infrahub)")
+    print("  Temporal:        localhost:18033")
+    print("  Temporal Web UI: http://localhost:18034")
 
 
 @task

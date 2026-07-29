@@ -221,7 +221,7 @@ class TestFailurePresentation:
 
         error = ConnectionCliError(
             subsystem="Temporal",
-            address="localhost:7233",
+            address="localhost:18033",
             env_var="TEMPORAL_HOST",
             cause="connection refused",
         )
@@ -229,7 +229,7 @@ class TestFailurePresentation:
             result = _invoke(["scan"])
 
         assert result.exit_code == ExitCode.ERROR
-        assert "localhost:7233" in result.output
+        assert "localhost:18033" in result.output
         assert "TEMPORAL_HOST" in result.output
         assert "Traceback" not in result.output
 
@@ -382,7 +382,7 @@ class TestErrorMessageBrevity:
 
         error = ConnectionCliError(
             subsystem="Source of Truth",
-            address="http://localhost:8000",
+            address="http://localhost:18000",
             env_var="INFRAHUB_ADDRESS",
             cause=graphql_blob,
         )
