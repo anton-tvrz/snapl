@@ -27,8 +27,8 @@ by printing a preflight report — do not start demoing until every line is `ok`
 
 ```
 Demo preflight:
-  [ok] temporal reachable — localhost:7233
-  [ok] source of truth reachable — http://localhost:8000
+  [ok] temporal reachable — localhost:18033
+  [ok] source of truth reachable — http://localhost:18000
   [ok] 'dcfabric' seeded — 6 devices
   [ok] gnmi spine-01 — 172.20.21.11:57400
   ...
@@ -43,8 +43,8 @@ uv run invoke orchestrator.start
 
 ### Ports and credentials
 
-Everything below assumes the **committed defaults**: Infrahub on `8000`, Temporal
-on `7233` (Web UI `8233`), SR Linux gNMI on `57400` with `admin` / `NokiaSrl1!`.
+Everything below assumes the **committed defaults**: Infrahub on `18000`, Temporal
+on `18033` (Web UI `18034`), SR Linux gNMI on `57400` with `admin` / `NokiaSrl1!`.
 Those are what a clean checkout gets, and `development/.env.example` sets them.
 
 If you offset the host ports to run alongside another project's stack, set

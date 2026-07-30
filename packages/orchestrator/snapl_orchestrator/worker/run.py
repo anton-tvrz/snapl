@@ -28,6 +28,7 @@ from snapl_orchestrator.activities.intent import (
 from snapl_orchestrator.activities.observability import detect_drift
 from snapl_orchestrator.audit.sqlite import SqliteAuditLog
 from snapl_orchestrator.exceptions import OrchestratorConfigError
+from snapl_orchestrator.worker.client import DEFAULT_NAMESPACE, DEFAULT_TEMPORAL_HOST
 from snapl_orchestrator.worker.sandbox import build_workflow_runner
 from snapl_orchestrator.workflows.deploy_intent import DeployIntentWorkflow
 from snapl_orchestrator.workflows.reconcile_devices import ReconcileDevicesWorkflow
@@ -35,12 +36,11 @@ from snapl_orchestrator.workflows.scan_drift import ScanDriftWorkflow
 
 logger = logging.getLogger(__name__)
 
-# Exported so anything else that has to reach the same cluster — notably the
-# demo bootstrap tasks (#97) — resolves it from here rather than restating it
-# and silently drifting. The Infrahub equivalent already lives in the intent
-# client as DEFAULT_ADDRESS (#61).
-DEFAULT_TEMPORAL_HOST = "localhost:7233"
-DEFAULT_NAMESPACE = "default"
+__all__ = ["DEFAULT_AUDIT_DB", "DEFAULT_NAMESPACE", "DEFAULT_TASK_QUEUE", "DEFAULT_TEMPORAL_HOST", "run_worker"]
+
+# Connection defaults live in worker.client (importable without pulling in
+# every workflow) and are re-exported here, so the demo tasks (#97), the CLI
+# (#63) and this module can never disagree about where the cluster is.
 DEFAULT_TASK_QUEUE = "snapl-orchestrator"
 DEFAULT_AUDIT_DB = "./snapl-audit.sqlite"
 
@@ -54,12 +54,12 @@ async def run_worker(*, activities: Activities | None = None) -> None:
             pass their own container with mocks/stubs.
 
     Env vars (when activities is None):
-        TEMPORAL_HOST           — frontend gRPC endpoint (default localhost:7233)
+        TEMPORAL_HOST           — frontend gRPC endpoint (default localhost:18033)
         TEMPORAL_NAMESPACE      — Temporal namespace (default 'default')
         TEMPORAL_TASK_QUEUE     — task queue (default 'snapl-orchestrator')
         SNAPL_AUDIT_DB          — SQLite path for the durable audit log
         INFRAHUB_ADDRESS        — Source of Truth address (default: the intent
-                                  client's DEFAULT_ADDRESS, http://localhost:8000)
+                                  client's DEFAULT_ADDRESS, http://localhost:18000)
         INFRAHUB_API_TOKEN      — required
         SRLINUX_USERNAME        — gNMI username (default 'admin')
         SRLINUX_PASSWORD        — required

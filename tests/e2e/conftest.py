@@ -28,6 +28,7 @@ import pytest
 from snapl_intent.infrahub.client import DEFAULT_ADDRESS
 from snapl_intent.infrahub.client import build_client as build_infrahub_client
 from snapl_intent.infrahub.store import InfrahubIntentStore
+from snapl_orchestrator.worker.client import DEFAULT_TEMPORAL_HOST
 
 # Dev-compose defaults, matching the integration conftest.
 DEFAULT_TOKEN = "06438eb2-8019-4776-878c-0941b1f1d1ec"  # pragma: allowlist secret  # noqa: S105
@@ -64,7 +65,7 @@ def infrahub_token() -> str:
 
 @pytest.fixture(scope="session")
 def temporal_endpoint() -> str:
-    return os.environ.get("TEMPORAL_HOST", "localhost:7233")
+    return os.environ.get("TEMPORAL_HOST", DEFAULT_TEMPORAL_HOST)
 
 
 @pytest.fixture(scope="session")

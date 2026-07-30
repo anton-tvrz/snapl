@@ -8,6 +8,16 @@ from datetime import datetime  # noqa: TC003 — runtime use in dataclass field
 from temporalio.client import Client
 from temporalio.contrib.pydantic import pydantic_data_converter
 
+# snapl owns the 18000-18099 port block and binds no conventional default:
+# 7233 is also six sibling projects' Temporal, and aiming at a well-known
+# port once reached another project's stack (#107). See
+# dev/knowledge/host-resource-registry.md.
+#
+# Defined here rather than in run.py so the CLI can import a client default
+# without dragging every workflow into its import graph.
+DEFAULT_TEMPORAL_HOST = "localhost:18033"
+DEFAULT_NAMESPACE = "default"
+
 
 @dataclass(frozen=True)
 class RunningWorkflowInfo:
@@ -21,8 +31,8 @@ class RunningWorkflowInfo:
 
 async def build_client(
     *,
-    target: str = "localhost:7233",
-    namespace: str = "default",
+    target: str = DEFAULT_TEMPORAL_HOST,
+    namespace: str = DEFAULT_NAMESPACE,
 ) -> Client:
     """Connect to a Temporal cluster with the pydantic data converter wired in."""
     return await Client.connect(
