@@ -187,13 +187,23 @@ services:
   # ---------------------------------------------------------------------------
   # Temporal — dev server for the snapl orchestrator (workflow engine + Web UI)
   #
-  # Same semantics as running `temporal server start-dev` locally: in-memory
-  # persistence (workflow history is lost on container restart), default
-  # namespace pre-created, Web UI included.
+  # Same semantics as running `temporal server start-dev` locally: default
+  # namespace pre-created, Web UI included. Unlike the bare command, history
+  # is persisted to SQLite on a named volume (#81) — `start-dev` defaults to
+  # in-memory, which silently emptied the Web UI on every container restart
+  # and took the demo's durability receipt with it. `demo.reset` still wipes
+  # it, along with the rest of the stack's volumes.
   # ---------------------------------------------------------------------------
   temporal:
     image: temporalio/temporal:latest
-    command: server start-dev --ip 0.0.0.0
+    command: server start-dev --ip 0.0.0.0 --db-filename /home/temporal/temporal.db
+    volumes:
+      # Mounted on the image's own home directory, which exists and is owned by
+      # the unprivileged `temporal` user (uid 1000) that the server runs as, so
+      # Docker initialises the volume with that ownership. A volume mounted at a
+      # path the image does not contain (/data) is created root-owned instead,
+      # and the server dies with "unable to create SQLite admin DB".
+      - temporal_data:/home/temporal
     ports:
       - "${TEMPORAL_PORT:-18033}:7233"
       - "${TEMPORAL_UI_PORT:-18034}:8233"
@@ -230,3 +240,4 @@ volumes:
   storage_data:
   task_manager_db:
   git_remote_data:
+  temporal_data:
