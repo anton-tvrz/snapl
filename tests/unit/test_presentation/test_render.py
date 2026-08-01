@@ -9,6 +9,8 @@ interface, and FR-010 says stdout carries only valid JSON.
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
+from uuid import uuid4
 
 import pytest
 from rich.console import Console
@@ -46,6 +48,51 @@ class TestHumanScan:
         assert "/interface[name=ethernet-1/1]/admin-state" in text
         assert "enable" in text
         assert "disable" in text
+
+    def test_undesired_config_reads_as_undesired_not_as_a_missing_value(self) -> None:
+        """An operator must see which way the difference runs (#54, spec 007
+        FR-007). Both directions render `desired` as empty otherwise: intent
+        wanting nothing looks exactly like the device having nothing."""
+        from snapl_observability.models import DriftItem, DriftReport, DriftStatus
+        from snapl_orchestrator.models import DriftScanResult
+
+        started = datetime(2026, 7, 29, 12, 0, 0, tzinfo=UTC)
+        device_id = uuid4()
+        result = DriftScanResult(
+            workflow_id="scan-drift-dcfabric",
+            use_case_id="dcfabric",
+            reports={
+                device_id: DriftReport(
+                    device_id=device_id,
+                    device_name="spine-01",
+                    status=DriftStatus.DRIFTED,
+                    items=[
+                        DriftItem(
+                            path="/interface[name=ethernet-1/7]/ip_address",
+                            desired=None,
+                            actual="192.0.2.1",
+                            entity_kind="interface",
+                            undesired=True,
+                        )
+                    ],
+                    timestamp=started,
+                )
+            },
+            total=1,
+            clean=0,
+            drifted=1,
+            errored=0,
+            started_at=started,
+            ended_at=started,
+        )
+
+        console, _ = _capture()
+        HumanRenderer(console).scan(result)
+        text = _text(console)
+
+        assert "ethernet-1/7" in text
+        assert "192.0.2.1" in text
+        assert "not in intent" in text, "undesired config is not marked as such"
 
     def test_clean_devices_are_not_listed_individually(self, scan_result) -> None:
         """Six clean devices should not push the one drifted device off screen."""
