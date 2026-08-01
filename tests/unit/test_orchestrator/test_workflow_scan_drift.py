@@ -254,3 +254,119 @@ async def test_records_started_and_terminated_audit_events(make_desired) -> None
     assert AuditEventType.WORKFLOW_TERMINATED in types
     terminal = next(e for e in events if e.event_type == AuditEventType.WORKFLOW_TERMINATED)
     assert terminal.reason == WorkflowReason.SUCCEEDED
+
+
+# ---------------------------------------------------------------------------
+# Per-device audit trail
+#
+# `docs/demo-scenarios.md` scenario 8 promises "the per-device query aggregates
+# deploys, scans and reconciles that touched the device". The scan's own
+# workflow-level events are keyed on the *use case* ("dcfabric"), so before
+# these tests a fabric-wide scan that flagged spine-01 left nothing at all
+# behind `snapl audit --device spine-01` — the scan that found the drift was
+# invisible in the device's story. Caught by the e2e demo arc (#100).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_scan_records_a_per_device_audit_event(make_desired) -> None:
+    """Each evaluated device gets an event keyed on its own id."""
+    states = [make_desired(f"spine-0{i}") for i in range(1, 4)]
+    audit = InMemoryAuditLog()
+    collector = MagicMock()
+    collector.get_running_config = AsyncMock(side_effect=_collect)
+    collector.collect = AsyncMock(side_effect=lambda device, _paths: _collect(device))
+    observer = MagicMock()
+    observer.detect_drift = AsyncMock(side_effect=lambda desired, _c: _report(desired.device, DriftStatus.CLEAN))
+    observer.emit_event = AsyncMock()
+
+    async with await WorkflowEnvironment.start_time_skipping(data_converter=pydantic_data_converter) as env:
+        await _run(
+            env,
+            _build_activities(
+                intent_store=_intent_store(states), collector=collector, observer=observer, audit_log=audit
+            ),
+            USE_CASE,
+        )
+
+    for state in states:
+        events = await audit.query_by_device(state.device.id)
+        assert events, f"scan left no audit trace for {state.device.name}"
+        assert {e.workflow_type for e in events} == {"ScanDrift"}
+        assert events[0].activity_name == "detect_drift"
+        assert events[0].payload["status"] == DriftStatus.CLEAN.value
+
+
+@pytest.mark.asyncio
+async def test_per_device_event_carries_the_drift_finding(make_desired) -> None:
+    """A drifted device's event names the count and the paths — the audit is
+    the durable record of what the scan saw, not just that it ran."""
+    states = [make_desired(f"spine-0{i}") for i in range(1, 3)]
+    drifted_device = states[1].device
+    audit = InMemoryAuditLog()
+    collector = MagicMock()
+    collector.get_running_config = AsyncMock(side_effect=_collect)
+    collector.collect = AsyncMock(side_effect=lambda device, _paths: _collect(device))
+
+    def _detect(desired, _c) -> DriftReport:
+        if desired.device.id == drifted_device.id:
+            return _report(
+                desired.device,
+                DriftStatus.DRIFTED,
+                items=[
+                    DriftItem(
+                        path="/interface[name=ethernet-1/1]/admin-state",
+                        desired="enable",
+                        actual="disable",
+                        entity_kind="Interface",
+                    )
+                ],
+            )
+        return _report(desired.device, DriftStatus.CLEAN)
+
+    observer = MagicMock()
+    observer.detect_drift = AsyncMock(side_effect=_detect)
+    observer.emit_event = AsyncMock()
+
+    async with await WorkflowEnvironment.start_time_skipping(data_converter=pydantic_data_converter) as env:
+        await _run(
+            env,
+            _build_activities(
+                intent_store=_intent_store(states), collector=collector, observer=observer, audit_log=audit
+            ),
+            USE_CASE,
+        )
+
+    events = await audit.query_by_device(drifted_device.id)
+    assert len(events) == 1
+    assert events[0].payload["status"] == DriftStatus.DRIFTED.value
+    assert events[0].payload["drift_items"] == 1
+    assert events[0].payload["paths"] == ["/interface[name=ethernet-1/1]/admin-state"]
+
+
+@pytest.mark.asyncio
+async def test_device_that_errors_is_audited_as_a_failure(make_desired) -> None:
+    """An unreachable device is the case an operator most needs to find later."""
+    states = [make_desired("spine-01")]
+    audit = InMemoryAuditLog()
+    collector = MagicMock()
+    collector.get_running_config = AsyncMock(side_effect=RuntimeError("dial failed"))
+    collector.collect = AsyncMock(side_effect=RuntimeError("dial failed"))
+    observer = MagicMock()
+    observer.detect_drift = AsyncMock()
+    observer.emit_event = AsyncMock()
+
+    async with await WorkflowEnvironment.start_time_skipping(data_converter=pydantic_data_converter) as env:
+        result = await _run(
+            env,
+            _build_activities(
+                intent_store=_intent_store(states), collector=collector, observer=observer, audit_log=audit
+            ),
+            USE_CASE,
+        )
+
+    assert result.errored == 1
+    events = await audit.query_by_device(states[0].device.id)
+    assert len(events) == 1
+    assert events[0].event_type is AuditEventType.ACTIVITY_FAILED
+    assert events[0].outcome == "failure"

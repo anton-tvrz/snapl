@@ -45,12 +45,33 @@ async def _audit(
     reason: WorkflowReason | None = None,
     payload: dict | None = None,
 ) -> None:
+    await _record(
+        workflow_id=workflow_id,
+        target_id=use_case_id,
+        event_type=event_type,
+        outcome=outcome,
+        reason=reason,
+        payload=payload,
+    )
+
+
+async def _record(
+    *,
+    workflow_id: str,
+    target_id,
+    event_type: AuditEventType,
+    activity_name: str | None = None,
+    outcome: str | None = None,
+    reason: WorkflowReason | None = None,
+    payload: dict | None = None,
+) -> None:
     event = AuditEvent(
         event_id=workflow.uuid4(),
         workflow_id=workflow_id,
         workflow_type=_WORKFLOW_TYPE,
-        target_id=use_case_id,
+        target_id=target_id,
         event_type=event_type,
+        activity_name=activity_name,
         outcome=outcome,
         reason=reason,
         payload=payload or {},
@@ -61,6 +82,31 @@ async def _audit(
         event,
         start_to_close_timeout=timedelta(seconds=10),
         retry_policy=_AUDIT_RETRY,
+    )
+
+
+async def _audit_device(*, workflow_id: str, report: DriftReport) -> None:
+    """Record this device's scan result against the *device's* id.
+
+    The workflow-level events are keyed on the use case, so without this a
+    fabric-wide scan leaves nothing behind ``snapl audit --device spine-01``
+    and the scan that found the drift is missing from the device's story —
+    which ``docs/demo-scenarios.md`` scenario 8 promises it is not.
+    """
+    errored = report.status == DriftStatus.ERROR
+    payload: dict = {"status": report.status.value, "drift_items": len(report.items)}
+    if report.items:
+        payload["paths"] = [item.path for item in report.items]
+    if report.error:
+        payload["error"] = report.error
+
+    await _record(
+        workflow_id=workflow_id,
+        target_id=report.device_id,
+        event_type=AuditEventType.ACTIVITY_FAILED if errored else AuditEventType.ACTIVITY_COMPLETED,
+        activity_name="detect_drift",
+        outcome="failure" if errored else "success",
+        payload=payload,
     )
 
 
@@ -143,6 +189,13 @@ class ScanDriftWorkflow:
         )
 
     async def _evaluate_device(self, device) -> DriftReport:
+        report = await self._evaluate(device)
+        # After the report resolves, never on the cancellation path: a
+        # cancelled scan is recorded once at the workflow level.
+        await _audit_device(workflow_id=workflow.info().workflow_id, report=report)
+        return report
+
+    async def _evaluate(self, device) -> DriftReport:
         try:
             desired = await workflow.execute_activity(
                 fetch_desired_state,

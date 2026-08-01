@@ -51,6 +51,7 @@ typing = [
 ]
 dev = [
     "invoke>=2.2",
+    "python-dotenv>=1.0",
     "pre-commit>=4.0",
     "ipython>=8.0",
     "towncrier>=24.8",

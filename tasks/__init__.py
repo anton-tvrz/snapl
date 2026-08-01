@@ -9,7 +9,14 @@ Usage:
 
 from invoke import Collection
 
-from . import demo, dev, main, orchestrator
+from .shared import load_env_file
+
+# Before the task modules resolve anything from os.environ. docker compose
+# reads development/.env on its own; this is what makes the same file reach
+# demo.seed, demo.check, orchestrator.start and test-e2e.
+load_env_file()
+
+from . import demo, dev, main, orchestrator  # noqa: E402 — must follow load_env_file
 
 ns = Collection()
 

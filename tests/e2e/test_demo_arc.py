@@ -151,6 +151,40 @@ async def test_phase2_deploy_succeeds_and_verifies(arc: Arc, activities, worker_
 
 
 # ---------------------------------------------------------------------------
+# Phase 2b — converge the rest of the fabric
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_phase2b_fabric_converges_before_drift_is_induced(arc: Arc, activities, worker_factory) -> None:
+    """Bring every device to intent, so a later scan means what it claims.
+
+    A freshly deployed lab has never had intent pushed to it: on the boot
+    config all six devices are legitimately drifted. Scenario 2's headline
+    ("6 devices: 5 clean, 1 drifted") is only true of a fabric that was
+    converged first, and phase 3 cannot tell "the device we broke" apart from
+    "the five nobody ever deployed" without this step. The demo doc carries
+    the same step for the same reason — `snapl reconcile --drifted --yes`.
+    """
+    device_ids = [state.device.id for state in arc.states]
+
+    client, worker = await worker_factory(arc.task_queue)
+    async with worker:
+        reconcile = await client.execute_workflow(
+            ReconcileDevicesWorkflow.run,
+            device_ids,
+            id=f"e2e-converge-{uuid4()}",
+            task_queue=arc.task_queue,
+            execution_timeout=_EXECUTION_TIMEOUT,
+        )
+
+    assert reconcile.total == EXPECTED_DEVICE_COUNT
+    assert reconcile.failed == 0, (
+        f"fabric did not converge: {[(r.reason, r.detail) for r in reconcile.device_results.values() if r.detail]}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Phase 3 — induce drift, detect it (demo scenario 2)
 # ---------------------------------------------------------------------------
 

@@ -81,6 +81,19 @@ snapl deploy spine-01
 
 **Temporal UI:** open the `deploy-intent-…` workflow → Event History. Every activity, retry, input and output payload is durably recorded — this history *is* the deploy receipt.
 
+Then bring the remaining five devices up to intent, so the fabric starts the
+next scenario clean:
+
+```bash
+snapl reconcile --use-case dcfabric --drifted --yes
+```
+
+**Expect:** `5/5 succeeded`. A freshly deployed lab boots on its startup config
+and has never had intent pushed to it, so until this runs *every* device is
+legitimately drifted and Scenario 2 would report `6 drifted` rather than the
+one device you break by hand. Skip this only if the fabric is already
+converged from an earlier run.
+
 ---
 
 ## Scenario 2 — Fabric-wide drift detection
@@ -90,9 +103,14 @@ snapl deploy spine-01
 1. Make an out-of-band change on one device:
 
 ```bash
-docker exec -it clab-dcfabric-spine-01 sr_cli \
-  "enter candidate; interface ethernet-1/1 admin-state disable; commit now"
+docker exec clab-dcfabric-spine-01 sr_cli -ec \
+  'set / interface ethernet-1/1 admin-state disable'
 ```
+
+`sr_cli -ec` enters candidate mode, applies and commits in one shot. (Passing
+`"enter candidate; ...; commit now"` as a single quoted argument does *not*
+work — sr_cli parses it as one command and rejects it with `Unknown token
+'interface'`.)
 
 2. Scan the whole use case:
 
@@ -100,8 +118,18 @@ docker exec -it clab-dcfabric-spine-01 sr_cli \
 snapl scan --use-case dcfabric   # exits 2 when drift is found
 ```
 
-**Expect:** `6 devices: 5 clean, 1 drifted, 0 errored` and the precise line:
-`spine-01: /interface[name=ethernet-1/1]/admin-state desired=enable actual=disable`.
+**Expect:** `6 devices: 5 clean, 1 drifted, 0 errored`, and the offending path
+named exactly:
+
+```
+spine-01 — drifted
+path                                     desired  actual
+  /interface[name=ethernet-1/1]/enabled  True     False
+```
+
+The drift is reported against the intent model's `enabled` field rather than
+the device's native `admin-state` leaf — the diff is structural, against
+desired state, not a config-text comparison.
 
 **Temporal UI:** one ScanDrift workflow fanned out activities for all six devices in parallel.
 
