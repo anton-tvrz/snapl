@@ -253,11 +253,12 @@ uv run invoke demo.reset     # destroy lab + stack + volumes
 uv run invoke demo.up        # rebuild from scratch
 ```
 
-Two things reset on their own and will surprise you otherwise:
+One thing resets on its own and will surprise you otherwise:
 
-- **Temporal is an in-memory dev server** — restarting the container empties the
-  Web UI of all history (#81). Re-run a scan and a reconcile to repopulate it
-  before demoing the UI.
+- **Temporal history survives a container restart** (#81) — it is persisted to
+  SQLite on the `temporal_data` volume, so the Web UI keeps every workflow you
+  ran. `demo.reset` does wipe it, along with every other volume, so a rehearsal
+  that starts from `reset` starts with an empty UI.
 - **SR Linux nodes keep their pushed config** across a container restart, but
   not across `lab-destroy`. After a redeploy the fabric is unconfigured, so
   Scenario 1's deploy is doing real work again — which is what you want.
