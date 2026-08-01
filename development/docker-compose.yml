@@ -27,7 +27,14 @@
 #   Temporal:     localhost:${TEMPORAL_PORT:-18033} (Web UI http://localhost:${TEMPORAL_UI_PORT:-18034})
 #
 # Default admin login: admin / infrahub
-# Default API token:   06438eb2-8019-4776-878c-0941b1f1d1ec
+# Default API token:   1ad8b66d-cca3-4523-821c-52c3d7e69100
+#
+# The token is snapl's alone (#115). It previously matched a sibling project's
+# default, so a snapl task aimed at the wrong Infrahub authenticated as admin
+# instead of being refused — the credential is the last line of defence when
+# INFRAHUB_ADDRESS points somewhere unintended. Changing it takes effect only
+# on a fresh instance: INFRAHUB_INITIAL_ADMIN_TOKEN is read at first boot, so
+# an existing stack needs `invoke demo.reset` before it applies.
 
 name: snapl
 
@@ -45,7 +52,7 @@ x-infrahub-env: &infrahub_env
   INFRAHUB_WORKFLOW_ADDRESS: task-manager
   INFRAHUB_WORKFLOW_PORT: 4200
   INFRAHUB_PRODUCTION: "false"
-  INFRAHUB_INITIAL_ADMIN_TOKEN: 06438eb2-8019-4776-878c-0941b1f1d1ec
+  INFRAHUB_INITIAL_ADMIN_TOKEN: 1ad8b66d-cca3-4523-821c-52c3d7e69100
   INFRAHUB_INITIAL_ADMIN_PASSWORD: infrahub
   INFRAHUB_SECURITY_SECRET_KEY: 327f747f-efac-42be-9e73-999f08f86b92
   INFRAHUB_STORAGE_DRIVER: local
@@ -225,7 +232,7 @@ services:
       <<: *infrahub_env
       INFRAHUB_ADDRESS: http://server:8000
       INFRAHUB_INTERNAL_ADDRESS: http://server:8000
-      INFRAHUB_API_TOKEN: 06438eb2-8019-4776-878c-0941b1f1d1ec
+      INFRAHUB_API_TOKEN: 1ad8b66d-cca3-4523-821c-52c3d7e69100
       INFRAHUB_TIMEOUT: "60"
     depends_on:
       server:
