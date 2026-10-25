@@ -90,5 +90,5 @@ packages/<block>/
 - Creating a module that spans multiple NAF blocks
 - Circular dependency between packages
 - Not defining the ABC before starting implementation
-- Tight coupling to a specific vendor (use driver pattern)
+- Naming a vendor outside the named seams (block implementations, templates, drift field map, collect adapter). See constitution Principle VI
 - Skipping the SDD spec phase

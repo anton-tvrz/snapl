@@ -2,53 +2,67 @@
 
 ## Vision
 
-snapl is a modular network automation prototype that implements the Network Automation Forum (NAF) Framework's six building blocks as independent, composable Python packages. The platform demonstrates production-grade automation patterns across multiple network use cases (datacenter fabric, client edge, SD-WAN, WAN) using Nokia SR Linux as the prototyping vendor, with architecture designed for multi-vendor extension.
+snapl is a network automation prototype that runs a closed **intent → deploy → verify → drift → reconcile** loop against a real Nokia SR Linux fabric. It is built as the Network Automation Forum (NAF) Framework's six building blocks, each an independent Python package.
 
-This project brings together the NAF Framework for architecture, GitHub Spec Kit for development methodology, and proven patterns from project-network-synapse-quattro for implementation.
+Every claim snapl makes is demonstrated in its lab. Anything not yet demonstrated is listed as roadmap or as a known limitation, never implied.
+
+The project combines the NAF Framework for architecture, GitHub Spec Kit for development methodology, and patterns proven in project-network-synapse-quattro for implementation.
 
 ## Core Principles
 
 ### I. NAF Alignment
 
-Every component maps to exactly one NAF building block. The six blocks are:
+Every component has one owning NAF building block:
 
-1. **Intent** — Stores and manages desired network state through structured APIs
-2. **Executor** — Applies network changes via write interfaces (gNMI, NETCONF, SSH)
-3. **Collector** — Retrieves live network data using read protocols
-4. **Observability** — Persists historical data, detects discrepancies, generates events
-5. **Orchestrator** — Coordinates automation workflows across components
-6. **Presentation** — Provides user interfaces for system interaction
+1. **Intent** — stores and manages desired network state through structured APIs
+2. **Executor** — applies network changes via write interfaces (gNMI)
+3. **Collector** — retrieves live network data using read protocols
+4. **Observability** — detects discrepancies, generates events, keeps history
+5. **Orchestrator** — coordinates automation workflows across components
+6. **Presentation** — provides user interfaces for system interaction
 
-The NAF feedback loop (Intent -> Executor -> Collector -> Observability -> Orchestrator -> Executor) is the primary architectural pattern. Components communicate through well-defined Python interfaces (abstract base classes + Pydantic models). No circular dependencies between packages.
+Where a component deliberately sits outside the block NAF would assign it, an ADR records the deviation and why. Current deviations (ADR-0004): durable audit persistence and the SR Linux collect-to-diff adapter both live in the Orchestrator, and Presentation reads the Source of Truth directly to resolve device names.
+
+The NAF feedback loop (Intent → Executor → Collector → Observability → Orchestrator → Executor) is the primary architectural pattern. Components communicate through abstract base classes and Pydantic models. No circular dependencies between packages.
 
 Dependency direction:
-- `presentation` -> `orchestrator` -> {`intent`, `executor`, `collector`, `observability`}
-- `observability` -> `collector`
-- `executor` -> `intent`
+- `presentation` → `orchestrator` → {`intent`, `executor`, `collector`, `observability`}
+- `observability` → {`collector`, `intent`}
+- `executor` → `intent`
+- `collector` → `intent`
 
-### II. Spec-Driven Development (NON-NEGOTIABLE)
+Any package may import another block's models and exceptions. Those are shared data contracts, and results flow through the loop in them. Importing another block's behaviour (stores, executors, collectors, observers) follows the arrows above.
 
-No module is implemented without a completed specification. The SDD workflow is:
+### II. Spec-Driven Development
 
-1. **Constitution** — This document; governs all development
-2. **Specify** — Define what to build (what/why, not how)
-3. **Plan** — Document architecture and technology choices
-4. **Tasks** — Generate actionable, ordered task breakdown
-5. **Implement** — Execute tasks following plan and fulfilling spec
+A specification is required before implementing:
 
-Specifications are living documents updated as understanding evolves. Contracts (API interfaces between NAF blocks) are defined before implementation. Cross-artifact analysis must pass before implementation begins.
+- a new NAF block,
+- a new capability, or
+- any change that writes to a device or to the Source of Truth in a way the system did not before.
 
-### III. Test-Driven Development (NON-NEGOTIABLE)
+The workflow is Specify → Plan → Tasks → Implement, governed by this constitution.
 
-TDD is mandatory. When generating code:
+Fixes, hardening and refactors do not need a spec. They need an issue that states the reproduction or the finding.
 
-1. Always produce the test file first
-2. Follow Red-Green-Refactor: failing test -> minimum implementation -> refactor
-3. Never create a source file without its corresponding test file
-4. Use pytest fixtures from `tests/conftest.py` for shared test data
-5. Coverage target: >=80% on new code
+Specifications are living documents while their feature is in progress, and historical records once it ships. Where an old spec conflicts with this constitution, the constitution wins.
 
-Test markers: `unit`, `integration`, `live`, `e2e`, `slow`, `pre_deployment`, `post_deployment`.
+### III. Test-Driven Development
+
+TDD is mandatory:
+
+1. Write the test first.
+2. Follow Red-Green-Refactor: failing test → minimum implementation → refactor.
+3. Never create a source file without its corresponding test file.
+4. Use pytest fixtures from `tests/conftest.py` for shared test data.
+5. Coverage stays at or above 80% on new code (enforced in CI).
+
+Coverage is a regression net, not a measure of correctness. Mocks encode assumptions, and most of snapl's bugs lived where an assumption about an external system was wrong. So:
+
+- **Boundary changes carry live evidence.** A PR that touches a system boundary (Infrahub response shapes, gNMI payloads, templates, the drift diff, the collect adapter) states in its body what was run against the live lab and what was observed.
+- **Bugs found live leave a fixture behind.** Every bug found on a live run adds a captured real payload as a test fixture, so the unit suite learns the boundary's true shape.
+
+Test markers: `unit`, `integration`, `live`, `e2e`, `slow`. Unit tests require no external infrastructure.
 
 ### IV. Modularity and Composability
 
@@ -64,23 +78,30 @@ packages/
 └── presentation/  (snapl-presentation)
 ```
 
-Packages communicate through abstract base classes and Pydantic models. Each package must be independently testable with unit tests requiring no external infrastructure.
+Each package must be independently testable with unit tests.
 
 ### V. Contract-First Interfaces
 
-Before implementing any NAF block, define its contract:
+Each block exposes one abstract base class plus Pydantic models as its public interface. The contract is defined before the implementation. The Orchestrator composes blocks through these contracts, and only its worker bootstrap names the concrete implementations.
 
-- `IntentStore` ABC: `get_desired_state()`, `get_schema()`, `seed()`
-- `Executor` ABC: `apply(config)`, `rollback(config)`, `dry_run(config)`
-- `Collector` ABC: `collect(device, paths)`, `get_running_config(device)`
-- `Observer` ABC: `detect_drift(desired, actual)`, `emit_event(event)`, `log_audit(entry)`
-- Orchestrator: Temporal workflows composing the above via their ABCs
+Each package's `abc.py` is the source of truth for its contract. This document does not repeat method signatures.
 
-For async events (drift detected, config changed), Temporal signals/activities serve as the event mechanism.
+For asynchronous events (drift detected, config changed), Temporal signals and activities serve as the event mechanism.
 
-### VI. Single-Vendor Prototype, Multi-Vendor Architecture
+### VI. Single Vendor, Named Seams
 
-All prototyping uses Nokia SR Linux via Containerlab. Vendor-specific code is behind abstraction layers (driver pattern). gNMI is the primary device interface (model-driven, structured). The architecture must support adding new vendors without modifying core logic.
+snapl is single-vendor (Nokia SR Linux via Containerlab) and built to take a second. gNMI is the device interface.
+
+Vendor-specific code lives only in named seams:
+
+- concrete block implementations (`GnmiExecutor`, `GnmiCollector`)
+- Jinja templates
+- the drift field map
+- the collect-to-diff adapter
+
+Workflows and models never name a vendor.
+
+snapl claims to be multi-vendor only once a second vendor runs the full loop in the lab. Until then, no abstraction is built for a vendor that does not exist (Principle VII). How multi-vendor support will be structured is an open question, recorded in ADR-0004.
 
 ### VII. Simplicity
 
@@ -94,20 +115,18 @@ Start simple, add complexity only when needed. Three similar lines of code are b
 2. **Drift response is part of drift detection** — Every drift-detection path has a defined response: `report` (default), `remediate` (operator-triggered or explicitly automated), or `suppress` (e.g. maintenance windows). Detecting drift without a defined response is an incomplete feature. Auto-remediation is never the silent default.
 3. **Intent extends beyond configuration** — Intent may declare operational expectations (BGP sessions established, interfaces oper-up, thresholds), not only config. Verification compares reality against intent; liveness alone never passes verification ("operationally up" ≠ "correct").
 4. **Executor idempotency** — `Executor.apply()` is idempotent: applying the same intent twice yields the same device state with no additional change. Workflows may safely retry applies. Destructive or uncertain changes go through `dry_run()` first.
+5. **Undesired config** — Configuration present on a device and absent from intent is drift, and it is reported. Removing it is a destructive change: never automatic, always preceded by `dry_run()`, and never applied to the protected set (management and system interfaces). (See spec 007.)
 
 ## Use Cases
 
-### Datacenter Fabric (Primary)
-Spine-leaf eBGP underlay with Nokia SR Linux. Ported from project-network-synapse-quattro as the baseline. Demonstrates the full NAF feedback loop.
+### Datacenter Fabric (current)
+Spine-leaf eBGP underlay on Nokia SR Linux. Demonstrates the full NAF feedback loop end to end.
 
-### Client Edge
-Single or dual SR Linux routers as customer-facing edge. BGP peering to upstream, static/OSPF downstream. Demonstrates intent-driven edge provisioning.
+### Site Edge (next)
+A manufacturing site edge on SR Linux: office and OT segments, and a WAN uplink over eBGP to a carrier router. Intent includes a segmentation rule (the OT segment cannot reach the WAN except a named subnet), so drift on a security control is detected and reconciled like any other drift. Tracked in #117.
 
-### SD-WAN (Conceptual)
-SR Linux nodes simulating SD-WAN hub/spoke topology. Overlay tunnel configuration via intent. Demonstrates policy-based routing intent.
-
-### WAN
-SR Linux backbone routers with IS-IS/MPLS-like underlay. Traffic engineering intent. Demonstrates multi-hop path orchestration.
+### Roadmap (not started)
+SD-WAN (hub/spoke overlay) and WAN backbone (IS-IS/MPLS-style underlay, traffic engineering).
 
 ## Technology Stack
 
@@ -140,16 +159,17 @@ SR Linux backbone routers with IS-IS/MPLS-like underlay. Traffic engineering int
 - All public functions require type hints
 - Line length: 120 characters
 - Pre-commit hooks must pass before every commit
-- CI pipeline: lint -> security scan -> unit tests -> type check
-- Each PR must include changelog fragment and test coverage
+- CI quality gates (lint and format, mypy, bandit, secrets detection, YAML lint, lock check, unit tests with coverage) run as parallel jobs behind a single quality gate, and all must pass
+- Each PR links its issue (`Closes #N`) and includes a changelog fragment, or the `skip-changelog` label for docs-, CI- or test-only changes
+- Boundary-touching PRs include live evidence (Principle III)
 - Branch from `main`, PR to `main`
 
 ## Documentation
 
 Two complementary documentation systems:
 
-1. **SDD Specs** (`.specify/`) — What to build, consumed before coding
-2. **Context Nuggets** (`dev/`) — How things work, consumed during coding
+1. **SDD specs** (`specs/`) — what to build, consumed before coding
+2. **Context Nuggets** (`dev/`) — how things work, consumed during coding
    - `dev/adr/` — Architecture Decision Records
    - `dev/commands/` — Reusable AI agent command workflows
    - `dev/guidelines/` — Coding standards and conventions
@@ -161,11 +181,11 @@ Two complementary documentation systems:
 
 ## Governance
 
-This Constitution supersedes all other development practices. Amendments require:
-1. An Architecture Decision Record (ADR) documenting the change
-2. Update to this Constitution
-3. Review and approval
+This constitution is the standing brief for the AI agents that work on snapl and for its maintainer. Specs, plans and code follow it. Where they conflict with it, it wins.
 
-All PRs and code reviews must verify compliance with this Constitution.
+Amendments require:
+1. An ADR recording the change and why
+2. A version bump here (major for removed or redefined principles, minor for added ones, patch for wording)
+3. A PR the maintainer merges
 
-**Version**: 1.1.0 | **Ratified**: 2026-04-14 | **Last Amended**: 2026-07-06 (ADR-0003: Core Principle VIII — Intent-First Correctness)
+**Version**: 2.0.0 | **Ratified**: 2026-04-14 | **Last Amended**: 2026-10-25 (ADR-0004: claim only what is true)

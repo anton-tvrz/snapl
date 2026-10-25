@@ -155,13 +155,10 @@ Blocks communicate through their ABC interfaces and Pydantic models:
 
 ## Use Cases
 
-The same six blocks support multiple network automation use cases:
+| Use Case | Status | Intent Source | Executor Target | Collector Method |
+|----------|--------|--------------|-----------------|------------------|
+| Datacenter Fabric | Implemented | Infrahub schemas | SR Linux gNMI | gNMI GET |
+| Site Edge | Next (#117) | Infrahub schemas | SR Linux gNMI | gNMI GET |
+| SD-WAN, WAN backbone | Roadmap | — | — | — |
 
-| Use Case | Intent Source | Executor Target | Collector Method |
-|----------|--------------|-----------------|------------------|
-| Datacenter Fabric | Infrahub schemas | SR Linux gNMI | gNMI GET |
-| Client Edge | Infrahub schemas | SR Linux gNMI | gNMI GET |
-| SD-WAN | Infrahub schemas | REST API | REST GET |
-| WAN | Infrahub schemas | NETCONF | NETCONF GET |
-
-Each use case provides its own concrete implementations of the ABCs while sharing the Orchestrator workflows and Observability logic.
+A use case adds schema, seed data, templates and a lab topology. It shares the block implementations, the Orchestrator workflows and the Observability logic.

@@ -18,7 +18,7 @@ The specification must define:
 - **Dependencies** — which other packages/modules it depends on
 - **Constraints** — performance, security, or compatibility requirements
 
-Output: `.specify/specs/<block>/<module-name>.md`
+Output: `specs/<NNN>-<feature>/spec.md`
 
 ## Step 2: Plan
 
@@ -30,7 +30,7 @@ The plan must include:
 - Dependency changes (if the module introduces new third-party deps)
 - Integration points with other NAF blocks
 
-Output: `.specify/specs/<block>/<module-name>-plan.md`
+Output: `specs/<NNN>-<feature>/plan.md`
 
 ## Step 3: Create the ABC
 
@@ -168,7 +168,7 @@ uv run invoke scan      # Security scan
 
 ## Checklist
 
-- [ ] Specification created in `.specify/specs/`
+- [ ] Specification created in `specs/`
 - [ ] ABC defined with Pydantic models
 - [ ] Tests written BEFORE implementation
 - [ ] All tests pass (GREEN)

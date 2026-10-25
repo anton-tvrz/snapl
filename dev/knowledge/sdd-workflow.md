@@ -35,7 +35,7 @@ A **specification** defines what a module or feature must do, without describing
 - **Constraints** — performance, security, compatibility requirements
 - **Acceptance Criteria** — testable conditions for "done"
 
-Location: `.specify/specs/<block>/<module-name>.md`
+Location: `specs/<NNN>-<feature>/spec.md`
 
 **Key principle:** The specification should be detailed enough that two independent developers would produce functionally equivalent implementations.
 
@@ -51,7 +51,7 @@ The **plan** translates a specification into a concrete implementation strategy:
 - Migration steps (if changing existing code)
 - Risk assessment and mitigation
 
-Location: `.specify/specs/<block>/<module-name>-plan.md`
+Location: `specs/<NNN>-<feature>/plan.md`
 
 **Command:** `/speckit-plan`
 
