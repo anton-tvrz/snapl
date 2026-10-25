@@ -151,6 +151,28 @@ def seed(ctx, use_case: str = DEFAULT_USE_CASE):
     store = _build_store(settings)
 
     async def _run():
+        # Before the first write, never after (#115). `demo.check` verifies
+        # identity too, but it runs at the end of `demo.up` — by then the
+        # schema and six devices are already in whichever Infrahub answered.
+        # INFRAHUB_ADDRESS is an ordinary environment variable, and a sibling
+        # project's instance answering on its port is a successful connection
+        # to the wrong Source of Truth.
+        from snapl_intent.infrahub.identity import SotIdentity  # noqa: PLC0415
+
+        identity = await identify_sot(store.client, address=settings.infrahub_address)
+        # Positively ours, not merely "not provably foreign". `is_foreign`
+        # alone fails open on UNKNOWN, and UNKNOWN is what a neighbour's
+        # instance actually returns when it refuses to serve its schema to
+        # snapl's credentials — measured, not assumed. A healthy snapl stack
+        # identifies as OURS whether it is freshly booted or fully seeded, so
+        # requiring that costs a legitimate bootstrap nothing.
+        if identity.identity is not SotIdentity.OURS:
+            raise DemoConfigError(
+                f"refusing to seed: {identity.detail}.\n"
+                "Point INFRAHUB_ADDRESS at snapl's own instance, or start it: "
+                "uv run invoke dev.deps"
+            )
+
         print(f"Provisioning '{use_case}' schema against {settings.infrahub_address} ...")
         provision = await store.provision_schema(use_case)
         print(f"  schema: {provision}")

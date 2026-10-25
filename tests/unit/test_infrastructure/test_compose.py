@@ -86,3 +86,50 @@ def test_the_comment_does_not_still_promise_in_memory_persistence() -> None:
     assert "workflow history is lost" not in header, (
         "the temporal service comment still tells the reader history is lost on restart, which is the thing #81 fixed"
     )
+
+
+# ---------------------------------------------------------------------------
+# Isolation from sibling projects (#115)
+#
+# snapl shares this machine with projects running near-identical stacks. Ports
+# (#107) and lab subnets (#90) are separated; these pin the two dimensions that
+# are not a networking problem — the compose project namespace, and the
+# credential that decides whether a misaimed write is refused or accepted.
+# ---------------------------------------------------------------------------
+
+# The Infrahub admin token that shipped as snapl's default until #115, and is
+# also project-network-synapse-quattro's default. Identical tokens mean an
+# accidentally misaimed snapl authenticates against a neighbour's Source of
+# Truth as admin, instead of being refused.
+SHARED_NEIGHBOUR_TOKEN = "06438eb2-8019-4776-878c-0941b1f1d1ec"  # noqa: S105 # pragma: allowlist secret
+
+
+def test_compose_declares_its_own_project_name(compose: dict) -> None:
+    """Without `name:`, compose falls back to the project directory — and both
+    snapl and the neighbour keep their compose file in `development/`, so the
+    stacks would share one `development_*` volume and container namespace.
+    Volumes named `temporal_data` exist in both projects, so the collision is
+    exact rather than theoretical.
+    """
+    assert compose.get("name") == "snapl", (
+        "docker-compose.yml must declare `name: snapl` — without it the project "
+        "name defaults to the 'development' directory, which the neighbour shares"
+    )
+
+
+def test_the_admin_token_is_not_the_one_the_neighbour_ships(compose: dict) -> None:
+    token = compose["services"]["server"]["environment"].get("INFRAHUB_INITIAL_ADMIN_TOKEN") or ""
+    assert str(token) != SHARED_NEIGHBOUR_TOKEN, (
+        "snapl's Infrahub admin token is the neighbouring project's default too — "
+        "a misaimed write authenticates instead of being refused (#115)"
+    )
+
+
+def test_the_example_env_token_matches_the_stack(compose: dict) -> None:
+    """A mismatch is a 401 on every task, so these two must move together."""
+    # dotenv_values rather than tasks.load_env_file: the latter reports only
+    # what it *applied*, and importing tasks already put these in os.environ.
+    from dotenv import dotenv_values
+
+    example = dotenv_values(COMPOSE_PATH.with_name(".env.example"))
+    assert example["INFRAHUB_API_TOKEN"] == compose["services"]["server"]["environment"]["INFRAHUB_INITIAL_ADMIN_TOKEN"]

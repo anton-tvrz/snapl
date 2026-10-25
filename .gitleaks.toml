@@ -19,6 +19,10 @@ paths = [
 # Allow dev/test tokens and IP addresses that appear in fixtures
 regexTarget = "match"
 regexes = [
-    '''06438eb2-8019-4776-878c-0941b1f1d1ec''',  # Infrahub dev admin token (docker-compose default)
+    '''1ad8b66d-cca3-4523-821c-52c3d7e69100''',  # Infrahub dev admin token (docker-compose default)
+    # snapl's token until #115, kept allowlisted because tests assert the
+    # current token is *not* this one — it is also a sibling project's default,
+    # so sharing it let a misaimed write authenticate instead of being refused.
+    '''06438eb2-8019-4776-878c-0941b1f1d1ec''',
     '''10\.\d+\.\d+\.\d+''',                       # Fabric/management IPs in seed fixtures
 ]
