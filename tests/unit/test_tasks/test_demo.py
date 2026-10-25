@@ -23,6 +23,22 @@ def _ctx() -> MagicMock:
     return MagicMock(spec=Context)
 
 
+def _identified_as_ours():
+    """Patch the SoT identity check to pass.
+
+    `demo.seed` refuses to write unless the instance identifies positively as
+    snapl's (#115), so every test that expects a seed to happen has to say
+    which Source of Truth it is talking to.
+    """
+    from snapl_intent.infrahub.identity import IdentityCheck, SotIdentity
+
+    return patch.object(
+        demo,
+        "identify_sot",
+        AsyncMock(return_value=IdentityCheck(SotIdentity.OURS, "carries snapl's schema")),
+    )
+
+
 # --------------------------------------------------------------------------
 # Settings resolution — must not drift from the worker's
 # --------------------------------------------------------------------------
@@ -77,7 +93,7 @@ def test_seed_provisions_the_schema_before_seeding(monkeypatch: pytest.MonkeyPat
     store.provision_schema = AsyncMock(side_effect=lambda _: order.append("provision"))
     store.seed = AsyncMock(side_effect=lambda _: order.append("seed"))
 
-    with patch.object(demo, "_build_store", return_value=store):
+    with patch.object(demo, "_build_store", return_value=store), _identified_as_ours():
         demo.seed(_ctx())
 
     assert order == ["provision", "seed"]
@@ -91,7 +107,7 @@ def test_seed_honours_an_explicit_use_case(monkeypatch: pytest.MonkeyPatch) -> N
     store.provision_schema = AsyncMock()
     store.seed = AsyncMock()
 
-    with patch.object(demo, "_build_store", return_value=store):
+    with patch.object(demo, "_build_store", return_value=store), _identified_as_ours():
         demo.seed(_ctx(), use_case="test_edge")
 
     store.provision_schema.assert_awaited_once_with("test_edge")
@@ -230,3 +246,110 @@ def test_check_reports_every_probe_before_failing(monkeypatch: pytest.MonkeyPatc
 def test_demo_namespace_is_registered() -> None:
     assert "demo" in ns.collections
     assert set(ns.collections["demo"].task_names) >= {"seed", "check", "up", "reset"}
+
+
+# --------------------------------------------------------------------------
+# Refusing to write to someone else's Source of Truth (#115)
+#
+# #107 added the identity check and wired it into `demo.check`, `snapl status`
+# and the e2e refusal — every path that *reports*. It was never wired into the
+# one task that *writes*, and `demo.up` ran seed before check, so the
+# verification happened after the damage. Environment variables are the one
+# namespace Docker cannot isolate, and since #111 a shell export deliberately
+# outranks development/.env, so `INFRAHUB_ADDRESS=... invoke demo.seed` was
+# enough to provision snapl's schema into a neighbouring project's Infrahub —
+# authenticated, because both projects shipped the same admin token.
+# --------------------------------------------------------------------------
+
+
+def test_seed_refuses_to_write_to_a_foreign_source_of_truth(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("INFRAHUB_API_TOKEN", "t")  # pragma: allowlist secret
+    from snapl_intent.infrahub.identity import IdentityCheck, SotIdentity
+
+    store = MagicMock()
+    store.provision_schema = AsyncMock()
+    store.seed = AsyncMock()
+    foreign = IdentityCheck(SotIdentity.FOREIGN, "localhost:8000 has 12 devices but no snapl marker")
+
+    with (
+        patch.object(demo, "_build_store", return_value=store),
+        patch.object(demo, "identify_sot", AsyncMock(return_value=foreign)),
+        pytest.raises(demo.DemoConfigError, match="refusing to seed"),
+    ):
+        demo.seed(_ctx())
+
+    store.provision_schema.assert_not_awaited()
+    store.seed.assert_not_awaited()
+
+
+def test_seed_verifies_identity_before_it_writes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ordering is the whole point — a check that runs after the write is a
+    report, not a guard."""
+    monkeypatch.setenv("INFRAHUB_API_TOKEN", "t")  # pragma: allowlist secret
+    from snapl_intent.infrahub.identity import IdentityCheck, SotIdentity
+
+    order: list[str] = []
+    store = MagicMock()
+    store.provision_schema = AsyncMock(side_effect=lambda _: order.append("provision"))
+    store.seed = AsyncMock(side_effect=lambda _: order.append("seed"))
+
+    async def _identify(*_args, **_kwargs):
+        order.append("identify")
+        return IdentityCheck(SotIdentity.OURS, "ours")
+
+    with (
+        patch.object(demo, "_build_store", return_value=store),
+        patch.object(demo, "identify_sot", _identify),
+    ):
+        demo.seed(_ctx())
+
+    assert order == ["identify", "provision", "seed"]
+
+
+def test_seed_proceeds_against_an_empty_instance(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A fresh snapl instance has no marker and no devices — that is the
+    normal bootstrap case and must not be mistaken for a neighbour's."""
+    monkeypatch.setenv("INFRAHUB_API_TOKEN", "t")  # pragma: allowlist secret
+    from snapl_intent.infrahub.identity import IdentityCheck, SotIdentity
+
+    store = MagicMock()
+    store.provision_schema = AsyncMock()
+    store.seed = AsyncMock()
+    empty = IdentityCheck(SotIdentity.OURS, "empty and unprovisioned")
+
+    with (
+        patch.object(demo, "_build_store", return_value=store),
+        patch.object(demo, "identify_sot", AsyncMock(return_value=empty)),
+    ):
+        demo.seed(_ctx())
+
+    store.seed.assert_awaited_once()
+
+
+def test_seed_refuses_when_identity_cannot_be_determined(monkeypatch: pytest.MonkeyPatch) -> None:
+    """UNKNOWN must not fail open on the write path.
+
+    Measured against the real neighbour: pointed at another project's Infrahub
+    with snapl's credentials, `identify` returns UNKNOWN rather than FOREIGN,
+    because the instance will not serve its schema to a stranger. A guard that
+    only refuses on FOREIGN therefore lets the seed through — the exact case it
+    exists to stop. Reporting paths (`demo.check`, `snapl status`) still treat
+    UNKNOWN as inconclusive; only writing demands a positive identification.
+    """
+    monkeypatch.setenv("INFRAHUB_API_TOKEN", "t")  # pragma: allowlist secret
+    from snapl_intent.infrahub.identity import IdentityCheck, SotIdentity
+
+    store = MagicMock()
+    store.provision_schema = AsyncMock()
+    store.seed = AsyncMock()
+    unknown = IdentityCheck(SotIdentity.UNKNOWN, "schema could not be read")
+
+    with (
+        patch.object(demo, "_build_store", return_value=store),
+        patch.object(demo, "identify_sot", AsyncMock(return_value=unknown)),
+        pytest.raises(demo.DemoConfigError, match="refusing to seed"),
+    ):
+        demo.seed(_ctx())
+
+    store.provision_schema.assert_not_awaited()
+    store.seed.assert_not_awaited()
