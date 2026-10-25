@@ -65,6 +65,12 @@ class DriftItem(BaseModel):
     desired: Any | None
     actual: Any | None
     entity_kind: str
+    # Which way the difference runs. False (the default) means intent asked
+    # for something the device lacks or got wrong; True means the device
+    # carries something intent never asked for. The remediations differ — one
+    # is an apply, the other a delete — so a reader must not have to infer the
+    # direction from `desired is None`, which a missing value also produces.
+    undesired: bool = False
 
     @model_validator(mode="after")
     def _check_values_differ(self) -> DriftItem:

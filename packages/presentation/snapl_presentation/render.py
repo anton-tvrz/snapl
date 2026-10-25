@@ -51,6 +51,19 @@ def _esc(value: Any) -> str:
     return escape(str(value))
 
 
+def _desired_cell(item: Any) -> str:
+    """What to show in the 'desired' column for one drift item.
+
+    An undesired entity has no desired value, and rendering it as a bare
+    ``None`` makes it read identically to intent wanting a field the device
+    has not set — the opposite problem, needing the opposite fix (#54). Name
+    the direction instead.
+    """
+    if getattr(item, "undesired", False):
+        return "[dim]not in intent[/]"
+    return _esc(item.desired)
+
+
 def _dump(model: Any) -> Any:
     """JSON-ready form of a pydantic model, with enums and UUIDs stringified."""
     return json.loads(model.model_dump_json())
@@ -115,7 +128,7 @@ class HumanRenderer(Renderer):
         if result.detail:
             self._console.print(f"  {_esc(result.detail)}")
         for item in result.drift_items:
-            self._console.print(f"  {_esc(item.path)} desired={_esc(item.desired)!r} actual={_esc(item.actual)!r}")
+            self._console.print(f"  {_esc(item.path)} desired={_desired_cell(item)} actual={_esc(item.actual)!r}")
 
     def scan(self, result: DriftScanResult) -> None:
         self._console.print(
@@ -136,7 +149,7 @@ class HumanRenderer(Renderer):
                 table.add_column("desired")
                 table.add_column("actual")
                 for item in report.items:
-                    table.add_row(f"  {_esc(item.path)}", _esc(item.desired), _esc(item.actual))
+                    table.add_row(f"  {_esc(item.path)}", _desired_cell(item), _esc(item.actual))
                 self._console.print(table)
 
     def reconcile(self, result: ReconcileResult) -> None:

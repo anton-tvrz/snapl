@@ -188,3 +188,164 @@ class TestDiffMultipleEntityKinds:
         kinds = {i.entity_kind for i in items}
         assert kinds == {"interface", "bgp_session"}
         assert len(items) == 2
+
+
+# ---------------------------------------------------------------------------
+# Undesired config — the reverse direction of the diff (#54, spec 007)
+#
+# The diff only ever walked *desired* entities, so config the device carries
+# but intent never asked for produced zero drift. The naive fix is dangerous:
+# a real SR Linux spine reports 31 interfaces intent does not name — 30 bare
+# chassis ports plus mgmt0, whose address is the one snapl dials over. These
+# tests pin the ownership rule that makes the difference tractable: an entity
+# is undesired only when it carries a value-bearing field, and the protected
+# set is never reported at all.
+# ---------------------------------------------------------------------------
+
+
+def _bare_interface() -> dict:
+    """What SR Linux reports for a chassis port nobody configured."""
+    return {"description": None, "ip_address": None, "prefix_length": None, "enabled": False, "mtu": None}
+
+
+class TestUndesiredEntities:
+    def test_unconfigured_chassis_ports_are_not_drift(self):
+        """SC-001: 30 bare ports per spine must not bury the signal."""
+        from snapl_observability.structural.diff import diff_desired_vs_actual
+
+        desired = _build_desired_state()
+        actual = _matching_actual_data(desired)
+        for n in range(5, 35):
+            actual[f"/interface[name=ethernet-1/{n}]"] = _bare_interface()
+
+        assert diff_desired_vs_actual(desired, actual) == []
+
+    def test_an_interface_configured_outside_intent_is_reported(self):
+        """SC-002: a hand-added IP is exactly the sprawl this is for."""
+        from snapl_observability.structural.diff import diff_desired_vs_actual
+
+        desired = _build_desired_state()
+        actual = _matching_actual_data(desired)
+        actual["/interface[name=ethernet-1/7]"] = {
+            **_bare_interface(),
+            "ip_address": "192.0.2.1",
+            "prefix_length": 30,
+            "enabled": True,
+        }
+
+        items = diff_desired_vs_actual(desired, actual)
+
+        paths = {item.path for item in items}
+        assert any("ethernet-1/7" in path for path in paths), f"undesired interface not reported: {paths}"
+        reported = [item for item in items if "ethernet-1/7" in item.path]
+        assert all(item.desired is None for item in reported), "an undesired entity has no desired value"
+        assert {item.actual for item in reported} == {"192.0.2.1", 30}
+
+    def test_the_management_interface_is_never_reported(self):
+        """SC-003: mgmt0 is shape-identical to real config, and deleting it
+        would strand the device — it can only be excluded by name."""
+        from snapl_observability.structural.diff import diff_desired_vs_actual
+
+        desired = _build_desired_state()
+        actual = _matching_actual_data(desired)
+        actual["/interface[name=mgmt0]"] = {
+            "description": None,
+            "ip_address": "172.20.21.11",
+            "prefix_length": 24,
+            "enabled": True,
+            "mtu": 1514,
+        }
+        actual["/interface[name=system0]"] = {
+            **_bare_interface(),
+            "ip_address": "10.255.0.1",
+            "prefix_length": 32,
+        }
+
+        items = diff_desired_vs_actual(desired, actual)
+
+        assert not [i for i in items if "mgmt0" in i.path or "system0" in i.path], (
+            f"a protected interface was reported: {[i.path for i in items]}"
+        )
+
+    def test_enabled_alone_does_not_make_an_interface_configured(self):
+        """FR-003: a port that is merely up is not evidence of intent."""
+        from snapl_observability.structural.diff import diff_desired_vs_actual
+
+        desired = _build_desired_state()
+        actual = _matching_actual_data(desired)
+        actual["/interface[name=ethernet-1/9]"] = {**_bare_interface(), "enabled": True}
+
+        assert diff_desired_vs_actual(desired, actual) == []
+
+    def test_a_bgp_neighbor_outside_intent_is_reported(self):
+        """US1 scenario 3 — the same rule applies to the other entity kind."""
+        from snapl_observability.structural.diff import diff_desired_vs_actual
+
+        desired = _build_desired_state()
+        actual = _matching_actual_data(desired)
+        actual["/network-instance[name=default]/protocols/bgp/neighbor[peer-address=203.0.113.9]"] = {
+            "peer_address": "203.0.113.9",
+            "peer_asn": 65099,
+            "peer_group": "underlay-ipv4",
+            "enabled": True,
+        }
+
+        items = diff_desired_vs_actual(desired, actual)
+
+        assert any("203.0.113.9" in item.path for item in items), (
+            f"undesired bgp neighbor not reported: {[i.path for i in items]}"
+        )
+
+    def test_undesired_items_are_marked_as_such(self):
+        """FR-007: direction must be readable without inferring it from
+        `desired is None`, which a missing-value case can also produce."""
+        from snapl_observability.structural.diff import diff_desired_vs_actual
+
+        desired = _build_desired_state()
+        actual = _matching_actual_data(desired)
+        actual["/interface[name=ethernet-1/7]"] = {**_bare_interface(), "description": "hand-added"}
+
+        items = diff_desired_vs_actual(desired, actual)
+
+        undesired = [item for item in items if "ethernet-1/7" in item.path]
+        assert undesired, "the undesired interface produced no drift items"
+        assert all(item.undesired for item in undesired)
+
+    def test_ordinary_drift_is_not_marked_undesired(self):
+        """The existing direction must keep its meaning."""
+        from snapl_observability.structural.diff import diff_desired_vs_actual
+
+        desired = _build_desired_state()
+        actual = _matching_actual_data(desired)
+        actual[f"/interface[name={desired.interfaces[0].name}]"]["description"] = "changed by hand"
+
+        items = diff_desired_vs_actual(desired, actual)
+
+        assert items, "an ordinary mismatch produced no drift items"
+        assert not any(item.undesired for item in items)
+
+    def test_an_unparseable_key_is_ignored(self):
+        """An unreadable key is not evidence of sprawl."""
+        from snapl_observability.structural.diff import diff_desired_vs_actual
+
+        desired = _build_desired_state()
+        actual = _matching_actual_data(desired)
+        actual["/interface[malformed"] = {**_bare_interface(), "description": "x"}
+        actual["/something/entirely/unrelated"] = {"description": "x"}
+
+        assert diff_desired_vs_actual(desired, actual) == []
+
+    def test_report_is_deterministic(self):
+        """FR-009: two scans of an unchanged device must be identical."""
+        from snapl_observability.structural.diff import diff_desired_vs_actual
+
+        desired = _build_desired_state()
+        actual = _matching_actual_data(desired)
+        for n in (12, 3, 30, 7):
+            actual[f"/interface[name=ethernet-1/{n}]"] = {**_bare_interface(), "description": f"x{n}"}
+
+        first = diff_desired_vs_actual(desired, actual)
+        second = diff_desired_vs_actual(desired, actual)
+
+        assert [i.path for i in first] == [i.path for i in second]
+        assert len(first) == 4
