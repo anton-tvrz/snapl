@@ -121,9 +121,11 @@ Config that matches intent is not the same as a control that works (Principle VI
 - **A dcfabric device has no ACL in intent.** Collecting ACL state from it must produce no drift items. A converged dcfabric fabric that scans clean today still scans clean (SC-005).
 - **Entry order is the rule's meaning.** Two ACLs with the same entries in a different order are different rules. Entries are identified by their sequence number. The same entry under a different sequence number counts as one entry missing and one undesired, not as a match.
 - **An ACL entry with no source or destination prefix** matches everything. An unset prefix in intent means "match any". Comparing it against an unset prefix on the device is not drift.
+- **A prefix added by hand to a match that intent leaves unset** narrows the entry. It is reported as drift. Merge-only apply cannot take the added prefix away, though (#65), so reconcile would not heal it. To keep every in-place weakening of the lab's rule healable, the lab's seeded rule spells out "any" as an explicit all-addresses prefix rather than leaving it unset. Live capture confirms the device keeps it as written.
 - **The deny entry's action flipped by hand.** On the device, accept and drop are mutually exclusive choices. Reconcile must leave exactly one action, drop, on the entry, not both (to be confirmed live; see the plan's capture list).
 - **A hand-added match criterion that snapl does not manage** (for example a protocol or port added to the deny entry, which narrows it). It is not compared in the first cut, so it is not detected. This is a known limitation and is documented as one (see Assumptions).
-- **The ACL bound to the OT interface in the wrong direction** (egress instead of ingress). This reads as the intended binding missing, plus an undesired binding.
+- **The ACL bound to the OT interface in the wrong direction** (egress instead of ingress). This reads as the intended ingress binding missing. The egress binding itself is not compared in the first cut, because only ingress is managed.
+- **The ACL bound by hand to an interface where intent declares no binding.** This is reported as an undesired binding. It is not a mismatch on that interface, so it never blocks verification.
 - **The site edge is unreachable.** The scan reports it as errored, as for any device. The carrier is still evaluated.
 
 ## Requirements *(mandatory)*
