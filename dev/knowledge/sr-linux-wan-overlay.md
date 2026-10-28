@@ -66,7 +66,8 @@ Two VXLAN constraints shape everything that follows:
   "Configuration of VXLAN on SR Linux is tied to EVPN", and the egress VTEP "is determined by EVPN".
 - **One source VTEP per box.** `vxlan-interface/egress/source-ip` is an enum with a single value,
   `use-system-ipv4-address`. The guide: "the data path supports one source tunnel IP address for all
-  VXLAN interfaces … the IPv4 address of sub-interface system0.0 in the default network-instance". So
+  VXLAN interfaces" and "The source IP used in the vxlan-interfaces is the IPv4 address of subinterface
+  system0.0 in the default network-instance". The 26.3.1 YANG enum above says the same today. So
   hub and branch have exactly one VTEP pair between them. The routed underlay picks which underlay
   carries it, not the tunnel.
 
@@ -319,7 +320,8 @@ The honest trade-off against GRE:
 
 - Nokia SR Linux 26.3 *Network-instances* (GRE tunnel next-hop groups, IP tunnel decapsulation groups):
   <https://documentation.nokia.com/srlinux/26-3/books/config-basics/network-instances.html>
-- Nokia SR Linux *EVPN-VXLAN guide*, VXLAN tied to EVPN, system0 source VTEP (wording unchanged 22.3–24.3):
+- Nokia SR Linux 22.3 *EVPN-VXLAN guide*, VXLAN tied to EVPN, system0 source VTEP. Quoted from this
+  page; the 26.3.1 YANG agrees:
   <https://documentation.nokia.com/srlinux/22-3/SR_Linux_Book_Files/EVPN-VXLAN_Guide/services-vxlan.html>
 - containerlab SR Linux kind (license and datapath limits): <https://containerlab.dev/manual/kinds/srl/>
 - YANG in `ghcr.io/nokia/srlinux:26.3.1`:

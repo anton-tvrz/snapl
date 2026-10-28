@@ -28,8 +28,8 @@ call `GnmiExecutor` makes. Every one was accepted on the first try.
 
 ## gNMI responses (captured from the device)
 
-These come from a GET with `encoding=json_ietf`, the collector's settings. Steady-state captures used
-`datatype=all`. The failed-state and route-table captures used `datatype=state`. The output is keyed by
+These come from a GET with `encoding=json_ietf`, the collector's settings. The steady-state and
+in-tunnel captures used `datatype=all`. The failed-state and route-table captures used `datatype=state`. The output is keyed by
 requested path, like `srlinux_spine01_collected.json`. The `statistics` and `traffic-rate` subtrees were
 pruned (same rule as `tests/unit/test_orchestrator/fixtures/`). Every other field is verbatim.
 
