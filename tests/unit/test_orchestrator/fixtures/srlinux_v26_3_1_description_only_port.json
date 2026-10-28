@@ -1,0 +1,95 @@
+{
+  "/interface": {
+    "srl_nokia-interfaces:interface": [
+      {
+        "name": "ethernet-1/7",
+        "description": "hand-added-by-operator",
+        "admin-state": "enable",
+        "mtu": 9232,
+        "oper-down-reason": "lower-layer-down",
+        "transceiver": {
+          "tx-laser": false,
+          "oper-state": "down",
+          "oper-down-reason": "not-present",
+          "ddm-events": true,
+          "srl_nokia-platform-healthz:healthz": {
+            "status": "unspecified"
+          }
+        },
+        "ethernet": {
+          "dac-link-training": false,
+          "lacp-port-priority": 32768,
+          "port-speed": "100G",
+          "hw-mac-address": "1A:A6:04:FF:00:07",
+          "flow-control": {
+            "receive": false
+          },
+          "forward-error-correction": {
+            "operational-host-if-fec": "disabled"
+          },
+          "hold-time": {
+            "up": 0,
+            "down": 0
+          },
+          "statistics": {},
+          "srl_nokia-dot1x:dot1x": {
+            "srl_nokia-dot1x-tunneling:tunnel": {
+              "tunnel-all": false,
+              "oper-rule": "trap-to-cpu-untagged"
+            }
+          },
+          "srl_nokia-interfaces-l2cp:l2cp-transparency": {
+            "tunnel-all-l2cp": false,
+            "lldp": {
+              "tunnel": false,
+              "oper-rule": "trap-to-cpu-untagged"
+            },
+            "lacp": {
+              "tunnel": false,
+              "oper-rule": "trap-to-cpu-untagged"
+            },
+            "xstp": {
+              "tunnel": false,
+              "oper-rule": "drop-tagged-and-untagged"
+            },
+            "ptp": {
+              "tunnel": false,
+              "oper-rule": "drop-tagged-and-untagged"
+            }
+          }
+        },
+        "sflow": {
+          "admin-state": "enable"
+        }
+      },
+      {
+        "name": "ethernet-1/8",
+        "admin-state": "disable",
+        "oper-down-reason": "port-admin-disabled",
+        "transceiver": {
+          "tx-laser": false,
+          "oper-state": "down",
+          "oper-down-reason": "not-present",
+          "ddm-events": false,
+          "srl_nokia-platform-healthz:healthz": {
+            "status": "unspecified"
+          }
+        },
+        "ethernet": {
+          "dac-link-training": false,
+          "port-speed": "100G",
+          "hw-mac-address": "1A:A6:04:FF:00:08",
+          "flow-control": {
+            "receive": false
+          },
+          "forward-error-correction": {
+            "operational-host-if-fec": "disabled"
+          }
+        },
+        "sflow": {
+          "admin-state": "disable"
+        }
+      }
+    ]
+  }
+}

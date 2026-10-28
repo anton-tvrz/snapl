@@ -110,3 +110,20 @@ def test_seed_dial_targets_are_addresses_not_hostnames(seeded_dial_targets: dict
     """A clab hostname here is the #96 regression: unresolvable from the host."""
     for name, target in seeded_dial_targets.items():
         assert IPv4Address(target) in SNAPL_SUBNET, f"{name}: {target!r} is not an address in {SNAPL_SUBNET}"
+
+
+# Issue #122: the image is part of the system under test. `latest` moved from the
+# August build to v26.3.1 with no change in this repo, and v26.3.1 reports a default
+# mtu the older build did not — a device behaviour change that surfaced as phantom
+# drift. Upgrading SR Linux must be a deliberate, re-verified change, so the tag
+# names an exact version.
+
+
+def test_srlinux_image_is_pinned_to_an_exact_version(topology: dict) -> None:
+    image = topology["topology"]["kinds"]["nokia_srlinux"]["image"]
+    repo, _, tag = image.rpartition(":")
+    assert repo == "ghcr.io/nokia/srlinux"
+    assert tag != "latest", "pin an exact SR Linux version; `latest` changes under the lab"
+    parts = tag.split(".")
+    assert len(parts) == 3, f"expected X.Y.Z, got {tag!r}"
+    assert all(part.isdigit() for part in parts), f"expected X.Y.Z, got {tag!r}"

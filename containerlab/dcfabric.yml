@@ -46,7 +46,9 @@ topology:
 
   kinds:
     nokia_srlinux:
-      image: ghcr.io/nokia/srlinux:latest
+      # Pinned (#122): the device image is part of the system under test.
+      # Upgrade deliberately, then re-run demo.reset -> demo.up -> test-e2e.
+      image: ghcr.io/nokia/srlinux:26.3.1
 
   nodes:
     # Spines: 7220 IXR-D3 (matches seed device_type)

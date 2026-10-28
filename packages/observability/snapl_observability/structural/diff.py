@@ -41,6 +41,12 @@ ENTITY_FIELD_MAP: dict[str, dict[str, Any]] = {
         # `enabled` is excluded on purpose: a port being up is not evidence
         # that anyone intended anything by it.
         "value_fields": ("description", "ip_address", "prefix_length", "mtu"),
+        # Values the device reports on its own once a port carries any config,
+        # with nobody having set them: SR Linux (v26.3.1) adds mtu 9232 to a port
+        # given only a description (#122). A default is not intent, so it neither
+        # marks a port as configured nor appears as an undesired item. Only the
+        # reverse diff consults this — a desired mtu is always compared strictly.
+        "device_defaults": {"mtu": 9232},
         # Never reported as undesired, and never deleted once removal lands
         # (#65). These carry real config and are indistinguishable by shape
         # from something an operator added by hand — mgmt0 holds the very
@@ -160,6 +166,7 @@ def _undesired_entities(
     pattern = _key_pattern(spec["path_template"])
     value_fields: tuple[str, ...] = spec.get("value_fields", ())
     protected: tuple[str, ...] = spec.get("protected", ())
+    device_defaults: dict[str, Any] = spec.get("device_defaults", {})
 
     items: list[DriftItem] = []
     # Sorted so two scans of an unchanged device produce identical reports.
@@ -175,7 +182,11 @@ def _undesired_entities(
         if not isinstance(entry, dict):
             continue
 
-        set_values = [(field, entry.get(field)) for field in value_fields if entry.get(field) is not None]
+        set_values = [
+            (field, value)
+            for field in value_fields
+            if (value := entry.get(field)) is not None and value != device_defaults.get(field)
+        ]
         if not set_values:
             continue
 
