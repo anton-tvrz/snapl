@@ -6,11 +6,10 @@
 
 ## Overview
 
-This feature adds three things to `snapl-orchestrator`. Nothing in an existing workflow, activity, model field or block ABC changes.
+This feature adds two things to `snapl-orchestrator`. Nothing in an existing workflow, activity, model field or block ABC changes.
 
 1. **Workflow `DriftResponse`**, started by a drift schedule. It scans a use case through a child `ScanDrift` and applies the schedule's response.
-2. **Activity `stand_down_schedule`**, which switches a schedule from `remediate` to `report` from inside a run (US4).
-3. **Module `snapl_orchestrator.schedules`**, the plain async functions that create, inspect and steer drift schedules. The CLI calls them. They work without a worker (FR-022).
+2. **Module `snapl_orchestrator.schedules`**, the plain async functions that create, inspect and steer drift schedules. The CLI calls them. They work without a worker (FR-022).
 
 Plus one pure helper, `snapl_orchestrator.remediation.select_remediation`.
 
@@ -44,32 +43,21 @@ class DriftResponseWorkflow:
    1. `remediated, excluded = select_remediation(scan)` (pure, inline).
    2. Audit `DRIFT_RESPONSE` per excluded device (device level).
    3. If `remediated` is non-empty: `reconcile = await workflow.execute_child_workflow(ReconcileDevicesWorkflow.run, remediated, id=f"{wf_id}-reconcile")`. Audit `DRIFT_RESPONSE` per remediated device (device level, with `reconcile_workflow_id`).
-   4. If `reconcile.failed > 0`: `await workflow.execute_activity(stand_down_schedule, args=[schedule_id, reason])` and set `stood_down=True`. The reason names this run's workflow id and the failed device ids.
-   5. Audit `DRIFT_RESPONSE` (use-case level) and `WORKFLOW_TERMINATED` (success), then return.
+   4. Audit `DRIFT_RESPONSE` (use-case level) and `WORKFLOW_TERMINATED` (success), then return.
 
 **Returns**: `DriftResponseResult` (see data-model.md, invariants included).
 
-**Cancellation**: As in `ScanDrift` and `ReconcileDevices`. Catch a cancelled child, audit `WORKFLOW_CANCELLED`, and re-raise. A cancelled run never calls `stand_down_schedule`.
+**Cancellation**: As in `ScanDrift` and `ReconcileDevices`. Catch a cancelled child, audit `WORKFLOW_CANCELLED`, and re-raise.
 
 **Determinism**: No clock, I/O or randomness outside `workflow.now()`, `workflow.uuid4()`, activities and children. `select_remediation` is pure. Imports go under `workflow.unsafe.imports_passed_through()`.
 
-**Vendor neutrality**: Imports only `snapl_orchestrator.models`, `snapl_orchestrator.remediation`, `snapl_orchestrator.activities.audit`, `snapl_orchestrator.activities.schedule`, and the two child workflows. `test_vendor_seams.py` covers the new file automatically.
+**Vendor neutrality**: Imports only `snapl_orchestrator.models`, `snapl_orchestrator.remediation`, `snapl_orchestrator.activities.audit`, and the two child workflows. `test_vendor_seams.py` covers the new file automatically.
 
 ---
 
-## Activity: stand_down_schedule
+## Deferred: stand_down_schedule
 
-```python
-@activity.defn(name="stand_down_schedule")
-async def stand_down_schedule(schedule_id: str, reason: str) -> bool:
-    """Switch a drift schedule's response to REPORT. Returns True if it changed it,
-    False if it was already REPORT (idempotent on retry)."""
-```
-
-- Uses `temporalio.activity.client()`, the worker's client, which has the pydantic converter.
-- `handle.update(updater)`. The updater rebuilds the action with `mode=REPORT` (same use case, task queue and id) and sets `state.note = reason`. It preserves `state.paused`, `spec` and `policy`.
-- Appends `SCHEDULE_CHANGED` (`change="stood_down"`, `actor="snapl:stand-down"`) to the `AuditLog` from `get_activities()`, **only when it changed the mode**. A retried activity therefore writes one record.
-- Retry: 5 attempts, 1s initial interval (as for audit: durability-critical). A schedule deleted mid-run (`RPCError` NOT_FOUND) is non-retryable and returns `False`. There is nothing left to stand down.
+The stand-down activity (former US4, FR-018) is deferred to a follow-up issue. Research R8 records its design. In this cut, `DriftResponse` returns a failed reconcile in its result and audit trail, and the schedule stays in `remediate`.
 
 ---
 
@@ -102,7 +90,9 @@ async def ensure_drift_schedule(
     """Create in REPORT; or, if it exists, change only the interval (and the
     catchup window). Response, paused and note are preserved (FR-004).
     Records 'created' or 'interval_changed'; records nothing if the interval
-    is unchanged."""
+    is unchanged. Called by `snapl schedule create` and by `invoke demo.up`.
+    The SoT identity check (FR-031) is the caller's job, before this call:
+    this module does not depend on the intent block's Infrahub client."""
 
 async def set_drift_response(
     client: Client, *, use_case_id: str, mode: DriftResponseMode, audit_log: AuditLog, actor: str,
@@ -135,7 +125,11 @@ async def delete_drift_schedule(
 
 async def describe_drift_schedule(client: Client, *, use_case_id: str) -> DriftScheduleView:
     """Read-only. Decodes the action argument back to DriftResponseRequest via
-    client.data_converter; fetches status for the last 5 runs."""
+    client.data_converter. For the last 5 runs, fetches status with one
+    describe each; for completed runs, also fetches the DriftResponseResult
+    (handle.result(), which returns at once for a closed workflow) to build
+    the summary and `wrote` flag (FR-024). A run whose result cannot be
+    fetched shows its status without a summary; describe never fails on it."""
 
 async def find_drift_schedule(client: Client, *, use_case_id: str) -> DriftScheduleView | None:
     """describe_drift_schedule, but None instead of ScheduleNotFoundError — for
@@ -160,4 +154,4 @@ def select_remediation(scan: DriftScanResult) -> tuple[list[UUID], dict[UUID, Ex
 
 ## Worker registration
 
-`worker/run.py` adds `DriftResponseWorkflow` to `workflows=[...]` and `stand_down_schedule` to `activities=[...]`. No new environment variable, no change to the `Activities` container, and no schedule is created at boot (research R7).
+`worker/run.py` adds `DriftResponseWorkflow` to `workflows=[...]`. No new activity, no new environment variable, no change to the `Activities` container, and no schedule is created at boot (research R7).

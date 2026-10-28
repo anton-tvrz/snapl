@@ -29,7 +29,7 @@ Why a drifted device was left alone by a `remediate` run.
 
 The kind of change a `SCHEDULE_CHANGED` audit event records. It is stored as the `change` key of `AuditEvent.payload`.
 
-`created`, `interval_changed`, `response_changed`, `paused`, `resumed`, `triggered`, `deleted`, `stood_down`
+`created`, `interval_changed`, `response_changed`, `paused`, `resumed`, `triggered`, `deleted`. (A `stood_down` value would arrive with the deferred stand-down follow-up.)
 
 ### AuditEventType (extended)
 
@@ -37,7 +37,7 @@ Two members are added to the existing enum. Existing values are unchanged, and S
 
 | member | value | written by |
 | --- | --- | --- |
-| `SCHEDULE_CHANGED` | `"schedule_changed"` | `schedules.py` functions (operator) and `stand_down_schedule` (system) |
+| `SCHEDULE_CHANGED` | `"schedule_changed"` | `schedules.py` functions, called by the CLI (operator) and `invoke demo.up` |
 | `DRIFT_RESPONSE` | `"drift_response"` | `DriftResponseWorkflow`: one event per run at use-case level, plus one per repaired or excluded device at device level |
 
 `AuditEvent._check_invariants` gains one rule: `SCHEDULE_CHANGED` requires `payload["change"]` to be a `ScheduleChange` value, and requires `actor` to be set. This is what makes FR-021 ("who") enforceable at the model.
@@ -50,9 +50,9 @@ The single argument a drift schedule passes to every run it starts. It is stored
 | --- | --- | --- |
 | `use_case_id` | `str` | non-empty |
 | `mode` | `DriftResponseMode` | default `REPORT` |
-| `schedule_id` | `str` | `drift-response-{use_case_id}`. Used for attribution and for stand-down. |
+| `schedule_id` | `str` | `drift-response-{use_case_id}`. Used for attribution. |
 
-**Invariant**: `schedule_id == drift_schedule_id(use_case_id)`. A request whose schedule and use case disagree is rejected, so a run cannot stand down a different use case's schedule.
+**Invariant**: `schedule_id == drift_schedule_id(use_case_id)`. A request whose schedule and use case disagree is rejected, so a run cannot be attributed to a different use case's schedule.
 
 `drift_schedule_id(use_case_id) -> str` (returns `"drift-response-{use_case_id}"`) is a plain function **in `models.py`**. `schedules.py` re-exports it as `schedule_id_for`. Defining it in `schedules.py` would create an import cycle (`schedules` imports `models`), and would drag `temporalio.client` into a module the workflow sandbox passes through.
 
@@ -70,17 +70,15 @@ The terminal outcome of one scheduled run.
 | `remediated` | `list[UUID]` | devices passed to reconcile, in scan order. Empty in `REPORT`. |
 | `excluded` | `dict[UUID, ExclusionReason]` | drifted or errored devices deliberately not passed to reconcile. Empty in `REPORT`. |
 | `reconcile` | `ReconcileResult \| None` | the child reconcile's result. `None` when nothing was eligible, and always in `REPORT`. |
-| `stood_down` | `bool` | default `False`. `True` when this run switched its schedule to `REPORT` (US4). |
 | `started_at` | `datetime` | |
 | `ended_at` | `datetime` | `>= started_at` |
 
 **Invariants**:
-- `mode == REPORT` ⇒ `remediated == []`, `excluded == {}`, `reconcile is None`, `stood_down is False`. This makes FR-011 a property of the result type.
+- `mode == REPORT` ⇒ `remediated == []`, `excluded == {}`, `reconcile is None`. This makes FR-011 a property of the result type.
 - `reconcile is None` ⇔ `remediated == []`.
 - `reconcile is not None` ⇒ `reconcile.total == len(remediated)`.
 - `remediated` and `excluded` are disjoint, and every id in either is a key of `scan.reports`.
 - Every id in `remediated` has `scan.reports[id].status == DRIFTED` and at least one item with `undesired is False` (R5).
-- `stood_down` ⇒ `reconcile is not None and reconcile.failed > 0`.
 
 ## Eligibility (pure function, no model)
 
@@ -105,7 +103,7 @@ A read model the CLI renders. `describe_drift_schedule` projects Temporal's `Sch
 | `interval` | `timedelta` | `schedule.spec.intervals[0].every` |
 | `mode` | `DriftResponseMode` | decoded `DriftResponseRequest.mode` (action args via `client.data_converter`, R3) |
 | `paused` | `bool` | `schedule.state.paused` |
-| `note` | `str \| None` | `schedule.state.note`: the pause reason, or the stand-down reason |
+| `note` | `str \| None` | `schedule.state.note`: the pause reason |
 | `next_runs` | `list[datetime]` | `info.next_action_times[:3]` |
 | `recent_runs` | `list[ScheduledRunInfo]` | `info.recent_actions[-5:]`, newest last |
 | `running` | `list[str]` | workflow ids from `info.running_actions` |
@@ -119,6 +117,20 @@ A read model the CLI renders. `describe_drift_schedule` projects Temporal's `Sch
 | `scheduled_at` | `datetime` | `ScheduleActionResult.scheduled_at` |
 | `started_at` | `datetime` | `ScheduleActionResult.started_at` |
 | `status` | `str` | `client.get_workflow_handle(workflow_id).describe().status.name.lower()` (`running`, `completed`, `failed`, …). In SDK 1.25.0, `ScheduleActionResult` carries no status, hence one describe call per shown run (at most 5). |
+| `summary` | `RunSummary \| None` | completed runs only: built from the run's `DriftResponseResult` (fetched with `handle.result()`). `None` while running, after a failure, or if the result can't be fetched. |
+
+### RunSummary
+
+The one-line outcome FR-024 asks for, e.g. `6 devices: 5 clean, 1 drifted, 0 errored`, plus whether the run wrote.
+
+| field | type | source |
+| --- | --- | --- |
+| `total`, `clean`, `drifted`, `errored` | `int` | `result.scan` counts |
+| `remediated` | `int` | `len(result.remediated)` (0 in `REPORT`) |
+| `succeeded`, `failed` | `int` | `result.reconcile` counts, 0 when `reconcile is None` |
+| `wrote` | `bool` | `result.reconcile is not None and result.reconcile.succeeded + result.reconcile.failed > 0`. A failed apply may still have written, so it counts. Skipped devices don't. |
+
+**Invariant**: `mode == REPORT` ⇒ `wrote is False` (it follows from the `DriftResponseResult` invariant).
 
 ## Audit payloads
 
@@ -135,13 +147,12 @@ Every new audit event uses the existing `AuditEvent` model. These are the payloa
 | `resumed` | `note` (optional) |
 | `triggered` | `mode` |
 | `deleted` | none |
-| `stood_down` | `from` (`"remediate"`), `to` (`"report"`), `run_workflow_id`, `failed_devices` (list of names) |
 
 Using the schedule id as `workflow_id` means `snapl audit --workflow drift-response-dcfabric` returns the schedule's whole policy history, with no new query.
 
 **`DRIFT_RESPONSE`** (written by `DriftResponseWorkflow`, `workflow_type = "DriftResponse"`, `actor = f"schedule:{schedule_id}"`):
 
-- Use-case level, one per run, `target_id = use_case_id`: `mode`, `scan_workflow_id`, `clean`, `drifted`, `errored`, `remediated` (count), `excluded` (count by reason), `reconcile_workflow_id` (or `None`), `stood_down`.
+- Use-case level, one per run, `target_id = use_case_id`: `mode`, `scan_workflow_id`, `clean`, `drifted`, `errored`, `remediated` (count), `excluded` (count by reason), `reconcile_workflow_id` (or `None`).
 - Device level, one per repaired or excluded device, `target_id = device_id`: `decision` (`remediated` or one of the `ExclusionReason` values), `scan_workflow_id`, `reconcile_workflow_id` (when remediated), `paths` (the drifted paths). This puts "repaired by schedule X from scan Y", or "left alone because undesired-only", into `snapl audit --device <name>` (FR-020).
 
 The existing lifecycle events (`WORKFLOW_STARTED`, `WORKFLOW_TERMINATED`, `WORKFLOW_CANCELLED`) are written by `DriftResponse` exactly as by the other workflows. The child scan, reconcile and per-device deploys keep writing their own events unchanged.
@@ -149,11 +160,11 @@ The existing lifecycle events (`WORKFLOW_STARTED`, `WORKFLOW_TERMINATED`, `WORKF
 ## Lifecycle of a drift schedule
 
 ```
-                    snapl schedule create
+         snapl schedule create  |  invoke demo.up
    (none) ───────────────────────────────────────▶ active / report
                                                    │   ▲
               snapl schedule mode remediate --yes  │   │ snapl schedule mode report
-                                                   ▼   │ stand-down (failed repair)
+                                                   ▼   │
                                                 active / remediate
 
    active / <mode> ──snapl schedule pause --reason──▶ paused / <mode>    (suppress: no runs)
@@ -162,4 +173,4 @@ The existing lifecycle events (`WORKFLOW_STARTED`, `WORKFLOW_TERMINATED`, `WORKF
    any ──snapl schedule delete──▶ (none)        create on an existing schedule: interval only, state kept
 ```
 
-A response change while paused is allowed and takes effect on resume. A stand-down never changes `paused`.
+A response change while paused is allowed and takes effect on resume.

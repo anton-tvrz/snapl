@@ -20,7 +20,7 @@ The audit log is opened as `snapl audit` opens it (`SqliteAuditLog(settings.audi
 
 | command | does | confirmation | exit |
 | --- | --- | --- | --- |
-| `snapl schedule create [--use-case UC] [--every 5m]` | `ensure_drift_schedule`. Prints the view and the next run time. Re-running changes only the interval. | none: always `report` | 0, or 1 on error (interval below 1m, Temporal unreachable) |
+| `snapl schedule create [--use-case UC] [--every 5m]` | Identify the SoT (refuse on foreign, FR-031), then `ensure_drift_schedule`. Prints the view and the next run time. Re-running changes only the interval. | none: always `report` | 0, or 1 on error (interval below 1m, Temporal unreachable, SoT is another project's) |
 | `snapl schedule show [--use-case UC] [--json]` | `describe_drift_schedule` | none | 0; 1 if no schedule |
 | `snapl schedule mode {report\|remediate} [--use-case UC] [--yes] [--json]` | `set_drift_response` | **`remediate` only**: prompt unless `--yes`; with `--json`, refuse unless `--yes` | 0; 1 if no schedule or aborted |
 | `snapl schedule pause --reason TEXT [--use-case UC]` | `pause_drift_schedule` (suppress). `--reason` is required. | none | 0; 1 if no schedule |
@@ -39,7 +39,7 @@ Switch dcfabric to remediate?
   Every 5m, devices whose scan shows drift a deploy can fix will be redeployed
   without asking — including devices whose intent was changed in the Source of
   Truth. Undesired config is never removed. Devices: 6.
-  A failed repair switches the schedule back to report.
+  A failed repair is retried every run until you switch back to report.
 Continue? [y/N]
 ```
 
@@ -54,12 +54,12 @@ every           5m
 response        report
 state           active                       # or: paused — "maintenance: spine swap"
 next runs       03:10:00Z  03:15:00Z  03:20:00Z
-recent runs     03:00:00Z completed  drift-response-dcfabric-2026-10-28T03:00:00Z
+recent runs     03:00:00Z completed  6 devices: 5 clean, 1 drifted, 0 errored   wrote: no
                 03:05:00Z running    drift-response-dcfabric-2026-10-28T03:05:00Z
 skipped (overlap) 0
 ```
 
-`remediate` renders in the warning colour on a TTY. A stood-down schedule shows `response report` and the stand-down reason in `state`'s note line.
+`remediate` renders in the warning colour on a TTY. A completed remediate run that wrote shows `wrote: 1 device (1 ok, 0 failed)`. A failed run shows `failed` and its workflow id, so the operator can open it in the Web UI.
 
 ## `--json` shape (`show`, `create`, `mode`)
 
@@ -79,3 +79,17 @@ A Temporal error while looking the schedule up renders as `drift schedule  could
 ## Rendering new audit events
 
 `snapl audit` already renders `event_type.value` generically. `schedule_changed` and `drift_response` events need only one thing: the human renderer shows `payload["change"]` or `payload["decision"]` in the outcome column, so the timeline reads `schedule_changed  response_changed report→remediate  anton` rather than a bare event type.
+
+## `invoke demo.up` and `invoke demo.check` (FR-009)
+
+`demo.up` seeds, then calls `ensure_drift_schedule(use_case_id=<seeded use case>, interval=DEFAULT_SCAN_INTERVAL, actor="invoke:demo.up (<os user>)")`, then runs `check`. It reuses the identity check `seed` already ran, so a foreign SoT stops it at `seed`, before any schedule exists. It opens the audit log at the worker's path (`SNAPL_AUDIT_DB`, default `./snapl-audit.sqlite`) and may create the file (research R7). Re-running it changes nothing an operator set: response, pause and reason are preserved.
+
+`demo.check` adds one row, after `temporal reachable`:
+
+```
+  ✓ drift schedule         dcfabric: every 5m, report, active
+  ✗ drift schedule         none — run: uv run invoke demo.up
+  ✗ drift schedule         paused — "maintenance: spine swap" (snapl schedule resume)
+```
+
+Unlike the `snapl status` row, this one fails the preflight. `demo.check` answers "ready to demo?", and a demo without a watching schedule isn't ready. When Temporal is unreachable, the row is skipped, because `temporal reachable` already fails.

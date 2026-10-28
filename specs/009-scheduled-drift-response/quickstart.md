@@ -9,7 +9,7 @@ This describes the feature **as it will behave once implemented**. None of these
 The demo environment from `docs/demo-scenarios.md`, converged before you start:
 
 ```bash
-uv run invoke demo.up                 # stack + lab + seed + preflight
+uv run invoke demo.up                 # stack + lab + seed + report-mode schedule + preflight
 uv run invoke orchestrator.start      # worker, in its own terminal
 snapl reconcile --use-case dcfabric --drifted --yes   # converge first
 snapl scan --use-case dcfabric        # expect: 6 clean
@@ -21,8 +21,8 @@ snapl scan --use-case dcfabric        # expect: 6 clean
 uv run pytest tests/unit/test_orchestrator/test_schedules.py \
               tests/unit/test_orchestrator/test_remediation.py \
               tests/unit/test_orchestrator/test_workflow_drift_response.py \
-              tests/unit/test_orchestrator/test_activity_schedule.py \
-              tests/unit/test_presentation/test_cli_schedule.py -m unit -v
+              tests/unit/test_presentation/test_cli_schedule.py \
+              tests/unit/test_tasks/test_demo.py -m unit -v
 ```
 
 No Temporal cluster is needed. `DriftResponse` runs in the time-skipping environment with mocked activities. Schedules themselves are tested as pure builders and against a fake client, because the time-skipping test server does not implement schedules (research R11).
@@ -37,11 +37,11 @@ uv run pytest tests/integration/test_orchestrator/test_schedules_local.py -m int
 ## 1. Watch the fabric (report mode, the default)
 
 ```bash
-snapl schedule create --use-case dcfabric --every 1m   # demo cadence; default is 5m
-snapl schedule show
+snapl schedule show                                    # demo.up already created it: every 5m, report
+snapl schedule create --use-case dcfabric --every 1m   # optional: demo cadence; changes only the interval
 ```
 
-**Expect**: `response report`, `state active`, next runs one minute apart. In the Temporal Web UI (http://localhost:18034), go to **Schedules** and open `drift-response-dcfabric`.
+**Expect**: `response report`, `state active`, next runs one minute apart. Recent runs read like `6 devices: 6 clean, 0 drifted, 0 errored   wrote: no`. In the Temporal Web UI (http://localhost:18034), go to **Schedules** and open `drift-response-dcfabric`.
 
 Break something by hand, then wait. Do not run `snapl scan`:
 
@@ -64,7 +64,7 @@ snapl audit --device spine-01
 snapl schedule pause --reason "maintenance: spine-01 optics"   # suppress
 snapl schedule show                                             # state paused — "maintenance: ..."
 snapl schedule resume
-snapl schedule trigger                                          # one run now
+snapl schedule trigger                                          # one run now; completed in `show` within 30s (SC-012)
 snapl audit --workflow drift-response-dcfabric                  # the schedule's policy history
 ```
 
@@ -99,9 +99,9 @@ Switch back:
 snapl schedule mode report
 ```
 
-## 4. The stand-down (US4)
+## 4. A repair that fails
 
-Inducing a repair failure on the lab is awkward on purpose. One reliable way is to make the device refuse the write for a run, for example by stopping its gNMI server between scan and repair. That is fiddly, so US4 is evidenced mainly by the workflow unit test, plus one manual check when practical: after a failed repair, `snapl schedule show` reads `response report` with the stand-down reason, and the next run writes nothing.
+Stand-down is deferred. In this cut, a failed scheduled repair shows as `failed` in `snapl schedule show`, and the schedule stays in `remediate`. The next run tries again. The workflow unit test covers this. A live check is optional: switch to `report` or pause to stop the retries.
 
 ## Live evidence the implementation PR must state (Principle III)
 
@@ -111,7 +111,8 @@ This feature adds device writes nobody types, so the implementation PR lists wha
 2. **Remediate heals forward drift** within two intervals (SC-003), with the audit links scan → reconcile → deploy.
 3. **Undesired-only drift is never written.** On the `ethernet-1/7` case above, no `DeployIntent` starts across 3 or more runs (SC-005).
 4. **Overlap.** With the interval set to 1 minute and a worker that is stopped for 3 minutes and then restarted, exactly one run executes on return, and `skipped (overlap)` counts the rest (SC-006).
-5. **Persistence.** After `docker restart snapl-temporal-1` (or the compose service), `snapl schedule show` reports the same interval, response and paused state (SC-008).
+5. **Bootstrap.** `invoke demo.up` on a reset environment leaves one report-mode schedule, and `demo.check` reports it. Pause it, run `demo.up` again, and the pause and its reason survive (SC-013).
+6. **Persistence.** After `docker restart snapl-temporal-1` (or the compose service), `snapl schedule show` reports the same interval, response and paused state (SC-008).
 
 Captured real `ScheduleDescription` payloads from step 5 become test fixtures if any decode bug surfaces (Principle III: bugs found live leave a fixture behind).
 

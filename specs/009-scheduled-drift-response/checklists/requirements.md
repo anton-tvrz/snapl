@@ -13,7 +13,7 @@
 
 ## Requirement Completeness
 
-- [ ] No [NEEDS CLARIFICATION] markers remain
+- [x] No [NEEDS CLARIFICATION] markers remain
 - [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable
 - [x] Success criteria are technology-agnostic (no implementation details)
@@ -31,10 +31,11 @@
 
 ## Notes
 
-- **Three `[NEEDS CLARIFICATION]` markers remain on purpose.** The spec was written unattended, and each marker is a scope decision only the maintainer can make. Each has a provisional default recorded under Assumptions, and `research.md` R9 carries the same defaults as "pending maintainer", so the plan is complete either way:
-  1. Opt-in granularity for `remediate`: per use case (provisional), per device, or global (US3).
-  2. Calendar maintenance windows in this cut, or operator pause with a reason only (provisional) (FR-017).
-  3. Schedule registration: explicit operator command only (provisional), or also by `invoke demo.up` or at worker start (FR-009).
+- **The three `[NEEDS CLARIFICATION]` markers were resolved with the maintainer on 2026-10-28** (research R10):
+  1. `remediate` is opted into per use case.
+  2. Pause with a reason is the only suppress. Calendar windows are not built.
+  3. `snapl schedule create` and `invoke demo.up` create schedules. The worker never does.
+- Also decided on 2026-10-28: the stand-down story (former US4, FR-018, SC-009) is deferred to a follow-up issue. FR-031 (SoT identity refusal), the FR-024 run summary, SC-012 and SC-013 were carried over from the superseded spec 008 draft (#129).
 - The spec names Temporal, the CLI flags (`--yes`, `--json`) and the `snapl` commands. That follows the precedent of 005 and 006: Temporal is an architectural given in the constitution, and the CLI contract is spec 006's. These are treated as project-level constraints, not implementation leaks.
 - The default interval (5 minutes) and the minimum (1 minute) are assumptions taken from #99, not clarifications.
-- Run `/speckit-clarify` with the maintainer to resolve the three markers before `/speckit-tasks`.
+- Ready for `/speckit-tasks`.
