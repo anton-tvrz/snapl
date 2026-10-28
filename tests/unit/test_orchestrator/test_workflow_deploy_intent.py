@@ -19,7 +19,7 @@ from snapl_intent.exceptions import IntentConnectionError
 from snapl_observability.models import DriftItem, DriftReport, DriftStatus
 from snapl_orchestrator.activities import Activities, set_activities
 from snapl_orchestrator.activities.audit import record_audit_event
-from snapl_orchestrator.activities.collector import collect_running_state
+from snapl_orchestrator.activities.collector import collect_drift_state
 from snapl_orchestrator.activities.executor import apply_config
 from snapl_orchestrator.activities.intent import fetch_desired_state
 from snapl_orchestrator.activities.observability import detect_drift
@@ -134,7 +134,7 @@ async def _run_with(env: WorkflowEnvironment, deps: Activities, device_id: _uuid
         activities=[
             fetch_desired_state,
             apply_config,
-            collect_running_state,
+            collect_drift_state,
             detect_drift,
             record_audit_event,
         ],

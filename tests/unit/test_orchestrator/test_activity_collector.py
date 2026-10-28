@@ -1,4 +1,4 @@
-"""Unit tests for the collect_running_state activity."""
+"""Unit tests for the collect_drift_state activity."""
 
 from __future__ import annotations
 
@@ -8,7 +8,8 @@ import pytest
 
 from snapl_collector.models import CollectResult
 from snapl_orchestrator.activities import Activities, set_activities
-from snapl_orchestrator.activities.collector import collect_running_state
+from snapl_orchestrator.activities.collector import collect_drift_state
+from snapl_orchestrator.adapters.srlinux import DRIFT_PATHS
 
 pytestmark = pytest.mark.unit
 
@@ -32,42 +33,22 @@ def teardown_function() -> None:
 
 
 @pytest.mark.asyncio
-async def test_collect_running_state_with_paths_uses_collect(make_device) -> None:
+async def test_collect_drift_state_requests_the_adapter_drift_paths(make_device) -> None:
+    """The activity, not the workflow, owns which vendor paths drift detection needs (#119)."""
     device = make_device("spine-01")
     cr = CollectResult(
         device_id=device.id,
         device_name=device.name,
         success=True,
         data={"/interface": [{"name": "ethernet-1/1"}]},
-        paths=["/interface"],
+        paths=list(DRIFT_PATHS),
     )
     collector = MagicMock()
     collector.collect = AsyncMock(return_value=cr)
     collector.get_running_config = AsyncMock()
     _install(collector)
 
-    out = await collect_running_state(device, ["/interface"])
+    out = await collect_drift_state(device)
     assert out is cr
-    collector.collect.assert_awaited_once_with(device, ["/interface"])
+    collector.collect.assert_awaited_once_with(device, list(DRIFT_PATHS))
     collector.get_running_config.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_collect_running_state_empty_paths_uses_get_running_config(make_device) -> None:
-    device = make_device("spine-01")
-    cr = CollectResult(
-        device_id=device.id,
-        device_name=device.name,
-        success=True,
-        data={"/": {"interface": []}},
-        paths=["/"],
-    )
-    collector = MagicMock()
-    collector.collect = AsyncMock()
-    collector.get_running_config = AsyncMock(return_value=cr)
-    _install(collector)
-
-    out = await collect_running_state(device, [])
-    assert out is cr
-    collector.get_running_config.assert_awaited_once_with(device)
-    collector.collect.assert_not_awaited()
