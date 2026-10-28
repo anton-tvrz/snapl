@@ -243,11 +243,19 @@ class DeployIntentWorkflow:
         )
 
         # ---- Terminal classification ---------------------------------------
-        if report.status == DriftStatus.CLEAN:
+        # Verification judges the change just applied. Config the device carries
+        # but intent never asked for is drift, yet apply cannot remove it (#65),
+        # so it is reported on the result and in the audit trail without failing
+        # the deploy (#121, constitution VIII.5).
+        undesired = [item for item in report.items if item.undesired]
+        if report.status == DriftStatus.CLEAN or (
+            report.status == DriftStatus.DRIFTED and len(undesired) == len(report.items)
+        ):
             return await self._terminate_success(
                 wf_id=wf_id,
                 device_id=device_id,
                 started_at=started_at,
+                undesired_paths=[item.path for item in undesired],
             )
         if report.status == DriftStatus.DRIFTED:
             return await self._terminate_verification_failed(
@@ -273,6 +281,7 @@ class DeployIntentWorkflow:
         wf_id: str,
         device_id: UUID,
         started_at,
+        undesired_paths: list[str],
     ) -> WorkflowResult:
         await _record_event(
             workflow_id=wf_id,
@@ -280,6 +289,7 @@ class DeployIntentWorkflow:
             event_type=AuditEventType.WORKFLOW_TERMINATED,
             outcome="success",
             reason=WorkflowReason.SUCCEEDED,
+            payload={"undesired_paths": undesired_paths} if undesired_paths else None,
         )
         return WorkflowResult(
             workflow_id=wf_id,
@@ -287,6 +297,11 @@ class DeployIntentWorkflow:
             target_id=device_id,
             success=True,
             reason=WorkflowReason.SUCCEEDED,
+            detail=(
+                f"{len(undesired_paths)} path(s) not in intent remain on the device — removal is not automatic"
+                if undesired_paths
+                else None
+            ),
             started_at=started_at,
             ended_at=workflow.now(),
         )
