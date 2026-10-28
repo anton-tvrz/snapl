@@ -310,6 +310,85 @@ async def test_verification_drifted_yields_verification_failed(dcfabric_desired_
     assert len(result.drift_items) == 1
 
 
+def _undesired_item() -> DriftItem:
+    return DriftItem(
+        path="/interface[name=ethernet-1/7]/description",
+        desired=None,
+        actual="hand-added-by-operator",
+        entity_kind="Interface",
+        undesired=True,
+    )
+
+
+def _report_with(device, items: list[DriftItem]) -> DriftReport:
+    return DriftReport(
+        device_id=device.id,
+        device_name=device.name,
+        status=DriftStatus.DRIFTED,
+        items=items,
+        timestamp=_now(),
+    )
+
+
+async def _deploy_against(dcfabric_desired_state, report: DriftReport, audit: InMemoryAuditLog):
+    device = dcfabric_desired_state.device
+    intent_store = MagicMock()
+    intent_store.get_desired_state = AsyncMock(return_value=[dcfabric_desired_state])
+    executor = MagicMock()
+    executor.apply = AsyncMock(return_value=_apply(device))
+    collector = MagicMock()
+    collector.collect = AsyncMock(return_value=_collect(device))
+    observer = MagicMock()
+    observer.detect_drift = AsyncMock(return_value=report)
+    observer.emit_event = AsyncMock()
+
+    async with await WorkflowEnvironment.start_time_skipping(data_converter=pydantic_data_converter) as env:
+        return await _run_with(
+            env,
+            _build_activities(
+                intent_store=intent_store,
+                executor=executor,
+                collector=collector,
+                observer=observer,
+                audit_log=audit,
+            ),
+            device.id,
+        )
+
+
+@pytest.mark.asyncio
+async def test_verification_ignores_undesired_only_drift_but_reports_it(dcfabric_desired_state) -> None:
+    """Apply cannot remove config (#65), so undesired items must not fail it (#121).
+
+    They are still drift (Principle VIII.5): the result and the audit trail name them.
+    """
+    device = dcfabric_desired_state.device
+    audit = InMemoryAuditLog()
+
+    result = await _deploy_against(dcfabric_desired_state, _report_with(device, [_undesired_item()]), audit)
+
+    assert result.success is True
+    assert result.reason == WorkflowReason.SUCCEEDED
+    assert result.detail is not None
+    assert "1 path(s) not in intent" in result.detail
+    events = await audit.query_by_workflow(result.workflow_id)
+    terminated = [e for e in events if e.event_type == AuditEventType.WORKFLOW_TERMINATED]
+    assert terminated[-1].payload == {"undesired_paths": ["/interface[name=ethernet-1/7]/description"]}
+
+
+@pytest.mark.asyncio
+async def test_verification_fails_on_forward_drift_even_alongside_undesired(dcfabric_desired_state) -> None:
+    device = dcfabric_desired_state.device
+    forward = _drifted_report(device).items[0]
+
+    result = await _deploy_against(
+        dcfabric_desired_state, _report_with(device, [forward, _undesired_item()]), InMemoryAuditLog()
+    )
+
+    assert result.reason == WorkflowReason.VERIFICATION_FAILED
+    assert [item.undesired for item in result.drift_items] == [False, True]
+
+
 @pytest.mark.asyncio
 async def test_collect_failure_yields_collect_failed(dcfabric_desired_state) -> None:
     device = dcfabric_desired_state.device
