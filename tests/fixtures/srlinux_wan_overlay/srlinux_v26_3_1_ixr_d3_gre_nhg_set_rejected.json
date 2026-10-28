@@ -1,0 +1,29 @@
+{
+  "target": "clab-wan-spike-br1 (7220 IXR-D3, SR Linux v26.3.1)",
+  "rpc": "gNMI Set, update at path '/', pygnmi default encoding (same call as snapl's GnmiExecutor)",
+  "request": {
+    "network-instance": [
+      {
+        "name": "default",
+        "next-hop-groups": {
+          "group": [
+            {
+              "name": "to-hub-gre",
+              "nexthop": [
+                {
+                  "index": 1,
+                  "encapsulate-header": "gre",
+                  "gre": {
+                    "source-ip": "10.254.0.11",
+                    "destination-ip": "10.254.0.1"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "error": "Schema '/network-instance/next-hop-groups/group/nexthop' has no local leaf with the name 'encapsulate-header'. Options are [index, ip-address, admin-state, resolve]: Parse error on line 1"
+}

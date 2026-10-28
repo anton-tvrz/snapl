@@ -1,0 +1,1939 @@
+{
+  "/tunnel-interface[name=vxlan1]": {
+    "vxlan-interface": [
+      {
+        "index": 100,
+        "type": "srl_nokia-interfaces:routed",
+        "oper-state": "up",
+        "ingress": {
+          "vni": 100
+        },
+        "egress": {
+          "source-ip": "use-system-ipv4-address",
+          "inner-ethernet-header": {
+            "used-source-mac": "1A:2E:00:FF:00:00"
+          }
+        }
+      }
+    ]
+  },
+  "/network-instance[name=default]/protocols/bgp": {
+    "admin-state": "enable",
+    "oper-state": "up",
+    "under-maintenance": false,
+    "maintenance-group": "",
+    "autonomous-system": 65011,
+    "local-preference": 100,
+    "router-id": "10.254.0.11",
+    "max-ecmp-hash-buckets-per-next-hop-group": 128,
+    "as-path-options": {
+      "allow-own-as": 0,
+      "remove-private-as": {
+        "mode": "disabled",
+        "leading-only": false,
+        "ignore-peer-as": false
+      }
+    },
+    "best-path-selection": {
+      "always-compare-med": false,
+      "ignore-domain-path-length": false
+    },
+    "convergence": {
+      "min-wait-to-advertise": 0
+    },
+    "dynamic-neighbors": {
+      "accept": {
+        "max-sessions": 0
+      }
+    },
+    "ebgp-default-policy": {
+      "import-reject-all": true,
+      "export-reject-all": true
+    },
+    "failure-detection": {
+      "enable-bfd": false,
+      "fast-failover": true
+    },
+    "graceful-restart": {
+      "admin-state": "disable"
+    },
+    "afi-safi": [
+      {
+        "afi-safi-name": "srl_nokia-common:evpn",
+        "admin-state": "enable",
+        "received-routes": "1",
+        "active-routes": "1",
+        "send-community-type": [
+          "standard",
+          "large",
+          "extended"
+        ],
+        "add-paths": {
+          "receive": false,
+          "send": false
+        },
+        "ipv4-unicast": {
+          "group-based-policy": {
+            "add-community": false,
+            "install-from-community": false
+          }
+        },
+        "ipv6-unicast": {
+          "group-based-policy": {
+            "add-community": false,
+            "install-from-community": false
+          }
+        },
+        "evpn": {
+          "advertise-ipv6-next-hops": false,
+          "keep-all-routes": false,
+          "next-hop-self-route-reflector": false,
+          "inter-as-vpn": false,
+          "rapid-update": false,
+          "default-received-encapsulation": "vxlan",
+          "next-hop-resolution": {
+            "ipv4-next-hops": {
+              "route-resolution": {
+                "admin-state": "enable",
+                "ignore-default-routes": true
+              },
+              "tunnel-resolution": {}
+            },
+            "ipv6-next-hops": {
+              "route-resolution": {
+                "admin-state": "enable",
+                "ignore-default-routes": true
+              },
+              "tunnel-resolution": {}
+            }
+          }
+        }
+      },
+      {
+        "afi-safi-name": "srl_nokia-common:ipv4-unicast",
+        "admin-state": "enable",
+        "received-routes": "3",
+        "active-routes": "1",
+        "send-community-type": [
+          "standard",
+          "large",
+          "extended"
+        ],
+        "add-paths": {
+          "receive": false,
+          "send": false
+        },
+        "multipath": {
+          "allow-multiple-as": true,
+          "ebgp": {
+            "maximum-paths": 1
+          },
+          "ibgp": {
+            "maximum-paths": 1
+          }
+        },
+        "ipv4-unicast": {
+          "advertise-ipv6-next-hops": false,
+          "receive-ipv6-next-hops": false,
+          "convergence": {
+            "max-wait-to-advertise": 0,
+            "oper-max-wait-to-advertise": 0,
+            "up-peers-when-min-expired": 0,
+            "up-peers": 2,
+            "converged-peers": 2,
+            "first-up-peer-time": "15",
+            "last-up-peer-time": "15",
+            "convergence-state": "waiting",
+            "convergence-time": "0"
+          },
+          "group-based-policy": {
+            "add-community": false,
+            "install-from-community": false
+          }
+        },
+        "ipv6-unicast": {
+          "group-based-policy": {
+            "add-community": false,
+            "install-from-community": false
+          }
+        }
+      },
+      {
+        "afi-safi-name": "srl_nokia-common:ipv6-unicast",
+        "admin-state": "disable",
+        "received-routes": "0",
+        "active-routes": "0"
+      },
+      {
+        "afi-safi-name": "srl_nokia-common:route-target",
+        "admin-state": "disable",
+        "received-routes": "0",
+        "active-routes": "0"
+      }
+    ],
+    "preference": {
+      "ebgp": 170,
+      "ibgp": 170
+    },
+    "route-advertisement": {
+      "rapid-withdrawal": false,
+      "wait-for-fib-install": true
+    },
+    "route-flap-damping": {
+      "half-life": 15,
+      "max-suppress-time": 60,
+      "reuse-threshold": 750,
+      "suppress-threshold": 3000
+    },
+    "route-reflector": {
+      "client": false
+    },
+    "transport": {
+      "single-hop-connected-check": true,
+      "mtu-discovery": true,
+      "tcp-mss": 1024
+    },
+    "group": [
+      {
+        "group-name": "overlay",
+        "admin-state": "enable",
+        "under-maintenance": false,
+        "maintenance-group": "",
+        "local-preference": 100,
+        "next-hop-self": false,
+        "peer-as": 65500,
+        "route-flap-damping": false,
+        "as-path-options": {
+          "allow-own-as": 0,
+          "replace-peer-as": false,
+          "remove-private-as": {
+            "mode": "disabled",
+            "leading-only": false,
+            "ignore-peer-as": false
+          }
+        },
+        "failure-detection": {
+          "enable-bfd": false,
+          "fast-failover": true
+        },
+        "multihop": {
+          "admin-state": "disable"
+        },
+        "graceful-restart": {
+          "admin-state": "disable"
+        },
+        "afi-safi": [
+          {
+            "afi-safi-name": "srl_nokia-common:evpn",
+            "admin-state": "enable",
+            "send-community-type": [
+              "standard",
+              "extended",
+              "large"
+            ],
+            "add-paths": {
+              "receive": false,
+              "send": false
+            },
+            "evpn": {
+              "advertise-ipv6-next-hops": false,
+              "default-received-encapsulation": "vxlan",
+              "prefix-limit-received": {
+                "max-received-routes": 4294967295,
+                "warning-threshold-pct": 90
+              }
+            }
+          },
+          {
+            "afi-safi-name": "srl_nokia-common:ipv4-unicast",
+            "admin-state": "disable",
+            "ipv4-unicast": {
+              "link-bandwidth": {
+                "add-next-hop-count-to-received-bgp-routes": "disable"
+              }
+            }
+          },
+          {
+            "afi-safi-name": "srl_nokia-common:ipv6-unicast",
+            "admin-state": "disable",
+            "ipv6-unicast": {
+              "link-bandwidth": {
+                "add-next-hop-count-to-received-bgp-routes": "disable"
+              }
+            }
+          },
+          {
+            "afi-safi-name": "srl_nokia-common:route-target",
+            "admin-state": "disable"
+          }
+        ],
+        "local-as": {
+          "as-number": 65500,
+          "prepend-global-as": true,
+          "prepend-local-as": true
+        },
+        "route-reflector": {
+          "client": false
+        },
+        "send-default-route": {
+          "ipv4-unicast": false,
+          "ipv6-unicast": false
+        },
+        "timers": {
+          "connect-retry": 120,
+          "hold-time": 90,
+          "keepalive-interval": 30,
+          "minimum-advertisement-interval": 5,
+          "prefix-limit-restart-timer": 0
+        },
+        "transport": {
+          "mtu-discovery": true,
+          "tcp-mss": 1024,
+          "passive-mode": false,
+          "local-address": "10.254.0.11"
+        }
+      },
+      {
+        "group-name": "underlay-isp",
+        "admin-state": "enable",
+        "under-maintenance": false,
+        "maintenance-group": "",
+        "local-preference": 100,
+        "next-hop-self": false,
+        "route-flap-damping": false,
+        "export-policy": [
+          "export-loopbacks"
+        ],
+        "import-policy": [
+          "isp-in"
+        ],
+        "as-path-options": {
+          "allow-own-as": 0,
+          "replace-peer-as": false,
+          "remove-private-as": {
+            "mode": "disabled",
+            "leading-only": false,
+            "ignore-peer-as": false
+          }
+        },
+        "failure-detection": {
+          "enable-bfd": true,
+          "fast-failover": true
+        },
+        "multihop": {
+          "admin-state": "disable"
+        },
+        "graceful-restart": {
+          "admin-state": "disable"
+        },
+        "afi-safi": [
+          {
+            "afi-safi-name": "srl_nokia-common:evpn",
+            "admin-state": "disable"
+          },
+          {
+            "afi-safi-name": "srl_nokia-common:ipv4-unicast",
+            "admin-state": "enable",
+            "send-community-type": [
+              "standard",
+              "extended",
+              "large"
+            ],
+            "add-paths": {
+              "receive": false,
+              "send": false
+            },
+            "ipv4-unicast": {
+              "advertise-ipv6-next-hops": false,
+              "receive-ipv6-next-hops": false,
+              "prefix-limit-received": {
+                "max-received-routes": 4294967295,
+                "warning-threshold-pct": 90,
+                "prevent-teardown": false
+              },
+              "link-bandwidth": {
+                "add-next-hop-count-to-received-bgp-routes": "disable",
+                "auto-from-interface-speed": {
+                  "admin-state": "disable",
+                  "hold-down-time": 10,
+                  "transitive": false
+                }
+              }
+            }
+          },
+          {
+            "afi-safi-name": "srl_nokia-common:ipv6-unicast",
+            "admin-state": "disable",
+            "ipv6-unicast": {
+              "link-bandwidth": {
+                "add-next-hop-count-to-received-bgp-routes": "disable"
+              }
+            }
+          },
+          {
+            "afi-safi-name": "srl_nokia-common:route-target",
+            "admin-state": "disable"
+          }
+        ],
+        "local-as": {
+          "as-number": 65011,
+          "prepend-global-as": true,
+          "prepend-local-as": true
+        },
+        "route-reflector": {
+          "client": false
+        },
+        "send-default-route": {
+          "ipv4-unicast": false,
+          "ipv6-unicast": false
+        },
+        "timers": {
+          "connect-retry": 120,
+          "hold-time": 90,
+          "keepalive-interval": 30,
+          "minimum-advertisement-interval": 5,
+          "prefix-limit-restart-timer": 0
+        },
+        "transport": {
+          "mtu-discovery": true,
+          "tcp-mss": 1024,
+          "passive-mode": false
+        }
+      },
+      {
+        "group-name": "underlay-mpls",
+        "admin-state": "enable",
+        "under-maintenance": false,
+        "maintenance-group": "",
+        "local-preference": 100,
+        "next-hop-self": false,
+        "route-flap-damping": false,
+        "export-policy": [
+          "export-loopbacks"
+        ],
+        "import-policy": [
+          "mpls-in"
+        ],
+        "as-path-options": {
+          "allow-own-as": 0,
+          "replace-peer-as": false,
+          "remove-private-as": {
+            "mode": "disabled",
+            "leading-only": false,
+            "ignore-peer-as": false
+          }
+        },
+        "failure-detection": {
+          "enable-bfd": true,
+          "fast-failover": true
+        },
+        "multihop": {
+          "admin-state": "disable"
+        },
+        "graceful-restart": {
+          "admin-state": "disable"
+        },
+        "afi-safi": [
+          {
+            "afi-safi-name": "srl_nokia-common:evpn",
+            "admin-state": "disable"
+          },
+          {
+            "afi-safi-name": "srl_nokia-common:ipv4-unicast",
+            "admin-state": "enable",
+            "send-community-type": [
+              "standard",
+              "extended",
+              "large"
+            ],
+            "add-paths": {
+              "receive": false,
+              "send": false
+            },
+            "ipv4-unicast": {
+              "advertise-ipv6-next-hops": false,
+              "receive-ipv6-next-hops": false,
+              "prefix-limit-received": {
+                "max-received-routes": 4294967295,
+                "warning-threshold-pct": 90,
+                "prevent-teardown": false
+              },
+              "link-bandwidth": {
+                "add-next-hop-count-to-received-bgp-routes": "disable",
+                "auto-from-interface-speed": {
+                  "admin-state": "disable",
+                  "hold-down-time": 10,
+                  "transitive": false
+                }
+              }
+            }
+          },
+          {
+            "afi-safi-name": "srl_nokia-common:ipv6-unicast",
+            "admin-state": "disable",
+            "ipv6-unicast": {
+              "link-bandwidth": {
+                "add-next-hop-count-to-received-bgp-routes": "disable"
+              }
+            }
+          },
+          {
+            "afi-safi-name": "srl_nokia-common:route-target",
+            "admin-state": "disable"
+          }
+        ],
+        "local-as": {
+          "as-number": 65011,
+          "prepend-global-as": true,
+          "prepend-local-as": true
+        },
+        "route-reflector": {
+          "client": false
+        },
+        "send-default-route": {
+          "ipv4-unicast": false,
+          "ipv6-unicast": false
+        },
+        "timers": {
+          "connect-retry": 120,
+          "hold-time": 90,
+          "keepalive-interval": 30,
+          "minimum-advertisement-interval": 5,
+          "prefix-limit-restart-timer": 0
+        },
+        "transport": {
+          "mtu-discovery": true,
+          "tcp-mss": 1024,
+          "passive-mode": false
+        }
+      }
+    ],
+    "neighbor": [
+      {
+        "peer-address": "10.254.0.1",
+        "admin-state": "enable",
+        "under-maintenance": false,
+        "maintenance-group": "",
+        "peer-type": "ibgp",
+        "local-preference": 100,
+        "next-hop-self": false,
+        "peer-as": 65500,
+        "peer-group": "overlay",
+        "route-flap-damping": false,
+        "peer-router-id": "10.254.0.1",
+        "session-state": "established",
+        "last-state": "active",
+        "last-event": "recvOpen",
+        "last-established": "2026-10-28T16:36:15.500Z",
+        "established-transitions": "1",
+        "advertised-capabilities": [
+          "ROUTE_REFRESH",
+          "4-OCTET_ASN",
+          "MP_BGP",
+          "GRACEFUL_RESTART"
+        ],
+        "received-capabilities": [
+          "ROUTE_REFRESH",
+          "4-OCTET_ASN",
+          "MP_BGP",
+          "GRACEFUL_RESTART"
+        ],
+        "received-afi-safi": [
+          "srl_nokia-common:evpn"
+        ],
+        "received-end-of-rib": [
+          "srl_nokia-common:evpn"
+        ],
+        "sent-end-of-rib": [
+          "srl_nokia-common:evpn"
+        ],
+        "as-path-options": {
+          "allow-own-as": 0,
+          "replace-peer-as": false,
+          "remove-private-as": {
+            "mode": "disabled",
+            "leading-only": false,
+            "ignore-peer-as": false
+          }
+        },
+        "authentication": {
+          "transmit-active": false
+        },
+        "failure-detection": {
+          "enable-bfd": false,
+          "fast-failover": true
+        },
+        "graceful-restart": {
+          "admin-state": "disable",
+          "mode": "HELPER_ONLY"
+        },
+        "multihop": {
+          "admin-state": "disable"
+        },
+        "afi-safi": [
+          {
+            "afi-safi-name": "srl_nokia-common:evpn",
+            "admin-state": "enable",
+            "oper-state": "up",
+            "received-routes": 1,
+            "sent-routes": 1,
+            "active-routes": 1,
+            "rejected-routes": 0,
+            "suppressed-routes": 0,
+            "received-routes-withdrawn-due-to-error": 0,
+            "send-community-type": [
+              "standard",
+              "extended",
+              "large"
+            ],
+            "add-paths": {
+              "receive": false,
+              "send": false
+            },
+            "evpn": {
+              "advertise-ipv6-next-hops": false,
+              "default-received-encapsulation": "vxlan",
+              "prefix-limit-received": {
+                "max-received-routes": 4294967295,
+                "warning-threshold-pct": 90,
+                "prefix-limit-exceeded": false
+              }
+            }
+          },
+          {
+            "afi-safi-name": "srl_nokia-common:ipv4-unicast",
+            "admin-state": "disable",
+            "oper-state": "down",
+            "ipv4-unicast": {
+              "link-bandwidth": {
+                "add-next-hop-count-to-received-bgp-routes": "disable"
+              }
+            }
+          },
+          {
+            "afi-safi-name": "srl_nokia-common:ipv6-unicast",
+            "admin-state": "disable",
+            "oper-state": "down",
+            "ipv6-unicast": {
+              "link-bandwidth": {
+                "add-next-hop-count-to-received-bgp-routes": "disable"
+              }
+            }
+          },
+          {
+            "afi-safi-name": "srl_nokia-common:route-target",
+            "admin-state": "disable",
+            "oper-state": "down"
+          }
+        ],
+        "local-as": {
+          "as-number": 65500,
+          "prepend-global-as": true,
+          "prepend-local-as": true
+        },
+        "route-reflector": {
+          "client": false
+        },
+        "send-default-route": {
+          "ipv4-unicast": false,
+          "ipv6-unicast": false
+        },
+        "timers": {
+          "connect-retry": 120,
+          "hold-time": 90,
+          "keepalive-interval": 30,
+          "minimum-advertisement-interval": 5,
+          "prefix-limit-restart-timer": 0,
+          "negotiated-hold-time": 90,
+          "negotiated-keepalive-interval": 30
+        },
+        "transport": {
+          "mtu-discovery": true,
+          "tcp-mss": 1012,
+          "passive-mode": false,
+          "local-address": "10.254.0.11",
+          "local-port": 179,
+          "remote-port": 40141
+        },
+        "sent-messages": {
+          "queue-depth": 0,
+          "total-updates": "2",
+          "total-non-updates": "12",
+          "route-refresh": "0",
+          "total-messages": "14",
+          "total-notifications": 0
+        },
+        "received-messages": {
+          "queue-depth": 0,
+          "total-updates": "2",
+          "total-non-updates": "12",
+          "malformed-updates": "0",
+          "route-refresh": "0",
+          "total-messages": "14",
+          "last-update-time": "2026-10-28T16:36:21.500Z",
+          "total-notifications": 0
+        }
+      },
+      {
+        "peer-address": "10.255.1.0",
+        "admin-state": "enable",
+        "under-maintenance": false,
+        "maintenance-group": "",
+        "peer-type": "ebgp",
+        "local-preference": 100,
+        "next-hop-self": false,
+        "peer-as": 65000,
+        "peer-group": "underlay-mpls",
+        "route-flap-damping": false,
+        "peer-router-id": "10.254.0.1",
+        "session-state": "established",
+        "last-state": "openconfirm",
+        "last-event": "recvOpen",
+        "last-established": "2026-10-28T16:36:10.500Z",
+        "established-transitions": "1",
+        "export-policy": [
+          "export-loopbacks"
+        ],
+        "import-policy": [
+          "mpls-in"
+        ],
+        "advertised-capabilities": [
+          "ROUTE_REFRESH",
+          "4-OCTET_ASN",
+          "MP_BGP",
+          "GRACEFUL_RESTART"
+        ],
+        "received-capabilities": [
+          "ROUTE_REFRESH",
+          "4-OCTET_ASN",
+          "MP_BGP",
+          "GRACEFUL_RESTART"
+        ],
+        "received-afi-safi": [
+          "srl_nokia-common:ipv4-unicast"
+        ],
+        "received-end-of-rib": [
+          "srl_nokia-common:ipv4-unicast"
+        ],
+        "sent-end-of-rib": [
+          "srl_nokia-common:ipv4-unicast"
+        ],
+        "as-path-options": {
+          "allow-own-as": 0,
+          "replace-peer-as": false,
+          "remove-private-as": {
+            "mode": "disabled",
+            "leading-only": false,
+            "ignore-peer-as": false
+          }
+        },
+        "authentication": {
+          "transmit-active": false
+        },
+        "failure-detection": {
+          "enable-bfd": true,
+          "fast-failover": true
+        },
+        "graceful-restart": {
+          "admin-state": "disable",
+          "mode": "HELPER_ONLY"
+        },
+        "multihop": {
+          "admin-state": "disable"
+        },
+        "afi-safi": [
+          {
+            "afi-safi-name": "srl_nokia-common:evpn",
+            "admin-state": "disable",
+            "oper-state": "down"
+          },
+          {
+            "afi-safi-name": "srl_nokia-common:ipv4-unicast",
+            "admin-state": "enable",
+            "oper-state": "up",
+            "received-routes": 1,
+            "sent-routes": 1,
+            "active-routes": 1,
+            "rejected-routes": 0,
+            "suppressed-routes": 0,
+            "received-routes-withdrawn-due-to-error": 0,
+            "send-community-type": [
+              "standard",
+              "extended",
+              "large"
+            ],
+            "add-paths": {
+              "receive": false,
+              "send": false
+            },
+            "ipv4-unicast": {
+              "advertise-ipv6-next-hops": false,
+              "receive-ipv6-next-hops": false,
+              "prefix-limit-received": {
+                "max-received-routes": 4294967295,
+                "warning-threshold-pct": 90,
+                "prevent-teardown": false,
+                "prefix-limit-exceeded": false
+              },
+              "link-bandwidth": {
+                "add-next-hop-count-to-received-bgp-routes": "disable"
+              }
+            }
+          },
+          {
+            "afi-safi-name": "srl_nokia-common:ipv6-unicast",
+            "admin-state": "disable",
+            "oper-state": "down",
+            "ipv6-unicast": {
+              "link-bandwidth": {
+                "add-next-hop-count-to-received-bgp-routes": "disable"
+              }
+            }
+          },
+          {
+            "afi-safi-name": "srl_nokia-common:route-target",
+            "admin-state": "disable",
+            "oper-state": "down"
+          }
+        ],
+        "local-as": {
+          "as-number": 65011,
+          "prepend-global-as": true,
+          "prepend-local-as": true
+        },
+        "route-reflector": {
+          "client": false
+        },
+        "send-default-route": {
+          "ipv4-unicast": false,
+          "ipv6-unicast": false
+        },
+        "timers": {
+          "connect-retry": 120,
+          "hold-time": 90,
+          "keepalive-interval": 30,
+          "minimum-advertisement-interval": 5,
+          "prefix-limit-restart-timer": 0,
+          "negotiated-hold-time": 90,
+          "negotiated-keepalive-interval": 30
+        },
+        "transport": {
+          "mtu-discovery": true,
+          "tcp-mss": 1012,
+          "passive-mode": false,
+          "local-address": "10.255.1.1",
+          "local-port": 46639,
+          "remote-port": 179
+        },
+        "sent-messages": {
+          "queue-depth": 0,
+          "total-updates": "2",
+          "total-non-updates": "12",
+          "route-refresh": "0",
+          "total-messages": "14",
+          "total-notifications": 0
+        },
+        "received-messages": {
+          "queue-depth": 0,
+          "total-updates": "2",
+          "total-non-updates": "12",
+          "malformed-updates": "0",
+          "route-refresh": "0",
+          "total-messages": "14",
+          "last-update-time": "2026-10-28T16:36:15.500Z",
+          "total-notifications": 0
+        }
+      },
+      {
+        "peer-address": "198.51.100.0",
+        "admin-state": "enable",
+        "under-maintenance": false,
+        "maintenance-group": "",
+        "peer-type": "ebgp",
+        "local-preference": 100,
+        "next-hop-self": false,
+        "peer-as": 65000,
+        "peer-group": "underlay-isp",
+        "route-flap-damping": false,
+        "peer-router-id": "10.254.0.1",
+        "session-state": "established",
+        "last-state": "openconfirm",
+        "last-event": "recvOpen",
+        "last-established": "2026-10-28T16:36:10.500Z",
+        "established-transitions": "1",
+        "export-policy": [
+          "export-loopbacks"
+        ],
+        "import-policy": [
+          "isp-in"
+        ],
+        "advertised-capabilities": [
+          "ROUTE_REFRESH",
+          "4-OCTET_ASN",
+          "MP_BGP",
+          "GRACEFUL_RESTART"
+        ],
+        "received-capabilities": [
+          "ROUTE_REFRESH",
+          "4-OCTET_ASN",
+          "MP_BGP",
+          "GRACEFUL_RESTART"
+        ],
+        "received-afi-safi": [
+          "srl_nokia-common:ipv4-unicast"
+        ],
+        "received-end-of-rib": [
+          "srl_nokia-common:ipv4-unicast"
+        ],
+        "sent-end-of-rib": [
+          "srl_nokia-common:ipv4-unicast"
+        ],
+        "as-path-options": {
+          "allow-own-as": 0,
+          "replace-peer-as": false,
+          "remove-private-as": {
+            "mode": "disabled",
+            "leading-only": false,
+            "ignore-peer-as": false
+          }
+        },
+        "authentication": {
+          "transmit-active": false
+        },
+        "failure-detection": {
+          "enable-bfd": true,
+          "fast-failover": true
+        },
+        "graceful-restart": {
+          "admin-state": "disable",
+          "mode": "HELPER_ONLY"
+        },
+        "multihop": {
+          "admin-state": "disable"
+        },
+        "afi-safi": [
+          {
+            "afi-safi-name": "srl_nokia-common:evpn",
+            "admin-state": "disable",
+            "oper-state": "down"
+          },
+          {
+            "afi-safi-name": "srl_nokia-common:ipv4-unicast",
+            "admin-state": "enable",
+            "oper-state": "up",
+            "received-routes": 2,
+            "sent-routes": 2,
+            "active-routes": 0,
+            "rejected-routes": 0,
+            "suppressed-routes": 0,
+            "received-routes-withdrawn-due-to-error": 0,
+            "send-community-type": [
+              "standard",
+              "extended",
+              "large"
+            ],
+            "add-paths": {
+              "receive": false,
+              "send": false
+            },
+            "ipv4-unicast": {
+              "advertise-ipv6-next-hops": false,
+              "receive-ipv6-next-hops": false,
+              "prefix-limit-received": {
+                "max-received-routes": 4294967295,
+                "warning-threshold-pct": 90,
+                "prevent-teardown": false,
+                "prefix-limit-exceeded": false
+              },
+              "link-bandwidth": {
+                "add-next-hop-count-to-received-bgp-routes": "disable"
+              }
+            }
+          },
+          {
+            "afi-safi-name": "srl_nokia-common:ipv6-unicast",
+            "admin-state": "disable",
+            "oper-state": "down",
+            "ipv6-unicast": {
+              "link-bandwidth": {
+                "add-next-hop-count-to-received-bgp-routes": "disable"
+              }
+            }
+          },
+          {
+            "afi-safi-name": "srl_nokia-common:route-target",
+            "admin-state": "disable",
+            "oper-state": "down"
+          }
+        ],
+        "local-as": {
+          "as-number": 65011,
+          "prepend-global-as": true,
+          "prepend-local-as": true
+        },
+        "route-reflector": {
+          "client": false
+        },
+        "send-default-route": {
+          "ipv4-unicast": false,
+          "ipv6-unicast": false
+        },
+        "timers": {
+          "connect-retry": 120,
+          "hold-time": 90,
+          "keepalive-interval": 30,
+          "minimum-advertisement-interval": 5,
+          "prefix-limit-restart-timer": 0,
+          "negotiated-hold-time": 90,
+          "negotiated-keepalive-interval": 30
+        },
+        "transport": {
+          "mtu-discovery": true,
+          "tcp-mss": 1012,
+          "passive-mode": false,
+          "local-address": "198.51.100.1",
+          "local-port": 35751,
+          "remote-port": 179
+        },
+        "sent-messages": {
+          "queue-depth": 0,
+          "total-updates": "3",
+          "total-non-updates": "12",
+          "route-refresh": "0",
+          "total-messages": "15",
+          "total-notifications": 0
+        },
+        "received-messages": {
+          "queue-depth": 0,
+          "total-updates": "3",
+          "total-non-updates": "12",
+          "malformed-updates": "0",
+          "route-refresh": "0",
+          "total-messages": "15",
+          "last-update-time": "2026-10-28T16:36:18.500Z",
+          "total-notifications": 0
+        }
+      }
+    ]
+  },
+  "/bfd": {
+    "total-bfd-sessions": 2,
+    "total-unmatched-bfd-packets": "1",
+    "subinterface": [
+      {
+        "id": "ethernet-1/1.0",
+        "admin-state": "enable",
+        "desired-minimum-transmit-interval": 100000,
+        "required-minimum-receive": 100000,
+        "detection-multiplier": 3,
+        "minimum-echo-receive-interval": 0,
+        "max-hop-count": 255
+      },
+      {
+        "id": "ethernet-1/2.0",
+        "admin-state": "enable",
+        "desired-minimum-transmit-interval": 100000,
+        "required-minimum-receive": 100000,
+        "detection-multiplier": 3,
+        "minimum-echo-receive-interval": 0,
+        "max-hop-count": 255
+      }
+    ],
+    "network-instance": [
+      {
+        "name": "default",
+        "peer": [
+          {
+            "local-discriminator": 16385,
+            "oper-state": "up",
+            "local-address": "10.255.1.1",
+            "remote-address": "10.255.1.0",
+            "remote-discriminator": 16385,
+            "subscribed-protocols": "BGP",
+            "session-state": "UP",
+            "remote-session-state": "UP",
+            "last-state-transition": "2026-10-28T16:40:13.185Z",
+            "failure-transitions": "0",
+            "local-diagnostic-code": "NO_DIAGNOSTIC",
+            "remote-diagnostic-code": "NO_DIAGNOSTIC",
+            "remote-minimum-receive-interval": 1000000,
+            "remote-control-plane-independent": false,
+            "active-transmit-interval": 1000000,
+            "active-receive-interval": 1000000,
+            "remote-multiplier": 3,
+            "async": {
+              "last-packet-transmitted": "2026-10-28T16:40:59.626Z",
+              "last-packet-received": "2026-10-28T16:40:59.773Z",
+              "transmitted-packets": "378",
+              "received-packets": "378",
+              "up-transitions": "2"
+            }
+          },
+          {
+            "local-discriminator": 16386,
+            "oper-state": "up",
+            "local-address": "198.51.100.1",
+            "remote-address": "198.51.100.0",
+            "remote-discriminator": 16386,
+            "subscribed-protocols": "BGP",
+            "session-state": "UP",
+            "remote-session-state": "UP",
+            "last-state-transition": "2026-10-28T16:36:10.630Z",
+            "failure-transitions": "0",
+            "local-diagnostic-code": "NO_DIAGNOSTIC",
+            "remote-diagnostic-code": "NO_DIAGNOSTIC",
+            "remote-minimum-receive-interval": 1000000,
+            "remote-control-plane-independent": false,
+            "active-transmit-interval": 1000000,
+            "active-receive-interval": 1000000,
+            "remote-multiplier": 3,
+            "async": {
+              "last-packet-transmitted": "2026-10-28T16:40:59.997Z",
+              "last-packet-received": "2026-10-28T16:40:59.590Z",
+              "transmitted-packets": "374",
+              "received-packets": "375",
+              "up-transitions": "1"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "/network-instance[name=corp]": {
+    "type": "srl_nokia-network-instance:ip-vrf",
+    "admin-state": "enable",
+    "oper-state": "up",
+    "ip-forwarding": {
+      "receive-ipv4-check": true,
+      "receive-ipv6-check": true,
+      "secondary-default-lookup": {
+        "ipv4": "inactive",
+        "ipv6": "inactive"
+      }
+    },
+    "interface": [
+      {
+        "name": "ethernet-1/3.0",
+        "oper-state": "up",
+        "index": "5"
+      }
+    ],
+    "vxlan-interface": [
+      {
+        "name": "vxlan1.100",
+        "oper-state": "up"
+      }
+    ],
+    "icmp": {},
+    "icmp6": {},
+    "protocols": {
+      "bgp-evpn": {
+        "srl_nokia-bgp-evpn:bgp-instance": [
+          {
+            "id": 1,
+            "admin-state": "enable",
+            "encapsulation-type": "vxlan",
+            "vxlan-interface": "vxlan1.100",
+            "evi": 100,
+            "ecmp": 1,
+            "multi-homing-mode": "network",
+            "oper-state": "up",
+            "group-based-policy": {
+              "add-community": false,
+              "install-from-community": false
+            }
+          }
+        ]
+      },
+      "srl_nokia-linux:linux": {
+        "import-routes": false,
+        "export-routes": false,
+        "export-neighbors": true
+      },
+      "srl_nokia-bgp-vpn:bgp-vpn": {
+        "bgp-instance": [
+          {
+            "id": 1,
+            "route-distinguisher": {
+              "rd": "10.254.0.11:100",
+              "route-distinguisher-origin": "auto-derived-from-evi"
+            },
+            "route-target": {
+              "export-rt": "target:65500:100",
+              "export-route-target-origin": "manual",
+              "import-rt": "target:65500:100",
+              "import-route-target-origin": "manual"
+            }
+          }
+        ]
+      }
+    },
+    "route-table": {
+      "srl_nokia-ip-route-tables:ipv4-unicast": {
+        "route": [
+          {
+            "ipv4-prefix": "10.1.0.0/24",
+            "id": 0,
+            "route-type": "srl_nokia-common:bgp-evpn",
+            "route-owner": "bgp_evpn_mgr",
+            "origin-network-instance": "corp",
+            "leakable": false,
+            "leaked": false,
+            "metric": 0,
+            "preference": 170,
+            "active": true,
+            "route-limit-exceeded": false,
+            "last-app-update": "2026-10-28T16:36:21.586Z",
+            "next-hop-group": "512486276",
+            "next-hop-group-network-instance": "corp",
+            "resilient-hash": false,
+            "dynamic-load-balancing": false,
+            "fib-programming": {
+              "suppressed": false,
+              "last-successful-operation-type": "modify",
+              "last-successful-operation-timestamp": "2026-10-28T16:36:21.586Z",
+              "pending-operation-type": "none",
+              "last-failed-operation-type": "none"
+            }
+          },
+          {
+            "ipv4-prefix": "10.11.0.0/24",
+            "id": 5,
+            "route-type": "srl_nokia-common:local",
+            "route-owner": "net_inst_mgr",
+            "origin-network-instance": "corp",
+            "leakable": false,
+            "leaked": false,
+            "metric": 0,
+            "preference": 0,
+            "active": true,
+            "route-limit-exceeded": false,
+            "last-app-update": "2026-10-28T16:36:01.591Z",
+            "next-hop-group": "512486271",
+            "next-hop-group-network-instance": "corp",
+            "resilient-hash": false,
+            "dynamic-load-balancing": false,
+            "fib-programming": {
+              "suppressed": false,
+              "last-successful-operation-type": "add",
+              "last-successful-operation-timestamp": "2026-10-28T16:36:01.591Z",
+              "pending-operation-type": "none",
+              "last-failed-operation-type": "none"
+            }
+          },
+          {
+            "ipv4-prefix": "10.11.0.1/32",
+            "id": 5,
+            "route-type": "srl_nokia-common:host",
+            "route-owner": "net_inst_mgr",
+            "origin-network-instance": "corp",
+            "leakable": false,
+            "leaked": false,
+            "metric": 0,
+            "preference": 0,
+            "active": true,
+            "route-limit-exceeded": false,
+            "last-app-update": "2026-10-28T16:36:01.591Z",
+            "next-hop-group": "512486272",
+            "next-hop-group-network-instance": "corp",
+            "resilient-hash": false,
+            "dynamic-load-balancing": false,
+            "fib-programming": {
+              "suppressed": false,
+              "last-successful-operation-type": "add",
+              "last-successful-operation-timestamp": "2026-10-28T16:36:01.591Z",
+              "pending-operation-type": "none",
+              "last-failed-operation-type": "none"
+            }
+          },
+          {
+            "ipv4-prefix": "10.11.0.255/32",
+            "id": 5,
+            "route-type": "srl_nokia-common:host",
+            "route-owner": "net_inst_mgr",
+            "origin-network-instance": "corp",
+            "leakable": false,
+            "leaked": false,
+            "metric": 0,
+            "preference": 0,
+            "active": true,
+            "route-limit-exceeded": false,
+            "last-app-update": "2026-10-28T16:36:01.591Z",
+            "next-hop-group": "512486273",
+            "next-hop-group-network-instance": "corp",
+            "resilient-hash": false,
+            "dynamic-load-balancing": false,
+            "fib-programming": {
+              "suppressed": false,
+              "last-successful-operation-type": "add",
+              "last-successful-operation-timestamp": "2026-10-28T16:36:01.591Z",
+              "pending-operation-type": "none",
+              "last-failed-operation-type": "none"
+            }
+          }
+        ],
+        "route-summary": {
+          "route-type": [
+            {
+              "ip-route-type-name": "srl_nokia-common:bgp-evpn",
+              "active-routes": 1
+            },
+            {
+              "ip-route-type-name": "srl_nokia-common:host",
+              "active-routes": 2
+            },
+            {
+              "ip-route-type-name": "srl_nokia-common:local",
+              "active-routes": 1
+            }
+          ]
+        },
+        "prefix-length-distribution": {
+          "length": [
+            {
+              "prefix-length": 24,
+              "active-routes": 2
+            },
+            {
+              "prefix-length": 32,
+              "active-routes": 2
+            }
+          ]
+        }
+      },
+      "srl_nokia-ip-route-tables:ipv6-unicast": {
+        "route-summary": {
+          "route-type": [
+            {
+              "ip-route-type-name": "srl_nokia-common:bgp-evpn"
+            },
+            {
+              "ip-route-type-name": "srl_nokia-common:host"
+            },
+            {
+              "ip-route-type-name": "srl_nokia-common:local"
+            }
+          ]
+        }
+      },
+      "srl_nokia-ip-route-tables:next-hop-group": [
+        {
+          "index": "512486271",
+          "backup-next-hop-group": "0",
+          "backup-active": false,
+          "fib-programming": {
+            "last-successful-operation-type": "add",
+            "last-successful-operation-timestamp": "2026-10-28T16:36:01.591Z",
+            "pending-operation-type": "none",
+            "last-failed-operation-type": "none"
+          },
+          "next-hop": [
+            {
+              "id": 0,
+              "next-hop": "512486270",
+              "resolved": "not-applicable",
+              "resource-allocation-failed": false
+            }
+          ]
+        },
+        {
+          "index": "512486272",
+          "backup-next-hop-group": "0",
+          "backup-active": false,
+          "fib-programming": {
+            "last-successful-operation-type": "add",
+            "last-successful-operation-timestamp": "2026-10-28T16:36:01.591Z",
+            "pending-operation-type": "none",
+            "last-failed-operation-type": "none"
+          },
+          "next-hop": [
+            {
+              "id": 0,
+              "next-hop": "512486271",
+              "resolved": "not-applicable",
+              "resource-allocation-failed": false
+            }
+          ]
+        },
+        {
+          "index": "512486273",
+          "backup-next-hop-group": "0",
+          "backup-active": false,
+          "fib-programming": {
+            "last-successful-operation-type": "add",
+            "last-successful-operation-timestamp": "2026-10-28T16:36:01.591Z",
+            "pending-operation-type": "none",
+            "last-failed-operation-type": "none"
+          },
+          "next-hop": [
+            {
+              "id": 0,
+              "next-hop": "3",
+              "resolved": "not-applicable",
+              "resource-allocation-failed": false
+            }
+          ]
+        },
+        {
+          "index": "512486276",
+          "backup-next-hop-group": "0",
+          "backup-active": false,
+          "fib-programming": {
+            "last-successful-operation-type": "add",
+            "last-successful-operation-timestamp": "2026-10-28T16:36:21.585Z",
+            "pending-operation-type": "none",
+            "last-failed-operation-type": "none"
+          },
+          "next-hop": [
+            {
+              "id": 0,
+              "next-hop": "512486274",
+              "resolved": "true",
+              "resource-allocation-failed": false
+            }
+          ]
+        }
+      ],
+      "srl_nokia-ip-route-tables:next-hop": [
+        {
+          "index": "3",
+          "resource-allocation-failed": false,
+          "type": "srl_nokia-ip-route-tables:broadcast"
+        },
+        {
+          "index": "512486270",
+          "resource-allocation-failed": false,
+          "type": "srl_nokia-ip-route-tables:direct",
+          "ip-address": "10.11.0.1",
+          "subinterface": "ethernet-1/3.0"
+        },
+        {
+          "index": "512486271",
+          "resource-allocation-failed": false,
+          "type": "srl_nokia-ip-route-tables:extract"
+        },
+        {
+          "index": "512486274",
+          "resource-allocation-failed": false,
+          "type": "srl_nokia-ip-route-tables:indirect",
+          "ip-address": "10.254.0.1",
+          "indirect": {
+            "resolved": true,
+            "resolving-tunnel": {
+              "next-hop-group": "512486277",
+              "ip-prefix": "10.254.0.1/32",
+              "tunnel-type": "srl_nokia-common:vxlan",
+              "tunnel-owner": "vxlan_mgr",
+              "tunnel-id": 1
+            }
+          },
+          "vxlan-encapsulation": {
+            "vni": 100,
+            "interface": "vxlan1",
+            "destination-mac": "1A:70:03:FF:00:00"
+          }
+        }
+      ]
+    },
+    "tunnel-table": {
+      "srl_nokia-tunnel-tables:ipv4": {},
+      "srl_nokia-tunnel-tables:ipv6": {}
+    },
+    "srl_nokia-table-connections:table-connections": {
+      "admin-state": "disable"
+    },
+    "srl_nokia-tcp-udp:tcp": {},
+    "srl_nokia-tcp-udp:udp": {},
+    "srl_nokia-aft:afts": {
+      "next-hop-group": [
+        {
+          "id": "512486271",
+          "backup-next-hop-group": "0",
+          "backup-active": false,
+          "next-hop": [
+            {
+              "index": "512486270"
+            }
+          ]
+        },
+        {
+          "id": "512486272",
+          "backup-next-hop-group": "0",
+          "backup-active": false,
+          "next-hop": [
+            {
+              "index": "512486271"
+            }
+          ]
+        },
+        {
+          "id": "512486273",
+          "backup-next-hop-group": "0",
+          "backup-active": false,
+          "next-hop": [
+            {
+              "index": "3"
+            }
+          ]
+        },
+        {
+          "id": "512486276",
+          "backup-next-hop-group": "0",
+          "backup-active": false,
+          "next-hop": [
+            {
+              "index": "512486274"
+            }
+          ]
+        }
+      ],
+      "ipv4-unicast": {
+        "ipv4-entry": [
+          {
+            "prefix": "10.1.0.0/24",
+            "origin-protocol": "srl_nokia-common:bgp-evpn",
+            "next-hop-group": "512486276",
+            "next-hop-group-network-instance": "corp",
+            "origin-network-instance": "corp"
+          },
+          {
+            "prefix": "10.11.0.0/24",
+            "origin-protocol": "srl_nokia-common:local",
+            "next-hop-group": "512486271",
+            "next-hop-group-network-instance": "corp",
+            "origin-network-instance": "corp"
+          },
+          {
+            "prefix": "10.11.0.1/32",
+            "origin-protocol": "srl_nokia-common:host",
+            "next-hop-group": "512486272",
+            "next-hop-group-network-instance": "corp",
+            "origin-network-instance": "corp"
+          },
+          {
+            "prefix": "10.11.0.255/32",
+            "origin-protocol": "srl_nokia-common:host",
+            "next-hop-group": "512486273",
+            "next-hop-group-network-instance": "corp",
+            "origin-network-instance": "corp"
+          }
+        ]
+      },
+      "next-hop": [
+        {
+          "index": "3"
+        },
+        {
+          "index": "512486270",
+          "ip-address": "10.11.0.1",
+          "interface-ref": {
+            "interface": "ethernet-1/3",
+            "subinterface": 0
+          }
+        },
+        {
+          "index": "512486271"
+        },
+        {
+          "index": "512486274",
+          "ip-address": "10.254.0.1",
+          "encap-header": [
+            {
+              "index": 0,
+              "type": "vxlan",
+              "vxlan": {
+                "vni-label": 100
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "/routing-policy": {
+    "prefix-set": [
+      {
+        "name": "system-loopbacks",
+        "prefix": [
+          {
+            "ip-prefix": "10.254.0.0/24",
+            "mask-length-range": "32..32"
+          }
+        ]
+      }
+    ],
+    "policy": [
+      {
+        "name": "export-loopbacks",
+        "default-action": {
+          "policy-result": "reject",
+          "bgp": {
+            "standard-community": {
+              "method": "reference"
+            },
+            "extended-community": {
+              "method": "reference"
+            }
+          }
+        },
+        "statement": [
+          {
+            "name": "10",
+            "match": {
+              "prefix": {
+                "prefix-set": "system-loopbacks",
+                "match-set-options": "any"
+              },
+              "internal-tags": {
+                "match-set-options": "any"
+              },
+              "bgp": {
+                "as-path": {
+                  "match-set-options": "any"
+                },
+                "standard-community": {
+                  "match-set-options": "any"
+                },
+                "extended-community": {
+                  "match-set-options": "any"
+                }
+              }
+            },
+            "action": {
+              "policy-result": "accept",
+              "bgp": {
+                "standard-community": {
+                  "method": "reference"
+                },
+                "extended-community": {
+                  "method": "reference"
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "isp-in",
+        "default-action": {
+          "policy-result": "reject",
+          "bgp": {
+            "standard-community": {
+              "method": "reference"
+            },
+            "extended-community": {
+              "method": "reference"
+            }
+          }
+        },
+        "statement": [
+          {
+            "name": "10",
+            "match": {
+              "prefix": {
+                "prefix-set": "system-loopbacks",
+                "match-set-options": "any"
+              },
+              "internal-tags": {
+                "match-set-options": "any"
+              },
+              "bgp": {
+                "as-path": {
+                  "match-set-options": "any"
+                },
+                "standard-community": {
+                  "match-set-options": "any"
+                },
+                "extended-community": {
+                  "match-set-options": "any"
+                }
+              }
+            },
+            "action": {
+              "policy-result": "accept",
+              "bgp": {
+                "standard-community": {
+                  "method": "reference"
+                },
+                "extended-community": {
+                  "method": "reference"
+                },
+                "local-preference": {
+                  "value": 50,
+                  "operation": "set"
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "mpls-in",
+        "default-action": {
+          "policy-result": "reject",
+          "bgp": {
+            "standard-community": {
+              "method": "reference"
+            },
+            "extended-community": {
+              "method": "reference"
+            }
+          }
+        },
+        "statement": [
+          {
+            "name": "10",
+            "match": {
+              "prefix": {
+                "prefix-set": "system-loopbacks",
+                "match-set-options": "any"
+              },
+              "internal-tags": {
+                "match-set-options": "any"
+              },
+              "bgp": {
+                "as-path": {
+                  "match-set-options": "any"
+                },
+                "standard-community": {
+                  "match-set-options": "any"
+                },
+                "extended-community": {
+                  "match-set-options": "any"
+                }
+              }
+            },
+            "action": {
+              "policy-result": "accept",
+              "bgp": {
+                "standard-community": {
+                  "method": "reference"
+                },
+                "extended-community": {
+                  "method": "reference"
+                },
+                "local-preference": {
+                  "value": 200,
+                  "operation": "set"
+                }
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "/interface[name=ethernet-1/1]": {
+    "description": "underlay mpls",
+    "admin-state": "enable",
+    "mtu": 9232,
+    "loopback-mode": "none",
+    "ifindex": 32768,
+    "oper-state": "up",
+    "last-change": "2026-10-28T16:28:27.902Z",
+    "linecard": 1,
+    "forwarding-complex": "0",
+    "forwarding-mode": "store-and-forward",
+    "srl_nokia-interfaces-vlans:vlan-tagging": false,
+    "srl_nokia-interfaces-vlans:tpid": "srl_nokia-interfaces-vlans:TPID_0X8100",
+    "transceiver": {
+      "tx-laser": false,
+      "oper-state": "down",
+      "oper-down-reason": "not-present",
+      "ddm-events": true,
+      "srl_nokia-platform-healthz:healthz": {
+        "status": "unspecified"
+      }
+    },
+    "ethernet": {
+      "dac-link-training": false,
+      "lacp-port-priority": 32768,
+      "port-speed": "10G",
+      "hw-mac-address": "1A:2E:00:FF:00:01",
+      "flow-control": {
+        "receive": false
+      },
+      "forward-error-correction": {
+        "operational-host-if-fec": "disabled"
+      },
+      "hold-time": {
+        "up": 0,
+        "down": 0
+      },
+      "srl_nokia-dot1x:dot1x": {
+        "srl_nokia-dot1x-tunneling:tunnel": {
+          "tunnel-all": false,
+          "oper-rule": "trap-to-cpu-untagged"
+        }
+      },
+      "srl_nokia-interfaces-l2cp:l2cp-transparency": {
+        "tunnel-all-l2cp": false,
+        "lldp": {
+          "tunnel": false,
+          "oper-rule": "trap-to-cpu-untagged"
+        },
+        "lacp": {
+          "tunnel": false,
+          "oper-rule": "trap-to-cpu-untagged"
+        },
+        "xstp": {
+          "tunnel": false,
+          "oper-rule": "drop-tagged-and-untagged"
+        },
+        "ptp": {
+          "tunnel": false,
+          "oper-rule": "drop-tagged-and-untagged"
+        }
+      }
+    },
+    "subinterface": [
+      {
+        "index": 0,
+        "type": "srl_nokia-interfaces:routed",
+        "admin-state": "enable",
+        "ip-mtu": 1500,
+        "name": "ethernet-1/1.0",
+        "ifindex": 65536,
+        "oper-state": "up",
+        "last-change": "2026-10-28T16:35:55.548Z",
+        "ipv4": {
+          "admin-state": "enable",
+          "allow-directed-broadcast": false,
+          "address": [
+            {
+              "ip-prefix": "10.255.1.1/31",
+              "origin": "static",
+              "primary": [
+                null
+              ],
+              "status": "preferred"
+            }
+          ],
+          "unnumbered": {
+            "admin-state": "disable"
+          },
+          "srl_nokia-interfaces-nbr:arp": {
+            "duplicate-address-detection": true,
+            "timeout": 14400,
+            "learn-unsolicited": false,
+            "proxy-arp": false,
+            "neighbor": [
+              {
+                "ipv4-address": "10.255.1.0",
+                "link-layer-address": "1A:70:03:FF:00:01",
+                "origin": "dynamic",
+                "expiration-time": "2026-10-28T20:36:01.635Z",
+                "group-based-policy-tag": 0,
+                "datapath-programming": {
+                  "status": "success"
+                }
+              }
+            ]
+          }
+        },
+        "ipv6": {
+          "admin-state": "disable",
+          "srl_nokia-interfaces-nbr:neighbor-discovery": {
+            "duplicate-address-detection": true,
+            "reachable-time": 30,
+            "stale-time": 14400,
+            "learn-unsolicited": "none",
+            "proxy-nd": false,
+            "limit": {
+              "log-only": false,
+              "warning-threshold-pct": 90
+            }
+          },
+          "srl_nokia-interfaces-router-adv:router-advertisement": {
+            "router-role": {
+              "admin-state": "disable",
+              "current-hop-limit": 64,
+              "managed-configuration-flag": false,
+              "other-configuration-flag": false,
+              "max-advertisement-interval": 600,
+              "min-advertisement-interval": 200,
+              "reachable-time": 0,
+              "retransmit-time": 0,
+              "router-lifetime": 1800
+            }
+          }
+        }
+      }
+    ],
+    "sflow": {
+      "admin-state": "enable"
+    }
+  },
+  "/interface[name=system0]": {
+    "admin-state": "enable",
+    "ifindex": 1073808128,
+    "oper-state": "up",
+    "last-change": "2026-10-28T16:35:55.544Z",
+    "ethernet": {
+      "hold-time": {
+        "up": 0,
+        "down": 0
+      }
+    },
+    "subinterface": [
+      {
+        "index": 0,
+        "admin-state": "enable",
+        "name": "system0.0",
+        "ifindex": 1073873664,
+        "oper-state": "up",
+        "last-change": "2026-10-28T16:35:55.549Z",
+        "ipv4": {
+          "admin-state": "enable",
+          "allow-directed-broadcast": false,
+          "address": [
+            {
+              "ip-prefix": "10.254.0.11/32",
+              "origin": "static",
+              "status": "preferred"
+            }
+          ],
+          "unnumbered": {
+            "admin-state": "disable"
+          },
+          "srl_nokia-interfaces-nbr:arp": {
+            "duplicate-address-detection": true,
+            "timeout": 14400,
+            "learn-unsolicited": false,
+            "proxy-arp": false
+          }
+        },
+        "ipv6": {
+          "admin-state": "disable",
+          "srl_nokia-interfaces-nbr:neighbor-discovery": {
+            "duplicate-address-detection": true,
+            "reachable-time": 30,
+            "stale-time": 14400,
+            "learn-unsolicited": "none",
+            "proxy-nd": false,
+            "limit": {
+              "log-only": false,
+              "warning-threshold-pct": 90
+            }
+          },
+          "srl_nokia-interfaces-router-adv:router-advertisement": {
+            "router-role": {
+              "admin-state": "disable",
+              "current-hop-limit": 64,
+              "managed-configuration-flag": false,
+              "other-configuration-flag": false,
+              "max-advertisement-interval": 600,
+              "min-advertisement-interval": 200,
+              "reachable-time": 0,
+              "retransmit-time": 0,
+              "router-lifetime": 1800
+            }
+          }
+        }
+      }
+    ],
+    "sflow": {
+      "admin-state": "disable"
+    }
+  }
+}

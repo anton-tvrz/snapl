@@ -1,0 +1,333 @@
+{
+  "/network-instance[name=default]/protocols/bgp/neighbor": {
+    "neighbor": [
+      {
+        "peer-address": "10.254.0.1",
+        "under-maintenance": false,
+        "maintenance-group": "",
+        "peer-type": "ibgp",
+        "peer-router-id": "10.254.0.1",
+        "session-state": "established",
+        "last-state": "active",
+        "last-event": "recvOpen",
+        "last-established": "2026-10-28T16:36:15.500Z",
+        "established-transitions": "1",
+        "advertised-capabilities": [
+          "ROUTE_REFRESH",
+          "4-OCTET_ASN",
+          "MP_BGP",
+          "GRACEFUL_RESTART"
+        ],
+        "received-capabilities": [
+          "ROUTE_REFRESH",
+          "4-OCTET_ASN",
+          "MP_BGP",
+          "GRACEFUL_RESTART"
+        ],
+        "received-afi-safi": [
+          "srl_nokia-common:evpn"
+        ],
+        "received-end-of-rib": [
+          "srl_nokia-common:evpn"
+        ],
+        "sent-end-of-rib": [
+          "srl_nokia-common:evpn"
+        ],
+        "authentication": {
+          "transmit-active": false
+        },
+        "graceful-restart": {
+          "mode": "HELPER_ONLY"
+        },
+        "afi-safi": [
+          {
+            "afi-safi-name": "srl_nokia-common:evpn",
+            "oper-state": "up",
+            "received-routes": 1,
+            "sent-routes": 1,
+            "active-routes": 1,
+            "rejected-routes": 0,
+            "suppressed-routes": 0,
+            "received-routes-withdrawn-due-to-error": 0,
+            "evpn": {
+              "prefix-limit-received": {
+                "prefix-limit-exceeded": false
+              }
+            }
+          },
+          {
+            "afi-safi-name": "srl_nokia-common:ipv4-unicast",
+            "oper-state": "down"
+          },
+          {
+            "afi-safi-name": "srl_nokia-common:ipv6-unicast",
+            "oper-state": "down"
+          },
+          {
+            "afi-safi-name": "srl_nokia-common:route-target",
+            "oper-state": "down"
+          }
+        ],
+        "timers": {
+          "negotiated-hold-time": 90,
+          "negotiated-keepalive-interval": 30
+        },
+        "transport": {
+          "local-port": 179,
+          "remote-port": 40141
+        },
+        "sent-messages": {
+          "queue-depth": 0,
+          "total-updates": "2",
+          "total-non-updates": "20",
+          "route-refresh": "0",
+          "total-messages": "22",
+          "total-notifications": 0
+        },
+        "received-messages": {
+          "queue-depth": 0,
+          "total-updates": "2",
+          "total-non-updates": "20",
+          "malformed-updates": "0",
+          "route-refresh": "0",
+          "total-messages": "22",
+          "last-update-time": "2026-10-28T16:36:21.500Z",
+          "total-notifications": 0
+        }
+      },
+      {
+        "peer-address": "10.255.1.0",
+        "under-maintenance": false,
+        "maintenance-group": "",
+        "peer-type": "ebgp",
+        "peer-router-id": "0.0.0.0",
+        "session-state": "connect",
+        "last-state": "active",
+        "last-event": "openFail",
+        "last-established": "2026-10-28T16:42:33.500Z",
+        "established-transitions": "1",
+        "advertised-capabilities": [
+          "ROUTE_REFRESH",
+          "4-OCTET_ASN",
+          "MP_BGP",
+          "GRACEFUL_RESTART"
+        ],
+        "authentication": {
+          "transmit-active": false
+        },
+        "graceful-restart": {
+          "mode": "HELPER_ONLY"
+        },
+        "afi-safi": [
+          {
+            "afi-safi-name": "srl_nokia-common:evpn",
+            "oper-state": "down"
+          },
+          {
+            "afi-safi-name": "srl_nokia-common:ipv4-unicast",
+            "oper-state": "down",
+            "received-routes": 0,
+            "sent-routes": 0,
+            "active-routes": 0,
+            "rejected-routes": 0,
+            "suppressed-routes": 0,
+            "received-routes-withdrawn-due-to-error": 0,
+            "ipv4-unicast": {
+              "prefix-limit-received": {
+                "prefix-limit-exceeded": false
+              }
+            }
+          },
+          {
+            "afi-safi-name": "srl_nokia-common:ipv6-unicast",
+            "oper-state": "down"
+          },
+          {
+            "afi-safi-name": "srl_nokia-common:route-target",
+            "oper-state": "down"
+          }
+        ],
+        "timers": {
+          "negotiated-hold-time": 0,
+          "negotiated-keepalive-interval": 0
+        },
+        "transport": {
+          "local-port": 0,
+          "remote-port": 0
+        },
+        "sent-messages": {
+          "queue-depth": 0,
+          "total-updates": "0",
+          "total-non-updates": "0",
+          "route-refresh": "0",
+          "total-messages": "0",
+          "total-notifications": 0
+        },
+        "received-messages": {
+          "queue-depth": 0,
+          "total-updates": "0",
+          "total-non-updates": "0",
+          "malformed-updates": "0",
+          "route-refresh": "0",
+          "total-messages": "0",
+          "last-update-time": "2026-10-28T16:36:15.500Z",
+          "total-notifications": 0
+        }
+      },
+      {
+        "peer-address": "198.51.100.0",
+        "under-maintenance": false,
+        "maintenance-group": "",
+        "peer-type": "ebgp",
+        "peer-router-id": "10.254.0.1",
+        "session-state": "established",
+        "last-state": "openconfirm",
+        "last-event": "recvOpen",
+        "last-established": "2026-10-28T16:36:10.500Z",
+        "established-transitions": "1",
+        "advertised-capabilities": [
+          "ROUTE_REFRESH",
+          "4-OCTET_ASN",
+          "MP_BGP",
+          "GRACEFUL_RESTART"
+        ],
+        "received-capabilities": [
+          "ROUTE_REFRESH",
+          "4-OCTET_ASN",
+          "MP_BGP",
+          "GRACEFUL_RESTART"
+        ],
+        "received-afi-safi": [
+          "srl_nokia-common:ipv4-unicast"
+        ],
+        "received-end-of-rib": [
+          "srl_nokia-common:ipv4-unicast"
+        ],
+        "sent-end-of-rib": [
+          "srl_nokia-common:ipv4-unicast"
+        ],
+        "authentication": {
+          "transmit-active": false
+        },
+        "graceful-restart": {
+          "mode": "HELPER_ONLY"
+        },
+        "afi-safi": [
+          {
+            "afi-safi-name": "srl_nokia-common:evpn",
+            "oper-state": "down"
+          },
+          {
+            "afi-safi-name": "srl_nokia-common:ipv4-unicast",
+            "oper-state": "up",
+            "received-routes": 1,
+            "sent-routes": 1,
+            "active-routes": 1,
+            "rejected-routes": 0,
+            "suppressed-routes": 0,
+            "received-routes-withdrawn-due-to-error": 0,
+            "ipv4-unicast": {
+              "prefix-limit-received": {
+                "prefix-limit-exceeded": false
+              }
+            }
+          },
+          {
+            "afi-safi-name": "srl_nokia-common:ipv6-unicast",
+            "oper-state": "down"
+          },
+          {
+            "afi-safi-name": "srl_nokia-common:route-target",
+            "oper-state": "down"
+          }
+        ],
+        "timers": {
+          "negotiated-hold-time": 90,
+          "negotiated-keepalive-interval": 30
+        },
+        "transport": {
+          "local-port": 35751,
+          "remote-port": 179
+        },
+        "sent-messages": {
+          "queue-depth": 0,
+          "total-updates": "4",
+          "total-non-updates": "21",
+          "route-refresh": "0",
+          "total-messages": "25",
+          "total-notifications": 0
+        },
+        "received-messages": {
+          "queue-depth": 0,
+          "total-updates": "4",
+          "total-non-updates": "21",
+          "malformed-updates": "0",
+          "route-refresh": "0",
+          "total-messages": "25",
+          "last-update-time": "2026-10-28T16:42:34.500Z",
+          "total-notifications": 0
+        }
+      }
+    ]
+  },
+  "/bfd/network-instance[name=default]": {
+    "peer": [
+      {
+        "local-discriminator": 16386,
+        "oper-state": "up",
+        "local-address": "198.51.100.1",
+        "remote-address": "198.51.100.0",
+        "remote-discriminator": 16386,
+        "subscribed-protocols": "BGP",
+        "session-state": "UP",
+        "remote-session-state": "UP",
+        "last-state-transition": "2026-10-28T16:36:10.630Z",
+        "failure-transitions": "0",
+        "local-diagnostic-code": "NO_DIAGNOSTIC",
+        "remote-diagnostic-code": "NO_DIAGNOSTIC",
+        "remote-minimum-receive-interval": 1000000,
+        "remote-control-plane-independent": false,
+        "active-transmit-interval": 1000000,
+        "active-receive-interval": 1000000,
+        "remote-multiplier": 3,
+        "async": {
+          "last-packet-transmitted": "2026-10-28T16:45:10.068Z",
+          "last-packet-received": "2026-10-28T16:45:09.746Z",
+          "transmitted-packets": "696",
+          "received-packets": "697",
+          "up-transitions": "1"
+        }
+      }
+    ]
+  },
+  "/network-instance[name=default]/route-table/ipv4-unicast/route[ipv4-prefix=10.254.0.1/32]": {
+    "route": [
+      {
+        "ipv4-prefix": "10.254.0.1/32",
+        "id": 0,
+        "route-type": "srl_nokia-common:bgp",
+        "route-owner": "bgp_mgr",
+        "origin-network-instance": "default",
+        "leakable": false,
+        "leaked": false,
+        "metric": 0,
+        "preference": 170,
+        "active": true,
+        "route-limit-exceeded": false,
+        "last-app-update": "2026-10-28T16:42:34.212Z",
+        "next-hop-group": "512486278",
+        "next-hop-group-network-instance": "default",
+        "resilient-hash": false,
+        "dynamic-load-balancing": false,
+        "fib-programming": {
+          "suppressed": false,
+          "last-successful-operation-type": "modify",
+          "last-successful-operation-timestamp": "2026-10-28T16:42:34.214Z",
+          "pending-operation-type": "none",
+          "last-failed-operation-type": "none"
+        }
+      }
+    ]
+  },
+  "/interface[name=ethernet-1/1]/oper-state": "up"
+}
