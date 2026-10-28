@@ -19,7 +19,7 @@ from snapl_collector.models import CollectResult
 from snapl_observability.models import DriftItem, DriftReport, DriftStatus
 from snapl_orchestrator.activities import Activities, set_activities
 from snapl_orchestrator.activities.audit import record_audit_event
-from snapl_orchestrator.activities.collector import collect_running_state
+from snapl_orchestrator.activities.collector import collect_drift_state
 from snapl_orchestrator.activities.intent import (
     fetch_desired_state,
     fetch_devices_for_use_case,
@@ -105,7 +105,7 @@ async def _run(env: WorkflowEnvironment, deps: Activities, use_case_id: str):
         activities=[
             fetch_devices_for_use_case,
             fetch_desired_state,
-            collect_running_state,
+            collect_drift_state,
             detect_drift,
             record_audit_event,
         ],

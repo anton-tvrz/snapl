@@ -18,7 +18,7 @@ from temporalio.worker import Worker
 
 from snapl_orchestrator.activities import Activities, set_activities
 from snapl_orchestrator.activities.audit import record_audit_event
-from snapl_orchestrator.activities.collector import collect_running_state
+from snapl_orchestrator.activities.collector import collect_drift_state
 from snapl_orchestrator.activities.executor import apply_config
 from snapl_orchestrator.activities.intent import (
     fetch_desired_state,
@@ -38,7 +38,7 @@ _DEPLOY_ACTIVITIES = [
     fetch_desired_state,
     fetch_devices_for_use_case,
     apply_config,
-    collect_running_state,
+    collect_drift_state,
     detect_drift,
     record_audit_event,
 ]

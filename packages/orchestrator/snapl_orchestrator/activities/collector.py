@@ -7,16 +7,17 @@ from temporalio import activity
 from snapl_collector.models import CollectResult
 from snapl_intent.models import Device
 from snapl_orchestrator.activities import get_activities
+from snapl_orchestrator.adapters.srlinux import DRIFT_PATHS
 
 
-@activity.defn(name="collect_running_state")
-async def collect_running_state(device: Device, paths: list[str]) -> CollectResult:
-    """Retrieve live device state via the Collector.
+@activity.defn(name="collect_drift_state")
+async def collect_drift_state(device: Device) -> CollectResult:
+    """Retrieve the live device state that drift detection compares against intent.
 
-    Empty ``paths`` retrieves the full running configuration; non-empty
-    ``paths`` performs a targeted gNMI GET for those YANG paths.
+    Which paths to fetch is vendor knowledge, so it is resolved here from the
+    collect adapter rather than passed in by the workflows (#119). The paths
+    are exactly the containers ``detect_drift`` normalizes, so the two always
+    agree on shape.
     """
     activities = get_activities()
-    if not paths:
-        return await activities.collector.get_running_config(device)
-    return await activities.collector.collect(device, paths)
+    return await activities.collector.collect(device, list(DRIFT_PATHS))

@@ -77,7 +77,7 @@ Add `--json` to any command to get the same result as machine-readable stdout.
 snapl deploy spine-01
 ```
 
-**Expect:** `True succeeded 0:00:0X`. The worker log shows the four activities in order: `fetch_desired_state → apply_config → collect_running_state → detect_drift`.
+**Expect:** `True succeeded 0:00:0X`. The worker log shows the four activities in order: `fetch_desired_state → apply_config → collect_drift_state → detect_drift`.
 
 **Temporal UI:** open the `deploy-intent-…` workflow → Event History. Every activity, retry, input and output payload is durably recorded — this history *is* the deploy receipt.
 

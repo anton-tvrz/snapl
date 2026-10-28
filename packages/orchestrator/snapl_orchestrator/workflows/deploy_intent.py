@@ -18,11 +18,10 @@ with workflow.unsafe.imports_passed_through():
     )
     from snapl_observability.models import DriftStatus
     from snapl_orchestrator.activities.audit import record_audit_event
-    from snapl_orchestrator.activities.collector import collect_running_state
+    from snapl_orchestrator.activities.collector import collect_drift_state
     from snapl_orchestrator.activities.executor import apply_config
     from snapl_orchestrator.activities.intent import fetch_desired_state
     from snapl_orchestrator.activities.observability import detect_drift
-    from snapl_orchestrator.adapters.srlinux import DRIFT_PATHS
     from snapl_orchestrator.models import (
         AuditEvent,
         AuditEventType,
@@ -180,12 +179,12 @@ class DeployIntentWorkflow:
         )
 
         # ---- Collect verification state ------------------------------------
-        # Fetch the entity container paths the drift adapter expands, not the
+        # The activity fetches the containers the drift adapter expands, not the
         # rendered payload's container names (which aren't valid gNMI paths).
         try:
             collected = await workflow.execute_activity(
-                collect_running_state,
-                args=[desired.device, list(DRIFT_PATHS)],
+                collect_drift_state,
+                args=[desired.device],
                 start_to_close_timeout=timedelta(seconds=30),
                 retry_policy=_COLLECT_RETRY,
             )
@@ -208,7 +207,7 @@ class DeployIntentWorkflow:
             workflow_id=wf_id,
             device_id=device_id,
             event_type=AuditEventType.ACTIVITY_COMPLETED,
-            activity_name="collect_running_state",
+            activity_name="collect_drift_state",
             outcome="success",
         )
 
