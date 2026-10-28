@@ -173,6 +173,7 @@ Not run tonight. The lab, Docker, Infrahub and Temporal were not touched while w
 | `0.0.0.0/0` normalized away by the device | "prefix added to any-match" becomes unhealable | Fall back to unset prefixes and document it (R2). |
 | `ixr-d2` emulation rejects interface ACLs | lab type change | One-line topology change, confirmed in C2. |
 | New SoT kinds race seeding (#87) | silent attribute loss on seed | Readiness poll extended (R5). C7. |
+| WAN interface role `upstream` rejected, because the Batch 3 `InterfacePhysical.role` re-declaration overrides the base choices | seed fails | Add a `wan` choice to project-owned `network_interface.yml` (R20). C7. Device roles use existing base choices (`edge`, `core`). |
 | Hand-inserted permit survives reconcile | an operator believes the site is healed | Report-only stated in the reconcile summary and docs. Q3 lets the maintainer pull removal forward. |
 
 ## Post-Design Constitution Re-Check

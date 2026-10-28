@@ -188,7 +188,7 @@ The cost is a new executor write path, a new CLI confirmation flow and their liv
 - Its own management network, `clab-snapl-site-edge` on **172.20.22.0/24**. This is the next free /24 after dcfabric's 172.20.21.0/24, registered in `dev/knowledge/host-resource-registry.md` in the same commit.
 - The SR Linux image is pinned to the same `26.3.1` as dcfabric.
 
-| node | kind / type | mgmt pin | role |
+| node | kind / type | mgmt pin | purpose (seed device role per R20) |
 | --- | --- | --- | --- |
 | `site-edge-01` | nokia_srlinux / ixr-d2 | 172.20.22.11 | site edge |
 | `carrier-a` | nokia_srlinux / ixr-d2 | 172.20.22.21 | carrier (stands in for the underlay) |
@@ -290,3 +290,14 @@ That is a second feature's worth of boundary changes.
 - The constitution's "Site Edge (next)" heading becomes current through the amendment process (ADR plus patch bump), in the maintainer's PR.
 
 Until the live arc runs green, none of these claim anything.
+
+## R20: Device and interface role values in the seed
+
+**Decision**:
+- Seed `site-edge-01` with device role `edge` and `carrier-a` with device role `core`. Both are existing choices of the vendored `DcimDevice.role` Dropdown (`base/dcim.yml`: core, edge, cpe, spine, leaf, tor). There is no `carrier` choice, and `base/` stays unmodified.
+- The office and OT interfaces use interface role `access`.
+- The WAN uplink uses `upstream`, which is a choice of the base `DcimInterface.role`.
+
+**Risk, confirmed by capture C7**: `network_interface.yml` (Batch 3) re-declares `role` on `InterfacePhysical` with only `fabric`, `loopback`, `management` and `access`. How Infrahub resolves that against the base Dropdown, whether by merge or by override, is not established from the desk. If the extension overrides it, `upstream` is rejected at seed time. The fix is then to add a `wan` choice to the project-owned `network_interface.yml` extension, which is allowed because Batch 3 is snapl's own file, and seed that instead.
+
+**Rationale**: The seed must use values the provisioned schema accepts, or the seed fails. dcfabric only exercises `fabric` and `loopback`, so the base/extension interplay has never been tested with another value.
