@@ -207,8 +207,6 @@ markers = [
     "live: Live infrastructure tests (requires running Infrahub/Containerlab/gNMI)",
     "e2e: End-to-end pipeline tests",
     "slow: Slow tests (>30 seconds)",
-    "pre_deployment: Pre-deployment validation",
-    "post_deployment: Post-deployment validation",
 ]
 addopts = "-v --strict-markers --tb=short"
 asyncio_mode = "auto"

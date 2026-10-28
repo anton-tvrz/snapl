@@ -35,7 +35,7 @@ snapl/
 │   └── e2e/                    # End-to-end pipeline tests
 │
 ├── containerlab/               # Lab topologies per use case
-├── development/                # Docker Compose, monitoring stack
+├── development/                # Docker Compose dev stack (Infrahub, Temporal)
 ├── changelog/                  # Towncrier changelog fragments
 ├── tasks/                      # Invoke task runner modules
 │
@@ -48,7 +48,8 @@ snapl/
 │   ├── prompts/                # Prompt templates
 │   └── skills/                 # AI agent skills
 │
-├── .specify/                   # SDD artifacts (constitution, specs, contracts)
+├── .specify/                   # Spec Kit tooling + constitution
+├── specs/                      # Feature specifications
 ├── pyproject.toml              # Root workspace config
 └── AGENTS.md                   # AI agent entry point
 ```

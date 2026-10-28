@@ -5,7 +5,7 @@
 
 ## What Is This Project?
 
-**snapl** is a modular network automation prototype that implements the Network Automation Forum (NAF) Framework's six building blocks as independent Python packages. It automates the full lifecycle of network configuration changes across multiple use cases using:
+**snapl** is a network automation prototype that runs a closed intent → deploy → verify → drift → reconcile loop against a real Nokia SR Linux fabric, built as the Network Automation Forum (NAF) Framework's six building blocks, each an independent Python package. It uses:
 
 - **Infrahub** (OpsMill) — Graph-based Source of Truth (SoT) for network inventory and intended state
 - **Temporal** — Durable workflow orchestration engine for auditable automation workflows
@@ -14,17 +14,20 @@
 
 **NAF Loop:** Intent (desired state) -> Executor (deploy) -> Collector (verify) -> Observability (detect drift) -> Orchestrator (coordinate) -> back to Executor
 
-**Use Cases:** Datacenter fabric, client edge, SD-WAN, WAN — all prototyped with Nokia SR Linux.
+**Use Cases:** Datacenter fabric (`dcfabric`) is the only implemented use case. Site edge (#117) is next. SD-WAN and WAN backbone are roadmap, not started. Don't add seed data, templates or schema for a use case without a spec.
+
+**Claims:** Say only what the lab demonstrates. snapl is single-vendor (SR Linux) and not production-grade. See the constitution's Vision and Principle VI before writing README or docs text.
 
 ## Repository Structure
 
 ```
 snapl/
-├── .specify/                   # SDD artifacts (constitution, specs, contracts)
+├── .specify/                   # Spec Kit tooling
 │   ├── memory/constitution.md  # Project constitution (governing document)
-│   ├── specs/                  # Feature specifications (per module/use case)
 │   ├── scripts/                # Automation scripts
 │   └── templates/              # Spec/plan/task templates
+│
+├── specs/                      # Feature specifications (one directory per spec)
 │
 ├── packages/                   # NAF building block packages (uv workspace)
 │   ├── intent/                 # snapl-intent: SoT, desired state, schemas
@@ -47,7 +50,7 @@ snapl/
 │   └── e2e/                    # End-to-end tests
 │
 ├── containerlab/               # Lab topologies per use case
-├── development/                # Docker Compose, monitoring stack
+├── development/                # Docker Compose dev stack (Infrahub, Temporal)
 ├── changelog/                  # Towncrier changelog fragments
 ├── tasks/                      # Invoke task runner modules
 │
@@ -82,9 +85,12 @@ This is a **uv workspace monorepo** with six packages mapped to NAF building blo
 **Dependency direction** (no circular deps):
 ```
 presentation -> orchestrator -> {intent, executor, collector, observability}
-observability -> collector
+observability -> {collector, intent}
 executor -> intent
+collector -> intent
 ```
+
+Any package may import another block's models and exceptions. Known deviations are recorded in ADR-0004.
 
 ## Key Commands
 
@@ -113,19 +119,17 @@ uv run pytest tests/unit/ -m unit -v    # Direct pytest
 ## Development Methodology
 
 ### Spec-Driven Development (SDD)
-Every module follows: Constitution -> Specify -> Plan -> Tasks -> Implement.
+A spec (Specify -> Plan -> Tasks -> Implement) is required for a new block, a new capability, or a new kind of write to a device or the SoT. Fixes and refactors need an issue with a reproduction instead.
 Constitution is at `.specify/memory/constitution.md`.
 
 ### Test-Driven Development (TDD)
-Tests are written FIRST, then implementation. Red-Green-Refactor. 80% coverage minimum.
+Tests are written FIRST, then implementation. Red-Green-Refactor. 80% coverage minimum, as a regression net. PRs that touch a system boundary (Infrahub shapes, gNMI payloads, templates, drift diff, collect adapter) state what was run against the live lab and what was observed. Bugs found live add a captured real payload as a fixture.
 
 ### NAF Contract-First
-Each NAF block exposes an abstract base class + Pydantic models as its public interface:
-- `IntentStore` ABC: `get_desired_state()`, `get_schema()`, `seed()`
-- `Executor` ABC: `apply()`, `rollback()`, `dry_run()`
-- `Collector` ABC: `collect()`, `get_running_config()`
-- `Observer` ABC: `detect_drift()`, `emit_event()`, `log_audit()`
-- Orchestrator: Temporal workflows composing the above
+Each NAF block exposes an abstract base class + Pydantic models as its public interface. The contract lives in each package's `abc.py`. Read it rather than relying on a summary. The Orchestrator composes blocks through these ABCs in Temporal workflows.
+
+### Vendor seams
+Vendor-specific code lives only in the gNMI block implementations, Jinja templates, the drift field map and the collect-to-diff adapter (`snapl_orchestrator/adapters/`). Workflows and models never name a vendor.
 
 ## Work Tracking
 

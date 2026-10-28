@@ -40,10 +40,9 @@ topology:
 
 | File | Use Case | Nodes |
 |------|----------|-------|
-| `dc-fabric.clab.yml` | Datacenter Fabric | Spine-leaf eBGP |
-| `client-edge.clab.yml` | Client Edge | Edge routers |
-| `sd-wan.clab.yml` | SD-WAN | Hub/spoke |
-| `wan.clab.yml` | WAN | Backbone routers |
+| `containerlab/dcfabric.yml` | Datacenter Fabric | 2 spines, 4 leaves, eBGP |
+
+Only `dcfabric` exists. Site edge (#117) will add the next topology; SD-WAN and WAN backbone are roadmap.
 
 ## Lab Lifecycle Commands
 
