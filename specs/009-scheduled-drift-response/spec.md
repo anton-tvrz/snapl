@@ -96,7 +96,7 @@ Once report mode has been trusted, an operator decides a use case should heal it
 
 ### Deferred: Self-Healing Stands Down When a Repair Fails (was User Story 4, P3)
 
-Deferred to a follow-up issue on 2026-10-28. In the deferred behaviour, a failed scheduled repair would switch the schedule back to `report` by itself. It is the only part of this feature where a run changes its own schedule, which needs an activity holding a Temporal client and its own audit path. Deferring it does not break the constitution, because US3 already satisfies VIII.2.
+Deferred to #136 on 2026-10-28. In the deferred behaviour, a failed scheduled repair would switch the schedule back to `report` by itself. It is the only part of this feature where a run changes its own schedule, which needs an activity holding a Temporal client and its own audit path. Deferring it does not break the constitution, because US3 already satisfies VIII.2.
 
 Until it lands, a device whose repair fails is attempted again on the next run. Applies are idempotent (VIII.4), so the device is not harmed. The cost is one failed repair record per interval in the audit trail until an operator switches the schedule to `report` or pauses it. The follow-up issue should also consider a proportional blast-radius guard (see Assumptions).
 
