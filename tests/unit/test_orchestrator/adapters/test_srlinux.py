@@ -143,3 +143,21 @@ def test_a_real_change_is_flagged_as_drift(collected: dict) -> None:
     assert len(asn_drift) == 1
     assert asn_drift[0].desired == 65099
     assert asn_drift[0].actual == 65011
+
+
+_DESCRIPTION_ONLY_FIXTURE = _FIXTURE.parent / "srlinux_v26_3_1_description_only_port.json"
+
+
+def test_a_description_only_port_reports_just_the_description_as_undesired() -> None:
+    """Real v26.3.1 payload (#122): the device adds its default mtu to a port given only a
+    description, and that default must not read as hand-added config. The untouched
+    neighbouring port stays invisible."""
+    collected = json.loads(_DESCRIPTION_ONLY_FIXTURE.read_text())
+    normalized = normalize_srlinux_state(collected)
+    assert normalized["/interface[name=ethernet-1/7]"]["mtu"] == 9232, "fixture no longer shows the device default"
+
+    items = diff_desired_vs_actual(_desired_matching_fixture(), normalized)
+
+    assert [(item.path, item.actual) for item in items if item.undesired] == [
+        ("/interface[name=ethernet-1/7]/description", "hand-added-by-operator")
+    ]

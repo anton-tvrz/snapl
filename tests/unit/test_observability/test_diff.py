@@ -241,6 +241,47 @@ class TestUndesiredEntities:
         assert all(item.desired is None for item in reported), "an undesired entity has no desired value"
         assert {item.actual for item in reported} == {"192.0.2.1", 30}
 
+    # SR Linux v26.3.1 reports its default mtu (9232) on any port carrying config,
+    # though nobody set one (#122). A default carries no operator intent.
+
+    def test_a_device_default_mtu_alone_does_not_mark_a_port_configured(self):
+        from snapl_observability.structural.diff import diff_desired_vs_actual
+
+        desired = _build_desired_state()
+        actual = _matching_actual_data(desired)
+        actual["/interface[name=ethernet-1/7]"] = {**_bare_interface(), "mtu": 9232}
+
+        assert diff_desired_vs_actual(desired, actual) == []
+
+    def test_a_device_default_mtu_is_not_reported_beside_real_config(self):
+        from snapl_observability.structural.diff import diff_desired_vs_actual
+
+        desired = _build_desired_state()
+        actual = _matching_actual_data(desired)
+        actual["/interface[name=ethernet-1/7]"] = {
+            **_bare_interface(),
+            "description": "hand-added-by-operator",
+            "enabled": True,
+            "mtu": 9232,
+        }
+
+        items = diff_desired_vs_actual(desired, actual)
+
+        assert [(item.path, item.actual) for item in items] == [
+            ("/interface[name=ethernet-1/7]/description", "hand-added-by-operator")
+        ]
+
+    def test_a_non_default_mtu_on_an_undesired_port_is_reported(self):
+        from snapl_observability.structural.diff import diff_desired_vs_actual
+
+        desired = _build_desired_state()
+        actual = _matching_actual_data(desired)
+        actual["/interface[name=ethernet-1/7]"] = {**_bare_interface(), "enabled": True, "mtu": 1500}
+
+        items = diff_desired_vs_actual(desired, actual)
+
+        assert [(item.path, item.actual) for item in items] == [("/interface[name=ethernet-1/7]/mtu", 1500)]
+
     def test_the_management_interface_is_never_reported(self):
         """SC-003: mgmt0 is shape-identical to real config, and deleting it
         would strand the device — it can only be excluded by name."""

@@ -18,7 +18,7 @@ name: dc-fabric
 topology:
   kinds:
     nokia_srlinux:
-      image: ghcr.io/nokia/srlinux:latest
+      image: ghcr.io/nokia/srlinux:26.3.1  # pin an exact version, never latest (#122)
   nodes:
     spine01:
       kind: nokia_srlinux
