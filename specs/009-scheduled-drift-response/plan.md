@@ -128,10 +128,10 @@ tests/integration/test_orchestrator/
 packages/orchestrator/snapl_orchestrator/
 ├── models.py                           # EXTEND: DriftResponseMode, ExclusionReason, ScheduleChange,
 │                                       #   DriftResponseRequest, DriftResponseResult, DriftScheduleView,
-│                                       #   ScheduledRunInfo; AuditEventType += SCHEDULE_CHANGED, DRIFT_RESPONSE
+│                                       #   ScheduledRunInfo, drift_schedule_id(); AuditEventType += SCHEDULE_CHANGED, DRIFT_RESPONSE
 ├── exceptions.py                       # EXTEND: ScheduleNotFoundError(OrchestratorError)
 ├── remediation.py                      # NEW: select_remediation (pure)
-├── schedules.py                        # NEW: schedule_id_for, build_drift_schedule, ensure/set/pause/
+├── schedules.py                        # NEW: schedule_id_for (re-export), build_drift_schedule, ensure/set/pause/
 │                                       #   resume/trigger/delete/describe/find
 ├── activities/
 │   └── schedule.py                     # NEW: stand_down_schedule

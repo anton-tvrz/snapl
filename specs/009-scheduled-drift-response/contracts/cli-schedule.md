@@ -14,7 +14,7 @@ A `schedule` sub-application is added to the existing `snapl` Typer app. Every c
 
 None of these commands calls `_require_worker`. A schedule can be created, paused or switched to `report` with no worker running (FR-022). `create` and `show` print a one-line warning on stderr when nothing is polling the task queue, because runs will wait.
 
-The audit log is opened as `snapl audit` opens it (`SqliteAuditLog(settings.audit_db)`). Unlike `audit`, a missing file is created: the CLI is now a writer, and the worker initialises the same schema. The actor is `getpass.getuser()`.
+The audit log is opened as `snapl audit` opens it (`SqliteAuditLog(settings.audit_db)`), with the same refusal when the file is absent: `no audit log at <path>`, plus the hint to set `SNAPL_AUDIT_DB` to the path the worker writes. The refusal matters more for a writer than for a reader. If the CLI created a fresh file at a mismatched path, schedule-change records ("switched to remediate by X") would land somewhere the worker and `snapl audit` never read, which would quietly break FR-021. This does not weaken FR-022: the database exists once a worker has run at least once, and that is the only situation in which pausing with the worker down matters. A mutating schedule command checks this **before** making the Temporal call, so a change is never applied without its audit record. The actor is `getpass.getuser()`.
 
 ## Commands
 

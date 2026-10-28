@@ -81,8 +81,10 @@ All functions are `async`, take a connected `temporalio.client.Client` built by 
 DEFAULT_SCAN_INTERVAL = timedelta(minutes=5)
 MIN_SCAN_INTERVAL = timedelta(minutes=1)
 
-def schedule_id_for(use_case_id: str) -> str:
-    """'drift-response-{use_case_id}'"""
+from snapl_orchestrator.models import drift_schedule_id as schedule_id_for
+    # 'drift-response-{use_case_id}'; defined in models.py so DriftResponseRequest
+    # can validate against it without importing this module (no cycle, no
+    # temporalio.client in the sandbox-passthrough models module).
 
 def build_drift_schedule(
     *, use_case_id: str, interval: timedelta, task_queue: str,

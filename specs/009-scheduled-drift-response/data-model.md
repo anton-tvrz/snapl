@@ -52,7 +52,9 @@ The single argument a drift schedule passes to every run it starts. It is stored
 | `mode` | `DriftResponseMode` | default `REPORT` |
 | `schedule_id` | `str` | `drift-response-{use_case_id}`. Used for attribution and for stand-down. |
 
-**Invariant**: `schedule_id == schedule_id_for(use_case_id)`. A request whose schedule and use case disagree is rejected, so a run cannot stand down a different use case's schedule.
+**Invariant**: `schedule_id == drift_schedule_id(use_case_id)`. A request whose schedule and use case disagree is rejected, so a run cannot stand down a different use case's schedule.
+
+`drift_schedule_id(use_case_id) -> str` (returns `"drift-response-{use_case_id}"`) is a plain function **in `models.py`**. `schedules.py` re-exports it as `schedule_id_for`. Defining it in `schedules.py` would create an import cycle (`schedules` imports `models`), and would drag `temporalio.client` into a module the workflow sandbox passes through.
 
 ## DriftResponseResult
 
