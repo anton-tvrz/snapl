@@ -203,17 +203,17 @@
 
 ## Phase 6: Polish & Cross-Cutting Concerns
 
-- [ ] T035 Write tests/integration/test_orchestrator/test_schedules_local.py (`@pytest.mark.integration`, `WorkflowEnvironment.start_local()` with the pydantic converter). It does one round trip:
+- [x] T035 Write tests/integration/test_orchestrator/test_schedules_local.py (`@pytest.mark.integration`, `WorkflowEnvironment.start_local()` with the pydantic converter). It does one round trip:
   - `ensure` → `describe` (mode report, interval);
   - `pause` → `describe` (paused, note);
   - `resume` → `trigger`;
   - `set_drift_response(REMEDIATE)` → `describe` (mode decodes back);
   - `delete` → `find` returns None.
-- [ ] T036 [P] Confirm tests/unit/test_orchestrator/test_vendor_seams.py covers workflows/drift_response.py with no change, and that the whole unit suite passes (`uv run invoke test-unit`)
-- [ ] T037 [P] Add the "The loop closes itself" scenario (quickstart steps 1 to 3) and a demo-arc variant in docs/demo-scenarios.md
-- [ ] T038 [P] In README.md's known limitations, state that remediate is opt-in per use case, that scheduled runs never remove config (#65), and that a failed repair retries every run until #136
-- [ ] T039 [P] Add changelog/99.added.md
-- [ ] T040 Check ≥80% coverage on the new modules, then run `uv run invoke lint` and `uv run invoke format`
+- [x] T036 [P] Confirm tests/unit/test_orchestrator/test_vendor_seams.py covers workflows/drift_response.py with no change, and that the whole unit suite passes (`uv run invoke test-unit`)
+- [x] T037 [P] Add the "The loop closes itself" scenario (quickstart steps 1 to 3) and a demo-arc variant in docs/demo-scenarios.md
+- [x] T038 [P] In README.md's known limitations, state that remediate is opt-in per use case, that scheduled runs never remove config (#65), and that a failed repair retries every run until #136
+- [x] T039 [P] Add changelog/99.added.md
+- [x] T040 Check ≥80% coverage on the new modules, then run `uv run invoke lint` and `uv run invoke format`
 - [ ] T041 Live evidence items 4 to 6 on the dcfabric lab (overlap after worker downtime, bootstrap idempotency, persistence across a Temporal restart), recorded in the implementation PR
 
 ---

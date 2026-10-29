@@ -226,6 +226,65 @@ snapl audit --device spine-01
 
 ---
 
+## Scenario 9 — The loop closes itself (scheduled scans, opt-in self-healing)
+
+**Story:** "Nobody runs a scan. snapl watches the fabric on a schedule, reports
+what drifted, and — only when an operator explicitly says so — heals it."
+
+`demo.up` already created a report-only schedule. Shorten it for the stage, and
+look at it:
+
+```bash
+snapl schedule create --every 1m      # changes only the interval
+snapl schedule show
+```
+
+**Expect:** `response report`, `state active`, next runs one minute apart. In
+the Temporal UI, **Schedules → drift-response-dcfabric** shows the same.
+
+Break something by hand, then wait — do **not** run `snapl scan`:
+
+```bash
+docker exec clab-dcfabric-spine-01 sr_cli -ec 'set / interface ethernet-1/1 admin-state disable'
+snapl schedule trigger                # or just wait a minute
+snapl schedule show
+```
+
+**Expect:** a recent run reading `6 devices: 5 clean, 1 drifted, 0 errored   wrote: no`.
+Report mode found it and wrote nothing; `snapl audit --device spine-01` has a
+`drift_response` event from `schedule:drift-response-dcfabric`.
+
+Now opt in to self-healing. The prompt says exactly what is being authorized:
+
+```bash
+snapl schedule mode remediate         # answer y
+snapl schedule trigger --yes
+snapl schedule show                   # wrote: 1 device (1 ok, 0 failed)
+snapl scan                            # 6 clean — nobody ran reconcile
+```
+
+**Temporal UI:** the scheduled run has a child `ScanDrift` and a child
+`ReconcileDevices`, which has the per-device `DeployIntent`.
+
+Undesired config is reported but never removed. Add some, and watch it stay:
+
+```bash
+docker exec clab-dcfabric-spine-01 sr_cli -ec 'set / interface ethernet-1/7 description hand-added'
+snapl schedule trigger --yes
+snapl audit --device spine-01         # decision undesired_only — no DeployIntent started
+```
+
+Pause before planned hand work, and switch back afterwards:
+
+```bash
+snapl schedule pause --reason "maintenance: spine-01 optics"
+snapl schedule resume
+snapl schedule mode report
+snapl audit --workflow drift-response-dcfabric   # every policy change, with who made it
+```
+
+---
+
 ## Suggested 10-minute demo arc
 
 | # | beat | command | *min* |
@@ -237,6 +296,12 @@ snapl audit --device spine-01
 | 5 | **Audit log** — everything you just did, from SQLite | `snapl audit --device spine-01` | 2 |
 
 Scenarios 4–6 are the Q&A reserve: "what if the SoT is stale / someone cancels / a device is down?"
+
+**Variant — the loop closes itself.** Replace beat 3 with Scenario 9: show the
+schedule finding the drift on its own in report mode, then
+`snapl schedule mode remediate` and `snapl schedule trigger --yes` to heal it
+without a reconcile command. Switch back to `report` before beat 4, or the
+schedule will heal whatever the next beat breaks.
 
 Worth showing the exit codes if the audience is technical — it is the thing that
 makes the CLI scriptable rather than just pretty:

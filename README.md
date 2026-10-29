@@ -37,7 +37,7 @@ Single vendor: Nokia SR Linux. Vendor-specific code is confined to a few named p
 ## Known limitations
 
 - **Removal is not implemented (#65).** Apply is a merge, so config deleted from intent stays on the device. snapl *detects* that undesired config and reports it, but does not remove it. Convergence is true for additions and changes.
-- **The loop is not yet self-closing (#99).** Scans run when an operator asks; nothing schedules them.
+- **Self-healing is opt-in, per use case.** `demo.up` creates a report-only drift schedule (every 5 minutes); scheduled repairs happen only after `snapl schedule mode remediate`. A scheduled repair never removes config (#65), and a failed repair is retried every run until an operator switches back to report (#136).
 - **No metrics or dashboards (#101).** Drift and audit are visible through the CLI and the Temporal Web UI only.
 - **Config-level verification only.** Intent describes configuration. Operational expectations (BGP sessions established, interfaces oper-up) are not yet checked.
 
@@ -48,12 +48,13 @@ Needs Docker (OrbStack on macOS) and uv.
 ```bash
 uv sync --all-groups
 cp development/.env.example development/.env
-uv run invoke demo.up             # stack + SR Linux fabric + seeded SoT + preflight
+uv run invoke demo.up             # stack + SR Linux fabric + seeded SoT + drift schedule + preflight
 uv run invoke orchestrator.start  # the worker, in its own terminal
 
 uv run snapl status
 uv run snapl deploy spine-01
 uv run snapl scan
+uv run snapl schedule show        # the report-only drift schedule demo.up created
 ```
 
 [`docs/demo-scenarios.md`](docs/demo-scenarios.md) walks through the full demo: deploy, inducing drift by hand, scanning, reconciling, and reading the audit trail.
