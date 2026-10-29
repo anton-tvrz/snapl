@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import timedelta
+from typing import TYPE_CHECKING, Any
 
 from temporalio import workflow
 from temporalio.common import RetryPolicy
@@ -31,6 +32,9 @@ with workflow.unsafe.imports_passed_through():
     from snapl_orchestrator.workflows.reconcile_devices import ReconcileDevicesWorkflow
     from snapl_orchestrator.workflows.scan_drift import ScanDriftWorkflow
 
+
+if TYPE_CHECKING:
+    from uuid import UUID
 
 _WORKFLOW_TYPE = "DriftResponse"
 
@@ -83,10 +87,10 @@ def _use_case_payload(result: DriftResponseResult) -> dict:
     }
 
 
-def _device_payloads(result: DriftResponseResult) -> list[tuple]:
+def _device_payloads(result: DriftResponseResult) -> list[tuple[UUID, dict[str, Any]]]:
     """One record per repaired or excluded device, so `snapl audit --device`
     shows "repaired by schedule X from scan Y" or "left alone, and why" (FR-020)."""
-    records = []
+    records: list[tuple[UUID, dict[str, Any]]] = []
     for device_id in result.remediated:
         report = result.scan.reports[device_id]
         outcome = result.reconcile.device_results.get(device_id) if result.reconcile else None
@@ -105,7 +109,7 @@ def _device_payloads(result: DriftResponseResult) -> list[tuple]:
         )
     for device_id, reason in result.excluded.items():
         report = result.scan.reports[device_id]
-        payload = {
+        payload: dict[str, Any] = {
             "decision": reason.value,
             "scan_workflow_id": result.scan.workflow_id,
             "paths": [item.path for item in report.items],
@@ -185,7 +189,7 @@ class DriftResponseWorkflow:
                 event_type=AuditEventType.WORKFLOW_TERMINATED,
                 outcome="failure",
                 reason=WorkflowReason.INTENT_UNAVAILABLE,
-                payload={"error": str(exc.cause or exc)},
+                payload={"error": str(getattr(exc, "cause", None) or exc)},
             )
             raise
 

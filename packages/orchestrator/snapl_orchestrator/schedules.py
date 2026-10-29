@@ -10,6 +10,7 @@ the thing that is wrong. Every mutating function appends exactly one
 from __future__ import annotations
 
 import dataclasses
+import logging
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
@@ -46,6 +47,8 @@ from snapl_orchestrator.models import drift_schedule_id as schedule_id_for
 
 if TYPE_CHECKING:
     from snapl_orchestrator.audit.abc import AuditLog
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "DEFAULT_SCAN_INTERVAL",
@@ -320,9 +323,9 @@ async def _decode_request(client: Client, action: Any) -> DriftResponseRequest:
     """
     args = list(action.args)
     if args and isinstance(args[0], Payload):
-        [request] = await client.data_converter.decode(args, [DriftResponseRequest])
-        return request
-    return args[0]
+        [decoded] = await client.data_converter.decode(args, [DriftResponseRequest])
+        return DriftResponseRequest.model_validate(decoded)
+    return DriftResponseRequest.model_validate(args[0])
 
 
 async def _run_info(client: Client, action_result: Any) -> ScheduledRunInfo:
@@ -342,8 +345,8 @@ async def _run_info(client: Client, action_result: Any) -> ScheduledRunInfo:
             status = described.status.name.lower()
         if described.status == WorkflowExecutionStatus.COMPLETED:
             summary = RunSummary.from_result(await handle.result())
-    except Exception:  # noqa: S110
-        pass
+    except Exception:
+        logger.debug("could not read scheduled run %s", execution.workflow_id, exc_info=True)
     return ScheduledRunInfo(
         workflow_id=execution.workflow_id,
         scheduled_at=action_result.scheduled_at,
