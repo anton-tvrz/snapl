@@ -202,3 +202,112 @@ class TestBuildRenderer:
         """Exit codes are a property of the result, not of the format."""
         result = scan_result(drifted=1)
         assert build_renderer(as_json=True).scan_code(result) == build_renderer(as_json=False).scan_code(result)
+
+
+# ---------------------------------------------------------------------------
+# Drift schedule view (spec 009)
+# ---------------------------------------------------------------------------
+
+
+def _schedule_view(*, mode: str = "report", paused: bool = False, note: str | None = None, runs=None):
+    from datetime import timedelta
+
+    from snapl_orchestrator.models import DriftResponseMode, DriftScheduleView
+
+    t0 = datetime(2026, 10, 28, 3, 0, tzinfo=UTC)
+    return DriftScheduleView(
+        schedule_id="drift-response-dcfabric",
+        use_case_id="dcfabric",
+        interval=timedelta(minutes=5),
+        mode=DriftResponseMode(mode),
+        paused=paused,
+        note=note,
+        next_runs=[t0 + timedelta(minutes=m) for m in (10, 15, 20)],
+        recent_runs=runs or [],
+        running=[],
+        skipped_overlap=0,
+    )
+
+
+def _run(workflow_id: str, status: str, summary=None):
+    from snapl_orchestrator.models import ScheduledRunInfo
+
+    at = datetime(2026, 10, 28, 3, 0, tzinfo=UTC)
+    return ScheduledRunInfo(workflow_id=workflow_id, scheduled_at=at, started_at=at, status=status, summary=summary)
+
+
+def _summary(*, clean=5, drifted=1, errored=0, succeeded=0, failed=0):
+    from snapl_orchestrator.models import RunSummary
+
+    return RunSummary(
+        total=clean + drifted + errored,
+        clean=clean,
+        drifted=drifted,
+        errored=errored,
+        remediated=succeeded + failed,
+        succeeded=succeeded,
+        failed=failed,
+        wrote=succeeded + failed > 0,
+    )
+
+
+class TestHumanSchedule:
+    def test_shows_the_schedule_settings(self) -> None:
+        console, _ = _capture()
+        HumanRenderer(console).schedule(_schedule_view())
+        text = _text(console)
+        assert "drift-response-dcfabric" in text
+        assert "every" in text
+        assert "5m" in text
+        assert "report" in text
+        assert "active" in text
+        assert "03:10:00Z" in text
+
+    def test_a_paused_schedule_shows_its_reason(self) -> None:
+        console, _ = _capture()
+        HumanRenderer(console).schedule(_schedule_view(paused=True, note="maintenance: spine swap"))
+        assert 'paused — "maintenance: spine swap"' in _text(console)
+
+    def test_a_completed_report_run_shows_its_summary(self) -> None:
+        console, _ = _capture()
+        view = _schedule_view(runs=[_run("drift-response-dcfabric-1", "completed", _summary())])
+        HumanRenderer(console).schedule(view)
+        text = _text(console)
+        assert "completed" in text
+        assert "6 devices: 5 clean, 1 drifted, 0 errored" in text
+        assert "wrote: no" in text
+
+    def test_a_run_that_wrote_says_how_many_devices(self) -> None:
+        console, _ = _capture()
+        view = _schedule_view(
+            mode="remediate", runs=[_run("drift-response-dcfabric-1", "completed", _summary(succeeded=1))]
+        )
+        HumanRenderer(console).schedule(view)
+        assert "wrote: 1 device (1 ok, 0 failed)" in _text(console)
+
+    def test_a_run_without_a_summary_shows_its_workflow_id(self) -> None:
+        console, _ = _capture()
+        view = _schedule_view(runs=[_run("drift-response-dcfabric-2026-10-28T03:05:00Z", "running")])
+        HumanRenderer(console).schedule(view)
+        text = _text(console)
+        assert "running" in text
+        assert "drift-response-dcfabric-2026-10-28T03:05:00Z" in text
+
+    def test_remediate_renders_in_the_warning_colour_on_a_tty(self) -> None:
+        console = Console(record=True, width=200, force_terminal=True, color_system="standard")
+        HumanRenderer(console).schedule(_schedule_view(mode="remediate"))
+        styled = console.export_text(styles=True)
+        assert "\x1b[33mremediate" in styled or "\x1b[1;33mremediate" in styled
+
+
+class TestJsonSchedule:
+    def test_emits_the_view_as_json(self) -> None:
+        console = Console(record=True, width=200, force_terminal=False)
+        view = _schedule_view(runs=[_run("drift-response-dcfabric-1", "completed", _summary())])
+        JsonRenderer(console).schedule(view)
+        payload = json.loads(console.export_text())
+        assert payload["schedule_id"] == "drift-response-dcfabric"
+        assert payload["interval"] == 300
+        assert payload["mode"] == "report"
+        assert payload["next_runs"][0] == "2026-10-28T03:10:00Z"
+        assert payload["recent_runs"][0]["summary"]["wrote"] is False

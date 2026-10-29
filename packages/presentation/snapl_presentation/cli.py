@@ -8,12 +8,16 @@ no gNMI and no drift computation — a bug in the loop is never fixed here.
     snapl reconcile --use-case dcfabric --drifted
     snapl audit --device spine-01
     snapl status
+    snapl schedule create --every 5m
 """
 
 from __future__ import annotations
 
 import asyncio
 import functools
+import getpass
+import re
+from datetime import timedelta
 from typing import TYPE_CHECKING, Annotated, Any
 from uuid import uuid4
 
@@ -45,6 +49,14 @@ DEFAULT_USE_CASE = "dcfabric"
 UseCaseOpt = Annotated[str, typer.Option("--use-case", help="Use case to operate on.")]
 JsonOpt = Annotated[bool, typer.Option("--json", help="Emit JSON on stdout instead of a table.")]
 YesOpt = Annotated[bool, typer.Option("--yes", "-y", help="Skip the confirmation prompt.")]
+EveryOpt = Annotated[str, typer.Option("--every", help="Scan interval: <n>s, <n>m or <n>h (minimum 1m).")]
+
+schedule_app = typer.Typer(
+    name="schedule",
+    help="Steer the drift schedule that scans a use case on an interval (spec 009).",
+    no_args_is_help=True,
+)
+app.add_typer(schedule_app)
 
 
 def command(fn: Callable) -> Callable:
@@ -167,6 +179,29 @@ async def _require_worker(client: Any, settings: CliSettings) -> None:
             f"no worker is polling task queue {settings.task_queue!r}",
             hint="Start one in another terminal: uv run invoke orchestrator.start",
         )
+
+
+async def _open_audit_log(settings: CliSettings):
+    """The worker's durable audit log, refusing a path that does not exist.
+
+    For a reader, an absent database is not an empty one: "0 events" for a path
+    never written is indistinguishable from a real empty log. For a writer
+    (schedule changes) it is worse — a fresh file at a mismatched path would
+    hold "switched to remediate by X" where neither the worker nor `snapl
+    audit` ever looks.
+    """
+    from pathlib import Path  # noqa: PLC0415
+
+    from snapl_orchestrator.audit.sqlite import SqliteAuditLog  # noqa: PLC0415
+
+    if settings.audit_db != ":memory:" and not Path(settings.audit_db).exists():
+        raise CliError(
+            f"no audit log at {settings.audit_db}",
+            hint="Set SNAPL_AUDIT_DB to the path the worker writes, or run a workflow first.",
+        )
+    log = SqliteAuditLog(database_url=settings.audit_db)
+    await log.initialize()
+    return log
 
 
 def _confirm(message: str, *, yes: bool, as_json: bool) -> None:
@@ -299,24 +334,11 @@ async def audit(
     as_json: JsonOpt = False,
 ) -> ExitCode:
     """Read the durable audit trail by workflow or by device."""
-    from pathlib import Path  # noqa: PLC0415
-
-    from snapl_orchestrator.audit.sqlite import SqliteAuditLog  # noqa: PLC0415
-
     if bool(workflow) == bool(device):
         raise CliError("pass exactly one of --workflow or --device")
 
     settings = CliSettings.from_env()
-    # An absent database is not an empty one — reporting "0 events" for a path
-    # that was never written would be indistinguishable from a real empty log.
-    if settings.audit_db != ":memory:" and not Path(settings.audit_db).exists():
-        raise CliError(
-            f"no audit log at {settings.audit_db}",
-            hint="Set SNAPL_AUDIT_DB to the path the worker writes, or run a workflow first.",
-        )
-
-    log = SqliteAuditLog(database_url=settings.audit_db)
-    await log.initialize()
+    log = await _open_audit_log(settings)
     try:
         if workflow:
             events = await log.query_by_workflow(workflow)
@@ -379,6 +401,120 @@ async def status(use_case: UseCaseOpt = DEFAULT_USE_CASE, as_json: JsonOpt = Fal
 
     build_renderer(as_json=as_json).status(checks, running)
     return ExitCode.OK if all(ok for _, ok, _ in checks) else ExitCode.ERROR
+
+
+# ---------------------------------------------------------------------------
+# snapl schedule (spec 009)
+#
+# None of these requires a worker (FR-022): "stop the unattended writes" is the
+# command most likely to be needed when the worker is what is wrong. They warn
+# instead, because a schedule with no worker queues runs nobody executes.
+# ---------------------------------------------------------------------------
+
+_INTERVAL = re.compile(r"^(\d+)([smh])$")
+_UNITS = {"s": "seconds", "m": "minutes", "h": "hours"}
+
+
+def _parse_interval(text: str) -> timedelta:
+    from snapl_orchestrator.schedules import MIN_SCAN_INTERVAL  # noqa: PLC0415
+
+    match = _INTERVAL.match(text.strip())
+    if match is None:
+        raise CliError(f"cannot read interval {text!r}", hint="Use <n>s, <n>m or <n>h — for example 90s, 5m, 1h.")
+    interval = timedelta(**{_UNITS[match[2]]: int(match[1])})
+    if interval < MIN_SCAN_INTERVAL:
+        # Refused, not silently raised: an operator who asked for 30s should
+        # learn it was not honoured.
+        raise CliError(f"interval {text} is below the 1m minimum")
+    return interval
+
+
+def _actor() -> str:
+    return getpass.getuser()
+
+
+def _no_schedule(use_case: str) -> CliError:
+    return CliError(
+        f"no drift schedule for {use_case}",
+        hint=f"Create one: snapl schedule create --use-case {use_case}",
+    )
+
+
+async def _warn_if_no_worker(client: Any, settings: CliSettings) -> None:
+    try:
+        pollers = await count_pollers(client, settings)
+    except Exception:
+        return
+    if pollers == 0:
+        _stderr.print(
+            f"[yellow]warning:[/] no worker is polling task queue {settings.task_queue!r} — "
+            "scheduled runs will wait (uv run invoke orchestrator.start)"
+        )
+
+
+async def _refuse_foreign_sot(settings: CliSettings) -> None:
+    """A schedule scans, and may repair, against whatever SoT the worker reads (FR-031).
+
+    Only a positive "this is another project's" refuses; an Infrahub that could
+    not be read is not evidence of anything (#107).
+    """
+    identity = await identify_sot(build_store(settings), address=settings.infrahub_address)
+    if identity.is_foreign:
+        raise CliError(
+            f"refusing to create a drift schedule: {identity.detail}",
+            hint="Point INFRAHUB_ADDRESS at snapl's Infrahub.",
+        )
+
+
+@schedule_app.command("create")
+@command
+async def schedule_create(
+    use_case: UseCaseOpt = DEFAULT_USE_CASE,
+    every: EveryOpt = "5m",
+    as_json: JsonOpt = False,
+) -> ExitCode:
+    """Put a use case on a report-only drift schedule, or change its interval."""
+    from snapl_orchestrator import schedules  # noqa: PLC0415
+
+    settings = CliSettings.from_env()
+    interval = _parse_interval(every)
+    await _refuse_foreign_sot(settings)
+    log = await _open_audit_log(settings)
+    try:
+        client = await _connect(settings)
+        await _warn_if_no_worker(client, settings)
+        view = await schedules.ensure_drift_schedule(
+            client,
+            use_case_id=use_case,
+            task_queue=settings.task_queue,
+            audit_log=log,
+            actor=_actor(),
+            interval=interval,
+        )
+    finally:
+        await log.close()
+
+    build_renderer(as_json=as_json).schedule(view)
+    return ExitCode.OK
+
+
+@schedule_app.command("show")
+@command
+async def schedule_show(use_case: UseCaseOpt = DEFAULT_USE_CASE, as_json: JsonOpt = False) -> ExitCode:
+    """Show a use case's drift schedule and its recent runs."""
+    from snapl_orchestrator import schedules  # noqa: PLC0415
+    from snapl_orchestrator.exceptions import ScheduleNotFoundError  # noqa: PLC0415
+
+    settings = CliSettings.from_env()
+    client = await _connect(settings)
+    await _warn_if_no_worker(client, settings)
+    try:
+        view = await schedules.describe_drift_schedule(client, use_case_id=use_case)
+    except ScheduleNotFoundError:
+        raise _no_schedule(use_case) from None
+
+    build_renderer(as_json=as_json).schedule(view)
+    return ExitCode.OK
 
 
 def main() -> None:

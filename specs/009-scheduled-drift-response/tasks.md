@@ -98,7 +98,7 @@
   - a missing schedule (RPC NOT_FOUND) raises `ScheduleNotFoundError`;
   - `find_drift_schedule` returns None for a missing schedule.
 - [x] T011 [P] [US1] Extend tests/unit/test_orchestrator/test_worker_run.py: `DriftResponseWorkflow` is registered, the activity list is unchanged, and starting the worker makes no schedule call
-- [ ] T012 [P] [US1] Write tests/unit/test_presentation/test_cli_schedule.py for `snapl schedule create` and `show`, with mocked `schedules` functions, covering:
+- [x] T012 [P] [US1] Write tests/unit/test_presentation/test_cli_schedule.py for `snapl schedule create` and `show`, with mocked `schedules` functions, covering:
   - `--every` parses `90s`, `5m` and `1h`, and rejects `abc` and `30s` with one line and exit 1;
   - a SoT that identifies as FOREIGN is refused before any Temporal call (FR-031), and UNKNOWN is not refused;
   - a missing audit DB is refused before any Temporal call, with the `SNAPL_AUDIT_DB` hint;
@@ -107,8 +107,8 @@
   - `show --json` puts only valid JSON on stdout;
   - `show` for a missing schedule exits 1 with one line;
   - no schedule command calls `_require_worker`.
-- [ ] T013 [P] [US1] Extend tests/unit/test_presentation/test_render.py for the schedule view in human form (contract layout, a completed run line `6 devices: 5 clean, 1 drifted, 0 errored   wrote: no`, a running run line shows the workflow id) and JSON form (interval in seconds, ISO 8601 UTC datetimes)
-- [ ] T014 [P] [US1] Extend tests/unit/test_tasks/test_demo.py, covering:
+- [x] T013 [P] [US1] Extend tests/unit/test_presentation/test_render.py for the schedule view in human form (contract layout, a completed run line `6 devices: 5 clean, 1 drifted, 0 errored   wrote: no`, a running run line shows the workflow id) and JSON form (interval in seconds, ISO 8601 UTC datetimes)
+- [x] T014 [P] [US1] Extend tests/unit/test_tasks/test_demo.py, covering:
   - `up` calls `ensure_drift_schedule` after `seed` and before `check`, with the seeded use case, `DEFAULT_SCAN_INTERVAL` and actor `invoke:demo.up (<user>)`;
   - `up` opens the audit log at `SNAPL_AUDIT_DB` (default `./snapl-audit.sqlite`) and may create it;
   - a foreign SoT stops `up` at `seed`, with no schedule call;
@@ -119,9 +119,9 @@
 - [x] T015 [US1] Implement `DriftResponseWorkflow` (report path, lifecycle audit, scan-failure and cancellation handling; imports under `workflow.unsafe.imports_passed_through()`) in packages/orchestrator/snapl_orchestrator/workflows/drift_response.py
 - [x] T016 [US1] Register `DriftResponseWorkflow` in packages/orchestrator/snapl_orchestrator/worker/run.py
 - [x] T017 [US1] Implement `ensure_drift_schedule`, `describe_drift_schedule` (including the `RunSummary` fetch) and `find_drift_schedule` in packages/orchestrator/snapl_orchestrator/schedules.py
-- [ ] T018 [US1] Render `DriftScheduleView` (human and JSON) in packages/presentation/snapl_presentation/render.py
-- [ ] T019 [US1] Add the `schedule` Typer sub-app with `create` and `show` in packages/presentation/snapl_presentation/schedule_cli.py, and mount it in packages/presentation/snapl_presentation/cli.py. Factor the audit-DB open-and-refuse logic out of `audit()` into a shared helper, so `audit` and every mutating schedule command use one refusal.
-- [ ] T020 [US1] In tasks/demo.py, make `up` call `ensure_drift_schedule` after `seed`, and add the `drift schedule` row to `check`
+- [x] T018 [US1] Render `DriftScheduleView` (human and JSON) in packages/presentation/snapl_presentation/render.py
+- [x] T019 [US1] Add the `schedule` Typer sub-app with `create` and `show` in packages/presentation/snapl_presentation/cli.py (kept in `cli.py`, not a separate `schedule_cli.py`, so the commands share its helpers and test patches; the plan made the split optional). Factor the audit-DB open-and-refuse logic out of `audit()` into a shared helper, so `audit` and every mutating schedule command use one refusal.
+- [x] T020 [US1] In tasks/demo.py, make `up` call `ensure_drift_schedule` after `seed`, and add the `drift schedule` row to `check`
 
 **Checkpoint**: US1 is shippable. Live evidence item 1 (quickstart.md): 3 or more report runs against a drifted spine, with the device unchanged and no `apply_config` in the worker log.
 
@@ -154,7 +154,7 @@
 ### Implementation
 
 - [ ] T025 [US2] Implement `pause_drift_schedule`, `resume_drift_schedule`, `trigger_drift_schedule` and `delete_drift_schedule` in packages/orchestrator/snapl_orchestrator/schedules.py
-- [ ] T026 [US2] Add the `pause`, `resume`, `trigger` (report path) and `delete` commands in packages/presentation/snapl_presentation/schedule_cli.py
+- [ ] T026 [US2] Add the `pause`, `resume`, `trigger` (report path) and `delete` commands in packages/presentation/snapl_presentation/cli.py
 - [ ] T027 [US2] Add the `drift schedule` status row using `find_drift_schedule` in packages/presentation/snapl_presentation/cli.py
 - [ ] T028 [US2] Render the new audit event payloads in packages/presentation/snapl_presentation/render.py
 
@@ -195,7 +195,7 @@
 
 - [ ] T032 [US3] Add the remediate path (`select_remediation`, the ReconcileDevices child, device-level audit) to packages/orchestrator/snapl_orchestrator/workflows/drift_response.py
 - [ ] T033 [US3] Implement `set_drift_response` in packages/orchestrator/snapl_orchestrator/schedules.py
-- [ ] T034 [US3] Add the `mode` command and the remediate confirmation for `mode` and `trigger` in packages/presentation/snapl_presentation/schedule_cli.py, and the remediate rendering in packages/presentation/snapl_presentation/render.py
+- [ ] T034 [US3] Add the `mode` command and the remediate confirmation for `mode` and `trigger` in packages/presentation/snapl_presentation/cli.py, and the remediate rendering in packages/presentation/snapl_presentation/render.py
 
 **Checkpoint**: Live evidence items 2 and 3. Forward drift heals within two intervals, with the audit chain scan → reconcile → deploy. The `ethernet-1/7` undesired-only case starts no DeployIntent across 3 or more runs.
 
@@ -221,7 +221,7 @@
 ## Dependencies & Execution Order
 
 - **Setup (T001)** → **Foundational (T002 to T008)** → **US1** → **US2** and **US3**, in either order → **Polish**.
-- US2 and US3 both extend `schedules.py`, `schedule_cli.py` and `render.py`, so they are sequential in practice, but each is shippable on its own.
+- US2 and US3 both extend `schedules.py`, `cli.py` and `render.py`, so they are sequential in practice, but each is shippable on its own.
 - Within each phase, every test task precedes the implementation task that satisfies it.
 
 ## Parallel Opportunities

@@ -23,6 +23,32 @@ def _ctx() -> MagicMock:
     return MagicMock(spec=Context)
 
 
+def _schedule_view(*, paused: bool = False, note: str | None = None):
+    from datetime import timedelta
+
+    from snapl_orchestrator.models import DriftResponseMode, DriftScheduleView
+
+    return DriftScheduleView(
+        schedule_id="drift-response-dcfabric",
+        use_case_id="dcfabric",
+        interval=timedelta(minutes=5),
+        mode=DriftResponseMode.REPORT,
+        paused=paused,
+        note=note,
+    )
+
+
+@pytest.fixture(autouse=True)
+def schedule_lookup():
+    """Assume an active drift schedule unless a test says otherwise.
+
+    Without this every preflight with a reachable Temporal would dial the real
+    cluster to look the schedule up.
+    """
+    with patch.object(demo, "find_schedule", AsyncMock(return_value=_schedule_view())) as find:
+        yield find
+
+
 def _identified_as_ours():
     """Patch the SoT identity check to pass.
 
@@ -353,3 +379,137 @@ def test_seed_refuses_when_identity_cannot_be_determined(monkeypatch: pytest.Mon
 
     store.provision_schema.assert_not_awaited()
     store.seed.assert_not_awaited()
+
+
+# --------------------------------------------------------------------------
+# The drift schedule (spec 009 FR-009): demo.up creates it, demo.check reports it
+# --------------------------------------------------------------------------
+
+
+def _checked(monkeypatch: pytest.MonkeyPatch, *, temporal_up: bool = True):
+    monkeypatch.setenv("INFRAHUB_API_TOKEN", "t")  # pragma: allowlist secret
+    store = MagicMock()
+    store.get_desired_state = AsyncMock(return_value=_states(1))
+
+    def _probe(host, port, **_kwargs):
+        return temporal_up if port == 18033 else True
+
+    return patch.object(demo, "_build_store", return_value=store), patch.object(demo, "_probe_tcp", side_effect=_probe)
+
+
+def _schedule_row(results):
+    return next(r for r in results if r.name == "drift schedule")
+
+
+def test_check_reports_an_active_schedule(monkeypatch: pytest.MonkeyPatch) -> None:
+    store_patch, probe_patch = _checked(monkeypatch)
+    with store_patch, probe_patch:
+        results = demo.check(_ctx())
+    row = _schedule_row(results)
+    assert row.ok
+    assert row.detail == "dcfabric: every 5m, report, active"
+
+
+def test_check_fails_without_a_schedule(monkeypatch: pytest.MonkeyPatch, schedule_lookup) -> None:
+    schedule_lookup.return_value = None
+    store_patch, probe_patch = _checked(monkeypatch)
+    with store_patch, probe_patch, pytest.raises(demo.DemoCheckError) as excinfo:
+        demo.check(_ctx())
+    row = _schedule_row(excinfo.value.results)
+    assert not row.ok
+    assert row.detail == "none — run: uv run invoke demo.up"
+
+
+def test_check_fails_on_a_paused_schedule_and_shows_why(monkeypatch: pytest.MonkeyPatch, schedule_lookup) -> None:
+    schedule_lookup.return_value = _schedule_view(paused=True, note="maintenance: spine swap")
+    store_patch, probe_patch = _checked(monkeypatch)
+    with store_patch, probe_patch, pytest.raises(demo.DemoCheckError) as excinfo:
+        demo.check(_ctx())
+    row = _schedule_row(excinfo.value.results)
+    assert not row.ok
+    assert row.detail == 'paused — "maintenance: spine swap" (snapl schedule resume)'
+
+
+def test_check_reports_a_schedule_lookup_failure(monkeypatch: pytest.MonkeyPatch, schedule_lookup) -> None:
+    schedule_lookup.side_effect = RuntimeError("deadline exceeded\nmore detail")
+    store_patch, probe_patch = _checked(monkeypatch)
+    with store_patch, probe_patch, pytest.raises(demo.DemoCheckError) as excinfo:
+        demo.check(_ctx())
+    row = _schedule_row(excinfo.value.results)
+    assert not row.ok
+    assert row.detail == "could not inspect: deadline exceeded"
+
+
+def test_check_skips_the_schedule_row_when_temporal_is_down(monkeypatch: pytest.MonkeyPatch, schedule_lookup) -> None:
+    store_patch, probe_patch = _checked(monkeypatch, temporal_up=False)
+    with store_patch, probe_patch, pytest.raises(demo.DemoCheckError) as excinfo:
+        demo.check(_ctx())
+    assert all(r.name != "drift schedule" for r in excinfo.value.results)
+    schedule_lookup.assert_not_called()
+
+
+def test_up_creates_the_schedule_after_seeding_and_before_the_preflight() -> None:
+    from tasks import dev
+
+    order: list[str] = []
+    with (
+        patch.object(dev, "deps", side_effect=lambda _c: order.append("deps")),
+        patch.object(dev, "lab_deploy", side_effect=lambda _c: order.append("lab")),
+        patch.object(demo, "seed", side_effect=lambda _c, use_case: order.append(f"seed:{use_case}")),
+        patch.object(
+            demo,
+            "ensure_schedule",
+            AsyncMock(side_effect=lambda _s, use_case: order.append(f"schedule:{use_case}") or _schedule_view()),
+        ),
+        patch.object(demo, "check", side_effect=lambda _c, use_case: order.append(f"check:{use_case}")),
+    ):
+        demo.up(_ctx(), use_case="dcfabric")
+
+    assert order == ["deps", "lab", "seed:dcfabric", "schedule:dcfabric", "check:dcfabric"]
+
+
+def test_up_creates_no_schedule_when_seed_refuses() -> None:
+    from tasks import dev
+
+    ensure = AsyncMock()
+    with (
+        patch.object(dev, "deps"),
+        patch.object(dev, "lab_deploy"),
+        patch.object(demo, "seed", side_effect=demo.DemoConfigError("refusing to seed")),
+        patch.object(demo, "ensure_schedule", ensure),
+        pytest.raises(demo.DemoConfigError),
+    ):
+        demo.up(_ctx())
+
+    ensure.assert_not_called()
+
+
+async def test_ensure_schedule_writes_report_mode_to_the_worker_audit_db(tmp_path, monkeypatch) -> None:
+    db = tmp_path / "snapl-audit.sqlite"
+    monkeypatch.setenv("SNAPL_AUDIT_DB", str(db))
+    client = MagicMock()
+    ensure = AsyncMock(return_value=_schedule_view())
+
+    with (
+        patch.object(demo, "_probe_tcp", return_value=True),
+        patch("snapl_orchestrator.worker.client.build_client", AsyncMock(return_value=client)),
+        patch("snapl_orchestrator.schedules.ensure_drift_schedule", ensure),
+        patch.object(demo.getpass, "getuser", return_value="anton"),
+    ):
+        view = await demo.ensure_schedule(demo.DemoSettings.from_env(), use_case="dcfabric")
+
+    from datetime import timedelta
+
+    assert view.mode.value == "report"
+    kwargs = ensure.call_args.kwargs
+    assert kwargs["use_case_id"] == "dcfabric"
+    assert kwargs["interval"] == timedelta(minutes=5)
+    assert kwargs["actor"] == "invoke:demo.up (anton)"
+    assert kwargs["task_queue"] == "snapl-orchestrator"
+    # demo.up may create the worker's audit DB on a clean checkout (research R7).
+    assert db.exists()
+
+
+async def test_ensure_schedule_refuses_an_unreachable_temporal(monkeypatch) -> None:
+    with patch.object(demo, "_probe_tcp", return_value=False), pytest.raises(demo.DemoConfigError, match=r"dev\.deps"):
+        await demo.ensure_schedule(demo.DemoSettings.from_env(), use_case="dcfabric")

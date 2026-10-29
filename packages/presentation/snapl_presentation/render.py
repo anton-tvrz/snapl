@@ -21,10 +21,15 @@ from snapl_observability.models import DriftStatus
 from snapl_presentation.exit_codes import ExitCode
 
 if TYPE_CHECKING:
+    from datetime import datetime, timedelta
+
     from snapl_orchestrator.models import (
         AuditEvent,
         DriftScanResult,
+        DriftScheduleView,
         ReconcileResult,
+        RunSummary,
+        ScheduledRunInfo,
         WorkflowResult,
     )
 
@@ -62,6 +67,35 @@ def _desired_cell(item: Any) -> str:
     if getattr(item, "undesired", False):
         return "[dim]not in intent[/]"
     return _esc(item.desired)
+
+
+def _interval(interval: timedelta) -> str:
+    """``5m``, ``90s``, ``1h`` — the same shape ``--every`` accepts."""
+    seconds = int(interval.total_seconds())
+    if seconds % 3600 == 0:
+        return f"{seconds // 3600}h"
+    if seconds % 60 == 0:
+        return f"{seconds // 60}m"
+    return f"{seconds}s"
+
+
+def _clock(at: datetime) -> str:
+    return at.strftime("%H:%M:%SZ")
+
+
+def _wrote(summary: RunSummary) -> str:
+    if not summary.wrote:
+        return "wrote: no"
+    devices = summary.succeeded + summary.failed
+    return f"wrote: {devices} device{'s' if devices != 1 else ''} ({summary.succeeded} ok, {summary.failed} failed)"
+
+
+def _run_line(run: ScheduledRunInfo) -> str:
+    head = f"{_clock(run.started_at)} {_esc(run.status):<9}"
+    if run.summary is None:
+        return f"{head}  {_esc(run.workflow_id)}"
+    s = run.summary
+    return f"{head}  {s.total} devices: {s.clean} clean, {s.drifted} drifted, {s.errored} errored   {_wrote(s)}"
 
 
 def _dump(model: Any) -> Any:
@@ -116,6 +150,9 @@ class Renderer:
         raise NotImplementedError
 
     def status(self, checks: list[tuple[str, bool, str]], running: list[Any]) -> None:
+        raise NotImplementedError
+
+    def schedule(self, view: DriftScheduleView) -> None:
         raise NotImplementedError
 
 
@@ -192,6 +229,31 @@ class HumanRenderer(Renderer):
         else:
             self._console.print("\nno workflows running")
 
+    def schedule(self, view: DriftScheduleView) -> None:
+        mode = view.mode.value
+        # Remediate means unattended writes; it should never read as routine.
+        response = f"[yellow]{mode}[/]" if mode == "remediate" else mode
+        state = (
+            f'paused — "{_esc(view.note)}"' if view.paused and view.note else ("paused" if view.paused else "active")
+        )
+        rows = [
+            ("drift schedule", _esc(view.schedule_id)),
+            ("use case", _esc(view.use_case_id)),
+            ("every", _interval(view.interval)),
+            ("response", response),
+            ("state", state),
+            ("next runs", "  ".join(_clock(at) for at in view.next_runs) or "none"),
+        ]
+        for label, value in rows:
+            self._console.print(f"{label:<17} {value}")
+        if view.recent_runs:
+            for index, run in enumerate(view.recent_runs):  # oldest first, as the contract shows
+                label = "recent runs" if index == 0 else ""
+                self._console.print(f"{label:<17} {_run_line(run)}")
+        else:
+            self._console.print(f"{'recent runs':<17} none yet")
+        self._console.print(f"{'skipped (overlap)':<17} {view.skipped_overlap}")
+
 
 class JsonRenderer(Renderer):
     """Machine output. Only JSON reaches stdout (FR-010)."""
@@ -223,6 +285,9 @@ class JsonRenderer(Renderer):
                 ],
             }
         )
+
+    def schedule(self, view: DriftScheduleView) -> None:
+        self._emit(view.model_dump(mode="json"))
 
 
 def build_renderer(*, as_json: bool, console: Console | None = None) -> Renderer:
