@@ -58,6 +58,7 @@ __all__ = [
     "pause_drift_schedule",
     "resume_drift_schedule",
     "schedule_id_for",
+    "set_drift_response",
     "trigger_drift_schedule",
 ]
 
@@ -166,6 +167,49 @@ async def ensure_drift_schedule(
             interval_seconds=int(interval.total_seconds()),
             mode=DriftResponseMode.REPORT.value,
         )
+    return await describe_drift_schedule(client, use_case_id=use_case_id)
+
+
+async def set_drift_response(
+    client: Client, *, use_case_id: str, mode: DriftResponseMode, audit_log: AuditLog, actor: str
+) -> DriftScheduleView:
+    """Switch what scheduled runs do. Takes effect from the next run; a run in
+    progress keeps the mode it started with (FR-016).
+
+    Only the action is rebuilt; interval, policy and pause state are kept. The
+    caller confirms before switching to REMEDIATE — this function does not prompt.
+    """
+    current = await describe_drift_schedule(client, use_case_id=use_case_id)
+    if current.mode is mode:
+        return current
+
+    def _updater(update_input) -> ScheduleUpdate:
+        schedule = update_input.description.schedule
+        action = schedule.action
+        return ScheduleUpdate(
+            schedule=dataclasses.replace(
+                schedule,
+                action=ScheduleActionStartWorkflow(
+                    _WORKFLOW_TYPE,
+                    DriftResponseRequest(use_case_id=use_case_id, mode=mode, schedule_id=schedule_id_for(use_case_id)),
+                    id=action.id,
+                    task_queue=action.task_queue,
+                    static_summary=f"drift response: {mode.value}",
+                ),
+            )
+        )
+
+    try:
+        await _handle(client, use_case_id).update(_updater)
+    except RPCError as exc:
+        raise _not_found(use_case_id, exc) from exc
+    await _record_change(
+        audit_log,
+        use_case_id=use_case_id,
+        actor=actor,
+        change=ScheduleChange.RESPONSE_CHANGED,
+        **{"from": current.mode.value, "to": mode.value},
+    )
     return await describe_drift_schedule(client, use_case_id=use_case_id)
 
 

@@ -170,7 +170,7 @@
 
 ### Tests (write first, verify they fail)
 
-- [ ] T029 [P] [US3] Extend tests/unit/test_orchestrator/test_workflow_drift_response.py with the remediate path, covering:
+- [x] T029 [P] [US3] Extend tests/unit/test_orchestrator/test_workflow_drift_response.py with the remediate path, covering:
   - a mixed fabric runs ReconcileDevices (`<wf_id>-reconcile`) with exactly the forward-drifted ids, in scan order;
   - each excluded device gets one device-level `DRIFT_RESPONSE` with its `decision`, `scan_workflow_id` and `paths`;
   - each remediated device gets one with `reconcile_workflow_id`;
@@ -178,12 +178,12 @@
   - a reconcile with `failed > 0` is returned in the result and the run still terminates with success, with no schedule call (stand-down deferred, #136);
   - an in-flight skip is not a failure;
   - the use-case-level `DRIFT_RESPONSE` carries the remediated count, excluded counts by reason, and `reconcile_workflow_id`.
-- [ ] T030 [P] [US3] Extend tests/unit/test_orchestrator/test_schedules.py, covering:
+- [x] T030 [P] [US3] Extend tests/unit/test_orchestrator/test_schedules.py, covering:
   - `set_drift_response` rebuilds the action with the new mode and `static_summary`, preserving `spec`, `policy` and `state`;
   - it records `response_changed` (`from`, `to`), and an unchanged mode is a no-op with no record;
   - `ensure_drift_schedule` on an existing REMEDIATE schedule keeps REMEDIATE;
   - no public function creates a schedule in REMEDIATE.
-- [ ] T031 [P] [US3] Extend tests/unit/test_presentation/test_cli_schedule.py, covering:
+- [x] T031 [P] [US3] Extend tests/unit/test_presentation/test_cli_schedule.py, covering:
   - `mode remediate` prints the contract's confirmation text verbatim, with the interval and the device count from `load_states`, or `Devices: unknown (SoT unreachable)`;
   - it proceeds on `y` or `--yes` and aborts on `N` with exit 1;
   - `--json` without `--yes` is refused;
@@ -193,9 +193,9 @@
 
 ### Implementation
 
-- [ ] T032 [US3] Add the remediate path (`select_remediation`, the ReconcileDevices child, device-level audit) to packages/orchestrator/snapl_orchestrator/workflows/drift_response.py
-- [ ] T033 [US3] Implement `set_drift_response` in packages/orchestrator/snapl_orchestrator/schedules.py
-- [ ] T034 [US3] Add the `mode` command and the remediate confirmation for `mode` and `trigger` in packages/presentation/snapl_presentation/cli.py, and the remediate rendering in packages/presentation/snapl_presentation/render.py
+- [x] T032 [US3] Add the remediate path (`select_remediation`, the ReconcileDevices child, device-level audit) to packages/orchestrator/snapl_orchestrator/workflows/drift_response.py
+- [x] T033 [US3] Implement `set_drift_response` in packages/orchestrator/snapl_orchestrator/schedules.py
+- [x] T034 [US3] Add the `mode` command and the remediate confirmation for `mode` and `trigger` in packages/presentation/snapl_presentation/cli.py, and the remediate rendering in packages/presentation/snapl_presentation/render.py
 
 **Checkpoint**: Live evidence items 2 and 3. Forward drift heals within two intervals, with the audit chain scan → reconcile → deploy. The `ethernet-1/7` undesired-only case starts no DeployIntent across 3 or more runs.
 

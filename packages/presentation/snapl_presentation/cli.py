@@ -590,16 +590,79 @@ async def schedule_resume(
     return ExitCode.OK
 
 
+async def _remediate_authorization(settings: CliSettings, use_case: str, interval: timedelta) -> str:
+    """What switching to (or triggering) remediate authorizes, in words (FR-012).
+
+    The wording is part of the contract: the operator is agreeing to unattended
+    writes, including SoT edits reaching the fabric without a `deploy`.
+    """
+    from snapl_presentation.render import format_interval  # noqa: PLC0415
+
+    try:
+        devices = str(len(await load_states(build_store(settings), settings, use_case=use_case)))
+    except CliError:
+        # Switching mode writes nothing to devices, so an unreachable SoT does
+        # not block the decision — it only makes the count unknowable.
+        devices = "unknown (SoT unreachable)"
+    return (
+        f"  Every {format_interval(interval)}, devices whose scan shows drift a deploy can fix will be redeployed\n"
+        "  without asking — including devices whose intent was changed in the Source of\n"
+        f"  Truth. Undesired config is never removed. Devices: {devices}.\n"
+        "  A failed repair is retried every run until you switch back to report.\n"
+        "Continue?"
+    )
+
+
+@schedule_app.command("mode")
+@command
+async def schedule_mode(
+    mode: Annotated[str, typer.Argument(help="report (write nothing) or remediate (repair forward drift).")],
+    use_case: UseCaseOpt = DEFAULT_USE_CASE,
+    yes: YesOpt = False,
+    as_json: JsonOpt = False,
+) -> ExitCode:
+    """Choose what scheduled runs do with the drift they find."""
+    from snapl_orchestrator import schedules  # noqa: PLC0415
+    from snapl_orchestrator.models import DriftResponseMode  # noqa: PLC0415
+
+    try:
+        target = DriftResponseMode(mode)
+    except ValueError:
+        raise CliError(
+            f"unknown mode {mode!r} — use report or remediate",
+            hint="To stop scheduled runs entirely, pause instead: snapl schedule pause --reason ...",
+        ) from None
+    settings = CliSettings.from_env()
+
+    async def _switch(client: Any, log: Any):
+        current = await schedules.describe_drift_schedule(client, use_case_id=use_case)
+        if target is DriftResponseMode.REMEDIATE:
+            body = await _remediate_authorization(settings, use_case, current.interval)
+            _confirm(f"Switch {use_case} to remediate?\n{body}", yes=yes, as_json=as_json)
+        return await schedules.set_drift_response(
+            client, use_case_id=use_case, mode=target, audit_log=log, actor=_actor()
+        )
+
+    view = await _schedule_write(settings, use_case, _switch)
+    build_renderer(as_json=as_json).schedule(view)
+    return ExitCode.OK
+
+
 @schedule_app.command("trigger")
 @command
 async def schedule_trigger(use_case: UseCaseOpt = DEFAULT_USE_CASE, yes: YesOpt = False) -> ExitCode:
     """Start one scheduled run now, under the schedule's current response."""
     from snapl_orchestrator import schedules  # noqa: PLC0415
+    from snapl_orchestrator.models import DriftResponseMode  # noqa: PLC0415
 
     settings = CliSettings.from_env()
 
     async def _trigger(client: Any, log: Any):
-        await schedules.describe_drift_schedule(client, use_case_id=use_case)
+        current = await schedules.describe_drift_schedule(client, use_case_id=use_case)
+        if current.mode is DriftResponseMode.REMEDIATE:
+            # A triggered remediate run may write, so it needs the same consent (FR-025).
+            body = await _remediate_authorization(settings, use_case, current.interval)
+            _confirm(f"Trigger a remediate run of {use_case} now?\n{body}", yes=yes, as_json=False)
         return await schedules.trigger_drift_schedule(client, use_case_id=use_case, audit_log=log, actor=_actor())
 
     mode = await _schedule_write(settings, use_case, _trigger)

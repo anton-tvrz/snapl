@@ -34,6 +34,7 @@ from snapl_orchestrator.models import (
     AuditEventType,
     DriftResponseMode,
     DriftResponseRequest,
+    ExclusionReason,
     WorkflowReason,
 )
 from snapl_orchestrator.worker.sandbox import build_workflow_runner
@@ -328,3 +329,114 @@ async def test_a_cancelled_run_records_cancellation(make_desired) -> None:
     types = [e.event_type for e in await audit.query_by_workflow(RUN_ID)]
     assert AuditEventType.WORKFLOW_CANCELLED in types
     assert AuditEventType.DRIFT_RESPONSE not in types
+
+
+# ---------------------------------------------------------------------------
+# Remediate (US3)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def mixed(make_desired) -> Fabric:
+    """forward-01 has forward drift, both-02 has forward and undesired,
+    undesired-03 has only undesired config, unreachable-04 can't be read,
+    clean-05 is clean."""
+    fabric = Fabric([make_desired(n) for n in ("forward-01", "both-02", "undesired-03", "unreachable-04", "clean-05")])
+    ids = [s.device.id for s in fabric.states]
+    fabric.drift[ids[0]] = [FORWARD]
+    fabric.drift[ids[1]] = [FORWARD, UNDESIRED]
+    fabric.drift[ids[2]] = [UNDESIRED]
+    fabric.unreachable.add(ids[3])
+    return fabric
+
+
+@pytest.mark.asyncio
+async def test_remediate_reconciles_only_forward_drift_in_scan_order(mixed: Fabric) -> None:
+    ids = [s.device.id for s in mixed.states]
+    audit = InMemoryAuditLog()
+
+    result = await _run(mixed.activities(audit), DriftResponseMode.REMEDIATE)
+
+    assert result.mode is DriftResponseMode.REMEDIATE
+    assert result.remediated == [ids[0], ids[1]]
+    assert result.excluded == {ids[2]: ExclusionReason.UNDESIRED_ONLY, ids[3]: ExclusionReason.ERRORED}
+    assert result.reconcile.workflow_id == f"{RUN_ID}-reconcile"
+    assert (result.reconcile.succeeded, result.reconcile.failed) == (2, 0)
+    assert sorted(mixed.applied, key=str) == sorted([ids[0], ids[1]], key=str)
+    # A deploy cannot remove config intent never asked for, and none was attempted (VIII.5).
+    assert mixed.drift[ids[1]] == [UNDESIRED]
+    assert mixed.drift[ids[2]] == [UNDESIRED]
+
+
+@pytest.mark.asyncio
+async def test_remediate_records_each_decision_against_the_device(mixed: Fabric) -> None:
+    ids = [s.device.id for s in mixed.states]
+    audit = InMemoryAuditLog()
+
+    await _run(mixed.activities(audit), DriftResponseMode.REMEDIATE)
+
+    [forward] = await _response_events(audit, target=ids[0])
+    assert forward.actor == ACTOR
+    assert forward.payload["decision"] == "remediated"
+    assert forward.payload["scan_workflow_id"] == f"{RUN_ID}-scan"
+    assert forward.payload["reconcile_workflow_id"] == f"{RUN_ID}-reconcile"
+    assert forward.payload["result"] == "succeeded"
+    assert forward.payload["paths"] == [FORWARD.path]
+
+    [undesired] = await _response_events(audit, target=ids[2])
+    assert undesired.payload["decision"] == "undesired_only"
+    assert undesired.payload["paths"] == [UNDESIRED.path]
+    assert "reconcile_workflow_id" not in undesired.payload
+
+    [errored] = await _response_events(audit, target=ids[3])
+    assert errored.payload["decision"] == "errored"
+    assert errored.payload["error"].startswith("collect failed")
+
+    assert await _response_events(audit, target=ids[4]) == []
+
+
+@pytest.mark.asyncio
+async def test_remediate_use_case_summary_counts_decisions(mixed: Fabric) -> None:
+    audit = InMemoryAuditLog()
+
+    await _run(mixed.activities(audit), DriftResponseMode.REMEDIATE)
+
+    [summary] = await _response_events(audit, target=USE_CASE)
+    assert summary.payload["mode"] == "remediate"
+    assert summary.payload["remediated"] == 2
+    assert summary.payload["excluded"] == {"undesired_only": 1, "errored": 1}
+    assert summary.payload["reconcile_workflow_id"] == f"{RUN_ID}-reconcile"
+
+
+@pytest.mark.asyncio
+async def test_remediate_with_nothing_eligible_starts_no_reconcile(make_desired) -> None:
+    fabric = Fabric([make_desired("undesired-01"), make_desired("clean-02")])
+    fabric.drift[fabric.states[0].device.id] = [UNDESIRED]
+    audit = InMemoryAuditLog()
+
+    result = await _run(fabric.activities(audit), DriftResponseMode.REMEDIATE)
+
+    assert result.remediated == []
+    assert result.reconcile is None
+    assert fabric.applied == []
+    assert await audit.query_by_workflow(f"{RUN_ID}-reconcile") == []
+
+
+@pytest.mark.asyncio
+async def test_a_failed_repair_is_reported_and_the_run_still_succeeds(make_desired) -> None:
+    fabric = Fabric([make_desired("rejecting-01"), make_desired("forward-02")])
+    rejecting, forward = (s.device.id for s in fabric.states)
+    fabric.drift[rejecting] = [FORWARD]
+    fabric.drift[forward] = [FORWARD]
+    fabric.rejecting.add(rejecting)
+    audit = InMemoryAuditLog()
+
+    result = await _run(fabric.activities(audit), DriftResponseMode.REMEDIATE)
+
+    # Stand-down is deferred (#136): the failure is recorded, the schedule is not touched.
+    assert (result.reconcile.succeeded, result.reconcile.failed) == (1, 1)
+    [failed] = await _response_events(audit, target=rejecting)
+    assert failed.payload["result"] == "failed"
+    terminal = (await audit.query_by_workflow(RUN_ID))[-1]
+    assert terminal.event_type is AuditEventType.WORKFLOW_TERMINATED
+    assert terminal.reason is WorkflowReason.SUCCEEDED

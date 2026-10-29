@@ -305,3 +305,137 @@ def test_no_schedule_command_requires_a_worker(args, audit_log, temporal, sot_id
     with patch.object(cli, "_require_worker", new=AsyncMock(side_effect=AssertionError("must not be called"))):
         result = _invoke(args)
     assert result.exit_code == ExitCode.OK, result.output
+
+
+# ---------------------------------------------------------------------------
+# mode, and confirm-on-trigger (US3)
+# ---------------------------------------------------------------------------
+
+_CONFIRMATION = (
+    "Switch dcfabric to remediate?\n"
+    "  Every 5m, devices whose scan shows drift a deploy can fix will be redeployed\n"
+    "  without asking — including devices whose intent was changed in the Source of\n"
+    "  Truth. Undesired config is never removed. Devices: 3.\n"
+    "  A failed repair is retried every run until you switch back to report.\n"
+    "Continue? [y/N]"
+)
+
+
+@pytest.fixture
+def set_response():
+    with patch(
+        f"{_SCHEDULES}.set_drift_response", new=AsyncMock(return_value=_view(mode=DriftResponseMode.REMEDIATE))
+    ) as mock:
+        yield mock
+
+
+@pytest.fixture
+def fabric_states(states):
+    with (
+        patch.object(cli, "build_store", return_value=MagicMock()),
+        patch.object(cli, "load_states", new=AsyncMock(return_value=states)),
+    ):
+        yield states
+
+
+class TestMode:
+    def test_remediate_states_what_it_authorizes_and_proceeds_on_yes(
+        self, audit_log, temporal, describe, set_response, fabric_states
+    ) -> None:
+        with patch.object(cli.getpass, "getuser", return_value="anton"):
+            result = runner.invoke(cli.app, ["schedule", "mode", "remediate"], input="y\n")
+
+        assert result.exit_code == ExitCode.OK, result.output
+        assert _CONFIRMATION in result.output
+        kwargs = set_response.call_args.kwargs
+        assert kwargs["mode"] is DriftResponseMode.REMEDIATE
+        assert kwargs["actor"] == "anton"
+        assert kwargs["audit_log"] is audit_log
+
+    def test_remediate_aborts_on_no(self, audit_log, temporal, describe, set_response, fabric_states) -> None:
+        result = runner.invoke(cli.app, ["schedule", "mode", "remediate"], input="n\n")
+        assert result.exit_code == ExitCode.ERROR
+        set_response.assert_not_called()
+
+    def test_yes_skips_the_prompt(self, audit_log, temporal, describe, set_response, fabric_states) -> None:
+        result = _invoke(["mode", "remediate", "--yes"])
+        assert result.exit_code == ExitCode.OK
+        assert "Continue?" not in result.output
+        set_response.assert_awaited_once()
+
+    def test_json_without_yes_is_refused(self, audit_log, temporal, describe, set_response, fabric_states) -> None:
+        result = _invoke(["mode", "remediate", "--json"])
+        assert result.exit_code == ExitCode.ERROR
+        assert "--json requires --yes" in result.output
+        set_response.assert_not_called()
+
+    def test_json_with_yes_emits_the_view(self, audit_log, temporal, describe, set_response, fabric_states) -> None:
+        result = _invoke(["mode", "remediate", "--json", "--yes"])
+        assert result.exit_code == ExitCode.OK
+        assert json.loads(result.stdout)["mode"] == "remediate"
+
+    def test_report_never_prompts(self, audit_log, temporal, describe, set_response) -> None:
+        set_response.return_value = _view()
+        result = _invoke(["mode", "report"])
+        assert result.exit_code == ExitCode.OK, result.output
+        assert "Continue?" not in result.output
+        assert set_response.call_args.kwargs["mode"] is DriftResponseMode.REPORT
+
+    def test_an_unknown_mode_is_a_one_line_error(self, audit_log, temporal, describe, set_response) -> None:
+        result = _invoke(["mode", "suppress"])
+        assert result.exit_code == ExitCode.ERROR
+        assert "report or remediate" in result.output
+        set_response.assert_not_called()
+
+    def test_an_unreachable_sot_still_lets_the_operator_decide(
+        self, audit_log, temporal, describe, set_response
+    ) -> None:
+        from snapl_presentation.exceptions import ConnectionCliError
+
+        failure = ConnectionCliError(subsystem="Source of Truth", address="x", env_var="INFRAHUB_ADDRESS", cause="down")
+        with (
+            patch.object(cli, "build_store", return_value=MagicMock()),
+            patch.object(cli, "load_states", new=AsyncMock(side_effect=failure)),
+        ):
+            result = runner.invoke(cli.app, ["schedule", "mode", "remediate"], input="y\n")
+        assert result.exit_code == ExitCode.OK, result.output
+        assert "Devices: unknown (SoT unreachable)" in result.output
+
+    def test_a_missing_schedule_exits_1(self, audit_log, temporal, describe, set_response) -> None:
+        describe.side_effect = ScheduleNotFoundError("none")
+        assert _invoke(["mode", "remediate", "--yes"]).exit_code == ExitCode.ERROR
+        set_response.assert_not_called()
+
+
+class TestTriggerRemediate:
+    def test_triggering_a_remediate_schedule_asks_first(self, audit_log, temporal, describe, control, fabric_states):
+        describe.return_value = _view(mode=DriftResponseMode.REMEDIATE)
+        result = runner.invoke(cli.app, ["schedule", "trigger"], input="n\n")
+        assert result.exit_code == ExitCode.ERROR
+        assert "Trigger a remediate run of dcfabric now?" in result.output
+        assert "Undesired config is never removed." in result.output
+        control.trigger.assert_not_called()
+
+    def test_yes_triggers_a_remediate_schedule(self, audit_log, temporal, describe, control, fabric_states) -> None:
+        describe.return_value = _view(mode=DriftResponseMode.REMEDIATE)
+        assert _invoke(["trigger", "--yes"]).exit_code == ExitCode.OK
+        control.trigger.assert_awaited_once()
+
+
+class TestShowRemediate:
+    def test_a_remediate_run_that_wrote_is_shown(self, temporal, describe) -> None:
+        from snapl_orchestrator.models import RunSummary, ScheduledRunInfo
+
+        at = datetime(2026, 10, 28, 3, 0, tzinfo=UTC)
+        summary = RunSummary(total=6, clean=5, drifted=1, errored=0, remediated=1, succeeded=1, failed=0, wrote=True)
+        describe.return_value = _view(mode=DriftResponseMode.REMEDIATE).model_copy(
+            update={
+                "recent_runs": [
+                    ScheduledRunInfo(
+                        workflow_id="w", scheduled_at=at, started_at=at, status="completed", summary=summary
+                    )
+                ]
+            }
+        )
+        result = _invoke(["show"])
+        assert "wrote: 1 device (1 ok, 0 failed)" in result.output

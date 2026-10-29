@@ -24,8 +24,11 @@ with workflow.unsafe.imports_passed_through():
         DriftResponseRequest,
         DriftResponseResult,
         DriftScanResult,
+        ReconcileResult,
         WorkflowReason,
     )
+    from snapl_orchestrator.remediation import select_remediation
+    from snapl_orchestrator.workflows.reconcile_devices import ReconcileDevicesWorkflow
     from snapl_orchestrator.workflows.scan_drift import ScanDriftWorkflow
 
 
@@ -80,6 +83,39 @@ def _use_case_payload(result: DriftResponseResult) -> dict:
     }
 
 
+def _device_payloads(result: DriftResponseResult) -> list[tuple]:
+    """One record per repaired or excluded device, so `snapl audit --device`
+    shows "repaired by schedule X from scan Y" or "left alone, and why" (FR-020)."""
+    records = []
+    for device_id in result.remediated:
+        report = result.scan.reports[device_id]
+        outcome = result.reconcile.device_results.get(device_id) if result.reconcile else None
+        records.append(
+            (
+                device_id,
+                {
+                    "decision": "remediated",
+                    "scan_workflow_id": result.scan.workflow_id,
+                    "reconcile_workflow_id": result.reconcile.workflow_id if result.reconcile else None,
+                    # No device result means reconcile skipped it (a deploy was in flight).
+                    "result": "skipped" if outcome is None else ("succeeded" if outcome.success else "failed"),
+                    "paths": [item.path for item in report.items],
+                },
+            )
+        )
+    for device_id, reason in result.excluded.items():
+        report = result.scan.reports[device_id]
+        payload = {
+            "decision": reason.value,
+            "scan_workflow_id": result.scan.workflow_id,
+            "paths": [item.path for item in report.items],
+        }
+        if report.error:
+            payload["error"] = report.error
+        records.append((device_id, payload))
+    return records
+
+
 @workflow.defn(name="DriftResponse")
 class DriftResponseWorkflow:
     """Scan a use case, then report (write nothing) or remediate (reconcile forward drift)."""
@@ -106,17 +142,31 @@ class DriftResponseWorkflow:
                 id=f"{wf_id}-scan",
                 cancellation_type=workflow.ChildWorkflowCancellationType.TRY_CANCEL,
             )
+            remediated: list = []
+            excluded: dict = {}
+            reconcile: ReconcileResult | None = None
+            if request.mode is DriftResponseMode.REMEDIATE:
+                # Only forward drift: an undesired-only device would be rewritten
+                # every interval without converging, and an errored one was never
+                # seen (FR-013). The repair is the operator's reconcile path,
+                # unchanged — per-device serialization and in-flight skips included.
+                remediated, excluded = select_remediation(scan)
+                if remediated:
+                    reconcile = await workflow.execute_child_workflow(
+                        ReconcileDevicesWorkflow.run, remediated, id=f"{wf_id}-reconcile"
+                    )
             result = DriftResponseResult(
                 workflow_id=wf_id,
                 schedule_id=request.schedule_id,
                 use_case_id=request.use_case_id,
                 mode=request.mode,
                 scan=scan,
+                remediated=remediated,
+                excluded=excluded,
+                reconcile=reconcile,
                 started_at=started_at,
                 ended_at=workflow.now(),
             )
-            if request.mode is DriftResponseMode.REMEDIATE:
-                raise NotImplementedError("remediate")
         except (asyncio.CancelledError, ChildWorkflowError) as exc:
             if is_cancelled_exception(exc):
                 await _record(
@@ -139,6 +189,13 @@ class DriftResponseWorkflow:
             )
             raise
 
+        for device_id, payload in _device_payloads(result):
+            await _record(
+                request=request,
+                target_id=device_id,
+                event_type=AuditEventType.DRIFT_RESPONSE,
+                payload=payload,
+            )
         await _record(
             request=request,
             target_id=request.use_case_id,

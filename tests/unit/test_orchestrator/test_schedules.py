@@ -46,6 +46,7 @@ from snapl_orchestrator.schedules import (
     pause_drift_schedule,
     resume_drift_schedule,
     schedule_id_for,
+    set_drift_response,
     trigger_drift_schedule,
 )
 
@@ -496,3 +497,73 @@ async def test_no_record_is_written_when_temporal_refuses_a_pause() -> None:
         await pause_drift_schedule(client, use_case_id="dcfabric", reason="r", audit_log=audit, actor="anton")
 
     assert [e.payload["change"] for e in await _changes(audit)] == ["created"]
+
+
+# ---------------------------------------------------------------------------
+# set_drift_response (US3)
+# ---------------------------------------------------------------------------
+
+
+async def test_set_response_switches_the_mode_and_keeps_everything_else() -> None:
+    client, audit = FakeClient(), InMemoryAuditLog()
+    await _ensure(client, audit, interval=timedelta(minutes=2))
+    await pause_drift_schedule(client, use_case_id="dcfabric", reason="hold", audit_log=audit, actor="anton")
+    before = client.schedules["drift-response-dcfabric"]["schedule"]
+
+    view = await set_drift_response(
+        client, use_case_id="dcfabric", mode=DriftResponseMode.REMEDIATE, audit_log=audit, actor="anton"
+    )
+
+    after = client.schedules["drift-response-dcfabric"]["schedule"]
+    assert view.mode is DriftResponseMode.REMEDIATE
+    assert after.action.static_summary == "drift response: remediate"
+    assert after.action.id == "drift-response-dcfabric"
+    assert after.spec == before.spec
+    assert after.policy == before.policy
+    assert (after.state.paused, after.state.note) == (True, "hold")
+    assert (await _changes(audit))[-1].payload == {"change": "response_changed", "from": "report", "to": "remediate"}
+
+
+async def test_set_response_to_the_current_mode_is_a_no_op() -> None:
+    client, audit = await _created()
+
+    await set_drift_response(client, use_case_id="dcfabric", mode=DriftResponseMode.REPORT, audit_log=audit, actor="a")
+
+    assert [e.payload["change"] for e in await _changes(audit)] == ["created"]
+    assert client.get_schedule_handle("drift-response-dcfabric").calls == []
+
+
+async def test_set_response_on_a_missing_schedule_raises_not_found() -> None:
+    with pytest.raises(ScheduleNotFoundError):
+        await set_drift_response(
+            FakeClient(),
+            use_case_id="dcfabric",
+            mode=DriftResponseMode.REMEDIATE,
+            audit_log=InMemoryAuditLog(),
+            actor="a",
+        )
+
+
+async def test_ensure_on_a_remediate_schedule_keeps_remediate() -> None:
+    client, audit = await _created()
+    await set_drift_response(
+        client, use_case_id="dcfabric", mode=DriftResponseMode.REMEDIATE, audit_log=audit, actor="a"
+    )
+
+    view = await _ensure(client, audit, interval=timedelta(minutes=10))
+
+    assert view.mode is DriftResponseMode.REMEDIATE
+
+
+def test_no_public_function_creates_a_remediate_schedule() -> None:
+    import inspect
+
+    import snapl_orchestrator.schedules as module
+
+    for name in module.__all__:
+        fn = getattr(module, name)
+        if name == "build_drift_schedule" or not callable(fn):
+            continue
+        params = inspect.signature(fn).parameters
+        if name.startswith(("ensure", "create")):
+            assert "mode" not in params, f"{name} must not take a mode (FR-003)"
