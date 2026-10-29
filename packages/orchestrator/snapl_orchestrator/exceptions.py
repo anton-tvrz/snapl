@@ -17,3 +17,7 @@ class OrchestratorConfigError(OrchestratorError):
 
 class AuditLogError(OrchestratorError):
     """Append or query failed against the durable audit store after retries."""
+
+
+class ScheduleNotFoundError(OrchestratorError):
+    """The use case has no drift schedule."""

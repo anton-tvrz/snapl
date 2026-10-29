@@ -9,7 +9,7 @@ dependencies = [
     "snapl-executor",
     "snapl-collector",
     "snapl-observability",
-    "temporalio>=1.7",
+    "temporalio>=1.25",
     "pydantic>=2.5",
     "aiosqlite>=0.19",
 ]

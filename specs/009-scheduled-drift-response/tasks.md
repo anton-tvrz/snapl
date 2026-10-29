@@ -19,7 +19,7 @@
 
 **Purpose**: Dependency floor. There is no new package and no new directory.
 
-- [ ] T001 Raise `temporalio>=1.7` to `temporalio>=1.25` in packages/orchestrator/pyproject.toml (research R1), then run `uv lock` and confirm uv.lock still resolves 1.25.0
+- [x] T001 Raise `temporalio>=1.7` to `temporalio>=1.25` in packages/orchestrator/pyproject.toml (research R1), then run `uv lock` and confirm uv.lock still resolves 1.25.0
 
 ---
 
@@ -29,7 +29,7 @@
 
 ### Tests (write first, verify they fail)
 
-- [ ] T002 [P] Extend tests/unit/test_orchestrator/test_models.py with:
+- [x] T002 [P] Extend tests/unit/test_orchestrator/test_models.py with:
   - `DriftResponseMode` (`report`, `remediate`), `ExclusionReason` (`undesired_only`, `errored`) and `ScheduleChange` (`created`, `interval_changed`, `response_changed`, `paused`, `resumed`, `triggered`, `deleted`) values;
   - `AuditEventType.SCHEDULE_CHANGED` and `DRIFT_RESPONSE` exist;
   - a `SCHEDULE_CHANGED` event without `actor`, or with a `payload["change"]` that isn't a `ScheduleChange` value, is rejected;
@@ -37,14 +37,14 @@
   - `DriftResponseRequest` rejects a `schedule_id` that doesn't match `drift_schedule_id(use_case_id)` and rejects an empty use case;
   - `DriftResponseResult` invariants from data-model.md: REPORT ⇒ nothing remediated, excluded or reconciled; `reconcile is None` ⇔ `remediated == []`; `reconcile.total == len(remediated)`; remediated and excluded are disjoint and ⊆ `scan.reports`; remediated ids are DRIFTED with at least one forward item; `ended_at >= started_at`;
   - `RunSummary` (`wrote` false for a report run; true when reconcile succeeded or failed > 0; false when everything was skipped), `ScheduledRunInfo` and `DriftScheduleView` are frozen and forbid extra fields.
-- [ ] T003 [P] Write tests/unit/test_orchestrator/test_remediation.py for `select_remediation(scan)`. Cover:
+- [x] T003 [P] Write tests/unit/test_orchestrator/test_remediation.py for `select_remediation(scan)`. Cover:
   - CLEAN devices are in neither result;
   - an ERROR device is excluded as `ERRORED`;
   - a DRIFTED device with only `undesired=True` items is excluded as `UNDESIRED_ONLY`;
   - a DRIFTED device with mixed items is remediated;
   - remediated ids keep scan order;
   - an empty scan gives `([], {})`.
-- [ ] T004 [P] Write the pure half of tests/unit/test_orchestrator/test_schedules.py for `build_drift_schedule`. Assert:
+- [x] T004 [P] Write the pure half of tests/unit/test_orchestrator/test_schedules.py for `build_drift_schedule`. Assert:
   - the interval spec equals the given interval;
   - overlap is `ScheduleOverlapPolicy.SKIP`;
   - `catchup_window` equals the interval (not the SDK's 365-day default);
@@ -57,14 +57,14 @@
 
 ### Implementation
 
-- [ ] T005 Add the new types and audit invariant to packages/orchestrator/snapl_orchestrator/models.py:
+- [x] T005 Add the new types and audit invariant to packages/orchestrator/snapl_orchestrator/models.py:
   - `DriftResponseMode`, `ExclusionReason`, `ScheduleChange`;
   - the two `AuditEventType` members, and the `SCHEDULE_CHANGED` rule in `AuditEvent._check_invariants`;
   - `drift_schedule_id()`;
   - `DriftResponseRequest`, `DriftResponseResult`, `RunSummary`, `ScheduledRunInfo`, `DriftScheduleView`, frozen with `extra="forbid"` and runtime type imports marked `# noqa: TC003` (research R12).
-- [ ] T006 [P] Add `ScheduleNotFoundError(OrchestratorError)` to packages/orchestrator/snapl_orchestrator/exceptions.py
-- [ ] T007 [P] Implement `select_remediation` (pure, no Temporal import) in packages/orchestrator/snapl_orchestrator/remediation.py
-- [ ] T008 Create packages/orchestrator/snapl_orchestrator/schedules.py with `DEFAULT_SCAN_INTERVAL`, `MIN_SCAN_INTERVAL`, `schedule_id_for` (re-export of `models.drift_schedule_id`) and `build_drift_schedule` per contracts/orchestrator-schedules.md
+- [x] T006 [P] Add `ScheduleNotFoundError(OrchestratorError)` to packages/orchestrator/snapl_orchestrator/exceptions.py
+- [x] T007 [P] Implement `select_remediation` (pure, no Temporal import) in packages/orchestrator/snapl_orchestrator/remediation.py
+- [x] T008 Create packages/orchestrator/snapl_orchestrator/schedules.py with `DEFAULT_SCAN_INTERVAL`, `MIN_SCAN_INTERVAL`, `schedule_id_for` (re-export of `models.drift_schedule_id`) and `build_drift_schedule` per contracts/orchestrator-schedules.md
 
 **Checkpoint**: `uv run pytest tests/unit/test_orchestrator/test_models.py test_remediation.py test_schedules.py` is green, with no Temporal server.
 
