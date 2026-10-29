@@ -93,6 +93,26 @@ async def test_query_by_time_range_is_half_open() -> None:
 
 
 @pytest.mark.asyncio
+async def test_query_by_time_range_refuses_naive_bounds() -> None:
+    """Same contract as SqliteAuditLog, rather than a TypeError mid-comparison."""
+    log = InMemoryAuditLog()
+    await log.append(_event())
+    with pytest.raises(ValueError, match="timezone"):
+        await log.query_by_time_range(datetime(2026, 5, 1), datetime(2026, 5, 2))  # noqa: DTZ001
+
+
+@pytest.mark.asyncio
+async def test_duplicate_event_id_is_stored_once() -> None:
+    """Same contract as SqliteAuditLog: an activity retry re-sends the event."""
+    log = InMemoryAuditLog()
+    event = _event(workflow_id="wf-retry")
+    await log.append(event)
+    await log.append(event)
+    assert [e.event_id for e in await log.query_by_workflow("wf-retry")] == [event.event_id]
+    assert len(log) == 1
+
+
+@pytest.mark.asyncio
 async def test_concurrent_appends_are_serialised() -> None:
     log = InMemoryAuditLog()
     events = [_event(workflow_id="wf") for _ in range(50)]

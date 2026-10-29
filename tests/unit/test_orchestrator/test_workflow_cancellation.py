@@ -126,7 +126,7 @@ async def test_scan_drift_cancellation_records_cancelled_event(make_desired) -> 
     _install_blocking_intent(make_desired("spine-01"), audit, started)
 
     wf_id = "scan-cancel-dcfabric"
-    await _start_block_cancel(
+    result = await _start_block_cancel(
         ScanDriftWorkflow.run,
         "dcfabric",
         workflows=[ScanDriftWorkflow],
@@ -137,6 +137,8 @@ async def test_scan_drift_cancellation_records_cancelled_event(make_desired) -> 
 
     types = [e.event_type for e in await audit.query_by_workflow(wf_id)]
     assert AuditEventType.WORKFLOW_CANCELLED in types
+    # The empty result must not read as a clean scan of zero devices.
+    assert result.cancelled is True
 
 
 @pytest.mark.asyncio
