@@ -311,3 +311,46 @@ class TestJsonSchedule:
         assert payload["mode"] == "report"
         assert payload["next_runs"][0] == "2026-10-28T03:10:00Z"
         assert payload["recent_runs"][0]["summary"]["wrote"] is False
+
+
+class TestHumanAuditScheduleEvents:
+    def _event(self, event_type: str, payload: dict, actor: str | None):
+        from snapl_orchestrator.models import AuditEvent, AuditEventType
+
+        return AuditEvent(
+            event_id=uuid4(),
+            workflow_id="drift-response-dcfabric",
+            workflow_type="DriftSchedule",
+            target_id="dcfabric",
+            event_type=AuditEventType(event_type),
+            payload=payload,
+            timestamp=datetime(2026, 10, 28, 3, 0, tzinfo=UTC),
+            actor=actor,
+        )
+
+    def test_a_schedule_change_shows_what_changed_and_who(self) -> None:
+        console, _ = _capture()
+        HumanRenderer(console).audit(
+            [
+                self._event(
+                    "schedule_changed", {"change": "response_changed", "from": "report", "to": "remediate"}, "anton"
+                )
+            ]
+        )
+        text = _text(console)
+        assert "response_changed report→remediate" in text
+        assert "anton" in text
+
+    def test_a_device_level_drift_response_shows_its_decision(self) -> None:
+        console, _ = _capture()
+        HumanRenderer(console).audit(
+            [self._event("drift_response", {"decision": "undesired_only"}, "schedule:drift-response-dcfabric")]
+        )
+        text = _text(console)
+        assert "undesired_only" in text
+        assert "schedule:drift-response-dcfabric" in text
+
+    def test_a_use_case_level_drift_response_shows_its_mode(self) -> None:
+        console, _ = _capture()
+        HumanRenderer(console).audit([self._event("drift_response", {"mode": "report"}, "schedule:x")])
+        assert "report" in _text(console)

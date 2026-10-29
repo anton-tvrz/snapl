@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -202,3 +203,105 @@ class TestShow:
         ):
             result = _invoke(["show"])
         assert result.exit_code == ExitCode.OK
+
+
+# ---------------------------------------------------------------------------
+# pause / resume / trigger / delete (US2)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def control():
+    """Mock every mutating schedule function."""
+    with (
+        patch(f"{_SCHEDULES}.pause_drift_schedule", new=AsyncMock()) as pause,
+        patch(f"{_SCHEDULES}.resume_drift_schedule", new=AsyncMock()) as resume,
+        patch(f"{_SCHEDULES}.trigger_drift_schedule", new=AsyncMock(return_value=DriftResponseMode.REPORT)) as trig,
+        patch(f"{_SCHEDULES}.delete_drift_schedule", new=AsyncMock()) as delete,
+    ):
+        yield SimpleNamespace(pause=pause, resume=resume, trigger=trig, delete=delete)
+
+
+class TestPause:
+    def test_pauses_with_the_reason(self, audit_log, temporal, control) -> None:
+        with patch.object(cli.getpass, "getuser", return_value="anton"):
+            result = _invoke(["pause", "--reason", "maintenance: spine swap"])
+        assert result.exit_code == ExitCode.OK, result.output
+        kwargs = control.pause.call_args.kwargs
+        assert kwargs["reason"] == "maintenance: spine swap"
+        assert kwargs["actor"] == "anton"
+        assert kwargs["audit_log"] is audit_log
+        assert "paused" in result.output
+
+    @pytest.mark.parametrize("args", [[], ["--reason", "  "]])
+    def test_requires_a_reason(self, audit_log, temporal, control, args) -> None:
+        result = _invoke(["pause", *args])
+        assert result.exit_code == ExitCode.ERROR
+        assert "--reason" in result.output
+        control.pause.assert_not_called()
+        temporal.assert_not_called()
+
+    def test_a_missing_schedule_exits_1(self, audit_log, temporal, control) -> None:
+        control.pause.side_effect = ScheduleNotFoundError("none")
+        result = _invoke(["pause", "--reason", "r"])
+        assert result.exit_code == ExitCode.ERROR
+        assert "no drift schedule for dcfabric" in result.output
+
+
+class TestResume:
+    def test_resumes_with_an_optional_note(self, audit_log, temporal, control) -> None:
+        result = _invoke(["resume", "--note", "swap done"])
+        assert result.exit_code == ExitCode.OK, result.output
+        assert control.resume.call_args.kwargs["note"] == "swap done"
+
+    def test_note_defaults_to_none(self, audit_log, temporal, control) -> None:
+        assert _invoke(["resume"]).exit_code == ExitCode.OK
+        assert control.resume.call_args.kwargs["note"] is None
+
+    def test_a_missing_schedule_exits_1(self, audit_log, temporal, control) -> None:
+        control.resume.side_effect = ScheduleNotFoundError("none")
+        assert _invoke(["resume"]).exit_code == ExitCode.ERROR
+
+
+class TestTrigger:
+    def test_triggers_a_report_schedule_without_asking(self, audit_log, temporal, describe, control) -> None:
+        result = _invoke(["trigger"])
+        assert result.exit_code == ExitCode.OK, result.output
+        control.trigger.assert_awaited_once()
+        assert "drift-response-dcfabric-" in result.output
+
+    def test_a_missing_schedule_exits_1(self, audit_log, temporal, describe, control) -> None:
+        describe.side_effect = ScheduleNotFoundError("none")
+        result = _invoke(["trigger"])
+        assert result.exit_code == ExitCode.ERROR
+        control.trigger.assert_not_called()
+
+
+class TestDelete:
+    def test_prompts_and_deletes_on_yes(self, audit_log, temporal, control) -> None:
+        result = runner.invoke(cli.app, ["schedule", "delete"], input="y\n")
+        assert result.exit_code == ExitCode.OK, result.output
+        control.delete.assert_awaited_once()
+
+    def test_an_aborted_prompt_deletes_nothing(self, audit_log, temporal, control) -> None:
+        result = runner.invoke(cli.app, ["schedule", "delete"], input="n\n")
+        assert result.exit_code == ExitCode.ERROR
+        control.delete.assert_not_called()
+
+    def test_yes_skips_the_prompt(self, audit_log, temporal, control) -> None:
+        assert _invoke(["delete", "--yes"]).exit_code == ExitCode.OK
+        control.delete.assert_awaited_once()
+
+    def test_a_missing_schedule_exits_1(self, audit_log, temporal, control) -> None:
+        control.delete.side_effect = ScheduleNotFoundError("none")
+        assert _invoke(["delete", "--yes"]).exit_code == ExitCode.ERROR
+
+
+@pytest.mark.parametrize(
+    "args",
+    [["pause", "--reason", "r"], ["resume"], ["trigger"], ["delete", "--yes"], ["create"]],
+)
+def test_no_schedule_command_requires_a_worker(args, audit_log, temporal, sot_identity, ensure, describe, control):
+    with patch.object(cli, "_require_worker", new=AsyncMock(side_effect=AssertionError("must not be called"))):
+        result = _invoke(args)
+    assert result.exit_code == ExitCode.OK, result.output

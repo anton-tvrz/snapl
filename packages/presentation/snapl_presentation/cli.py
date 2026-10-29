@@ -387,6 +387,14 @@ async def status(use_case: UseCaseOpt = DEFAULT_USE_CASE, as_json: JsonOpt = Fal
                     else f"nothing polling {settings.task_queue} — uv run invoke orchestrator.start",
                 )
             )
+        from snapl_orchestrator import schedules  # noqa: PLC0415
+
+        try:
+            view = await schedules.find_drift_schedule(client, use_case_id=use_case)
+        except Exception as exc:
+            checks.append(("drift schedule", True, f"could not inspect: {first_line(str(exc))}"))
+        else:
+            checks.append(_schedule_status_row(view, use_case))
 
     try:
         states = await load_states(build_store(settings), settings, use_case=use_case)
@@ -466,6 +474,25 @@ async def _refuse_foreign_sot(settings: CliSettings) -> None:
         )
 
 
+async def _schedule_write(settings: CliSettings, use_case: str, operation: Callable) -> Any:
+    """Run one mutating schedule call with the audit log open.
+
+    The log is opened (and a missing one refused) before Temporal is touched,
+    so a change is never applied without its audit record (FR-021).
+    """
+    from snapl_orchestrator.exceptions import ScheduleNotFoundError  # noqa: PLC0415
+
+    log = await _open_audit_log(settings)
+    try:
+        client = await _connect(settings)
+        await _warn_if_no_worker(client, settings)
+        return await operation(client, log)
+    except ScheduleNotFoundError:
+        raise _no_schedule(use_case) from None
+    finally:
+        await log.close()
+
+
 @schedule_app.command("create")
 @command
 async def schedule_create(
@@ -515,6 +542,104 @@ async def schedule_show(use_case: UseCaseOpt = DEFAULT_USE_CASE, as_json: JsonOp
 
     build_renderer(as_json=as_json).schedule(view)
     return ExitCode.OK
+
+
+@schedule_app.command("pause")
+@command
+async def schedule_pause(
+    reason: Annotated[str | None, typer.Option("--reason", help="Why scans stop — required.")] = None,
+    use_case: UseCaseOpt = DEFAULT_USE_CASE,
+) -> ExitCode:
+    """Suppress: stop scheduled runs until resumed, with a stated reason."""
+    from snapl_orchestrator import schedules  # noqa: PLC0415
+
+    # Checked here rather than as a required Typer option, whose usage error
+    # would exit 2 — the code this CLI reserves for drift (spec 006 FR-011).
+    if not reason or not reason.strip():
+        raise CliError("pause needs --reason", hint='For example: --reason "maintenance: spine-01 optics"')
+    settings = CliSettings.from_env()
+    await _schedule_write(
+        settings,
+        use_case,
+        lambda client, log: schedules.pause_drift_schedule(
+            client, use_case_id=use_case, reason=reason, audit_log=log, actor=_actor()
+        ),
+    )
+    _stderr.print(f'drift schedule for {use_case} paused — "{reason}"')
+    return ExitCode.OK
+
+
+@schedule_app.command("resume")
+@command
+async def schedule_resume(
+    use_case: UseCaseOpt = DEFAULT_USE_CASE,
+    note: Annotated[str | None, typer.Option("--note", help="Optional note recorded with the resume.")] = None,
+) -> ExitCode:
+    """Resume scheduled runs at the next interval."""
+    from snapl_orchestrator import schedules  # noqa: PLC0415
+
+    settings = CliSettings.from_env()
+    await _schedule_write(
+        settings,
+        use_case,
+        lambda client, log: schedules.resume_drift_schedule(
+            client, use_case_id=use_case, audit_log=log, actor=_actor(), note=note
+        ),
+    )
+    _stderr.print(f"drift schedule for {use_case} resumed")
+    return ExitCode.OK
+
+
+@schedule_app.command("trigger")
+@command
+async def schedule_trigger(use_case: UseCaseOpt = DEFAULT_USE_CASE, yes: YesOpt = False) -> ExitCode:
+    """Start one scheduled run now, under the schedule's current response."""
+    from snapl_orchestrator import schedules  # noqa: PLC0415
+
+    settings = CliSettings.from_env()
+
+    async def _trigger(client: Any, log: Any):
+        await schedules.describe_drift_schedule(client, use_case_id=use_case)
+        return await schedules.trigger_drift_schedule(client, use_case_id=use_case, audit_log=log, actor=_actor())
+
+    mode = await _schedule_write(settings, use_case, _trigger)
+    schedule_id = schedules.schedule_id_for(use_case)
+    _stderr.print(
+        f"triggered {schedule_id} ({mode.value}) — follow runs named {schedule_id}-<time>: snapl schedule show"
+    )
+    return ExitCode.OK
+
+
+@schedule_app.command("delete")
+@command
+async def schedule_delete(use_case: UseCaseOpt = DEFAULT_USE_CASE, yes: YesOpt = False) -> ExitCode:
+    """Remove a use case's drift schedule. A run in progress finishes."""
+    from snapl_orchestrator import schedules  # noqa: PLC0415
+
+    # Not destructive to devices, but it stops detection — worth a prompt.
+    _confirm(
+        f"Delete the drift schedule for {use_case}? Drift will no longer be found on its own.", yes=yes, as_json=False
+    )
+    settings = CliSettings.from_env()
+    await _schedule_write(
+        settings,
+        use_case,
+        lambda client, log: schedules.delete_drift_schedule(
+            client, use_case_id=use_case, audit_log=log, actor=_actor()
+        ),
+    )
+    _stderr.print(f"drift schedule for {use_case} deleted")
+    return ExitCode.OK
+
+
+def _schedule_status_row(view: Any, use_case: str) -> tuple[str, bool, str]:
+    """Informational only: `status` reports health, and no schedule is a choice, not a fault (FR-026)."""
+    from snapl_presentation.render import format_interval  # noqa: PLC0415
+
+    if view is None:
+        return ("drift schedule", True, "none — snapl schedule create")
+    state = f'paused — "{view.note}"' if view.paused and view.note else ("paused" if view.paused else "active")
+    return ("drift schedule", True, f"{use_case}: every {format_interval(view.interval)}, {view.mode.value}, {state}")
 
 
 def main() -> None:

@@ -33,6 +33,14 @@ def _worker_present():
         yield
 
 
+@pytest.fixture(autouse=True)
+def _no_schedule():
+    """No drift schedule unless a test says otherwise, so `status` never
+    describes a schedule against a MagicMock client."""
+    with patch("snapl_orchestrator.schedules.find_drift_schedule", new=AsyncMock(return_value=None)) as find:
+        yield find
+
+
 @pytest.fixture
 def sot(states):
     """Patch SoT access so no command reaches a real Infrahub."""
@@ -369,6 +377,41 @@ class TestStatus:
             result = _invoke(["status"])
 
         assert result.exit_code == ExitCode.OK
+
+    def _status_with(self, temporal_client, find) -> object:
+        client = temporal_client()
+        with (
+            patch.object(cli, "_connect", new=AsyncMock(return_value=client)),
+            patch.object(cli, "count_pollers", new=AsyncMock(return_value=1)),
+            patch("snapl_orchestrator.schedules.find_drift_schedule", new=find),
+        ):
+            return _invoke(["status"])
+
+    def test_reports_the_drift_schedule(self, sot, temporal_client) -> None:
+        from datetime import timedelta
+
+        from snapl_orchestrator.models import DriftResponseMode, DriftScheduleView
+
+        view = DriftScheduleView(
+            schedule_id="drift-response-dcfabric",
+            use_case_id="dcfabric",
+            interval=timedelta(minutes=5),
+            mode=DriftResponseMode.REPORT,
+            paused=False,
+        )
+        result = self._status_with(temporal_client, AsyncMock(return_value=view))
+        assert result.exit_code == ExitCode.OK
+        assert "drift schedule — dcfabric: every 5m, report, active" in result.output
+
+    def test_a_missing_schedule_is_informational(self, sot, temporal_client) -> None:
+        result = self._status_with(temporal_client, AsyncMock(return_value=None))
+        assert result.exit_code == ExitCode.OK
+        assert "drift schedule — none — snapl schedule create" in result.output
+
+    def test_a_schedule_lookup_failure_does_not_change_the_exit_code(self, sot, temporal_client) -> None:
+        result = self._status_with(temporal_client, AsyncMock(side_effect=RuntimeError("deadline exceeded\ntrace")))
+        assert result.exit_code == ExitCode.OK
+        assert "drift schedule — could not inspect: deadline exceeded" in result.output
 
 
 class TestErrorMessageBrevity:

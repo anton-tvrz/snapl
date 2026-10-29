@@ -51,10 +51,14 @@ __all__ = [
     "DEFAULT_SCAN_INTERVAL",
     "MIN_SCAN_INTERVAL",
     "build_drift_schedule",
+    "delete_drift_schedule",
     "describe_drift_schedule",
     "ensure_drift_schedule",
     "find_drift_schedule",
+    "pause_drift_schedule",
+    "resume_drift_schedule",
     "schedule_id_for",
+    "trigger_drift_schedule",
 ]
 
 DEFAULT_SCAN_INTERVAL = timedelta(minutes=5)
@@ -163,6 +167,58 @@ async def ensure_drift_schedule(
             mode=DriftResponseMode.REPORT.value,
         )
     return await describe_drift_schedule(client, use_case_id=use_case_id)
+
+
+async def pause_drift_schedule(
+    client: Client, *, use_case_id: str, reason: str, audit_log: AuditLog, actor: str
+) -> None:
+    """Suppress: no scheduled run starts until resumed. An unexplained pause is
+    as bad as an unexplained write, so the reason is required and becomes the
+    schedule's note, visible in the Web UI too."""
+    if not reason.strip():
+        raise ValueError("pausing a drift schedule requires a reason")
+    try:
+        await _handle(client, use_case_id).pause(note=reason)
+    except RPCError as exc:
+        raise _not_found(use_case_id, exc) from exc
+    await _record_change(audit_log, use_case_id=use_case_id, actor=actor, change=ScheduleChange.PAUSED, reason=reason)
+
+
+async def resume_drift_schedule(
+    client: Client, *, use_case_id: str, audit_log: AuditLog, actor: str, note: str | None = None
+) -> None:
+    """Runs start again at the next interval."""
+    try:
+        await _handle(client, use_case_id).unpause(note=note)
+    except RPCError as exc:
+        raise _not_found(use_case_id, exc) from exc
+    await _record_change(audit_log, use_case_id=use_case_id, actor=actor, change=ScheduleChange.RESUMED, note=note)
+
+
+async def trigger_drift_schedule(
+    client: Client, *, use_case_id: str, audit_log: AuditLog, actor: str
+) -> DriftResponseMode:
+    """One run now, under the current response and the schedule's own overlap
+    policy, so a run already in progress makes it a no-op. Returns the mode the
+    run uses; a caller about to trigger a REMEDIATE run confirms first."""
+    view = await describe_drift_schedule(client, use_case_id=use_case_id)
+    try:
+        await _handle(client, use_case_id).trigger()
+    except RPCError as exc:
+        raise _not_found(use_case_id, exc) from exc
+    await _record_change(
+        audit_log, use_case_id=use_case_id, actor=actor, change=ScheduleChange.TRIGGERED, mode=view.mode.value
+    )
+    return view.mode
+
+
+async def delete_drift_schedule(client: Client, *, use_case_id: str, audit_log: AuditLog, actor: str) -> None:
+    """No further runs start. A run in progress finishes."""
+    try:
+        await _handle(client, use_case_id).delete()
+    except RPCError as exc:
+        raise _not_found(use_case_id, exc) from exc
+    await _record_change(audit_log, use_case_id=use_case_id, actor=actor, change=ScheduleChange.DELETED)
 
 
 async def describe_drift_schedule(client: Client, *, use_case_id: str) -> DriftScheduleView:

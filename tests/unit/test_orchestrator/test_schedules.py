@@ -39,10 +39,14 @@ from snapl_orchestrator.schedules import (
     DEFAULT_SCAN_INTERVAL,
     MIN_SCAN_INTERVAL,
     build_drift_schedule,
+    delete_drift_schedule,
     describe_drift_schedule,
     ensure_drift_schedule,
     find_drift_schedule,
+    pause_drift_schedule,
+    resume_drift_schedule,
     schedule_id_for,
+    trigger_drift_schedule,
 )
 
 pytestmark = pytest.mark.unit
@@ -406,3 +410,89 @@ async def test_find_returns_the_view_when_present() -> None:
     view = await find_drift_schedule(client, use_case_id="dcfabric")
     assert view is not None
     assert view.mode is DriftResponseMode.REPORT
+
+
+# ---------------------------------------------------------------------------
+# pause / resume / trigger / delete (US2)
+# ---------------------------------------------------------------------------
+
+
+async def _created(audit: InMemoryAuditLog | None = None) -> tuple[FakeClient, InMemoryAuditLog]:
+    client, audit = FakeClient(), audit or InMemoryAuditLog()
+    await _ensure(client, audit)
+    return client, audit
+
+
+async def test_pause_requires_a_reason() -> None:
+    client, audit = await _created()
+    for reason in ("", "   "):
+        with pytest.raises(ValueError, match="reason"):
+            await pause_drift_schedule(client, use_case_id="dcfabric", reason=reason, audit_log=audit, actor="anton")
+    assert client.get_schedule_handle("drift-response-dcfabric").calls == []
+
+
+async def test_pause_suppresses_with_the_reason_as_the_note() -> None:
+    client, audit = await _created()
+
+    await pause_drift_schedule(
+        client, use_case_id="dcfabric", reason="maintenance: spine swap", audit_log=audit, actor="anton"
+    )
+
+    assert client.get_schedule_handle("drift-response-dcfabric").calls == [("pause", "maintenance: spine swap")]
+    event = (await _changes(audit))[-1]
+    assert event.payload == {"change": "paused", "reason": "maintenance: spine swap"}
+    assert event.actor == "anton"
+
+
+async def test_resume_records_the_optional_note() -> None:
+    client, audit = await _created()
+
+    await resume_drift_schedule(client, use_case_id="dcfabric", audit_log=audit, actor="anton", note="swap done")
+
+    assert client.get_schedule_handle("drift-response-dcfabric").calls == [("unpause", "swap done")]
+    assert (await _changes(audit))[-1].payload == {"change": "resumed", "note": "swap done"}
+
+
+async def test_trigger_returns_the_mode_it_will_run_with() -> None:
+    client, audit = await _created()
+
+    mode = await trigger_drift_schedule(client, use_case_id="dcfabric", audit_log=audit, actor="anton")
+
+    assert mode is DriftResponseMode.REPORT
+    assert client.get_schedule_handle("drift-response-dcfabric").calls == [("trigger", None)]
+    assert (await _changes(audit))[-1].payload == {"change": "triggered", "mode": "report"}
+
+
+async def test_delete_removes_the_schedule_and_records_it() -> None:
+    client, audit = await _created()
+
+    await delete_drift_schedule(client, use_case_id="dcfabric", audit_log=audit, actor="anton")
+
+    assert client.schedules == {}
+    assert (await _changes(audit))[-1].payload == {"change": "deleted"}
+
+
+@pytest.mark.parametrize("operation", ["pause", "resume", "trigger", "delete"])
+async def test_every_control_raises_not_found_for_a_missing_schedule(operation: str) -> None:
+    client, audit = FakeClient(), InMemoryAuditLog()
+    call = {
+        "pause": lambda: pause_drift_schedule(client, use_case_id="dcfabric", reason="r", audit_log=audit, actor="a"),
+        "resume": lambda: resume_drift_schedule(client, use_case_id="dcfabric", audit_log=audit, actor="a"),
+        "trigger": lambda: trigger_drift_schedule(client, use_case_id="dcfabric", audit_log=audit, actor="a"),
+        "delete": lambda: delete_drift_schedule(client, use_case_id="dcfabric", audit_log=audit, actor="a"),
+    }[operation]
+
+    with pytest.raises(ScheduleNotFoundError):
+        await call()
+
+    assert await _changes(audit) == []
+
+
+async def test_no_record_is_written_when_temporal_refuses_a_pause() -> None:
+    client, audit = await _created()
+    client.fail_next = RPCError("unavailable", RPCStatusCode.UNAVAILABLE, b"")
+
+    with pytest.raises(RPCError):
+        await pause_drift_schedule(client, use_case_id="dcfabric", reason="r", audit_log=audit, actor="anton")
+
+    assert [e.payload["change"] for e in await _changes(audit)] == ["created"]

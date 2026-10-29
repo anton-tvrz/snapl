@@ -69,7 +69,7 @@ def _desired_cell(item: Any) -> str:
     return _esc(item.desired)
 
 
-def _interval(interval: timedelta) -> str:
+def format_interval(interval: timedelta) -> str:
     """``5m``, ``90s``, ``1h`` — the same shape ``--every`` accepts."""
     seconds = int(interval.total_seconds())
     if seconds % 3600 == 0:
@@ -96,6 +96,22 @@ def _run_line(run: ScheduledRunInfo) -> str:
         return f"{head}  {_esc(run.workflow_id)}"
     s = run.summary
     return f"{head}  {s.total} devices: {s.clean} clean, {s.drifted} drifted, {s.errored} errored   {_wrote(s)}"
+
+
+def _audit_outcome(event: AuditEvent) -> str:
+    """What the outcome column says. Schedule events carry their meaning in the
+    payload, so a bare event type would hide which policy changed (spec 009)."""
+    payload = event.payload
+    if event.event_type.value == "schedule_changed":
+        change = str(payload.get("change", ""))
+        if "from" in payload and "to" in payload:
+            return f"{change} {payload['from']}→{payload['to']}"
+        if "from_seconds" in payload and "to_seconds" in payload:
+            return f"{change} {payload['from_seconds']}s→{payload['to_seconds']}s"
+        return change
+    if event.event_type.value == "drift_response":
+        return str(payload.get("decision") or payload.get("mode") or event.outcome or "")
+    return event.outcome or ""
 
 
 def _dump(model: Any) -> Any:
@@ -208,13 +224,15 @@ class HumanRenderer(Renderer):
         table.add_column("event")
         table.add_column("activity")
         table.add_column("outcome")
+        table.add_column("actor")
         for event in events:
             table.add_row(
                 event.timestamp.isoformat(timespec="seconds"),
                 _esc(event.workflow_id),
                 _esc(event.event_type.value),
                 _esc(event.activity_name or ""),
-                _esc(event.outcome or ""),
+                _esc(_audit_outcome(event)),
+                _esc(event.actor or ""),
             )
         self._console.print(table)
 
@@ -239,7 +257,7 @@ class HumanRenderer(Renderer):
         rows = [
             ("drift schedule", _esc(view.schedule_id)),
             ("use case", _esc(view.use_case_id)),
-            ("every", _interval(view.interval)),
+            ("every", format_interval(view.interval)),
             ("response", response),
             ("state", state),
             ("next runs", "  ".join(_clock(at) for at in view.next_runs) or "none"),

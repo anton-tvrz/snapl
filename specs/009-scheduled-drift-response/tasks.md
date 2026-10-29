@@ -135,28 +135,28 @@
 
 ### Tests (write first, verify they fail)
 
-- [ ] T021 [P] [US2] Extend tests/unit/test_orchestrator/test_schedules.py, covering:
+- [x] T021 [P] [US2] Extend tests/unit/test_orchestrator/test_schedules.py, covering:
   - `pause_drift_schedule` rejects an empty or whitespace reason, calls `pause(note=reason)` and records `paused` with the reason;
   - `resume_drift_schedule` records `resumed`, with the optional note;
   - `trigger_drift_schedule` returns the current mode and records `triggered`;
   - `delete_drift_schedule` records `deleted`;
   - each of them raises `ScheduleNotFoundError` for a missing schedule;
   - no audit record is written when the Temporal call raises.
-- [ ] T022 [P] [US2] Extend tests/unit/test_presentation/test_cli_schedule.py, covering:
+- [x] T022 [P] [US2] Extend tests/unit/test_presentation/test_cli_schedule.py, covering:
   - `pause` requires `--reason`;
   - `resume` takes an optional `--note`;
   - `trigger` on a report schedule doesn't prompt and prints the workflow-id prefix;
   - `delete` prompts unless `--yes`, and an aborted prompt exits 1 with no call;
   - a missing schedule exits 1 for every command.
-- [ ] T023 [P] [US2] Extend tests/unit/test_presentation/test_cli.py: `snapl status` shows `drift schedule  dcfabric: every 5m, report, active`, `none — snapl schedule create`, or `could not inspect: <first line>`. The row is always ok, and the exit code is unchanged in all three cases.
-- [ ] T024 [P] [US2] Extend tests/unit/test_presentation/test_render.py: in the human audit timeline, `schedule_changed` events show `payload["change"]` (with from→to where present) and `drift_response` events show `payload["decision"]` in the outcome column
+- [x] T023 [P] [US2] Extend tests/unit/test_presentation/test_cli.py: `snapl status` shows `drift schedule  dcfabric: every 5m, report, active`, `none — snapl schedule create`, or `could not inspect: <first line>`. The row is always ok, and the exit code is unchanged in all three cases.
+- [x] T024 [P] [US2] Extend tests/unit/test_presentation/test_render.py: in the human audit timeline, `schedule_changed` events show `payload["change"]` (with from→to where present) and `drift_response` events show `payload["decision"]` in the outcome column
 
 ### Implementation
 
-- [ ] T025 [US2] Implement `pause_drift_schedule`, `resume_drift_schedule`, `trigger_drift_schedule` and `delete_drift_schedule` in packages/orchestrator/snapl_orchestrator/schedules.py
-- [ ] T026 [US2] Add the `pause`, `resume`, `trigger` (report path) and `delete` commands in packages/presentation/snapl_presentation/cli.py
-- [ ] T027 [US2] Add the `drift schedule` status row using `find_drift_schedule` in packages/presentation/snapl_presentation/cli.py
-- [ ] T028 [US2] Render the new audit event payloads in packages/presentation/snapl_presentation/render.py
+- [x] T025 [US2] Implement `pause_drift_schedule`, `resume_drift_schedule`, `trigger_drift_schedule` and `delete_drift_schedule` in packages/orchestrator/snapl_orchestrator/schedules.py
+- [x] T026 [US2] Add the `pause`, `resume`, `trigger` (report path) and `delete` commands in packages/presentation/snapl_presentation/cli.py
+- [x] T027 [US2] Add the `drift schedule` status row using `find_drift_schedule` in packages/presentation/snapl_presentation/cli.py
+- [x] T028 [US2] Render the new audit event payloads in packages/presentation/snapl_presentation/render.py
 
 **Checkpoint**: Quickstart step 2 works end to end against the dev stack.
 
