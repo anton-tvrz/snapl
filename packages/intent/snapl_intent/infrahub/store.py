@@ -12,6 +12,7 @@ typically create one via :func:`snapl_intent.infrahub.client.build_client` or
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -41,6 +42,8 @@ from snapl_intent.models import (
 _PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 _SCHEMAS_ROOT = _PACKAGE_ROOT / "schemas"
 _SEED_ROOT = _PACKAGE_ROOT / "seed"
+
+_logger = logging.getLogger(__name__)
 
 
 # The Infrahub kind representing our Device. The base schema-library uses
@@ -117,15 +120,18 @@ def _peer_node(node: Any, attr: str) -> Any | None:
 def _peer_id(node: Any, attr: str) -> str | None:
     """Read the id of the peer on a cardinality-one relation.
 
+    Prefer the relation's own ``id``: the live SDK fills it from the query
+    response, so it survives the store miss that makes ``.peer`` raise (#46).
+    Fall back to the resolved peer for relation objects exposing only ``.peer``.
+
     Stringify the id: some SDK nodes expose ``id`` as a ``uuid.UUID`` object
-    rather than a string, and both grouping keys (``str(node.id)``) and
-    ``UUID(peer_id)`` downstream assume str — a raw UUID silently drops the
-    child from its device group or raises (#48).
+    rather than a string, and the grouping keys (``str(node.id)``) assume
+    str — a raw UUID silently drops the child from its device group (#48).
     """
-    peer = _peer_node(node, attr)
-    if peer is None:
-        return None
-    peer_id = getattr(peer, "id", None)
+    rel = getattr(node, attr, None)
+    peer_id = getattr(rel, "id", None)
+    if peer_id is None:
+        peer_id = getattr(_resolve_peer(rel), "id", None)
     return str(peer_id) if peer_id is not None else None
 
 
@@ -160,6 +166,61 @@ def _select_interface_ip(
         if ":" not in address:
             return address, prefix
     return candidates[0] if candidates else (None, None)
+
+
+# SoT ``status`` values under which a child's config is admin-enabled (#47).
+_ENABLED_STATUSES = frozenset({"active", "provisioning", "maintenance", "outage"})
+
+
+def _status_enabled(node: Any) -> bool:
+    """Map a child node's SoT ``status`` to admin enablement.
+
+    One rule for every child kind. ``status`` tracks lifecycle, not admin
+    state, so lifecycle and operational annotations keep the config enabled:
+    rendering a ``provisioning`` link admin-shutdown takes it down exactly
+    when it is first pushed, and the observer then flags it as drift.
+
+    InterfacePhysical (``DcimInterface.status``, schemas/base/dcim.yml):
+        active, provisioning, maintenance, outage, None -> enabled
+        free, disabled, deleted                         -> disabled
+    RoutingBGPSession (``RoutingProtocol.status``, schemas/extensions/routing.yml):
+        active, None                                    -> enabled
+        disabled, deleted                               -> disabled
+
+    No status means the SoT has no opinion, so the config stays enabled. Any
+    other value is disabled: an unrecognised lifecycle state is not
+    confirmed live.
+    """
+    status = _value(node, "status")
+    return status is None or status in _ENABLED_STATUSES
+
+
+def _group_by_device(nodes: list[Any], device_ids: list[str], *, kind: str) -> dict[str, list[Any]]:
+    """Group children from a ``device__ids`` query onto the queried devices.
+
+    Query membership attributes a child, not peer resolution: with one device
+    queried, every child returned is that device's. Across several devices the
+    ``device`` relation's id picks the parent. A child naming no queried
+    device can't be placed — warn with a count rather than drop it silently,
+    since a missing child reads as live-only config downstream and reconcile
+    would remove it (#46).
+    """
+    queried = set(device_ids)
+    grouped: dict[str, list[Any]] = {}
+    unattributed = 0
+    for node in nodes:
+        device_ref = device_ids[0] if len(device_ids) == 1 else _peer_id(node, "device")
+        if device_ref in queried:
+            grouped.setdefault(device_ref, []).append(node)
+        else:
+            unattributed += 1
+    if unattributed:
+        _logger.warning(
+            "Dropped %d %s node(s) from desired state: their device relation names no queried device",
+            unattributed,
+            kind,
+        )
+    return grouped
 
 
 class InfrahubIntentStore(IntentStore):
@@ -224,16 +285,8 @@ class InfrahubIntentStore(IntentStore):
         iface_nodes = await self._filters(kind=INTERFACE_KIND, **relation_kwargs)
         session_nodes = await self._filters(kind=SESSION_KIND, **relation_kwargs)
 
-        ifaces_by_device: dict[str, list[Any]] = {}
-        for node in iface_nodes:
-            device_ref = _peer_id(node, "device")
-            if device_ref is not None:
-                ifaces_by_device.setdefault(device_ref, []).append(node)
-        sessions_by_device: dict[str, list[Any]] = {}
-        for node in session_nodes:
-            device_ref = _peer_id(node, "device")
-            if device_ref is not None:
-                sessions_by_device.setdefault(device_ref, []).append(node)
+        ifaces_by_device = _group_by_device(iface_nodes, device_ids, kind=INTERFACE_KIND)
+        sessions_by_device = _group_by_device(session_nodes, device_ids, kind=SESSION_KIND)
 
         states: list[DesiredState] = []
         for node in device_nodes:
@@ -243,11 +296,11 @@ class InfrahubIntentStore(IntentStore):
                 DesiredState(
                     device=device,
                     interfaces=[
-                        self._node_to_interface(iface, fallback_device_id=device.id)
+                        self._node_to_interface(iface, device_id=device.id)
                         for iface in ifaces_by_device.get(node_id, [])
                     ],
                     bgp_sessions=[
-                        self._node_to_bgp_session(session, fallback_device_id=device.id)
+                        self._node_to_bgp_session(session, device_id=device.id)
                         for session in sessions_by_device.get(node_id, [])
                     ],
                 )
@@ -375,13 +428,12 @@ class InfrahubIntentStore(IntentStore):
             lab_node_name=_value(node, "lab_node_name"),
         )
 
-    def _node_to_interface(self, node: Any, *, fallback_device_id: UUID) -> Interface:
+    def _node_to_interface(self, node: Any, *, device_id: UUID) -> Interface:
         # Live InterfacePhysical shape: the IP lives on the ``ip_addresses``
         # relation (IpamIPAddress peer with a CIDR ``address``); enablement is
         # the ``status`` attribute. There are no ip_address/prefix_length/
-        # enabled scalars (#33).
-        peer_id = _peer_id(node, "device")
-        device_id = UUID(peer_id) if peer_id else fallback_device_id
+        # enabled scalars (#33). ``device_id`` is the device the node was
+        # grouped under, not its re-resolved ``device`` peer (#46).
         ip_candidates: list[tuple[str, int | None]] = []
         for ip_rel in _peers(node, "ip_addresses"):
             ip_peer = _resolve_peer(ip_rel)
@@ -389,7 +441,6 @@ class InfrahubIntentStore(IntentStore):
             if address:
                 ip_candidates.append((address, prefix))
         ip_address, prefix_length = _select_interface_ip(ip_candidates)
-        status = _value(node, "status")
         return Interface(
             id=UUID(str(node.id)),
             device_id=device_id,
@@ -397,21 +448,19 @@ class InfrahubIntentStore(IntentStore):
             description=_value(node, "description"),
             ip_address=ip_address,
             prefix_length=prefix_length,
-            enabled=True if status is None else status == "active",
+            enabled=_status_enabled(node),
             speed=_value(node, "speed"),
             mtu=_value(node, "mtu"),
             peer_device=_value(node, "peer_device"),
             peer_interface=_value(node, "peer_interface"),
         )
 
-    def _node_to_bgp_session(self, node: Any, *, fallback_device_id: UUID) -> BGPSession:
+    def _node_to_bgp_session(self, node: Any, *, device_id: UUID) -> BGPSession:
         # Live RoutingBGPSession shape: ASNs and endpoint IPs are relations
         # (local_as/remote_as → RoutingAutonomousSystem, remote_ip →
         # IpamIPAddress), and the policy attributes are plural (#33).
-        peer_id = _peer_id(node, "device")
-        device_id = UUID(peer_id) if peer_id else fallback_device_id
+        # ``device_id`` is the device the node was grouped under (#46).
         peer_address, _prefix = _split_cidr(_peer_value(node, "remote_ip", "address"))
-        status = _value(node, "status")
         return BGPSession(
             id=UUID(str(node.id)),
             device_id=device_id,
@@ -422,5 +471,5 @@ class InfrahubIntentStore(IntentStore):
             address_family=_value(node, "address_family", default="ipv4_unicast"),
             export_policy=_value(node, "export_policies"),
             import_policy=_value(node, "import_policies"),
-            enabled=True if status is None else status == "active",
+            enabled=_status_enabled(node),
         )
