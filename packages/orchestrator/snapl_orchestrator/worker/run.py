@@ -31,6 +31,7 @@ from snapl_orchestrator.exceptions import OrchestratorConfigError
 from snapl_orchestrator.worker.client import DEFAULT_NAMESPACE, DEFAULT_TEMPORAL_HOST
 from snapl_orchestrator.worker.sandbox import build_workflow_runner
 from snapl_orchestrator.workflows.deploy_intent import DeployIntentWorkflow
+from snapl_orchestrator.workflows.drift_response import DriftResponseWorkflow
 from snapl_orchestrator.workflows.reconcile_devices import ReconcileDevicesWorkflow
 from snapl_orchestrator.workflows.scan_drift import ScanDriftWorkflow
 
@@ -90,6 +91,8 @@ async def run_worker(*, activities: Activities | None = None) -> None:
             DeployIntentWorkflow,
             ScanDriftWorkflow,
             ReconcileDevicesWorkflow,
+            # Started only by drift schedules; the worker never creates one (009 FR-009).
+            DriftResponseWorkflow,
         ],
         activities=[
             fetch_desired_state,

@@ -81,13 +81,13 @@
 
 ### Tests (write first, verify they fail)
 
-- [ ] T009 [P] [US1] Write tests/unit/test_orchestrator/test_workflow_drift_response.py covering the report path. Use `WorkflowEnvironment.start_time_skipping`, `build_workflow_runner()`, the real `ScanDriftWorkflow` child with mocked activities and a recording `record_audit_event`, as in test_workflow_scan_drift.py. Cover:
+- [x] T009 [P] [US1] Write tests/unit/test_orchestrator/test_workflow_drift_response.py covering the report path. Use `WorkflowEnvironment.start_time_skipping`, `build_workflow_runner()`, the real `ScanDriftWorkflow` child with mocked activities and a recording `record_audit_event`, as in test_workflow_scan_drift.py. Cover:
   - a REPORT request runs exactly one ScanDrift child (`<wf_id>-scan`) and no ReconcileDevices child;
   - the result has the scan, empty remediated and excluded, and `reconcile=None`;
   - the audit gets `WORKFLOW_STARTED` and `WORKFLOW_TERMINATED` with `actor="schedule:drift-response-<uc>"`, plus one use-case-level `DRIFT_RESPONSE` with `mode`, `scan_workflow_id` and the clean, drifted and errored counts;
   - when the scan child fails outright, `WORKFLOW_TERMINATED` is recorded with failure and `INTENT_UNAVAILABLE` and the run re-raises;
   - a cancelled run records `WORKFLOW_CANCELLED`.
-- [ ] T010 [P] [US1] Extend tests/unit/test_orchestrator/test_schedules.py with a fake `Client` and `ScheduleHandle`, covering:
+- [x] T010 [P] [US1] Extend tests/unit/test_orchestrator/test_schedules.py with a fake `Client` and `ScheduleHandle`, covering:
   - `ensure_drift_schedule` creates in REPORT and records one `SCHEDULE_CHANGED` `created` event (`interval_seconds`, `mode`, actor);
   - on `ScheduleAlreadyRunningError` it updates only `spec` and `policy.catchup_window`, keeping the existing action (mode) and `state` (paused, note) byte for byte, and records `interval_changed` (`from_seconds`, `to_seconds`);
   - an unchanged interval records nothing;
@@ -97,7 +97,7 @@
   - a run whose result fetch fails keeps its status with `summary=None`;
   - a missing schedule (RPC NOT_FOUND) raises `ScheduleNotFoundError`;
   - `find_drift_schedule` returns None for a missing schedule.
-- [ ] T011 [P] [US1] Extend tests/unit/test_orchestrator/test_worker_run.py: `DriftResponseWorkflow` is registered, the activity list is unchanged, and starting the worker makes no schedule call
+- [x] T011 [P] [US1] Extend tests/unit/test_orchestrator/test_worker_run.py: `DriftResponseWorkflow` is registered, the activity list is unchanged, and starting the worker makes no schedule call
 - [ ] T012 [P] [US1] Write tests/unit/test_presentation/test_cli_schedule.py for `snapl schedule create` and `show`, with mocked `schedules` functions, covering:
   - `--every` parses `90s`, `5m` and `1h`, and rejects `abc` and `30s` with one line and exit 1;
   - a SoT that identifies as FOREIGN is refused before any Temporal call (FR-031), and UNKNOWN is not refused;
@@ -116,9 +116,9 @@
 
 ### Implementation
 
-- [ ] T015 [US1] Implement `DriftResponseWorkflow` (report path, lifecycle audit, scan-failure and cancellation handling; imports under `workflow.unsafe.imports_passed_through()`) in packages/orchestrator/snapl_orchestrator/workflows/drift_response.py
-- [ ] T016 [US1] Register `DriftResponseWorkflow` in packages/orchestrator/snapl_orchestrator/worker/run.py
-- [ ] T017 [US1] Implement `ensure_drift_schedule`, `describe_drift_schedule` (including the `RunSummary` fetch) and `find_drift_schedule` in packages/orchestrator/snapl_orchestrator/schedules.py
+- [x] T015 [US1] Implement `DriftResponseWorkflow` (report path, lifecycle audit, scan-failure and cancellation handling; imports under `workflow.unsafe.imports_passed_through()`) in packages/orchestrator/snapl_orchestrator/workflows/drift_response.py
+- [x] T016 [US1] Register `DriftResponseWorkflow` in packages/orchestrator/snapl_orchestrator/worker/run.py
+- [x] T017 [US1] Implement `ensure_drift_schedule`, `describe_drift_schedule` (including the `RunSummary` fetch) and `find_drift_schedule` in packages/orchestrator/snapl_orchestrator/schedules.py
 - [ ] T018 [US1] Render `DriftScheduleView` (human and JSON) in packages/presentation/snapl_presentation/render.py
 - [ ] T019 [US1] Add the `schedule` Typer sub-app with `create` and `show` in packages/presentation/snapl_presentation/schedule_cli.py, and mount it in packages/presentation/snapl_presentation/cli.py. Factor the audit-DB open-and-refuse logic out of `audit()` into a shared helper, so `audit` and every mutating schedule command use one refusal.
 - [ ] T020 [US1] In tasks/demo.py, make `up` call `ensure_drift_schedule` after `seed`, and add the `drift schedule` row to `check`

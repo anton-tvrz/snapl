@@ -178,3 +178,33 @@ class TestLogDriftEvent:
         with caplog.at_level(logging.INFO, logger="snapl_orchestrator.worker.run"):
             _log_drift_event(self._event(DriftStatus.ERROR))
         assert any(r.levelno == logging.WARNING for r in caplog.records)
+
+
+class TestWorkerRegistration:
+    """run_worker registers the scheduled-run workflow and touches no schedule (009 FR-009)."""
+
+    async def test_registers_drift_response_and_creates_no_schedule(self, monkeypatch):
+        from unittest.mock import AsyncMock, MagicMock
+
+        import snapl_orchestrator.worker.run as run_mod
+        from snapl_orchestrator.workflows.drift_response import DriftResponseWorkflow
+
+        client = MagicMock()
+        monkeypatch.setattr(run_mod.Client, "connect", AsyncMock(return_value=client))
+        captured: dict = {}
+
+        class _FakeWorker:
+            def __init__(self, _client, **kwargs):
+                captured.update(kwargs)
+
+            async def run(self):
+                return None
+
+        monkeypatch.setattr(run_mod, "Worker", _FakeWorker)
+
+        await run_mod.run_worker(activities=MagicMock())
+
+        assert DriftResponseWorkflow in captured["workflows"]
+        assert len(captured["activities"]) == 6
+        client.create_schedule.assert_not_called()
+        client.get_schedule_handle.assert_not_called()
