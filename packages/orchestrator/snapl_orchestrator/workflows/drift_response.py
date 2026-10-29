@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 from temporalio import workflow
 from temporalio.common import RetryPolicy
-from temporalio.exceptions import ChildWorkflowError, is_cancelled_exception
+from temporalio.exceptions import ApplicationError, ChildWorkflowError, is_cancelled_exception
 
 with workflow.unsafe.imports_passed_through():
     from snapl_orchestrator.activities.audit import record_audit_event
@@ -25,6 +25,7 @@ with workflow.unsafe.imports_passed_through():
         DriftResponseRequest,
         DriftResponseResult,
         DriftScanResult,
+        ExclusionReason,
         ReconcileResult,
         WorkflowReason,
     )
@@ -71,47 +72,91 @@ async def _record(
     )
 
 
-def _use_case_payload(result: DriftResponseResult) -> dict:
-    excluded: dict[str, int] = {}
-    for reason in result.excluded.values():
-        excluded[reason.value] = excluded.get(reason.value, 0) + 1
+async def _record_end(request: DriftResponseRequest, exc: BaseException, *, reason: WorkflowReason) -> None:
+    """The run's last record when a child it waited on did not complete."""
+    if is_cancelled_exception(exc):
+        await _record(
+            request=request,
+            target_id=request.use_case_id,
+            event_type=AuditEventType.WORKFLOW_CANCELLED,
+            outcome="cancelled",
+        )
+        return
+    await _record(
+        request=request,
+        target_id=request.use_case_id,
+        event_type=AuditEventType.WORKFLOW_TERMINATED,
+        outcome="failure",
+        reason=reason,
+        payload={"error": str(getattr(exc, "cause", None) or exc)},
+    )
+
+
+def _use_case_payload(
+    *,
+    mode: DriftResponseMode,
+    scan: DriftScanResult,
+    remediated: list[UUID],
+    excluded: dict[UUID, ExclusionReason],
+    reconcile_workflow_id: str | None,
+) -> dict:
+    excluded_counts: dict[str, int] = {}
+    for reason in excluded.values():
+        excluded_counts[reason.value] = excluded_counts.get(reason.value, 0) + 1
     return {
-        "mode": result.mode.value,
-        "scan_workflow_id": result.scan.workflow_id,
-        "clean": result.scan.clean,
-        "drifted": result.scan.drifted,
-        "errored": result.scan.errored,
-        "remediated": len(result.remediated),
-        "excluded": excluded,
-        "reconcile_workflow_id": result.reconcile.workflow_id if result.reconcile else None,
+        "mode": mode.value,
+        "scan_workflow_id": scan.workflow_id,
+        "clean": scan.clean,
+        "drifted": scan.drifted,
+        "errored": scan.errored,
+        "remediated": len(remediated),
+        "excluded": excluded_counts,
+        "reconcile_workflow_id": reconcile_workflow_id,
     }
 
 
-def _device_payloads(result: DriftResponseResult) -> list[tuple[UUID, dict[str, Any]]]:
+def _remediation_result(reconcile: ReconcileResult | None, device_id: UUID) -> str:
+    if reconcile is None:
+        # Reconcile failed as a whole, before reporting per-device results; its
+        # DeployIntent children's own records say what was written.
+        return "unknown"
+    outcome = reconcile.device_results.get(device_id)
+    # No device result means reconcile skipped it (a deploy was in flight).
+    if outcome is None:
+        return "skipped"
+    return "succeeded" if outcome.success else "failed"
+
+
+def _device_payloads(
+    *,
+    scan: DriftScanResult,
+    remediated: list[UUID],
+    excluded: dict[UUID, ExclusionReason],
+    reconcile: ReconcileResult | None,
+    reconcile_workflow_id: str | None,
+) -> list[tuple[UUID, dict[str, Any]]]:
     """One record per repaired or excluded device, so `snapl audit --device`
     shows "repaired by schedule X from scan Y" or "left alone, and why" (FR-020)."""
     records: list[tuple[UUID, dict[str, Any]]] = []
-    for device_id in result.remediated:
-        report = result.scan.reports[device_id]
-        outcome = result.reconcile.device_results.get(device_id) if result.reconcile else None
+    for device_id in remediated:
+        report = scan.reports[device_id]
         records.append(
             (
                 device_id,
                 {
                     "decision": "remediated",
-                    "scan_workflow_id": result.scan.workflow_id,
-                    "reconcile_workflow_id": result.reconcile.workflow_id if result.reconcile else None,
-                    # No device result means reconcile skipped it (a deploy was in flight).
-                    "result": "skipped" if outcome is None else ("succeeded" if outcome.success else "failed"),
+                    "scan_workflow_id": scan.workflow_id,
+                    "reconcile_workflow_id": reconcile_workflow_id,
+                    "result": _remediation_result(reconcile, device_id),
                     "paths": [item.path for item in report.items],
                 },
             )
         )
-    for device_id, reason in result.excluded.items():
-        report = result.scan.reports[device_id]
+    for device_id, reason in excluded.items():
+        report = scan.reports[device_id]
         payload: dict[str, Any] = {
             "decision": reason.value,
-            "scan_workflow_id": result.scan.workflow_id,
+            "scan_workflow_id": scan.workflow_id,
             "paths": [item.path for item in report.items],
         }
         if report.error:
@@ -146,54 +191,54 @@ class DriftResponseWorkflow:
                 id=f"{wf_id}-scan",
                 cancellation_type=workflow.ChildWorkflowCancellationType.TRY_CANCEL,
             )
-            remediated: list = []
-            excluded: dict = {}
-            reconcile: ReconcileResult | None = None
-            if request.mode is DriftResponseMode.REMEDIATE:
-                # Only forward drift: an undesired-only device would be rewritten
-                # every interval without converging, and an errored one was never
-                # seen (FR-013). The repair is the operator's reconcile path,
-                # unchanged — per-device serialization and in-flight skips included.
-                remediated, excluded = select_remediation(scan)
-                if remediated:
-                    reconcile = await workflow.execute_child_workflow(
-                        ReconcileDevicesWorkflow.run, remediated, id=f"{wf_id}-reconcile"
-                    )
-            result = DriftResponseResult(
-                workflow_id=wf_id,
-                schedule_id=request.schedule_id,
-                use_case_id=request.use_case_id,
-                mode=request.mode,
-                scan=scan,
-                remediated=remediated,
-                excluded=excluded,
-                reconcile=reconcile,
-                started_at=started_at,
-                ended_at=workflow.now(),
-            )
         except (asyncio.CancelledError, ChildWorkflowError) as exc:
-            if is_cancelled_exception(exc):
-                await _record(
-                    request=request,
-                    target_id=request.use_case_id,
-                    event_type=AuditEventType.WORKFLOW_CANCELLED,
-                    outcome="cancelled",
-                )
-                raise
             # The scan itself failed (Source of Truth unreachable): nothing was
             # evaluated, so nothing can be reported or repaired. Re-raise so the
             # run shows as failed in the schedule's recent runs.
+            await _record_end(request, exc, reason=WorkflowReason.INTENT_UNAVAILABLE)
+            raise
+        if scan.cancelled:
+            # Cancelled on its own (this run's cancellation raises above): its
+            # empty result is not a clean scan of zero devices.
+            error = f"scan {scan.workflow_id} was cancelled; nothing was evaluated"
             await _record(
                 request=request,
                 target_id=request.use_case_id,
                 event_type=AuditEventType.WORKFLOW_TERMINATED,
                 outcome="failure",
-                reason=WorkflowReason.INTENT_UNAVAILABLE,
-                payload={"error": str(getattr(exc, "cause", None) or exc)},
+                reason=WorkflowReason.CANCELLED,
+                payload={"error": error},
             )
-            raise
+            raise ApplicationError(error, non_retryable=True)
 
-        for device_id, payload in _device_payloads(result):
+        remediated: list[UUID] = []
+        excluded: dict[UUID, ExclusionReason] = {}
+        reconcile: ReconcileResult | None = None
+        reconcile_failure: BaseException | None = None
+        if request.mode is DriftResponseMode.REMEDIATE:
+            # Only forward drift: an undesired-only device would be rewritten
+            # every interval without converging, and an errored one was never
+            # seen (FR-013). The repair is the operator's reconcile path,
+            # unchanged — per-device serialization and in-flight skips included.
+            remediated, excluded = select_remediation(scan)
+            if remediated:
+                try:
+                    reconcile = await workflow.execute_child_workflow(
+                        ReconcileDevicesWorkflow.run, remediated, id=f"{wf_id}-reconcile"
+                    )
+                except (asyncio.CancelledError, ChildWorkflowError) as exc:
+                    # Its deploys may already have written, so every decision is
+                    # still recorded below before the run fails (FR-020).
+                    reconcile_failure = exc
+        reconcile_workflow_id = f"{wf_id}-reconcile" if remediated else None
+
+        for device_id, payload in _device_payloads(
+            scan=scan,
+            remediated=remediated,
+            excluded=excluded,
+            reconcile=reconcile,
+            reconcile_workflow_id=reconcile_workflow_id,
+        ):
             await _record(
                 request=request,
                 target_id=device_id,
@@ -204,7 +249,28 @@ class DriftResponseWorkflow:
             request=request,
             target_id=request.use_case_id,
             event_type=AuditEventType.DRIFT_RESPONSE,
-            payload=_use_case_payload(result),
+            payload=_use_case_payload(
+                mode=request.mode,
+                scan=scan,
+                remediated=remediated,
+                excluded=excluded,
+                reconcile_workflow_id=reconcile_workflow_id,
+            ),
+        )
+        if reconcile_failure is not None:
+            await _record_end(request, reconcile_failure, reason=WorkflowReason.REMEDIATION_FAILED)
+            raise reconcile_failure
+        result = DriftResponseResult(
+            workflow_id=wf_id,
+            schedule_id=request.schedule_id,
+            use_case_id=request.use_case_id,
+            mode=request.mode,
+            scan=scan,
+            remediated=remediated,
+            excluded=excluded,
+            reconcile=reconcile,
+            started_at=started_at,
+            ended_at=workflow.now(),
         )
         await _record(
             request=request,

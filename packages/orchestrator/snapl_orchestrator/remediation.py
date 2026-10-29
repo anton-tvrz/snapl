@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from snapl_observability.models import DriftStatus
-from snapl_orchestrator.models import ExclusionReason
+from snapl_orchestrator.models import ExclusionReason, has_forward_drift
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -34,9 +34,8 @@ def select_remediation(scan: DriftScanResult) -> tuple[list[UUID], dict[UUID, Ex
     for device_id, report in scan.reports.items():
         if report.status == DriftStatus.ERROR:
             excluded[device_id] = ExclusionReason.ERRORED
+        elif has_forward_drift(report):
+            remediated.append(device_id)
         elif report.status == DriftStatus.DRIFTED:
-            if any(not item.undesired for item in report.items):
-                remediated.append(device_id)
-            else:
-                excluded[device_id] = ExclusionReason.UNDESIRED_ONLY
+            excluded[device_id] = ExclusionReason.UNDESIRED_ONLY
     return remediated, excluded

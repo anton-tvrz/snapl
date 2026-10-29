@@ -13,7 +13,7 @@ This feature adds two things to `snapl-orchestrator`. Nothing in an existing wor
 
 Plus one pure helper, `snapl_orchestrator.remediation.select_remediation`.
 
-Results-versus-exceptions follows spec 005's design note. `DriftResponse` returns a `DriftResponseResult` for every network outcome, and raises only when its scan child fails outright (SoT unreachable), so the run shows as failed in the schedule's recent runs.
+Results-versus-exceptions follows spec 005's design note. `DriftResponse` returns a `DriftResponseResult` for every network outcome, and raises only when a child does not complete: its scan fails outright (SoT unreachable) or is cancelled on its own, or its reconcile fails as a whole. The run then shows as failed in the schedule's recent runs.
 
 ---
 
@@ -38,11 +38,13 @@ class DriftResponseWorkflow:
 1. Audit `WORKFLOW_STARTED` (`target_id=use_case_id`, `actor=f"schedule:{schedule_id}"`, payload `{"mode": ...}`).
 2. `scan = await workflow.execute_child_workflow(ScanDriftWorkflow.run, use_case_id, id=f"{wf_id}-scan")`.
    - On a non-cancellation `ChildWorkflowError`, audit `WORKFLOW_TERMINATED` (outcome `failure`, reason `INTENT_UNAVAILABLE`), then re-raise. The schedule is not paused (`pause_on_failure=False`).
+   - If the scan was cancelled on its own (`scan.cancelled`; this run's own cancellation raises instead), audit `WORKFLOW_TERMINATED` (outcome `failure`, reason `CANCELLED`) and fail with a non-retryable `ApplicationError`. An empty scan is never reported as a clean one.
 3. If `mode == REPORT`: audit `DRIFT_RESPONSE` (use-case level), audit `WORKFLOW_TERMINATED` (success), and return. **No other activity or child is started.**
 4. If `mode == REMEDIATE`:
    1. `remediated, excluded = select_remediation(scan)` (pure, inline).
    2. Audit `DRIFT_RESPONSE` per excluded device (device level).
    3. If `remediated` is non-empty: `reconcile = await workflow.execute_child_workflow(ReconcileDevicesWorkflow.run, remediated, id=f"{wf_id}-reconcile")`. Audit `DRIFT_RESPONSE` per remediated device (device level, with `reconcile_workflow_id`).
+      - If the reconcile child fails as a whole, its deploys may already have written. Every per-device and use-case `DRIFT_RESPONSE` is still recorded, with `result: "unknown"` for remediated devices, then `WORKFLOW_TERMINATED` (outcome `failure`, reason `REMEDIATION_FAILED`), and the error is re-raised.
    4. Audit `DRIFT_RESPONSE` (use-case level) and `WORKFLOW_TERMINATED` (success), then return.
 
 **Returns**: `DriftResponseResult` (see data-model.md, invariants included).
@@ -80,17 +82,20 @@ def build_drift_schedule(
 ) -> Schedule:
     """Pure. Interval spec; SKIP overlap; catchup_window=interval;
     pause_on_failure=False; action = DriftResponse(DriftResponseRequest(...)),
-    id=schedule_id_for(use_case_id), static_summary='drift response: <mode>'.
-    Raises ValueError below MIN_SCAN_INTERVAL."""
+    id=schedule_id_for(use_case_id), static_summary='drift response: <mode>',
+    execution_timeout=RUN_TIMEOUT (30m), so a stuck run cannot hold the SKIP
+    slot forever. Raises ValueError below MIN_SCAN_INTERVAL."""
 
 async def ensure_drift_schedule(
     client: Client, *, use_case_id: str, task_queue: str, audit_log: AuditLog, actor: str,
     interval: timedelta = DEFAULT_SCAN_INTERVAL,
 ) -> DriftScheduleView:
     """Create in REPORT; or, if it exists, change only the interval (and the
-    catchup window). Response, paused and note are preserved (FR-004).
-    Records 'created' or 'interval_changed'; records nothing if the interval
-    is unchanged. Called by `snapl schedule create` and by `invoke demo.up`.
+    catchup window), and add RUN_TIMEOUT to an action created without one.
+    Response, paused and note are preserved (FR-004). Records 'created' or
+    'interval_changed' (from_seconds None when the interval had been replaced
+    outside snapl); records nothing if the interval is unchanged. Called by
+    `snapl schedule create` and by `invoke demo.up`.
     The SoT identity check (FR-031) is the caller's job, before this call:
     this module does not depend on the intent block's Infrahub client."""
 
@@ -98,7 +103,9 @@ async def set_drift_response(
     client: Client, *, use_case_id: str, mode: DriftResponseMode, audit_log: AuditLog, actor: str,
 ) -> DriftScheduleView:
     """Rebuild the action with the new mode; preserve spec, policy, state.
-    Records 'response_changed' (from/to); no-op and no record if unchanged."""
+    The current mode is read inside the update, from the description it is
+    built on. Records 'response_changed' (from/to); no-op and no record if
+    unchanged."""
 
 async def pause_drift_schedule(
     client: Client, *, use_case_id: str, reason: str, audit_log: AuditLog, actor: str,
@@ -113,10 +120,10 @@ async def resume_drift_schedule(
 async def trigger_drift_schedule(
     client: Client, *, use_case_id: str, audit_log: AuditLog, actor: str,
 ) -> DriftResponseMode:
-    """One run now under the current response and the schedule's overlap
-    policy (a run in progress makes it a no-op). Returns the mode it will run
+    """One run now under the current response. Returns the mode it will run
     with, so the caller can confirm before calling for REMEDIATE.
-    Records 'triggered'."""
+    Raises ScheduleRunInProgressError, triggering and recording nothing, while
+    a run is in progress (SKIP would drop the trigger). Records 'triggered'."""
 
 async def delete_drift_schedule(
     client: Client, *, use_case_id: str, audit_log: AuditLog, actor: str,
@@ -129,7 +136,9 @@ async def describe_drift_schedule(client: Client, *, use_case_id: str) -> DriftS
     describe each; for completed runs, also fetches the DriftResponseResult
     (handle.result(), which returns at once for a closed workflow) to build
     the summary and `wrote` flag (FR-024). A run whose result cannot be
-    fetched shows its status without a summary; describe never fails on it."""
+    fetched shows its status without a summary; describe never fails on it.
+    Raises UnreadableScheduleError when the interval spec was replaced outside
+    snapl; `ensure_drift_schedule` restores it."""
 
 async def find_drift_schedule(client: Client, *, use_case_id: str) -> DriftScheduleView | None:
     """describe_drift_schedule, but None instead of ScheduleNotFoundError — for

@@ -25,7 +25,7 @@ The audit log is opened as `snapl audit` opens it (`SqliteAuditLog(settings.audi
 | `snapl schedule mode {report\|remediate} [--use-case UC] [--yes] [--json]` | `set_drift_response` | **`remediate` only**: prompt unless `--yes`; with `--json`, refuse unless `--yes` | 0; 1 if no schedule or aborted |
 | `snapl schedule pause --reason TEXT [--use-case UC]` | `pause_drift_schedule` (suppress). `--reason` is required. | none | 0; 1 if no schedule |
 | `snapl schedule resume [--use-case UC] [--note TEXT]` | `resume_drift_schedule` | none | 0; 1 if no schedule |
-| `snapl schedule trigger [--use-case UC] [--yes]` | describe, then `trigger_drift_schedule`. Returns at once and prints the workflow-id prefix to follow. | **when the schedule is in `remediate`**: as for `mode remediate` | 0; 1 if no schedule or aborted |
+| `snapl schedule trigger [--use-case UC] [--yes]` | describe, then `trigger_drift_schedule`. Returns at once and prints the workflow-id prefix to follow. | **when the schedule is in `remediate`**: as for `mode remediate` | 0; 1 if no schedule, aborted, or a run is already in progress (nothing is triggered) |
 | `snapl schedule delete [--use-case UC] [--yes]` | `delete_drift_schedule` | prompt unless `--yes` (removing detection is consequential, not destructive to devices) | 0; 1 if no schedule or aborted |
 
 `--every` accepts `<n>s`, `<n>m` or `<n>h` (for example `90s`, `5m`, `1h`) and is parsed in Presentation. The orchestrator takes a `timedelta`.

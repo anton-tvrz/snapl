@@ -23,10 +23,14 @@ class InMemoryAuditLog(AuditLog):
 
     def __init__(self) -> None:
         self._events: list[AuditEvent] = []
+        self._event_ids: set[UUID] = set()
         self._lock = asyncio.Lock()
 
     async def append(self, event: AuditEvent) -> None:
         async with self._lock:
+            if event.event_id in self._event_ids:
+                return
+            self._event_ids.add(event.event_id)
             self._events.append(event)
 
     async def query_by_workflow(self, workflow_id: str) -> list[AuditEvent]:
@@ -44,6 +48,8 @@ class InMemoryAuditLog(AuditLog):
         start: datetime,
         end: datetime,
     ) -> list[AuditEvent]:
+        if start.tzinfo is None or end.tzinfo is None:
+            raise ValueError("time-range bounds must be timezone-aware")
         async with self._lock:
             matching = [e for e in self._events if start <= e.timestamp < end]
         return sorted(matching, key=lambda e: e.timestamp)

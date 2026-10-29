@@ -31,7 +31,9 @@ async def fetch_desired_state(device_id: UUID) -> DesiredState:
 
 @activity.defn(name="fetch_devices_for_use_case")
 async def fetch_devices_for_use_case(use_case_id: str) -> list[Device]:
-    """Return every device participating in a use case."""
+    """Return every device participating in a use case, each once, in SoT order."""
     activities = get_activities()
     states = await activities.intent_store.get_desired_state(use_case=use_case_id)
-    return [s.device for s in states]
+    # A device in two services of the use case comes back twice; ScanDrift
+    # keys its reports by device id, so a duplicate would break its counts.
+    return list({s.device.id: s.device for s in states}.values())

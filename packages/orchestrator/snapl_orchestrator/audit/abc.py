@@ -23,6 +23,9 @@ class AuditLog(ABC):
     async def append(self, event: AuditEvent) -> None:
         """Append an immutable AuditEvent.
 
+        Idempotent on ``event_id``: appending an event that is already stored
+        is a no-op, so a retried ``record_audit_event`` activity succeeds.
+
         Raises:
             AuditLogError: persistence failed after all retries.
         """
@@ -44,4 +47,8 @@ class AuditLog(ABC):
         start: datetime,
         end: datetime,
     ) -> list[AuditEvent]:
-        """Return events with ``start <= timestamp < end``, chronological order."""
+        """Return events with ``start <= timestamp < end``, chronological order.
+
+        Raises:
+            ValueError: a bound is naive; instants are only comparable with an offset.
+        """
