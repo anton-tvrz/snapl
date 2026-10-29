@@ -56,7 +56,7 @@ Within one minute:
 snapl audit --device spine-01
 ```
 
-**Expect**: a `drift_response` event from `schedule:drift-response-dcfabric`, `mode=report`, naming `/interface[name=ethernet-1/1]/enabled`. `snapl scan` still reports spine-01 drifted: report mode wrote nothing.
+**Expect**: the scheduled scan's `detect_drift` event for spine-01 under workflow `drift-response-dcfabric-<time>-scan`. The run's use-case-level `drift_response` event (`mode=report`, attributed to `schedule:drift-response-dcfabric`) is under `snapl audit --workflow drift-response-dcfabric-<time>`; device-level `drift_response` records are written only in remediate mode (FR-020). `snapl scan` still reports spine-01 drifted: report mode wrote nothing.
 
 ## 2. Steer it
 

@@ -1842,7 +1842,7 @@ requires-dist = [
     { name = "snapl-executor", editable = "packages/executor" },
     { name = "snapl-intent", editable = "packages/intent" },
     { name = "snapl-observability", editable = "packages/observability" },
-    { name = "temporalio", specifier = ">=1.7" },
+    { name = "temporalio", specifier = ">=1.25" },
 ]
 
 [[package]]
