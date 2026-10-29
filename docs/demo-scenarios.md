@@ -251,8 +251,10 @@ snapl schedule show
 ```
 
 **Expect:** a recent run reading `6 devices: 5 clean, 1 drifted, 0 errored   wrote: no`.
-Report mode found it and wrote nothing; `snapl audit --device spine-01` has a
-`drift_response` event from `schedule:drift-response-dcfabric`.
+Report mode found it and wrote nothing. `snapl audit --device spine-01` shows
+the scheduled scan's finding under workflow `drift-response-dcfabric-<time>-scan`,
+and `snapl audit --workflow drift-response-dcfabric-<time>` shows the run's
+`drift_response` summary, attributed to `schedule:drift-response-dcfabric`.
 
 Now opt in to self-healing. The prompt says exactly what is being authorized:
 
@@ -261,6 +263,7 @@ snapl schedule mode remediate         # answer y
 snapl schedule trigger --yes
 snapl schedule show                   # wrote: 1 device (1 ok, 0 failed)
 snapl scan                            # 6 clean — nobody ran reconcile
+snapl audit --device spine-01         # drift_response decision=remediated, then the deploy
 ```
 
 **Temporal UI:** the scheduled run has a child `ScanDrift` and a child

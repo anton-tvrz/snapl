@@ -267,7 +267,9 @@ class HumanRenderer(Renderer):
         if view.recent_runs:
             for index, run in enumerate(view.recent_runs):  # oldest first, as the contract shows
                 label = "recent runs" if index == 0 else ""
-                self._console.print(f"{label:<17} {_run_line(run)}")
+                # soft_wrap: a run line is one record; hard-wrapping it at the
+                # console width splits its summary from its "wrote" verdict.
+                self._console.print(f"{label:<17} {_run_line(run)}", soft_wrap=True)
         else:
             self._console.print(f"{'recent runs':<17} none yet")
         self._console.print(f"{'skipped (overlap)':<17} {view.skipped_overlap}")

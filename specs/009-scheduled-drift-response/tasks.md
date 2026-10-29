@@ -214,7 +214,7 @@
 - [x] T038 [P] In README.md's known limitations, state that remediate is opt-in per use case, that scheduled runs never remove config (#65), and that a failed repair retries every run until #136
 - [x] T039 [P] Add changelog/99.added.md
 - [x] T040 Check ≥80% coverage on the new modules, then run `uv run invoke lint` and `uv run invoke format`
-- [ ] T041 Live evidence items 4 to 6 on the dcfabric lab (overlap after worker downtime, bootstrap idempotency, persistence across a Temporal restart), recorded in the implementation PR
+- [x] T041 Live evidence items 4 to 6 on the dcfabric lab (overlap after worker downtime, bootstrap idempotency, persistence across a Temporal restart), recorded in the implementation PR
 
 ---
 

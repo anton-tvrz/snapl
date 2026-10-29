@@ -354,3 +354,13 @@ class TestHumanAuditScheduleEvents:
         console, _ = _capture()
         HumanRenderer(console).audit([self._event("drift_response", {"mode": "report"}, "schedule:x")])
         assert "report" in _text(console)
+
+
+def test_a_run_line_is_never_hard_wrapped_on_a_narrow_console() -> None:
+    """Found live: at the default 80 columns Rich broke `wrote: no` onto its own
+    line, splitting one run's facts across two rows of the view."""
+    console = Console(record=True, width=80, force_terminal=False, no_color=True)
+    view = _schedule_view(runs=[_run("drift-response-dcfabric-1", "completed", _summary())])
+    HumanRenderer(console).schedule(view)
+    lines = console.export_text().splitlines()
+    assert any("6 devices: 5 clean, 1 drifted, 0 errored" in line and "wrote: no" in line for line in lines)
