@@ -10,13 +10,28 @@ from pygnmi.client import gNMIclient
 
 from snapl_executor.abc import Executor
 from snapl_executor.exceptions import ExecutorConfigError
-from snapl_executor.gnmi.renderer import RENDER_ERROR_KEY, ConfigRenderer
+from snapl_executor.gnmi.renderer import ConfigRenderer
 from snapl_executor.models import ApplyResult, BatchResult, DryRunResult
 
 if TYPE_CHECKING:
     from uuid import UUID
 
     from snapl_intent.models import DesiredState, Device
+
+
+def _render(desired: DesiredState) -> tuple[dict[str, Any] | None, str | None]:
+    """Build the renderer for the device's use case and render ``desired``.
+
+    Returns ``(payload, None)``, or ``(None, error)`` when the renderer can't
+    be built (no templates for the use case) or rendering fails (a template
+    error, or rendered text that is not JSON). Every entrypoint renders
+    through here, so all of them report render failures the same way (#56).
+    """
+    use_case = desired.device.use_case
+    try:
+        return ConfigRenderer(use_case=use_case).render(desired), None
+    except Exception as exc:
+        return None, f"render failed for use case {use_case!r}: {type(exc).__name__}: {exc}"
 
 
 class GnmiExecutor(Executor):
@@ -26,6 +41,13 @@ class GnmiExecutor(Executor):
     per call from the Device — ``lab_node_name`` first, then
     ``management_address`` — with the constructor ``host`` as a last-resort
     fallback for single-target use (tests, ad-hoc scripts).
+
+    Error contract (see ``Executor``): ``apply``, ``rollback``, ``dry_run``
+    and ``apply_batch`` return their result with ``success=False`` when the
+    renderer can't be built or rendering fails, and ``apply``/``rollback``
+    do the same when the device can't be reached or rejects the payload.
+    They raise only for programming errors (``desired`` is None, an empty
+    or duplicate batch); the constructor raises ``ExecutorConfigError``.
     """
 
     def __init__(
@@ -64,29 +86,26 @@ class GnmiExecutor(Executor):
     async def apply(self, desired: DesiredState) -> ApplyResult:
         if desired is None:
             raise ValueError("desired is required")
-        renderer = ConfigRenderer(use_case=desired.device.use_case)
-        payload = renderer.render(desired)
-        return await self._gnmi_set(desired, payload, is_rollback=False)
+        return await self._deploy(desired, is_rollback=False)
 
     # ------------------------------------------------------------------ US2
 
     async def dry_run(self, desired: DesiredState) -> DryRunResult:
         if desired is None:
             raise ValueError("desired is required")
-        renderer = ConfigRenderer(use_case=desired.device.use_case)
-        result = renderer.render_safe(desired)
-        if RENDER_ERROR_KEY in result:
+        payload, render_error = _render(desired)
+        if payload is None:
             return DryRunResult(
                 device_id=desired.device.id,
                 device_name=desired.device.name,
                 success=False,
-                render_error=result[RENDER_ERROR_KEY],
+                render_error=render_error,
             )
         return DryRunResult(
             device_id=desired.device.id,
             device_name=desired.device.name,
             success=True,
-            payload=result,
+            payload=payload,
         )
 
     # ------------------------------------------------------------------ US3
@@ -94,9 +113,7 @@ class GnmiExecutor(Executor):
     async def rollback(self, desired: DesiredState) -> ApplyResult:
         if desired is None:
             raise ValueError("desired is required")
-        renderer = ConfigRenderer(use_case=desired.device.use_case)
-        payload = renderer.render(desired)
-        return await self._gnmi_set(desired, payload, is_rollback=True)
+        return await self._deploy(desired, is_rollback=True)
 
     # ------------------------------------------------------------------ US4
 
@@ -107,7 +124,7 @@ class GnmiExecutor(Executor):
         if len(ids) != len(set(ids)):
             raise ValueError("states contains duplicate device IDs")
 
-        tasks = [self._apply_one(ds) for ds in states]
+        tasks = [self._deploy(ds, is_rollback=False) for ds in states]
         results_list: list[ApplyResult] = await asyncio.gather(*tasks)
 
         results: dict[UUID, ApplyResult] = {r.device_id: r for r in results_list}
@@ -122,19 +139,19 @@ class GnmiExecutor(Executor):
 
     # ------------------------------------------------------------------ internals
 
-    async def _apply_one(self, desired: DesiredState) -> ApplyResult:
-        try:
-            renderer = ConfigRenderer(use_case=desired.device.use_case)
-            payload = renderer.render(desired)
-            return await self._gnmi_set(desired, payload, is_rollback=False)
-        except Exception as exc:
+    async def _deploy(self, desired: DesiredState, *, is_rollback: bool) -> ApplyResult:
+        """Render and SET ``desired``; a render failure is a failed result and nothing is dialled."""
+        payload, render_error = _render(desired)
+        if payload is None:
             return ApplyResult(
                 device_id=desired.device.id,
                 device_name=desired.device.name,
                 success=False,
                 payload={},
-                error=str(exc),
+                error=render_error,
+                is_rollback=is_rollback,
             )
+        return await self._gnmi_set(desired, payload, is_rollback=is_rollback)
 
     async def _gnmi_set(self, desired: DesiredState, payload: dict[str, Any], *, is_rollback: bool) -> ApplyResult:
         start = time.monotonic()

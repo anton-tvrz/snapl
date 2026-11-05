@@ -32,6 +32,8 @@ class WorkflowReason(StrEnum):
     AUDIT_FAILED = "audit_failed"
     CANCELLED = "cancelled"
     DEVICE_NOT_FOUND = "device_not_found"
+    # A scheduled repair's reconcile failed as a whole; its deploys may have written.
+    REMEDIATION_FAILED = "remediation_failed"
 
 
 class AuditEventType(StrEnum):
@@ -129,6 +131,9 @@ class DriftScanResult(BaseModel):
     errored: int
     started_at: datetime
     ended_at: datetime
+    # A cancelled scan returns what it has (nothing), which must not read as
+    # a clean scan of zero devices.
+    cancelled: bool = False
 
     @model_validator(mode="after")
     def _check_counts(self) -> DriftScanResult:
@@ -234,7 +239,12 @@ def drift_schedule_id(use_case_id: str) -> str:
     return f"drift-response-{use_case_id}"
 
 
-def _has_forward_drift(report: DriftReport) -> bool:
+def has_forward_drift(report: DriftReport) -> bool:
+    """Drifted, with at least one item intent wants (not only undesired config).
+
+    The one rule for what a scheduled repair may touch: ``select_remediation``
+    applies it and ``DriftResponseResult`` enforces it.
+    """
     return report.status == DriftStatus.DRIFTED and any(not item.undesired for item in report.items)
 
 
@@ -285,7 +295,7 @@ class DriftResponseResult(BaseModel):
         unknown = (set(self.remediated) | set(self.excluded)) - set(self.scan.reports)
         if unknown:
             raise ValueError(f"devices not in the scan: {sorted(map(str, unknown))}")
-        ineligible = [d for d in self.remediated if not _has_forward_drift(self.scan.reports[d])]
+        ineligible = [d for d in self.remediated if not has_forward_drift(self.scan.reports[d])]
         if ineligible:
             raise ValueError(f"remediated devices without forward drift: {sorted(map(str, ineligible))}")
         if self.ended_at < self.started_at:

@@ -17,7 +17,11 @@ import pytest
 from typer.testing import CliRunner
 
 from snapl_intent.infrahub.identity import IdentityCheck, SotIdentity
-from snapl_orchestrator.exceptions import ScheduleNotFoundError
+from snapl_orchestrator.exceptions import (
+    ScheduleNotFoundError,
+    ScheduleRunInProgressError,
+    UnreadableScheduleError,
+)
 from snapl_orchestrator.models import DriftResponseMode, DriftScheduleView
 from snapl_presentation import cli
 from snapl_presentation.exit_codes import ExitCode
@@ -196,6 +200,17 @@ class TestShow:
         assert "snapl schedule create" in result.output
         assert "Traceback" not in result.output
 
+    def test_a_schedule_changed_outside_snapl_exits_1_with_the_fix(self, temporal, describe) -> None:
+        describe.side_effect = UnreadableScheduleError(
+            "drift schedule drift-response-dcfabric has no interval; it was changed outside snapl"
+        )
+        result = _invoke(["show"])
+        output = " ".join(result.output.split())
+        assert result.exit_code == ExitCode.ERROR
+        assert "changed outside snapl" in output
+        assert "snapl schedule create --use-case dcfabric --every" in output
+        assert "Traceback" not in output
+
     def test_never_requires_a_worker(self, temporal, describe) -> None:
         with (
             patch.object(cli, "count_pollers", new=AsyncMock(return_value=0)),
@@ -275,6 +290,26 @@ class TestTrigger:
         result = _invoke(["trigger"])
         assert result.exit_code == ExitCode.ERROR
         control.trigger.assert_not_called()
+
+    def test_a_run_in_progress_exits_1_and_says_nothing_was_triggered(
+        self, audit_log, temporal, describe, control
+    ) -> None:
+        control.trigger.side_effect = ScheduleRunInProgressError(
+            "a run of drift-response-dcfabric is already in progress (r1); nothing was triggered"
+        )
+        result = _invoke(["trigger"])
+        output = " ".join(result.output.split())
+        assert result.exit_code == ExitCode.ERROR
+        assert "nothing was triggered" in output
+        assert "snapl schedule show" in output
+        assert "Traceback" not in output
+
+    def test_a_schedule_changed_outside_snapl_exits_1(self, audit_log, temporal, describe, control) -> None:
+        describe.side_effect = UnreadableScheduleError("it was changed outside snapl")
+        result = _invoke(["trigger"])
+        assert result.exit_code == ExitCode.ERROR
+        assert "snapl schedule create" in result.output
+        assert "Traceback" not in result.output
 
 
 class TestDelete:

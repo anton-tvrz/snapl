@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import UUID
@@ -94,6 +94,10 @@ class SqliteAuditLog(AuditLog):
     async def append(self, event: AuditEvent) -> None:
         try:
             async with self._write_lock, self._connect() as conn:
+                # A Temporal activity retry re-sends an event whose first attempt
+                # may already have committed (e.g. it timed out after the write):
+                # storing it once and succeeding is the only answer that lets the
+                # workflow carry on.
                 await conn.execute(
                     """
                     INSERT INTO audit_events (
@@ -102,6 +106,7 @@ class SqliteAuditLog(AuditLog):
                         payload_json, timestamp, actor
                     )
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(event_id) DO NOTHING
                     """,
                     (
                         str(event.event_id),
@@ -113,13 +118,11 @@ class SqliteAuditLog(AuditLog):
                         event.outcome,
                         event.reason.value if event.reason else None,
                         json.dumps(event.payload, default=str),
-                        event.timestamp.isoformat(),
+                        _utc_text(event.timestamp),
                         event.actor,
                     ),
                 )
                 await conn.commit()
-        except aiosqlite.IntegrityError as exc:
-            raise AuditLogError(f"event_id {event.event_id} already persisted") from exc
         except aiosqlite.Error as exc:
             raise AuditLogError(f"append failed: {exc}") from exc
 
@@ -140,9 +143,11 @@ class SqliteAuditLog(AuditLog):
         start: datetime,
         end: datetime,
     ) -> list[AuditEvent]:
+        if start.tzinfo is None or end.tzinfo is None:
+            raise ValueError("time-range bounds must be timezone-aware")
         return await self._query(
             "WHERE timestamp >= ? AND timestamp < ? ORDER BY id ASC",
-            (start.isoformat(), end.isoformat()),
+            (_utc_text(start), _utc_text(end)),
         )
 
     async def _query(self, where_clause: str, params: tuple) -> list[AuditEvent]:
@@ -156,6 +161,12 @@ class SqliteAuditLog(AuditLog):
                 return [_row_to_event(row) for row in rows]
         except aiosqlite.Error as exc:
             raise AuditLogError(f"query failed: {exc}") from exc
+
+
+def _utc_text(at: datetime) -> str:
+    """ISO-8601 in UTC: the range query compares stored text, which orders
+    like the instants only when every value carries the same offset."""
+    return at.astimezone(UTC).isoformat() if at.tzinfo is not None else at.isoformat()
 
 
 def _serialize_target(target_id) -> str | None:

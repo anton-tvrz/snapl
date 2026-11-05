@@ -448,6 +448,13 @@ def _no_schedule(use_case: str) -> CliError:
     )
 
 
+def _unreadable_schedule(use_case: str, exc: Exception) -> CliError:
+    return CliError(
+        str(exc),
+        hint=f"Restore an interval: snapl schedule create --use-case {use_case} --every 5m",
+    )
+
+
 async def _warn_if_no_worker(client: Any, settings: CliSettings) -> None:
     try:
         pollers = await count_pollers(client, settings)
@@ -480,7 +487,11 @@ async def _schedule_write(settings: CliSettings, use_case: str, operation: Calla
     The log is opened (and a missing one refused) before Temporal is touched,
     so a change is never applied without its audit record (FR-021).
     """
-    from snapl_orchestrator.exceptions import ScheduleNotFoundError  # noqa: PLC0415
+    from snapl_orchestrator.exceptions import (  # noqa: PLC0415
+        ScheduleNotFoundError,
+        ScheduleRunInProgressError,
+        UnreadableScheduleError,
+    )
 
     log = await _open_audit_log(settings)
     try:
@@ -489,6 +500,10 @@ async def _schedule_write(settings: CliSettings, use_case: str, operation: Calla
         return await operation(client, log)
     except ScheduleNotFoundError:
         raise _no_schedule(use_case) from None
+    except UnreadableScheduleError as exc:
+        raise _unreadable_schedule(use_case, exc) from None
+    except ScheduleRunInProgressError as exc:
+        raise CliError(str(exc), hint="Follow it: snapl schedule show") from None
     finally:
         await log.close()
 
@@ -530,7 +545,7 @@ async def schedule_create(
 async def schedule_show(use_case: UseCaseOpt = DEFAULT_USE_CASE, as_json: JsonOpt = False) -> ExitCode:
     """Show a use case's drift schedule and its recent runs."""
     from snapl_orchestrator import schedules  # noqa: PLC0415
-    from snapl_orchestrator.exceptions import ScheduleNotFoundError  # noqa: PLC0415
+    from snapl_orchestrator.exceptions import ScheduleNotFoundError, UnreadableScheduleError  # noqa: PLC0415
 
     settings = CliSettings.from_env()
     client = await _connect(settings)
@@ -539,6 +554,8 @@ async def schedule_show(use_case: UseCaseOpt = DEFAULT_USE_CASE, as_json: JsonOp
         view = await schedules.describe_drift_schedule(client, use_case_id=use_case)
     except ScheduleNotFoundError:
         raise _no_schedule(use_case) from None
+    except UnreadableScheduleError as exc:
+        raise _unreadable_schedule(use_case, exc) from None
 
     build_renderer(as_json=as_json).schedule(view)
     return ExitCode.OK
