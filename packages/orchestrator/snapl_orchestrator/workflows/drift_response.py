@@ -41,6 +41,10 @@ _WORKFLOW_TYPE = "DriftResponse"
 
 _AUDIT_RETRY = RetryPolicy(initial_interval=timedelta(seconds=1), maximum_attempts=5)
 
+# Patch id for starting the reconcile child with ABANDON (#144). Runs already in
+# flight when this shipped replay their original start command without it.
+_ABANDON_REPAIR_PATCH = "drift-response-abandon-repair-on-close"
+
 
 async def _record(
     *,
@@ -222,9 +226,26 @@ class DriftResponseWorkflow:
             # unchanged — per-device serialization and in-flight skips included.
             remediated, excluded = select_remediation(scan)
             if remediated:
+                # ABANDON: when this run hits RUN_TIMEOUT the server closes it
+                # without running workflow code. With the default TERMINATE that
+                # also kills the repair, possibly between a DeployIntent's apply
+                # and its verify, so no rollback runs and nothing records the cut
+                # (#144). Abandoned, the repair finishes and writes its own
+                # records. A later run can't collide with it: reconcile skips a
+                # device whose deploy is still in flight. An operator cancel of
+                # this run still cancels the repair (the default cancellation
+                # type is unaffected by the close policy).
+                close_policy = (
+                    workflow.ParentClosePolicy.ABANDON
+                    if workflow.patched(_ABANDON_REPAIR_PATCH)
+                    else workflow.ParentClosePolicy.TERMINATE
+                )
                 try:
                     reconcile = await workflow.execute_child_workflow(
-                        ReconcileDevicesWorkflow.run, remediated, id=f"{wf_id}-reconcile"
+                        ReconcileDevicesWorkflow.run,
+                        remediated,
+                        id=f"{wf_id}-reconcile",
+                        parent_close_policy=close_policy,
                     )
                 except (asyncio.CancelledError, ChildWorkflowError) as exc:
                     # Its deploys may already have written, so every decision is

@@ -10,7 +10,7 @@ config in place, which is what the live fabric does (#121).
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 import pydantic_core  # noqa: F401 — pre-import to keep workflow sandbox quiet
@@ -75,7 +75,9 @@ class Fabric:
     """A fake fabric: per-device drift items, an apply that heals forward drift.
 
     ``unreachable`` devices fail to collect, so the scan reports them ERROR.
-    ``rejecting`` devices fail their apply.
+    ``rejecting`` devices fail their apply. When ``gate`` is set, every apply
+    sets ``apply_started`` and then waits for the gate, holding the repair
+    between apply and verify.
     """
 
     def __init__(self, states: list) -> None:
@@ -85,6 +87,8 @@ class Fabric:
         self.unreachable: set = set()
         self.rejecting: set = set()
         self.applied: list = []
+        self.gate: asyncio.Event | None = None
+        self.apply_started = asyncio.Event()
 
     def activities(self, audit: InMemoryAuditLog) -> Activities:
         async def _get_desired(*, use_case=None, device_id=None):
@@ -94,6 +98,9 @@ class Fabric:
 
         async def _apply(desired):
             self.applied.append(desired.device.id)
+            if self.gate is not None:
+                self.apply_started.set()
+                await self.gate.wait()
             if desired.device.id in self.rejecting:
                 return ApplyResult(
                     device_id=desired.device.id,
@@ -539,3 +546,65 @@ async def test_a_failed_reconcile_records_each_decision_and_fails_the_run(mixed:
     assert terminal.event_type is AuditEventType.WORKFLOW_TERMINATED
     assert terminal.outcome == "failure"
     assert terminal.reason is WorkflowReason.REMEDIATION_FAILED
+
+
+@pytest.mark.asyncio
+async def test_a_run_timeout_mid_repair_lets_the_repair_finish_and_record(make_desired) -> None:
+    """#144: the schedule's RUN_TIMEOUT closes the run server-side, mid-repair.
+
+    The reconcile child is abandoned rather than terminated, so its deploy
+    verifies and every child writes its own terminal record. A later run that
+    finds the same device still drifted skips it: its deploy is still in flight.
+    """
+    fabric = Fabric([make_desired("forward-01")])
+    device_id = fabric.states[0].device.id
+    fabric.drift[device_id] = [FORWARD]
+    fabric.gate = asyncio.Event()
+    audit = InMemoryAuditLog()
+    set_activities(fabric.activities(audit))
+    later_run = f"{RUN_ID}-later"
+
+    async with (
+        await WorkflowEnvironment.start_time_skipping(data_converter=pydantic_data_converter) as env,
+        Worker(
+            env.client,
+            task_queue=TASK_QUEUE,
+            workflows=_WORKFLOWS,
+            workflow_runner=build_workflow_runner(),
+            activities=_ACTIVITIES,
+        ),
+    ):
+        handle = await env.client.start_workflow(
+            DriftResponseWorkflow.run,
+            _request(DriftResponseMode.REMEDIATE),
+            id=RUN_ID,
+            task_queue=TASK_QUEUE,
+            # Stands in for RUN_TIMEOUT; well inside apply's 60s start-to-close.
+            execution_timeout=timedelta(seconds=10),
+        )
+        await asyncio.wait_for(fabric.apply_started.wait(), timeout=10)
+        await env.sleep(timedelta(seconds=20))
+        with pytest.raises(WorkflowFailureError):
+            await handle.result()
+
+        # The device is still drifted (its apply is held), so the next run
+        # selects it again, and its reconcile skips the in-flight deploy.
+        later = await env.client.execute_workflow(
+            DriftResponseWorkflow.run, _request(DriftResponseMode.REMEDIATE), id=later_run, task_queue=TASK_QUEUE
+        )
+        assert later.remediated == [device_id]
+        assert (later.reconcile.skipped, later.reconcile.failed) == (1, 0)
+        assert fabric.applied == [device_id]
+
+        fabric.gate.set()
+        repair = await env.client.get_workflow_handle(f"{RUN_ID}-reconcile").result()
+
+    assert (repair.succeeded, repair.failed, repair.skipped) == (1, 0, 0)
+    assert fabric.drift[device_id] == []
+    for workflow_id in (f"{RUN_ID}-reconcile", f"deploy-intent-{device_id}"):
+        terminal = [
+            e for e in await audit.query_by_workflow(workflow_id) if e.event_type is AuditEventType.WORKFLOW_TERMINATED
+        ]
+        assert [(e.outcome, e.reason) for e in terminal] == [("success", WorkflowReason.SUCCEEDED)]
+    # The timed-out run wrote no DRIFT_RESPONSE: workflow code never ran again.
+    assert await _response_events(audit) == []
