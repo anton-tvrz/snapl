@@ -12,13 +12,13 @@ typically create one via :func:`snapl_intent.infrahub.client.build_client` or
 
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 from typing import Any
 from uuid import UUID
 
 from snapl_intent.abc import IntentStore
 from snapl_intent.exceptions import (
+    IntentAttributionError,
     IntentConnectionError,
     IntentDeletionError,
     IntentNotFoundError,
@@ -42,8 +42,6 @@ from snapl_intent.models import (
 _PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 _SCHEMAS_ROOT = _PACKAGE_ROOT / "schemas"
 _SEED_ROOT = _PACKAGE_ROOT / "seed"
-
-_logger = logging.getLogger(__name__)
 
 
 # The Infrahub kind representing our Device. The base schema-library uses
@@ -201,24 +199,21 @@ def _group_by_device(nodes: list[Any], device_ids: list[str], *, kind: str) -> d
     Query membership attributes a child, not peer resolution: with one device
     queried, every child returned is that device's. Across several devices the
     ``device`` relation's id picks the parent. A child naming no queried
-    device can't be placed — warn with a count rather than drop it silently,
-    since a missing child reads as live-only config downstream and reconcile
-    would remove it (#46).
+    device can't be placed, and leaving it out would read as live-only config
+    downstream, which reconcile could remove (#46), so refuse instead.
     """
     queried = set(device_ids)
     grouped: dict[str, list[Any]] = {}
-    unattributed = 0
+    unattributed: list[str] = []
     for node in nodes:
         device_ref = device_ids[0] if len(device_ids) == 1 else _peer_id(node, "device")
         if device_ref in queried:
             grouped.setdefault(device_ref, []).append(node)
         else:
-            unattributed += 1
+            unattributed.append(str(node.id))
     if unattributed:
-        _logger.warning(
-            "Dropped %d %s node(s) from desired state: their device relation names no queried device",
-            unattributed,
-            kind,
+        raise IntentAttributionError(
+            f"{len(unattributed)} {kind} node(s) name no queried device: {', '.join(unattributed)}"
         )
     return grouped
 

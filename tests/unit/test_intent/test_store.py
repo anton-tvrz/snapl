@@ -7,7 +7,6 @@ the SDK client. Tests grow across phases (US1 -> US2 -> US3 -> US4 -> Polish).
 
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -18,6 +17,7 @@ import yaml
 
 import snapl_intent
 from snapl_intent.exceptions import (
+    IntentAttributionError,
     IntentConnectionError,
     IntentDeletionError,
     IntentNotFoundError,
@@ -237,7 +237,7 @@ class TestGetDesiredState:
 
     async def test_filters_by_role(self, mock_infrahub_client):
         spine_nodes = [_make_device_node(name=f"spine-{i:02d}", role="spine") for i in range(1, 3)]
-        mock_infrahub_client.filters.return_value = spine_nodes
+        _dispatch_filters(mock_infrahub_client, devices=spine_nodes)
         store = InfrahubIntentStore(client=mock_infrahub_client)
 
         result = await store.get_desired_state(role="spine")
@@ -725,7 +725,7 @@ class TestDeviceAttribution:
         assert [(i.name, i.device_id) for i in state.interfaces] == [("ethernet-1/1", dev_uuid)]
         assert [s.device_id for s in state.bgp_sessions] == [dev_uuid]
 
-    async def test_store_miss_grouped_by_relation_id_across_devices(self, mock_infrahub_client, caplog):
+    async def test_store_miss_grouped_by_relation_id_across_devices(self, mock_infrahub_client):
         """A multi-device query can't attribute by membership alone, but the
         live relation still carries the peer id when ``.peer`` misses the store."""
         spine_id, leaf_id = uuid4(), uuid4()
@@ -738,37 +738,42 @@ class TestDeviceAttribution:
         _dispatch_filters(mock_infrahub_client, devices=[spine, leaf], interfaces=[iface], sessions=[bgp])
         store = InfrahubIntentStore(client=mock_infrahub_client)
 
-        with caplog.at_level(logging.WARNING, logger="snapl_intent.infrahub.store"):
-            result = {s.device.name: s for s in await store.get_desired_state(use_case="dcfabric")}
+        result = {s.device.name: s for s in await store.get_desired_state(use_case="dcfabric")}
 
         assert [i.device_id for i in result["spine-01"].interfaces] == [spine_id]
         assert [s.device_id for s in result["leaf-01"].bgp_sessions] == [leaf_id]
         assert result["leaf-01"].interfaces == []
         assert result["spine-01"].bgp_sessions == []
-        assert not caplog.records
 
-    async def test_unattributable_children_logged_with_count(self, mock_infrahub_client, caplog):
-        """When neither membership nor the relation names a queried device, the
-        drop must be visible: one warning per kind, with the count."""
+    async def test_unattributable_interfaces_fail_closed(self, mock_infrahub_client):
+        """A child naming no queried device must not be left out: the gap would
+        read as live-only config, so no desired state is returned at all."""
         spine_id, leaf_id = uuid4(), uuid4()
         spine = _make_device_node(name="spine-01", device_id=spine_id)
         leaf = _make_device_node(name="leaf-01", role="leaf", device_id=leaf_id)
         no_ref = _make_interface_node(device_uuid=spine_id, name="ethernet-1/1")
         no_ref.device = _UnresolvableDeviceRel()
         foreign_ref = _make_interface_node(device_uuid=uuid4(), name="ethernet-1/2")
-        bgp = _make_bgp_session_node(device_uuid=leaf_id, local_asn=65011, peer_address="10.10.1.0/31", peer_asn=65000)
-        bgp.device = _UnresolvableDeviceRel()
-        _dispatch_filters(mock_infrahub_client, devices=[spine, leaf], interfaces=[no_ref, foreign_ref], sessions=[bgp])
+        _dispatch_filters(mock_infrahub_client, devices=[spine, leaf], interfaces=[no_ref, foreign_ref], sessions=[])
         store = InfrahubIntentStore(client=mock_infrahub_client)
 
-        with caplog.at_level(logging.WARNING, logger="snapl_intent.infrahub.store"):
-            result = await store.get_desired_state(use_case="dcfabric")
+        with pytest.raises(IntentAttributionError, match="2 InterfacePhysical") as excinfo:
+            await store.get_desired_state(use_case="dcfabric")
 
-        assert all(not s.interfaces and not s.bgp_sessions for s in result)
-        messages = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
-        assert len(messages) == 2
-        assert any("2 InterfacePhysical" in m for m in messages)
-        assert any("1 RoutingBGPSession" in m for m in messages)
+        assert str(no_ref.id) in str(excinfo.value)
+        assert str(foreign_ref.id) in str(excinfo.value)
+
+    async def test_unattributable_sessions_fail_closed(self, mock_infrahub_client):
+        spine_id, leaf_id = uuid4(), uuid4()
+        spine = _make_device_node(name="spine-01", device_id=spine_id)
+        leaf = _make_device_node(name="leaf-01", role="leaf", device_id=leaf_id)
+        bgp = _make_bgp_session_node(device_uuid=leaf_id, local_asn=65011, peer_address="10.10.1.0/31", peer_asn=65000)
+        bgp.device = _UnresolvableDeviceRel()
+        _dispatch_filters(mock_infrahub_client, devices=[spine, leaf], interfaces=[], sessions=[bgp])
+        store = InfrahubIntentStore(client=mock_infrahub_client)
+
+        with pytest.raises(IntentAttributionError, match="1 RoutingBGPSession"):
+            await store.get_desired_state(use_case="dcfabric")
 
 
 # Deliberate SoT status → enabled mapping (#47). The keys must match the

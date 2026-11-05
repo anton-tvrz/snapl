@@ -2,6 +2,7 @@
 
 from snapl_intent.abc import IntentStore
 from snapl_intent.exceptions import (
+    IntentAttributionError,
     IntentConnectionError,
     IntentDeletionError,
     IntentError,
@@ -30,6 +31,7 @@ __all__ = [  # noqa: RUF022
     "IntentValidationError",
     "IntentSchemaError",
     "IntentDeletionError",
+    "IntentAttributionError",
     # Models
     "Device",
     "Interface",
