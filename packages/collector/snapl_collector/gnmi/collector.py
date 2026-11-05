@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 import grpc
 
 from snapl_collector.abc import Collector
+from snapl_collector.exceptions import CollectorConfigError
 from snapl_collector.gnmi.client import gnmi_get
 from snapl_collector.models import BatchCollectResult, CollectResult
 
@@ -32,6 +33,9 @@ class GnmiCollector(Collector):
         password: gNMI password.
         insecure: Skip TLS verification (default True for lab environments).
         timeout: gNMI operation timeout in seconds (default 30).
+
+    Raises:
+        CollectorConfigError: If ``password`` is empty or missing.
     """
 
     def __init__(
@@ -44,6 +48,8 @@ class GnmiCollector(Collector):
         insecure: bool = True,
         timeout: int = 30,
     ) -> None:
+        if not password:
+            raise CollectorConfigError("password is required")
         self._host = host
         self._port = port
         self._username = username
@@ -74,7 +80,12 @@ class GnmiCollector(Collector):
         that still reports an empty/root path; key it by the single requested
         path.
 
-        Raises KeyError/TypeError if the response structure is unexpected.
+        gNMI lets a target split one path across several notifications or
+        updates, so updates that land on the same key are merged by
+        :meth:`_merge_fragment` instead of overwriting each other.
+
+        Raises KeyError/TypeError if the response structure is unexpected, and
+        ValueError if two fragments for one key can't be reconciled.
         """
         data: dict[str, Any] = {}
         for notification in response["notification"]:
@@ -86,8 +97,43 @@ class GnmiCollector(Collector):
                     key = self._normalize_path(paths[0])
                 else:
                     key = "/"
-                data[key] = update["val"]
+                if key in data:
+                    data[key] = self._merge_fragment(data[key], update["val"], key)
+                else:
+                    data[key] = update["val"]
         return data
+
+    @classmethod
+    def _merge_fragment(cls, existing: Any, incoming: Any, where: str) -> Any:
+        """Merge a repeated update for one path into what was already collected.
+
+        The rule, applied recursively:
+
+        - dict + dict: deep-merged key by key.
+        - list + list: concatenated in arrival order; an entry equal to one
+          already collected is not added again, so a re-sent fragment is
+          harmless. Entries are never merged with each other (the YANG list
+          keys aren't known here), so one list entry split across fragments
+          stays two entries.
+        - equal values (the same leaf reported twice): kept once.
+        - anything else, such as two different scalars for one leaf or a dict
+          against a list, can't be reconciled and raises ValueError naming
+          the conflicting leaf, so ``collect`` reports a parse error instead
+          of silently keeping one fragment.
+        """
+        if isinstance(existing, dict) and isinstance(incoming, dict):
+            merged = dict(existing)
+            for name, value in incoming.items():
+                if name in merged:
+                    merged[name] = cls._merge_fragment(merged[name], value, f"{where.rstrip('/')}/{name}")
+                else:
+                    merged[name] = value
+            return merged
+        if isinstance(existing, list) and isinstance(incoming, list):
+            return existing + [entry for entry in incoming if entry not in existing]
+        if existing == incoming:
+            return existing
+        raise ValueError(f"conflicting updates for {where}: {existing!r:.80} vs {incoming!r:.80}")
 
     @staticmethod
     def _normalize_path(path: str | None) -> str:
@@ -162,7 +208,7 @@ class GnmiCollector(Collector):
                 paths=paths,
                 duration_ms=duration_ms,
             )
-        except (KeyError, TypeError) as exc:
+        except (KeyError, TypeError, ValueError) as exc:
             duration_ms = int((time.monotonic() - start) * 1000)
             return CollectResult(
                 device_id=device.id,

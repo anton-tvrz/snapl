@@ -586,3 +586,117 @@ class TestDialHostResolution:
         assert batch.succeeded == 2
         hosts = {call.kwargs["host"] for call in mock_get.call_args_list}
         assert hosts == {"clab-dcfabric-spine-01", "clab-dcfabric-leaf-01"}
+
+
+# ---------------------------------------------------------------------------
+# #69 — repeated same-path updates are merged, not overwritten
+# ---------------------------------------------------------------------------
+
+
+def _fragments(path, *vals):
+    """A GET response with one notification per fragment, all for one path."""
+    return {"notification": [{"timestamp": 1, "update": [{"path": path, "val": val}]} for val in vals]}
+
+
+class TestRepeatedPathUpdates:
+    """gNMI lets a target split one requested path across several
+    notifications/updates. Every fragment must reach the caller; fragments
+    that can't be reconciled fail the collect loudly as a parse error (#69)."""
+
+    async def _collect(self, make_device, response, paths):
+        collector = _make_collector()
+        with patch(
+            "snapl_collector.gnmi.collector.gnmi_get",
+            new_callable=AsyncMock,
+            return_value=response,
+        ):
+            return await collector.collect(make_device("spine-01"), paths=paths)
+
+    @pytest.mark.asyncio
+    async def test_single_update_unchanged(self, make_device):
+        val = {"admin-state": "enable", "subinterface": [{"index": 0}]}
+        result = await self._collect(make_device, _fragments("/interface[name=ethernet-1/1]", val), ["/interface"])
+        assert result.success is True
+        assert result.data == {"/interface[name=ethernet-1/1]": val}
+
+    @pytest.mark.asyncio
+    async def test_split_container_deep_merged(self, make_device):
+        bgp_path = "/network-instance[name=default]/protocols/bgp"
+        response = _fragments(
+            bgp_path,
+            {"autonomous-system": 65001, "ipv4-unicast": {"admin-state": "enable"}},
+            {"router-id": "10.0.0.1", "ipv4-unicast": {"multipath": {"max-paths-level-1": 2}}},
+        )
+        result = await self._collect(make_device, response, [bgp_path])
+        assert result.success is True
+        assert result.data[bgp_path] == {
+            "autonomous-system": 65001,
+            "router-id": "10.0.0.1",
+            "ipv4-unicast": {"admin-state": "enable", "multipath": {"max-paths-level-1": 2}},
+        }
+
+    @pytest.mark.asyncio
+    async def test_split_list_combined(self, make_device):
+        response = _fragments("/interface", [{"name": "ethernet-1/1"}], [{"name": "ethernet-1/2"}])
+        result = await self._collect(make_device, response, ["/interface"])
+        assert result.success is True
+        assert result.data["/interface"] == [{"name": "ethernet-1/1"}, {"name": "ethernet-1/2"}]
+
+    @pytest.mark.asyncio
+    async def test_split_root_response_merged(self, make_device):
+        """A root GET reports an empty path on every fragment; all of them key
+        to "/" and are merged, lists inside the subtree combined."""
+        response = _fragments(
+            None,
+            {"interface": [{"name": "ethernet-1/1"}], "system": {"name": {"host-name": "spine-01"}}},
+            {"interface": [{"name": "ethernet-1/2"}], "system": {"ntp": {"admin-state": "enable"}}},
+        )
+        result = await self._collect(make_device, response, ["/"])
+        assert result.success is True
+        assert result.data["/"] == {
+            "interface": [{"name": "ethernet-1/1"}, {"name": "ethernet-1/2"}],
+            "system": {"name": {"host-name": "spine-01"}, "ntp": {"admin-state": "enable"}},
+        }
+
+    @pytest.mark.asyncio
+    async def test_resent_fragment_is_idempotent(self, make_device):
+        val = {"mtu": 9000, "subinterface": [{"index": 0}]}
+        response = _fragments("/interface[name=ethernet-1/1]", val, val)
+        result = await self._collect(make_device, response, ["/interface[name=ethernet-1/1]"])
+        assert result.success is True
+        assert result.data["/interface[name=ethernet-1/1]"] == val
+
+    @pytest.mark.asyncio
+    async def test_conflicting_scalars_raise_parse_error(self, make_device):
+        path = "/interface[name=ethernet-1/1]"
+        response = _fragments(path, {"mtu": 1500}, {"mtu": 9000})
+        result = await self._collect(make_device, response, [path])
+        assert result.success is False
+        assert result.data == {}
+        assert "parse error" in result.error
+        assert f"{path}/mtu" in result.error
+
+    @pytest.mark.asyncio
+    async def test_mismatched_shapes_raise_parse_error(self, make_device):
+        response = _fragments("/interface", [{"name": "ethernet-1/1"}], {"name": "ethernet-1/2"})
+        result = await self._collect(make_device, response, ["/interface"])
+        assert result.success is False
+        assert "parse error" in result.error
+
+
+# ---------------------------------------------------------------------------
+# #69 — missing credentials fail at construction
+# ---------------------------------------------------------------------------
+
+
+class TestConstructorValidation:
+    """A collector without a password is a bootstrap error, raised when it is
+    built — not a per-device "auth error" at collect time (#69)."""
+
+    @pytest.mark.parametrize("password", ["", None])
+    def test_missing_password_raises_config_error(self, password):
+        from snapl_collector.exceptions import CollectorConfigError
+        from snapl_collector.gnmi.collector import GnmiCollector
+
+        with pytest.raises(CollectorConfigError, match="password is required"):
+            GnmiCollector(host="127.0.0.1", password=password)
