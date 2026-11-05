@@ -21,3 +21,11 @@ class AuditLogError(OrchestratorError):
 
 class ScheduleNotFoundError(OrchestratorError):
     """The use case has no drift schedule."""
+
+
+class UnreadableScheduleError(OrchestratorError):
+    """The drift schedule was changed outside snapl into a shape snapl cannot read."""
+
+
+class ScheduleRunInProgressError(OrchestratorError):
+    """A scheduled run is in progress, so a trigger would be skipped by the overlap policy."""

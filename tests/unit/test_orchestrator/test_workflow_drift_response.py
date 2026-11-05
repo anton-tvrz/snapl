@@ -30,6 +30,7 @@ from snapl_orchestrator.activities.executor import apply_config
 from snapl_orchestrator.activities.intent import fetch_desired_state, fetch_devices_for_use_case
 from snapl_orchestrator.activities.observability import detect_drift
 from snapl_orchestrator.audit.memory import InMemoryAuditLog
+from snapl_orchestrator.exceptions import AuditLogError
 from snapl_orchestrator.models import (
     AuditEventType,
     DriftResponseMode,
@@ -149,6 +150,19 @@ class Fabric:
             observer=observer,
             audit_log=audit,
         )
+
+
+class RefusingAuditLog(InMemoryAuditLog):
+    """Refuses one workflow type's terminal record, as a locked or full disk would."""
+
+    def __init__(self, workflow_type: str) -> None:
+        super().__init__()
+        self._workflow_type = workflow_type
+
+    async def append(self, event) -> None:
+        if event.workflow_type == self._workflow_type and event.event_type is AuditEventType.WORKFLOW_TERMINATED:
+            raise AuditLogError("database is locked")
+        await super().append(event)
 
 
 def teardown_function() -> None:
@@ -331,6 +345,59 @@ async def test_a_cancelled_run_records_cancellation(make_desired) -> None:
     assert AuditEventType.DRIFT_RESPONSE not in types
 
 
+@pytest.mark.asyncio
+async def test_a_scan_cancelled_on_its_own_fails_the_run(make_desired) -> None:
+    """Cancelling only the scan child (Web UI, CLI) returns an empty scan.
+
+    That must not be recorded as a successful run over zero devices.
+    """
+    audit = InMemoryAuditLog()
+    started = asyncio.Event()
+
+    async def _blocking(*, use_case=None, device_id=None):
+        started.set()
+        await asyncio.sleep(30)  # released by cancellation / worker shutdown
+        return []
+
+    intent_store = MagicMock()
+    intent_store.get_desired_state = AsyncMock(side_effect=_blocking)
+    set_activities(
+        Activities(
+            intent_store=intent_store,
+            executor=MagicMock(),
+            collector=MagicMock(),
+            observer=MagicMock(),
+            audit_log=audit,
+        )
+    )
+
+    async with (
+        await WorkflowEnvironment.start_time_skipping(data_converter=pydantic_data_converter) as env,
+        Worker(
+            env.client,
+            task_queue=TASK_QUEUE,
+            workflows=_WORKFLOWS,
+            workflow_runner=build_workflow_runner(),
+            activities=_ACTIVITIES,
+        ),
+    ):
+        handle = await env.client.start_workflow(
+            DriftResponseWorkflow.run, _request(DriftResponseMode.REMEDIATE), id=RUN_ID, task_queue=TASK_QUEUE
+        )
+        await asyncio.wait_for(started.wait(), timeout=10)
+        await env.client.get_workflow_handle(f"{RUN_ID}-scan").cancel()
+        with pytest.raises(WorkflowFailureError):
+            await handle.result()
+
+    events = await audit.query_by_workflow(RUN_ID)
+    assert AuditEventType.DRIFT_RESPONSE not in [e.event_type for e in events]
+    terminal = events[-1]
+    assert terminal.event_type is AuditEventType.WORKFLOW_TERMINATED
+    assert terminal.outcome == "failure"
+    assert terminal.reason is WorkflowReason.CANCELLED
+    assert f"{RUN_ID}-scan" in terminal.payload["error"]
+
+
 # ---------------------------------------------------------------------------
 # Remediate (US3)
 # ---------------------------------------------------------------------------
@@ -440,3 +507,35 @@ async def test_a_failed_repair_is_reported_and_the_run_still_succeeds(make_desir
     terminal = (await audit.query_by_workflow(RUN_ID))[-1]
     assert terminal.event_type is AuditEventType.WORKFLOW_TERMINATED
     assert terminal.reason is WorkflowReason.SUCCEEDED
+
+
+@pytest.mark.asyncio
+async def test_a_failed_reconcile_records_each_decision_and_fails_the_run(mixed: Fabric) -> None:
+    """The deploys ran (and wrote) before ReconcileDevices itself failed.
+
+    The run must not blame the Source of Truth, and every device it decided
+    about still needs its record (FR-020).
+    """
+    ids = [s.device.id for s in mixed.states]
+    audit = RefusingAuditLog("ReconcileDevices")
+
+    with pytest.raises(WorkflowFailureError):
+        await _run(mixed.activities(audit), DriftResponseMode.REMEDIATE)
+
+    assert sorted(mixed.applied, key=str) == sorted([ids[0], ids[1]], key=str)
+    for device_id in (ids[0], ids[1]):
+        [record] = await _response_events(audit, target=device_id)
+        assert record.payload["decision"] == "remediated"
+        assert record.payload["reconcile_workflow_id"] == f"{RUN_ID}-reconcile"
+        # Reconcile failed before it reported per-device results.
+        assert record.payload["result"] == "unknown"
+    [undesired] = await _response_events(audit, target=ids[2])
+    assert undesired.payload["decision"] == "undesired_only"
+    [summary] = await _response_events(audit, target=USE_CASE)
+    assert summary.payload["remediated"] == 2
+    assert summary.payload["reconcile_workflow_id"] == f"{RUN_ID}-reconcile"
+
+    terminal = (await audit.query_by_workflow(RUN_ID))[-1]
+    assert terminal.event_type is AuditEventType.WORKFLOW_TERMINATED
+    assert terminal.outcome == "failure"
+    assert terminal.reason is WorkflowReason.REMEDIATION_FAILED

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path  # noqa: TC003 — runtime use in tmp_path fixture typing
 from uuid import UUID, uuid4
 
@@ -117,14 +117,59 @@ async def test_query_by_time_range_is_half_open(tmp_db_path: str) -> None:
     assert [e.event_id for e in out] == [e1.event_id]
 
 
+_PLUS_2 = timezone(timedelta(hours=2))
+
+
 @pytest.mark.asyncio
-async def test_duplicate_event_id_rejected(tmp_db_path: str) -> None:
+async def test_query_by_time_range_compares_instants_not_text(tmp_db_path: str) -> None:
+    """Bounds in another offset name the same instants; text comparison would not."""
     log = SqliteAuditLog(database_url=tmp_db_path)
     await log.initialize()
-    event = _event()
+    base = datetime(2026, 5, 1, tzinfo=UTC)
+    e0 = _event(timestamp=base)
+    e1 = _event(timestamp=base + timedelta(seconds=10))
+    e2 = _event(timestamp=base + timedelta(seconds=20))
+    for e in (e0, e1, e2):
+        await log.append(e)
+
+    out = await log.query_by_time_range(
+        (base + timedelta(seconds=5)).astimezone(_PLUS_2),
+        (base + timedelta(seconds=20)).astimezone(_PLUS_2),
+    )
+    assert [e.event_id for e in out] == [e1.event_id]
+
+
+@pytest.mark.asyncio
+async def test_an_event_stamped_in_another_offset_is_found_by_its_instant(tmp_db_path: str) -> None:
+    log = SqliteAuditLog(database_url=tmp_db_path)
+    await log.initialize()
+    base = datetime(2026, 5, 1, tzinfo=UTC)
+    event = _event(timestamp=(base + timedelta(seconds=10)).astimezone(_PLUS_2))
     await log.append(event)
-    with pytest.raises(AuditLogError):
-        await log.append(event)
+
+    out = await log.query_by_time_range(base + timedelta(seconds=5), base + timedelta(seconds=20))
+    assert [e.event_id for e in out] == [event.event_id]
+    assert out[0].timestamp == event.timestamp
+
+
+@pytest.mark.asyncio
+async def test_query_by_time_range_refuses_naive_bounds(tmp_db_path: str) -> None:
+    log = SqliteAuditLog(database_url=tmp_db_path)
+    await log.initialize()
+    with pytest.raises(ValueError, match="timezone"):
+        await log.query_by_time_range(datetime(2026, 5, 1), datetime(2026, 5, 2))  # noqa: DTZ001
+
+
+@pytest.mark.asyncio
+async def test_duplicate_event_id_is_stored_once(tmp_db_path: str) -> None:
+    """A retried record_audit_event activity re-sends the same event after its
+    first attempt already committed; the retry must succeed, not fail the run."""
+    log = SqliteAuditLog(database_url=tmp_db_path)
+    await log.initialize()
+    event = _event(workflow_id="wf-retry")
+    await log.append(event)
+    await log.append(event)
+    assert [e.event_id for e in await log.query_by_workflow("wf-retry")] == [event.event_id]
 
 
 @pytest.mark.asyncio
@@ -217,13 +262,13 @@ async def test_memory_mode_persists_across_many_operations() -> None:
 
 
 @pytest.mark.asyncio
-async def test_memory_mode_duplicate_event_id_still_raises() -> None:
+async def test_memory_mode_duplicate_event_id_is_stored_once() -> None:
     log = SqliteAuditLog(database_url=":memory:")
     await log.initialize()
-    event = _event()
+    event = _event(workflow_id="wf-mem")
     await log.append(event)
-    with pytest.raises(AuditLogError, match="already persisted"):
-        await log.append(event)
+    await log.append(event)
+    assert [e.event_id for e in await log.query_by_workflow("wf-mem")] == [event.event_id]
     await log.close()
 
 

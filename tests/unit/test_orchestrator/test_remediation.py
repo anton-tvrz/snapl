@@ -8,7 +8,7 @@ from uuid import UUID, uuid4
 import pytest
 
 from snapl_observability.models import DriftItem, DriftReport, DriftStatus
-from snapl_orchestrator.models import DriftScanResult, ExclusionReason
+from snapl_orchestrator.models import DriftScanResult, ExclusionReason, has_forward_drift
 from snapl_orchestrator.remediation import select_remediation
 
 pytestmark = pytest.mark.unit
@@ -89,3 +89,22 @@ def test_remediated_devices_keep_scan_order() -> None:
 
 def test_an_empty_scan_selects_nothing() -> None:
     assert select_remediation(_scan()) == ([], {})
+
+
+def test_remediation_matches_the_rule_drift_response_result_enforces() -> None:
+    """DriftResponseResult refuses a remediated device without forward drift.
+
+    If select_remediation ever disagreed with it, the workflow would fail its
+    own validator; one predicate keeps them from drifting apart.
+    """
+    reports = [
+        _report(uuid4(), DriftStatus.CLEAN),
+        _report(uuid4(), DriftStatus.ERROR),
+        _report(uuid4(), DriftStatus.DRIFTED, [_item(undesired=True)]),
+        _report(uuid4(), DriftStatus.DRIFTED, [_item(undesired=False)]),
+        _report(uuid4(), DriftStatus.DRIFTED, [_item(undesired=True), _item(undesired=False)]),
+    ]
+
+    remediated, _ = select_remediation(_scan(*reports))
+
+    assert remediated == [r.device_id for r in reports if has_forward_drift(r)]

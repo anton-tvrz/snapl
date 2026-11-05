@@ -276,4 +276,5 @@ class ScanDriftWorkflow:
             errored=len(partial_reports),
             started_at=started_at,
             ended_at=workflow.now(),
+            cancelled=True,
         )
