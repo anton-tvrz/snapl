@@ -7,18 +7,17 @@ the SDK client. Tests grow across phases (US1 -> US2 -> US3 -> US4 -> Polish).
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
-from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
 import pytest
 import yaml
 
-if TYPE_CHECKING:
-    from pathlib import Path
-
+import snapl_intent
 from snapl_intent.exceptions import (
+    IntentAttributionError,
     IntentConnectionError,
     IntentDeletionError,
     IntentNotFoundError,
@@ -56,7 +55,7 @@ def _make_interface_node(
     device_uuid: UUID,
     name: str,
     ip: str | None = None,
-    status: str = "active",
+    status: str | None = "active",
     mtu: int | None = 9214,
     description: str | None = None,
     peer_device: str | None = None,
@@ -87,7 +86,7 @@ def _make_bgp_session_node(
     peer_address: str,
     peer_asn: int,
     peer_group: str | None = None,
-    status: str = "active",
+    status: str | None = "active",
     export_policies: str | None = None,
     import_policies: str | None = None,
 ):
@@ -238,7 +237,7 @@ class TestGetDesiredState:
 
     async def test_filters_by_role(self, mock_infrahub_client):
         spine_nodes = [_make_device_node(name=f"spine-{i:02d}", role="spine") for i in range(1, 3)]
-        mock_infrahub_client.filters.return_value = spine_nodes
+        _dispatch_filters(mock_infrahub_client, devices=spine_nodes)
         store = InfrahubIntentStore(client=mock_infrahub_client)
 
         result = await store.get_desired_state(role="spine")
@@ -692,6 +691,150 @@ class TestRelationshipQueries:
 
         (mapped,) = result[0].interfaces
         assert mapped.device_id == dev_uuid
+
+
+class _UnresolvableDeviceRel:
+    """A live ``RelatedNode`` whose peer misses the SDK store: ``.peer`` raises,
+    while ``.id`` still carries whatever id the GraphQL response held."""
+
+    def __init__(self, peer_id: str | None = None):
+        self.id = peer_id
+
+    @property
+    def peer(self):
+        raise ValueError("Unable to find the node in the store")
+
+
+class TestDeviceAttribution:
+    """Regression for #46: a child whose ``device`` peer won't resolve must not
+    silently vanish from desired state — reconcile would read the gap as
+    live-only config and remove it."""
+
+    async def test_unresolvable_device_peer_stays_under_queried_device(self, mock_infrahub_client):
+        dev_uuid = uuid4()
+        node = _make_device_node(name="spine-01", device_id=dev_uuid)
+        iface = _make_interface_node(device_uuid=dev_uuid, name="ethernet-1/1")
+        iface.device = _UnresolvableDeviceRel()
+        bgp = _make_bgp_session_node(device_uuid=dev_uuid, local_asn=65000, peer_address="10.10.1.1/31", peer_asn=65011)
+        bgp.device = _UnresolvableDeviceRel()
+        _dispatch_filters(mock_infrahub_client, devices=[node], interfaces=[iface], sessions=[bgp])
+        store = InfrahubIntentStore(client=mock_infrahub_client)
+
+        (state,) = await store.get_desired_state(device_id=dev_uuid)
+
+        assert [(i.name, i.device_id) for i in state.interfaces] == [("ethernet-1/1", dev_uuid)]
+        assert [s.device_id for s in state.bgp_sessions] == [dev_uuid]
+
+    async def test_store_miss_grouped_by_relation_id_across_devices(self, mock_infrahub_client):
+        """A multi-device query can't attribute by membership alone, but the
+        live relation still carries the peer id when ``.peer`` misses the store."""
+        spine_id, leaf_id = uuid4(), uuid4()
+        spine = _make_device_node(name="spine-01", device_id=spine_id)
+        leaf = _make_device_node(name="leaf-01", role="leaf", device_id=leaf_id)
+        iface = _make_interface_node(device_uuid=spine_id, name="ethernet-1/1")
+        iface.device = _UnresolvableDeviceRel(str(spine_id))
+        bgp = _make_bgp_session_node(device_uuid=leaf_id, local_asn=65011, peer_address="10.10.1.0/31", peer_asn=65000)
+        bgp.device = _UnresolvableDeviceRel(str(leaf_id))
+        _dispatch_filters(mock_infrahub_client, devices=[spine, leaf], interfaces=[iface], sessions=[bgp])
+        store = InfrahubIntentStore(client=mock_infrahub_client)
+
+        result = {s.device.name: s for s in await store.get_desired_state(use_case="dcfabric")}
+
+        assert [i.device_id for i in result["spine-01"].interfaces] == [spine_id]
+        assert [s.device_id for s in result["leaf-01"].bgp_sessions] == [leaf_id]
+        assert result["leaf-01"].interfaces == []
+        assert result["spine-01"].bgp_sessions == []
+
+    async def test_unattributable_interfaces_fail_closed(self, mock_infrahub_client):
+        """A child naming no queried device must not be left out: the gap would
+        read as live-only config, so no desired state is returned at all."""
+        spine_id, leaf_id = uuid4(), uuid4()
+        spine = _make_device_node(name="spine-01", device_id=spine_id)
+        leaf = _make_device_node(name="leaf-01", role="leaf", device_id=leaf_id)
+        no_ref = _make_interface_node(device_uuid=spine_id, name="ethernet-1/1")
+        no_ref.device = _UnresolvableDeviceRel()
+        foreign_ref = _make_interface_node(device_uuid=uuid4(), name="ethernet-1/2")
+        _dispatch_filters(mock_infrahub_client, devices=[spine, leaf], interfaces=[no_ref, foreign_ref], sessions=[])
+        store = InfrahubIntentStore(client=mock_infrahub_client)
+
+        with pytest.raises(IntentAttributionError, match="2 InterfacePhysical") as excinfo:
+            await store.get_desired_state(use_case="dcfabric")
+
+        assert str(no_ref.id) in str(excinfo.value)
+        assert str(foreign_ref.id) in str(excinfo.value)
+
+    async def test_unattributable_sessions_fail_closed(self, mock_infrahub_client):
+        spine_id, leaf_id = uuid4(), uuid4()
+        spine = _make_device_node(name="spine-01", device_id=spine_id)
+        leaf = _make_device_node(name="leaf-01", role="leaf", device_id=leaf_id)
+        bgp = _make_bgp_session_node(device_uuid=leaf_id, local_asn=65011, peer_address="10.10.1.0/31", peer_asn=65000)
+        bgp.device = _UnresolvableDeviceRel()
+        _dispatch_filters(mock_infrahub_client, devices=[spine, leaf], interfaces=[], sessions=[bgp])
+        store = InfrahubIntentStore(client=mock_infrahub_client)
+
+        with pytest.raises(IntentAttributionError, match="1 RoutingBGPSession"):
+            await store.get_desired_state(use_case="dcfabric")
+
+
+# Deliberate SoT status → enabled mapping (#47). The keys must match the
+# packaged schema's choices exactly — test_tables_cover_schema_choices pins it,
+# so a new status can't slip in unclassified.
+_INTERFACE_STATUS_ENABLED = {
+    "provisioning": True,
+    "free": False,
+    "active": True,
+    "maintenance": True,
+    "disabled": False,
+    "deleted": False,
+    "outage": True,
+}
+_BGP_STATUS_ENABLED = {"active": True, "disabled": False, "deleted": False}
+
+
+def _schema_status_choices(relative_path: str, generic_name: str) -> set[str]:
+    """Read the ``status`` dropdown choices of a generic in the packaged schema."""
+    schemas_root = Path(snapl_intent.__file__).resolve().parent / "schemas"
+    doc = yaml.safe_load((schemas_root / relative_path).read_text())
+    (generic,) = [g for g in doc["generics"] if g["name"] == generic_name]
+    (status,) = [a for a in generic["attributes"] if a["name"] == "status"]
+    return {choice["name"] for choice in status["choices"]}
+
+
+class TestStatusEnablement:
+    """Regression for #47: ``status == "active"`` rendered provisioning and
+    maintenance interfaces admin-shutdown."""
+
+    @pytest.mark.parametrize(("status", "enabled"), [*_INTERFACE_STATUS_ENABLED.items(), (None, True)])
+    async def test_interface_status_maps_to_enabled(self, mock_infrahub_client, status, enabled):
+        dev_uuid = uuid4()
+        node = _make_device_node(name="spine-01", device_id=dev_uuid)
+        iface = _make_interface_node(device_uuid=dev_uuid, name="ethernet-1/1", status=status)
+        _dispatch_filters(mock_infrahub_client, devices=[node], interfaces=[iface])
+        store = InfrahubIntentStore(client=mock_infrahub_client)
+
+        (state,) = await store.get_desired_state(device_id=dev_uuid)
+
+        assert state.interfaces[0].enabled is enabled
+
+    @pytest.mark.parametrize(("status", "enabled"), [*_BGP_STATUS_ENABLED.items(), (None, True)])
+    async def test_bgp_session_status_maps_to_enabled(self, mock_infrahub_client, status, enabled):
+        dev_uuid = uuid4()
+        node = _make_device_node(name="spine-01", device_id=dev_uuid)
+        bgp = _make_bgp_session_node(
+            device_uuid=dev_uuid, local_asn=65000, peer_address="10.10.1.1/31", peer_asn=65011, status=status
+        )
+        _dispatch_filters(mock_infrahub_client, devices=[node], sessions=[bgp])
+        store = InfrahubIntentStore(client=mock_infrahub_client)
+
+        (state,) = await store.get_desired_state(device_id=dev_uuid)
+
+        assert state.bgp_sessions[0].enabled is enabled
+
+    def test_tables_cover_schema_choices(self):
+        # InterfacePhysical inherits status from DcimInterface; RoutingBGPSession
+        # from RoutingProtocol.
+        assert set(_INTERFACE_STATUS_ENABLED) == _schema_status_choices("base/dcim.yml", "Interface")
+        assert set(_BGP_STATUS_ENABLED) == _schema_status_choices("extensions/routing.yml", "Protocol")
 
 
 class TestUseCaseIsolation:
