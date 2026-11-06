@@ -555,6 +555,10 @@ async def test_a_run_timeout_mid_repair_lets_the_repair_finish_and_record(make_d
     The reconcile child is abandoned rather than terminated, so its deploy
     verifies and every child writes its own terminal record. A later run that
     finds the same device still drifted skips it: its deploy is still in flight.
+
+    Runs on a real dev server: the time-skipping test server doesn't apply a
+    parent close policy when a run times out, so there the repair survives
+    either way and the test can't fail.
     """
     fabric = Fabric([make_desired("forward-01")])
     device_id = fabric.states[0].device.id
@@ -565,7 +569,7 @@ async def test_a_run_timeout_mid_repair_lets_the_repair_finish_and_record(make_d
     later_run = f"{RUN_ID}-later"
 
     async with (
-        await WorkflowEnvironment.start_time_skipping(data_converter=pydantic_data_converter) as env,
+        await WorkflowEnvironment.start_local(data_converter=pydantic_data_converter) as env,
         Worker(
             env.client,
             task_queue=TASK_QUEUE,
@@ -583,21 +587,25 @@ async def test_a_run_timeout_mid_repair_lets_the_repair_finish_and_record(make_d
             execution_timeout=timedelta(seconds=10),
         )
         await asyncio.wait_for(fabric.apply_started.wait(), timeout=10)
-        await env.sleep(timedelta(seconds=20))
+        await asyncio.sleep(14)
         with pytest.raises(WorkflowFailureError):
             await handle.result()
 
         # The device is still drifted (its apply is held), so the next run
-        # selects it again, and its reconcile skips the in-flight deploy.
-        later = await env.client.execute_workflow(
-            DriftResponseWorkflow.run, _request(DriftResponseMode.REMEDIATE), id=later_run, task_queue=TASK_QUEUE
+        # selects it again, and its reconcile skips the in-flight deploy. If the
+        # repair was killed instead, this run's own deploy blocks on the gate.
+        later = await asyncio.wait_for(
+            env.client.execute_workflow(
+                DriftResponseWorkflow.run, _request(DriftResponseMode.REMEDIATE), id=later_run, task_queue=TASK_QUEUE
+            ),
+            timeout=30,
         )
         assert later.remediated == [device_id]
         assert (later.reconcile.skipped, later.reconcile.failed) == (1, 0)
         assert fabric.applied == [device_id]
 
         fabric.gate.set()
-        repair = await env.client.get_workflow_handle(f"{RUN_ID}-reconcile").result()
+        repair = await env.client.get_workflow_handle_for(ReconcileDevicesWorkflow.run, f"{RUN_ID}-reconcile").result()
 
     assert (repair.succeeded, repair.failed, repair.skipped) == (1, 0, 0)
     assert fabric.drift[device_id] == []
