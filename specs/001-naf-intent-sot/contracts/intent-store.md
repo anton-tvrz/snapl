@@ -37,6 +37,7 @@ class IntentStore(ABC):
         Raises:
             IntentConnectionError: Source of Truth unreachable
             IntentNotFoundError: No devices match the query (empty list returned, not raised)
+            IntentAttributionError: An interface or BGP session can't be placed on a queried device
         """
 
     # ── Schema Operations ────────────────────────────────────────────────
@@ -201,6 +202,9 @@ class IntentSchemaError(IntentError):
 
 class IntentDeletionError(IntentError):
     """Deletion preconditions not met."""
+
+class IntentAttributionError(IntentError):
+    """A queried child can't be placed on a queried device."""
 ```
 
 ## Consumer Expectations
@@ -217,6 +221,7 @@ class IntentDeletionError(IntentError):
 
 - All methods are **async** — callers must await them
 - `get_desired_state()` with no matches returns an **empty list**, not an error
+- `get_desired_state()` never returns partial state: a child it can't place on a queried device raises
 - `provision_schema()` is **idempotent** — safe to call repeatedly
 - `seed()` uses **upsert** semantics — no duplicates on re-run
 - All errors are domain exceptions (never raw SDK/HTTP errors)
