@@ -10,7 +10,7 @@ everything except doing anything.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from snapl_intent.infrahub.client import DEFAULT_ADDRESS as DEFAULT_INFRAHUB_ADDRESS
 from snapl_orchestrator.worker.run import (
@@ -21,6 +21,13 @@ from snapl_orchestrator.worker.run import (
 )
 
 DEFAULT_CONNECT_TIMEOUT = 10.0
+
+# Host ports from dev/knowledge/host-resource-registry.md.
+DEFAULT_DASHBOARD_PORT = 18030
+DEFAULT_TEMPORAL_UI_PORT = 18034
+# Loopback only: the dashboard has no authentication (spec 010 FR-002).
+DEFAULT_DASHBOARD_HOST = "127.0.0.1"
+DEFAULT_TEST_RUNS_DIR = ".snapl/test-runs"
 
 
 @dataclass(frozen=True)
@@ -36,6 +43,14 @@ class CliSettings:
     # Temporal's client retries its initial handshake forever; without a cap
     # the CLI hangs silently against a cluster that is not running.
     connect_timeout: float = DEFAULT_CONNECT_TIMEOUT
+    # Dashboard (spec 010).
+    dashboard_port: int = DEFAULT_DASHBOARD_PORT
+    dashboard_host: str = DEFAULT_DASHBOARD_HOST
+    temporal_ui_address: str = f"http://localhost:{DEFAULT_TEMPORAL_UI_PORT}"
+    # None means "resolve from `git remote get-url origin`".
+    github_repo: str | None = None
+    github_token: str | None = field(default=None, repr=False)
+    test_runs_dir: str = DEFAULT_TEST_RUNS_DIR
 
     @classmethod
     def from_env(cls) -> CliSettings:
@@ -47,4 +62,11 @@ class CliSettings:
             infrahub_token=os.environ.get("INFRAHUB_API_TOKEN"),
             audit_db=os.environ.get("SNAPL_AUDIT_DB") or DEFAULT_AUDIT_DB,
             connect_timeout=float(os.environ.get("SNAPL_CONNECT_TIMEOUT") or DEFAULT_CONNECT_TIMEOUT),
+            dashboard_port=int(os.environ.get("DASHBOARD_PORT") or DEFAULT_DASHBOARD_PORT),
+            dashboard_host=os.environ.get("DASHBOARD_HOST") or DEFAULT_DASHBOARD_HOST,
+            temporal_ui_address=os.environ.get("TEMPORAL_UI_ADDRESS")
+            or f"http://localhost:{os.environ.get('TEMPORAL_UI_PORT') or DEFAULT_TEMPORAL_UI_PORT}",
+            github_repo=os.environ.get("SNAPL_GITHUB_REPO") or None,
+            github_token=os.environ.get("GITHUB_TOKEN") or None,
+            test_runs_dir=os.environ.get("SNAPL_TEST_RUNS_DIR") or DEFAULT_TEST_RUNS_DIR,
         )

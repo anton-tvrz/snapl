@@ -29,9 +29,9 @@ Each PR says `Closes` a task issue under #101 and carries `changelog/101.added.m
 
 **Purpose**: Dependencies, settings, ignore rules. No behaviour yet.
 
-- [ ] T001 Add `fastapi>=0.115`, `uvicorn>=0.32` and `httpx>=0.28` to `dependencies` in packages/presentation/pyproject.toml. Declare `snapl_presentation/dashboard/static/*` as package data (hatch `[tool.hatch.build.targets.wheel]` include). Run `uv lock` and confirm `uv lock --check` passes (research R1).
-- [ ] T002 [P] Add `.snapl/` to .gitignore, with a comment naming spec 010 and spec 012 as its users.
-- [ ] T003 [P] Extend tests/unit/test_presentation/test_cli.py (or a new test_settings.py next to it) so `CliSettings.from_env()` resolves the new fields:
+- [x] T001 Add `fastapi>=0.115`, `uvicorn>=0.32` and `httpx>=0.28` to `dependencies` in packages/presentation/pyproject.toml. Declare `snapl_presentation/dashboard/static/*` as package data (hatch `[tool.hatch.build.targets.wheel]` include). Run `uv lock` and confirm `uv lock --check` passes (research R1).
+- [x] T002 [P] Add `.snapl/` to .gitignore, with a comment naming spec 010 and spec 012 as its users.
+- [x] T003 [P] Extend tests/unit/test_presentation/test_cli.py (or a new test_settings.py next to it) so `CliSettings.from_env()` resolves the new fields:
   - `dashboard_port` (`DASHBOARD_PORT`, default 18030)
   - `dashboard_host` (`DASHBOARD_HOST`, default `127.0.0.1`)
   - `temporal_ui_address` (`TEMPORAL_UI_ADDRESS`, default `http://localhost:${TEMPORAL_UI_PORT:-18034}`)
@@ -40,7 +40,7 @@ Each PR says `Closes` a task issue under #101 and carries `changelog/101.added.m
   - `test_runs_dir` (`SNAPL_TEST_RUNS_DIR`, default `.snapl/test-runs`)
 
   Also assert that `repr(settings)` never contains the token value. Run the test and see it fail.
-- [ ] T004 Implement those fields in packages/presentation/snapl_presentation/settings.py. Exclude `github_token` from repr (`field(repr=False)`). T003 passes.
+- [x] T004 Implement those fields in packages/presentation/snapl_presentation/settings.py. Exclude `github_token` from repr (`field(repr=False)`). T003 passes.
 
 ---
 
@@ -56,30 +56,30 @@ Every story depends on these.
 
 ### Tests (write first, verify they fail)
 
-- [ ] T005 [P] Write tests/unit/test_presentation/test_probes.py. It pins the behaviour of the helpers that move out of cli.py:
+- [x] T005 [P] Write tests/unit/test_presentation/test_probes.py. It pins the behaviour of the helpers that move out of cli.py:
   - `probe` returns a reason for a refused or timed-out port and `None` for a listening one
   - `connect` raises `ConnectionCliError` naming `TEMPORAL_HOST` without calling `build_client` when the probe fails
   - `count_pollers` returns `len(response.pollers)` from a fake `describe_task_queue`
   - `identify_sot` delegates to `snapl_intent.infrahub.identity.identify`
 
   Import from `snapl_presentation.probes`, so it fails until T009.
-- [ ] T006 [P] Extend tests/unit/test_orchestrator/test_audit_sqlite.py with `SqliteAuditLog(database_url=path, read_only=True)`:
+- [x] T006 [P] Extend tests/unit/test_orchestrator/test_audit_sqlite.py with `SqliteAuditLog(database_url=path, read_only=True)`:
   - opens an existing DB and returns the same events as a writable instance
   - `initialize()` does not create a missing file and raises `AuditLogError`
   - `initialize()` executes no DDL (the file's mtime and size are unchanged)
   - `append()` raises `AuditLogError("audit log opened read-only")`
   - a concurrent writable instance can still append while the read-only one is open (WAL)
   - it opens a WAL-mode DB after the writer has closed, with and without the `-wal`/`-shm` files present. macOS keeps them on close, Linux deletes them, so cover both explicitly.
-- [ ] T007 [P] Extend tests/unit/test_orchestrator/test_workflow_scan_drift.py:
+- [x] T007 [P] Extend tests/unit/test_orchestrator/test_workflow_scan_drift.py:
   - The per-device `detect_drift` audit payload carries `undesired_paths`. It is a subset of `paths`, in the same order, and contains exactly the paths whose `DriftItem.undesired` is true.
   - It is `[]` for a forward-only report.
   - It is absent when `paths` is absent (clean device).
   - Existing keys are unchanged (FR-012a, research R4).
-- [ ] T007a [P] Extend tests/unit/test_orchestrator/test_workflow_deploy_intent.py:
+- [x] T007a [P] Extend tests/unit/test_orchestrator/test_workflow_deploy_intent.py:
   - An operator-started run's `WORKFLOW_STARTED` payload is `{"parent_workflow_id": None}`.
   - A run started as a child of `ReconcileDevices` carries the parent's workflow id.
   - No other event's payload changes (FR-016a, research R5).
-- [ ] T008 [P] Write tests/unit/test_presentation/test_dashboard_models.py:
+- [x] T008 [P] Write tests/unit/test_presentation/test_dashboard_models.py:
   - `View` rejects `available=False` without `reason` and `remedy`, and rejects `stale=True` without `data` and `fetched_at`.
   - `Envelope.contract_version == "1"`.
   - Every model is frozen and forbids extra fields.
@@ -92,16 +92,16 @@ Every story depends on these.
 
 ### Implementation
 
-- [ ] T009 Move `_probe`, `_connect`, `count_pollers` and `identify_sot` from packages/presentation/snapl_presentation/cli.py into a new packages/presentation/snapl_presentation/probes.py, public names `probe`, `connect`, `count_pollers` and `identify_sot`. cli.py imports them, and its behaviour is unchanged. T005 and the existing tests/unit/test_presentation/test_cli.py and test_cli_schedule.py all pass. Keep the docstring explaining why the TCP probe exists.
-- [ ] T010 [P] Add `read_only: bool = False` to `SqliteAuditLog.__init__` in packages/orchestrator/snapl_orchestrator/audit/sqlite.py:
+- [x] T009 Move `_probe`, `_connect`, `count_pollers` and `identify_sot` from packages/presentation/snapl_presentation/cli.py into a new packages/presentation/snapl_presentation/probes.py, public names `probe`, `connect`, `count_pollers` and `identify_sot`. cli.py imports them, and its behaviour is unchanged. T005 and the existing tests/unit/test_presentation/test_cli.py and test_cli_schedule.py all pass. Keep the docstring explaining why the TCP probe exists.
+- [x] T010 [P] Add `read_only: bool = False` to `SqliteAuditLog.__init__` in packages/orchestrator/snapl_orchestrator/audit/sqlite.py:
   - **When true**: connect with `f"file:{path}?mode=ro"`, `uri=True`; `initialize()` checks the file exists and skips the DDL and the WAL pragma; `append()` raises.
   - **When false**: the code path is unchanged.
   - `:memory:` with `read_only=True` raises `ValueError`.
   - T006 passes.
-- [ ] T011 [P] In packages/orchestrator/snapl_orchestrator/workflows/scan_drift.py `_audit_device`, add `payload["undesired_paths"] = [i.path for i in report.items if i.undesired]` inside the existing `if report.items:` branch. T007 passes. `tests/unit/test_orchestrator/test_vendor_seams.py` still passes.
-- [ ] T011a [P] In packages/orchestrator/snapl_orchestrator/workflows/deploy_intent.py, pass `payload={"parent_workflow_id": parent.workflow_id if (parent := workflow.info().parent) else None}` to the `WORKFLOW_STARTED` `_record_event`. T007a passes. No `workflow.patched` is needed, because activity inputs are not part of replay.
-- [ ] T012 Create packages/presentation/snapl_presentation/dashboard/__init__.py and packages/presentation/snapl_presentation/dashboard/models.py with every model in data-model.md. Reuse `WorkflowReason` and `DriftScheduleView` from `snapl_orchestrator.models`. T008 passes.
-- [ ] T013 **Live evidence item 1** (quickstart.md):
+- [x] T011 [P] In packages/orchestrator/snapl_orchestrator/workflows/scan_drift.py `_audit_device`, add `payload["undesired_paths"] = [i.path for i in report.items if i.undesired]` inside the existing `if report.items:` branch. T007 passes. `tests/unit/test_orchestrator/test_vendor_seams.py` still passes.
+- [x] T011a [P] In packages/orchestrator/snapl_orchestrator/workflows/deploy_intent.py, pass `payload={"parent_workflow_id": parent.workflow_id if (parent := workflow.info().parent) else None}` to the `WORKFLOW_STARTED` `_record_event`. T007a passes. No `workflow.patched` is needed, because activity inputs are not part of replay.
+- [x] T012 Create packages/presentation/snapl_presentation/dashboard/__init__.py and packages/presentation/snapl_presentation/dashboard/models.py with every model in data-model.md. Reuse `WorkflowReason` and `DriftScheduleView` from `snapl_orchestrator.models`. T008 passes.
+- [x] T013 **Live evidence item 1** (quickstart.md):
   - With T011 and T011a deployed to the worker, hand-add an interface address on `leaf-01` and change a BGP peer AS on `spine-01`.
   - Run deploy, scan, reconcile, scan per the quickstart.
   - Verify `snapl audit --device leaf-01` shows `undesired_paths == paths`, and that the reconcile's deploys carry its id as `parent_workflow_id`.

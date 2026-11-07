@@ -57,5 +57,9 @@ containerlab/clab-dcfabric/
 snapl-audit.sqlite
 *.sqlite-journal
 
+# Local snapl state: recorded live lab runs (spec 010), Prometheus data (spec 012).
+# Lives outside Docker volumes so `invoke demo.reset` keeps it.
+.snapl/
+
 # Local backups of development/.env
 development/.env.backup-*

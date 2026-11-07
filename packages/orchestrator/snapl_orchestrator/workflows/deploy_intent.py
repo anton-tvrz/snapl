@@ -93,10 +93,16 @@ class DeployIntentWorkflow:
         wf_id = workflow.info().workflow_id
         started_at = workflow.now()
 
+        # Which workflow started this run, if any: ReconcileDevices for a
+        # reconcile, or nothing for an operator's `snapl deploy`. The dashboard
+        # reads a run's trigger from this rather than guessing it from timing
+        # (spec 010 FR-016a). An activity input, so replay is unaffected.
+        parent = workflow.info().parent
         await _record_event(
             workflow_id=wf_id,
             device_id=device_id,
             event_type=AuditEventType.WORKFLOW_STARTED,
+            payload={"parent_workflow_id": parent.workflow_id if parent else None},
         )
 
         # ---- Fetch intent ---------------------------------------------------
