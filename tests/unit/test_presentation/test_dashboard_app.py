@@ -37,11 +37,12 @@ pytestmark = pytest.mark.unit
 T0 = datetime(2026, 11, 7, 21, 0, tzinfo=UTC)
 SNAPSHOT = Path(__file__).parent / "fixtures" / "openapi_v1.json"
 
-# The routes served so far. Later phases add history, ci, lab-runs, overview
-# and sources (contracts/dashboard-api.md).
+# The routes served so far. Later phases add ci, lab-runs, overview and
+# sources (contracts/dashboard-api.md).
 CONTRACT_ROUTES = {
     ("/", "GET"),
     ("/api/v1/devices", "GET"),
+    ("/api/v1/history", "GET"),
     ("/api/v1/runs", "GET"),
     ("/api/v1/schedule", "GET"),
     ("/api/v1/openapi.json", "GET"),
@@ -212,7 +213,7 @@ def test_every_route_only_reads_and_matches_the_contract():
     assert {path for path, method in routes if method == "HEAD"} == {"/api/v1/openapi.json"}
 
 
-@pytest.mark.parametrize("path", ["/api/v1/devices", "/api/v1/runs", "/api/v1/schedule"])
+@pytest.mark.parametrize("path", ["/api/v1/devices", "/api/v1/runs", "/api/v1/schedule", "/api/v1/history"])
 @pytest.mark.parametrize("method", ["HEAD", "POST", "PUT", "PATCH", "DELETE"])
 def test_other_methods_are_refused(method: str, path: str):
     assert _client().request(method, path).status_code == 405
@@ -436,3 +437,61 @@ def test_no_schedule_suggests_creating_one():
 
     assert data["exists"] is False
     assert data["suggested_command"] == "snapl schedule create --use-case dcfabric"
+
+
+# --- /api/v1/history (T035) -----------------------------------------------------
+
+
+def _history_client() -> TestClient:
+    audit = View(source=SourceName.AUDIT, available=True, fetched_at=T0, data=[*_deploy_run(), _scan_start()])
+    return _client(audit=audit)
+
+
+def test_history_defaults_to_the_last_24_hours_hourly_and_all_four_series():
+    body = _history_client().get("/api/v1/history").json()
+
+    series = {s["name"]: s for s in body["series"]}
+    assert set(series) == {"drifted_devices", "undesired_paths", "deploys", "repairs"}
+    deploys = series["deploys"]
+    # The app's clock is T0 + 5 s.
+    assert deploys["end"] == "2026-11-07T21:00:05Z"
+    assert deploys["start"] == "2026-11-06T21:00:05Z"
+    assert deploys["bucket"] == "1h"
+    assert series["drifted_devices"]["bucket"] is None
+    assert deploys["points"][-1] == {
+        "t": "2026-11-07T21:00:00Z",
+        "value": None,
+        "by_outcome": {"succeeded": 1, "failed": 0},
+    }
+
+
+def test_history_series_is_repeatable():
+    body = _history_client().get("/api/v1/history", params=[("series", "deploys"), ("series", "repairs")]).json()
+
+    assert [s["name"] for s in body["series"]] == ["deploys", "repairs"]
+
+
+def test_history_range_is_never_clamped_to_the_data():
+    params = {"series": "deploys", "start": "2020-01-01T00:00:00Z", "end": "2020-01-02T00:00:00Z"}
+
+    [series] = _history_client().get("/api/v1/history", params=params).json()["series"]
+
+    assert series["start"] == "2020-01-01T00:00:00Z"
+    assert len(series["points"]) == 24
+    assert all(p["by_outcome"] == {"succeeded": None, "failed": None} for p in series["points"])
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"start": "2026-11-07T00:00:00", "end": "2026-11-07T10:00:00Z"},
+        {"start": "2026-11-07T00:00:00Z", "end": "2026-11-07T10:00:00"},
+        {"start": "2026-11-07T10:00:00Z", "end": "2026-11-07T10:00:00Z"},
+        {"start": "2026-11-07T11:00:00Z", "end": "2026-11-07T10:00:00Z"},
+        {"start": "2026-01-01T00:00:00Z", "end": "2026-11-07T00:00:00Z", "bucket": "5m"},
+        {"bucket": "2h"},
+        {"series": "uptime"},
+    ],
+)
+def test_history_rejects_bad_ranges(params: dict):
+    assert _history_client().get("/api/v1/history", params=params).status_code == 422

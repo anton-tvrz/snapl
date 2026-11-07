@@ -18,7 +18,7 @@ from snapl_intent.models import DesiredState, Device
 from snapl_orchestrator.audit.sqlite import SqliteAuditLog
 from snapl_orchestrator.models import AuditEvent, AuditEventType, WorkflowReason
 from snapl_orchestrator.worker.client import RunningWorkflowInfo
-from snapl_presentation.dashboard.models import DriftState, RunState, Trigger
+from snapl_presentation.dashboard.models import Bucket, DriftState, RunState, SeriesName, Trigger
 from snapl_presentation.dashboard.projections import (
     RunFilters,
     latest_pause,
@@ -26,6 +26,7 @@ from snapl_presentation.dashboard.projections import (
     project_repeated_failures,
     project_running,
     project_runs,
+    project_series,
 )
 
 pytestmark = pytest.mark.unit
@@ -876,3 +877,207 @@ def test_latest_pause_for_the_use_case():
 
 def test_no_pause_recorded():
     assert latest_pause([], use_case="dcfabric") is None
+
+
+# =============================================================================
+# History series (T033, research R8)
+# =============================================================================
+
+H0 = datetime(2026, 5, 1, tzinfo=UTC)
+# Six months of history with a 30-day gap in the middle.
+GAP_START = H0 + timedelta(days=60)
+GAP_END = GAP_START + timedelta(days=30)
+
+
+def _scan_run(workflow_id: str, at: datetime, *, drifted: dict[UUID, list[str]], clean: int = 1, ok: bool = True):
+    """A ScanDrift run: start, one record per drifted device, and its end."""
+    events = [_wf(workflow_id, "ScanDrift", AuditEventType.WORKFLOW_STARTED, at, target="dcfabric")]
+    for device_id, undesired in drifted.items():
+        events.append(
+            _scan(
+                device_id,
+                at + timedelta(seconds=1),
+                status="drifted",
+                paths=["/a", *undesired],
+                undesired=undesired,
+                workflow_id=workflow_id,
+            )
+        )
+    end_payload = {"total": len(drifted) + clean, "clean": clean, "drifted": len(drifted), "errored": 0}
+    events.append(
+        _wf(
+            workflow_id,
+            "ScanDrift",
+            AuditEventType.WORKFLOW_TERMINATED,
+            at + timedelta(seconds=2),
+            target="dcfabric",
+            outcome="success" if ok else "failure",
+            reason=WorkflowReason.SUCCEEDED if ok else WorkflowReason.INTENT_UNAVAILABLE,
+            payload=end_payload if ok else {"error": "SoT down"},
+        )
+    )
+    return events
+
+
+def _history():
+    """Daily scans for six months, none in the gap, with one drift spike."""
+    events = []
+    day = H0
+    while day < H0 + timedelta(days=180):
+        if not GAP_START <= day < GAP_END:
+            drifted = {LEAF: ["/x", "/y"], SPINE: []} if day == H0 + timedelta(days=10) else {}
+            events += _scan_run(f"scan-{day:%Y%m%d}", day + timedelta(hours=3), drifted=drifted)
+        day += timedelta(days=1)
+    return events
+
+
+def test_drifted_devices_is_one_point_per_scan_with_no_points_in_the_gap():
+    events = _history()
+
+    series = project_series(events, SeriesName.DRIFTED_DEVICES, H0, H0 + timedelta(days=180), Bucket.DAY)
+
+    assert series.bucket is None
+    assert len(series.points) == 150
+    assert not [p for p in series.points if GAP_START <= p.t < GAP_END]
+    spike = [p for p in series.points if p.value]
+    assert [(p.t, p.value) for p in spike] == [(H0 + timedelta(days=10, hours=3, seconds=2), 2)]
+    assert series.first_event_at == H0 + timedelta(hours=3)
+
+
+def test_undesired_paths_counts_the_scans_undesired_paths():
+    events = _history()
+
+    series = project_series(
+        events, SeriesName.UNDESIRED_PATHS, H0 + timedelta(days=9), H0 + timedelta(days=12), Bucket.HOUR
+    )
+
+    assert [p.value for p in series.points] == [0, 2, 0]
+
+
+def test_undesired_paths_is_unknown_for_a_scan_recorded_before_fr_012a():
+    events = _scan_run("scan-old", H0, drifted={})
+    events.append(
+        _scan(LEAF, H0 + timedelta(seconds=1), status="drifted", paths=["/a"], undesired=None, workflow_id="scan-old")
+    )
+
+    [point] = project_series(events, SeriesName.UNDESIRED_PATHS, H0, H0 + timedelta(days=1), Bucket.HOUR).points
+
+    assert point.value is None
+
+
+def test_a_failed_scan_is_not_a_point():
+    events = _scan_run("scan-failed", H0, drifted={}, ok=False)
+
+    assert project_series(events, SeriesName.DRIFTED_DEVICES, H0, H0 + timedelta(days=1), Bucket.HOUR).points == []
+
+
+def _deploy_end(at: datetime, *, ok: bool = True, device: UUID = LEAF):
+    return _run(
+        f"deploy-intent-{device}",
+        "DeployIntent",
+        at - timedelta(seconds=3),
+        at,
+        target=device,
+        ok=ok,
+        start_payload={"parent_workflow_id": None},
+    )
+
+
+def test_deploys_are_counted_per_bucket_by_outcome_with_null_for_empty_buckets():
+    start = H0
+    events = [
+        *_deploy_end(start + timedelta(minutes=10)),
+        *_deploy_end(start + timedelta(minutes=20), ok=False),
+        *_deploy_end(start + timedelta(minutes=30)),
+        *_scan_run("scan-2", start + timedelta(hours=2, minutes=5), drifted={}),
+    ]
+
+    series = project_series(events, SeriesName.DEPLOYS, start, start + timedelta(hours=3), Bucket.HOUR)
+
+    assert series.bucket is Bucket.HOUR
+    assert [(p.t, p.by_outcome) for p in series.points] == [
+        (start, {"succeeded": 2, "failed": 1}),
+        # Nothing ran: no data, not zero.
+        (start + timedelta(hours=1), {"succeeded": None, "failed": None}),
+        # A scan ran and no deploy did: a real zero.
+        (start + timedelta(hours=2), {"succeeded": 0, "failed": 0}),
+    ]
+
+
+def test_repairs_are_counted_per_bucket_by_result():
+    start = H0
+    events = [
+        *_scan_run("scan-r", start + timedelta(minutes=1), drifted={LEAF: []}),
+        _response(LEAF, start + timedelta(minutes=2), result="succeeded"),
+        _response(SPINE, start + timedelta(minutes=2), result="failed"),
+        _response(LEAF, start + timedelta(minutes=3), result="unknown"),
+        _response(LEAF, start + timedelta(minutes=4), decision="undesired_only"),
+    ]
+
+    [point] = project_series(events, SeriesName.REPAIRS, start, start + timedelta(hours=1), Bucket.HOUR).points
+
+    assert point.by_outcome == {"succeeded": 1, "failed": 1}
+
+
+def test_markers_for_reconciles_and_remediating_responses():
+    events = [
+        *_run("reconcile-1", "ReconcileDevices", H0 + timedelta(minutes=5), H0 + timedelta(minutes=6)),
+        *_run(
+            SCHEDULED,
+            "DriftResponse",
+            H0 + timedelta(minutes=10),
+            H0 + timedelta(minutes=11),
+            target="dcfabric",
+            actor="schedule:drift-response-dcfabric",
+            start_payload={"mode": "remediate"},
+        ),
+        *_run(
+            "drift-response-report",
+            "DriftResponse",
+            H0 + timedelta(minutes=15),
+            H0 + timedelta(minutes=16),
+            target="dcfabric",
+            actor="schedule:drift-response-dcfabric",
+            start_payload={"mode": "report"},
+        ),
+        # Outside the range.
+        *_run("reconcile-2", "ReconcileDevices", H0 + timedelta(days=2), H0 + timedelta(days=2, minutes=1)),
+    ]
+
+    series = project_series(events, SeriesName.DEPLOYS, H0, H0 + timedelta(hours=1), Bucket.HOUR)
+
+    assert [(m.kind, m.workflow_id, m.trigger) for m in series.markers] == [
+        ("reconcile", "reconcile-1", Trigger.OPERATOR),
+        ("remediation", SCHEDULED, Trigger.SCHEDULE),
+    ]
+    assert series.markers[0].t == H0 + timedelta(minutes=5)
+
+
+def test_bucket_edges_are_utc_aligned():
+    start = datetime(2026, 5, 6, 10, 37, tzinfo=UTC)  # a Wednesday
+    events = _deploy_end(start + timedelta(minutes=1))
+
+    hourly = project_series(events, SeriesName.DEPLOYS, start, start + timedelta(hours=2), Bucket.HOUR)
+    five = project_series(events, SeriesName.DEPLOYS, start, start + timedelta(minutes=10), Bucket.FIVE_MINUTES)
+    daily = project_series(events, SeriesName.DEPLOYS, start, start + timedelta(days=1), Bucket.DAY)
+    weekly = project_series(events, SeriesName.DEPLOYS, start, start + timedelta(days=1), Bucket.WEEK)
+
+    assert hourly.points[0].t == datetime(2026, 5, 6, 10, tzinfo=UTC)
+    assert five.points[0].t == datetime(2026, 5, 6, 10, 35, tzinfo=UTC)
+    assert daily.points[0].t == datetime(2026, 5, 6, tzinfo=UTC)
+    # Weeks start on Monday.
+    assert weekly.points[0].t == datetime(2026, 5, 4, tzinfo=UTC)
+    assert [p.t for p in hourly.points] == [datetime(2026, 5, 6, h, tzinfo=UTC) for h in (10, 11, 12)]
+
+
+def test_more_than_2000_buckets_is_refused():
+    with pytest.raises(ValueError, match="2,000"):
+        project_series([], SeriesName.DEPLOYS, H0, H0 + timedelta(minutes=5 * 2001), Bucket.FIVE_MINUTES)
+    assert project_series([], SeriesName.DEPLOYS, H0, H0 + timedelta(minutes=5 * 2000), Bucket.FIVE_MINUTES)
+
+
+def test_empty_trail_has_no_first_event():
+    series = project_series([], SeriesName.DRIFTED_DEVICES, H0, H0 + timedelta(hours=1), Bucket.HOUR)
+
+    assert series.first_event_at is None
+    assert series.points == []

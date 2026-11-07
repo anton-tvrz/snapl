@@ -11,18 +11,22 @@ inside a ``200`` (FR-005, FR-007).
 
 from __future__ import annotations
 
-from datetime import datetime  # noqa: TC003 — FastAPI resolves annotations at runtime
+from datetime import datetime, timedelta
 from importlib import resources
 from typing import TYPE_CHECKING, Annotated, Any
 
 from fastapi import APIRouter, FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
+from pydantic import AwareDatetime  # noqa: TC002 — FastAPI resolves query types at runtime
 
 from snapl_presentation.dashboard.models import (
+    Bucket,
     DeviceView,
     Envelope,
     RunView,
     ScheduleStatus,
+    Series,
+    SeriesName,
     SourceName,
     View,
     WorkerStatus,
@@ -34,6 +38,7 @@ from snapl_presentation.dashboard.projections import (
     project_repeated_failures,
     project_running,
     project_runs,
+    project_series,
 )
 from snapl_presentation.dashboard.sources import Sources, utcnow
 
@@ -55,6 +60,10 @@ class DevicesResponse(Envelope):
 class RunsResponse(Envelope):
     runs: View[list[RunView]]
     running: View[list[RunView]]
+
+
+class HistoryResponse(Envelope):
+    series: list[Series]
 
 
 class ScheduleResponse(Envelope):
@@ -271,6 +280,31 @@ def create_app(
             temporal, audit, names, use_case=served, task_queue=settings.task_queue
         )
         return ScheduleResponse(use_case=served, generated_at=clock(), schedule=schedule_view, worker=worker_view)
+
+    @router.get("/history", response_model=HistoryResponse)
+    async def history(
+        requested: UseCaseQuery = None,
+        series: Annotated[list[SeriesName] | None, Query(description="Repeatable. Defaults to all four.")] = None,
+        start: Annotated[AwareDatetime | None, Query(description="Defaults to end - 24h.")] = None,
+        end: Annotated[AwareDatetime | None, Query(description="Defaults to now.")] = None,
+        bucket: Annotated[Bucket, Query(description="Ignored for per-scan series.")] = Bucket.HOUR,
+    ) -> HistoryResponse:
+        """Audit-derived history over any range. Gaps are no data, not zero (research R8).
+
+        The series come from the audit trail alone. If it cannot be read, they
+        are computed from the last read, or are empty; `/api/v1/devices` and
+        the sources view say why.
+        """
+        served = _check_use_case(requested)
+        range_end = end or clock()
+        range_start = start or range_end - timedelta(hours=24)
+        names = series or list(SeriesName)
+        audit = await sources.audit.refresh()
+        try:
+            projected = [project_series(audit.data or [], name, range_start, range_end, bucket) for name in names]
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return HistoryResponse(use_case=served, generated_at=clock(), series=projected)
 
     app.include_router(router)
 
