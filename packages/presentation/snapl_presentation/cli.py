@@ -686,9 +686,13 @@ def _serve_dashboard(settings: CliSettings, use_case: str, host: str, port: int)
     No source is required at start-up (FR-007): each one reports its own
     failure in the views, and a missing audit file is never created.
     """
+    from pathlib import Path  # noqa: PLC0415
+
     import uvicorn  # noqa: PLC0415
 
     from snapl_presentation.dashboard.app import create_app  # noqa: PLC0415
+    from snapl_presentation.dashboard.ci import CiSource, resolve_repo  # noqa: PLC0415
+    from snapl_presentation.dashboard.lab_runs import LabRunSource  # noqa: PLC0415
     from snapl_presentation.dashboard.sources import (  # noqa: PLC0415
         AuditSource,
         SotSource,
@@ -696,10 +700,15 @@ def _serve_dashboard(settings: CliSettings, use_case: str, host: str, port: int)
         TemporalSource,
     )
 
+    # The checkout the dashboard runs from: its git history and its lab-run
+    # records are the ones to describe.
+    checkout = Path.cwd()
     sources = Sources(
         audit=AuditSource(settings.audit_db),
         sot=SotSource(settings, use_case),
         temporal=TemporalSource(settings, use_case),
+        ci=CiSource(resolve_repo(settings.github_repo, checkout), settings.github_token),
+        lab_runs=LabRunSource(Path(settings.test_runs_dir), checkout),
     )
     app_ = create_app(sources, settings, use_case)
     server = uvicorn.Server(uvicorn.Config(app_, host=host, port=port, log_level="warning", access_log=False))

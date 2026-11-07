@@ -59,6 +59,23 @@
   <ul id="running"></ul>
 </section>
 <section>
+  <h2>Live lab evidence</h2>
+  <div id="lab-problem" hidden></div>
+  <div id="lab"></div>
+  <ul id="lab-runs"></ul>
+</section>
+<section>
+  <h2>CI</h2>
+  <div id="ci-problem" hidden></div>
+  <table>
+    <thead>
+      <tr><th>Target</th><th>Gate</th><th>Failed jobs</th><th class="wide">Coverage</th></tr>
+    </thead>
+    <tbody id="ci"></tbody>
+  </table>
+  <div class="meta" id="ci-meta"></div>
+</section>
+<section>
   <h2>Last 24 hours</h2>
   <div class="meta" id="history-meta"></div>
   <table>
@@ -242,12 +259,82 @@ function renderRuns(body) {
   document.getElementById("runs").replaceChildren(...(body.runs.data || []).map(runRow));
 }
 
+function link(text, href) {
+  const anchor = el("a", text);
+  anchor.href = href;
+  anchor.rel = "noopener noreferrer";
+  anchor.target = "_blank";
+  return anchor;
+}
+
+function labRunText(run) {
+  const counts = run.passed === null ? "" : " (" + run.passed + " passed, " + run.failed + " failed)";
+  const where = run.commit ? " at " + run.commit.slice(0, 8) + (run.dirty ? " (dirty)" : "") : "";
+  return run.suite + ": " + run.status + counts + where + " · " + (run.started_at ? age(run.started_at) : run.id);
+}
+
+function renderLab(body) {
+  const view = body.lab;
+  showProblem(document.getElementById("lab-problem"), view);
+  const box = document.getElementById("lab");
+  box.replaceChildren();
+  const evidence = view.data;
+  if (!evidence || !evidence.runs.length) {
+    box.append(el("div", "No live lab runs recorded yet. Record one with:"));
+    if (view.remedy) box.append(el("code", view.remedy));
+  } else {
+    for (const [suite, run] of Object.entries(evidence.latest)) {
+      const line = el("div", "Latest " + labRunText(run));
+      const since = evidence.commits_on_main_since[suite];
+      const note = since === null || since === undefined
+        ? "commits on main since: unknown (" + (evidence.commits_unknown_reason[suite] || "") + ")"
+        : since + " commits on main since the last live run (matched by " + evidence.matched_by[suite] + ")";
+      line.append(el("div", note, "paths"));
+      box.append(line);
+    }
+  }
+  const odd = ((evidence && evidence.runs) || []).filter((run) => run.status === "incomplete" || run.status === "unreadable");
+  document.getElementById("lab-runs").replaceChildren(...odd.map((run) =>
+    el("li", run.id + ": " + run.status + (run.problem ? " (" + run.problem + ")" : ""), "paths")));
+}
+
+function renderCi(body) {
+  const view = body.ci;
+  showProblem(document.getElementById("ci-problem"), view);
+  const rows = ((view.data && view.data.targets) || []).map((target) => {
+    const row = document.createElement("tr");
+    const name = el("td");
+    const label = target.kind === "main" ? "main" : "#" + target.number + " " + (target.title || "");
+    name.append(target.run_url ? link(label, target.run_url) : el("span", label));
+    row.append(name);
+    row.append(el("td", target.gate, target.gate === "success" ? "state-in_sync" : "state-missing"));
+    const failed = el("td");
+    for (const job of target.jobs.filter((j) => j.result === "failure")) {
+      failed.append(link(job.name, job.url));
+      failed.append(el("br"));
+    }
+    row.append(failed);
+    row.append(el("td", target.coverage_pct === null ? "" : target.coverage_pct.toFixed(1) + "%", "wide"));
+    return row;
+  });
+  document.getElementById("ci").replaceChildren(...rows);
+  const meta = document.getElementById("ci-meta");
+  if (view.data) {
+    const omitted = view.data.omitted_prs ? " · " + view.data.omitted_prs + " more PRs not checked without a token" : "";
+    meta.textContent = view.data.repo + " · read " + age(view.fetched_at) + omitted;
+  } else {
+    meta.textContent = "";
+  }
+}
+
 // Each panel is fetched and rendered on its own, so one failing route never
 // blanks the others.
 const PANELS = [
   ["/api/v1/devices", renderDevices],
   ["/api/v1/runs", renderRuns],
   ["/api/v1/schedule", (body) => renderSchedule(body.schedule, body.worker)],
+  ["/api/v1/lab-runs", renderLab],
+  ["/api/v1/ci", renderCi],
 ];
 
 const HISTORY_MS = 60000;
