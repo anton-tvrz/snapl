@@ -255,15 +255,15 @@ Every story depends on these.
 
 ### Tests (write first, verify they fail)
 
-- [ ] T033 [P] [US3] Add series tests to tests/unit/test_presentation/test_dashboard_projections.py, generating events with timestamps over 6 months and a 30-day gap:
+- [x] T033 [P] [US3] Add series tests to tests/unit/test_presentation/test_dashboard_projections.py, generating events with timestamps over 6 months and a 30-day gap:
   - `drifted_devices` and `undesired_paths` are one point per `ScanDrift` terminal event, with no points in the gap.
   - `deploys` and `repairs` are per-bucket counts by outcome, with `null` (not 0) in buckets with no scan and no deploy.
   - Markers appear for `ReconcileDevices` runs and remediate-mode `DriftResponse` runs.
   - `first_event_at` is set.
   - Bucket edges are UTC-aligned.
   - More than 2,000 buckets raises `ValueError`.
-- [ ] T034 [P] [US3] Add a performance test, marked `slow`: build 100,000 synthetic events, then time `project_devices`, `project_runs` and a 30-day `1h` series. Each must finish in < 1 s (SC-007).
-- [ ] T035 [P] [US3] Extend test_dashboard_app.py:
+- [x] T034 [P] [US3] Add a performance test, marked `slow`: build 100,000 synthetic events, then time `project_devices`, `project_runs` and a 30-day `1h` series. Each must finish in < 1 s (SC-007).
+- [x] T035 [P] [US3] Extend test_dashboard_app.py:
   - `/api/v1/history` defaults (last 24 h, `1h`)
   - repeatable `series`
   - 422 for a naive time, `start >= end` and over 2,000 buckets
@@ -273,9 +273,9 @@ Every story depends on these.
 
 ### Implementation
 
-- [ ] T036 [US3] Implement `project_series(events, name, start, end, bucket)` in packages/presentation/snapl_presentation/dashboard/projections.py per research R8. T033 and T034 pass. If T034 fails, keep per-device and per-workflow indexes in `AuditSource`, updated incrementally, rather than rescanning the event list.
-- [ ] T037 [US3] Add `/api/v1/history` to packages/presentation/snapl_presentation/dashboard/app.py. T035 passes.
-- [ ] T038 [US3] Extend static/index.html with a "last 24 hours" table per series, refreshed every 60 s, showing gaps as "no scans" and listing markers.
+- [x] T036 [US3] Implement `project_series(events, name, start, end, bucket)` in packages/presentation/snapl_presentation/dashboard/projections.py per research R8. T033 and T034 pass. If T034 fails, keep per-device and per-workflow indexes in `AuditSource`, updated incrementally, rather than rescanning the event list.
+- [x] T037 [US3] Add `/api/v1/history` to packages/presentation/snapl_presentation/dashboard/app.py. T035 passes.
+- [x] T038 [US3] Extend static/index.html with a "last 24 hours" table per series, refreshed every 60 s, showing gaps as "no scans" and listing markers.
 
 **Checkpoint**: History works from the audit trail alone. PR D.
 

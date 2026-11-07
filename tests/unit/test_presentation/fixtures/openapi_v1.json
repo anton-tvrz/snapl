@@ -1,6 +1,16 @@
 {
   "components": {
     "schemas": {
+      "Bucket": {
+        "enum": [
+          "5m",
+          "1h",
+          "1d",
+          "1w"
+        ],
+        "title": "Bucket",
+        "type": "string"
+      },
       "DeployOutcome": {
         "additionalProperties": false,
         "properties": {
@@ -299,6 +309,120 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HistoryResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "contract_version": {
+            "const": "1",
+            "default": "1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "series": {
+            "items": {
+              "$ref": "#/components/schemas/Series"
+            },
+            "title": "Series",
+            "type": "array"
+          },
+          "use_case": {
+            "title": "Use Case",
+            "type": "string"
+          }
+        },
+        "required": [
+          "use_case",
+          "generated_at",
+          "series"
+        ],
+        "title": "HistoryResponse",
+        "type": "object"
+      },
+      "Marker": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": [
+              "reconcile",
+              "remediation"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "t": {
+            "format": "date-time",
+            "title": "T",
+            "type": "string"
+          },
+          "trigger": {
+            "$ref": "#/components/schemas/Trigger"
+          },
+          "workflow_id": {
+            "title": "Workflow Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "t",
+          "kind",
+          "workflow_id",
+          "trigger"
+        ],
+        "title": "Marker",
+        "type": "object"
+      },
+      "Point": {
+        "additionalProperties": false,
+        "properties": {
+          "by_outcome": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "By Outcome"
+          },
+          "t": {
+            "format": "date-time",
+            "title": "T",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "t"
+        ],
+        "title": "Point",
         "type": "object"
       },
       "RepeatedRepairFailure": {
@@ -669,6 +793,80 @@
         ],
         "title": "ScheduledRunInfo",
         "type": "object"
+      },
+      "Series": {
+        "additionalProperties": false,
+        "properties": {
+          "bucket": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Bucket"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "end": {
+            "format": "date-time",
+            "title": "End",
+            "type": "string"
+          },
+          "first_event_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Event At"
+          },
+          "markers": {
+            "items": {
+              "$ref": "#/components/schemas/Marker"
+            },
+            "title": "Markers",
+            "type": "array"
+          },
+          "name": {
+            "$ref": "#/components/schemas/SeriesName"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/Point"
+            },
+            "title": "Points",
+            "type": "array"
+          },
+          "start": {
+            "format": "date-time",
+            "title": "Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "start",
+          "end",
+          "bucket",
+          "points",
+          "markers"
+        ],
+        "title": "Series",
+        "type": "object"
+      },
+      "SeriesName": {
+        "enum": [
+          "drifted_devices",
+          "undesired_paths",
+          "deploys",
+          "repairs"
+        ],
+        "title": "SeriesName",
+        "type": "string"
       },
       "SourceName": {
         "enum": [
@@ -1095,6 +1293,125 @@
           }
         },
         "summary": "Devices"
+      }
+    },
+    "/api/v1/history": {
+      "get": {
+        "description": "Audit-derived history over any range. Gaps are no data, not zero (research R8).\n\nThe series come from the audit trail alone. If it cannot be read, they\nare computed from the last read, or are empty; `/api/v1/devices` and\nthe sources view say why.",
+        "operationId": "history_api_v1_history_get",
+        "parameters": [
+          {
+            "description": "Defaults to the server's --use-case.",
+            "in": "query",
+            "name": "use_case",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to the server's --use-case.",
+              "title": "Use Case"
+            }
+          },
+          {
+            "description": "Repeatable. Defaults to all four.",
+            "in": "query",
+            "name": "series",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "$ref": "#/components/schemas/SeriesName"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Repeatable. Defaults to all four.",
+              "title": "Series"
+            }
+          },
+          {
+            "description": "Defaults to end - 24h.",
+            "in": "query",
+            "name": "start",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to end - 24h.",
+              "title": "Start"
+            }
+          },
+          {
+            "description": "Defaults to now.",
+            "in": "query",
+            "name": "end",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to now.",
+              "title": "End"
+            }
+          },
+          {
+            "description": "Ignored for per-scan series.",
+            "in": "query",
+            "name": "bucket",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/Bucket",
+              "default": "1h",
+              "description": "Ignored for per-scan series."
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "History"
       }
     },
     "/api/v1/runs": {

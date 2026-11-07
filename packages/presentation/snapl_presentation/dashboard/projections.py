@@ -12,25 +12,30 @@ inserted well after its timestamp (research R3).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING, Literal
 from urllib.parse import quote
 from uuid import UUID
 
 from snapl_orchestrator.models import AuditEventType, ScheduleChange, WorkflowReason
 from snapl_presentation.dashboard.models import (
+    Bucket,
     DeployOutcome,
     DeviceView,
     DriftState,
+    Marker,
+    Point,
     RepeatedRepairFailure,
     RunState,
     RunView,
+    Series,
+    SeriesName,
     Trigger,
 )
 from snapl_presentation.exceptions import first_line
 
 if TYPE_CHECKING:
     from collections.abc import Collection, Mapping, Sequence
-    from datetime import datetime
 
     from snapl_intent.models import DesiredState
     from snapl_orchestrator.models import AuditEvent
@@ -452,3 +457,163 @@ def latest_pause(events: Sequence[AuditEvent], *, use_case: str) -> tuple[str | 
         return None
     latest = max(pauses, key=lambda e: e.timestamp)
     return latest.actor, latest.timestamp
+
+
+# --- history (research R8) -----------------------------------------------------
+
+MAX_BUCKETS = 2000
+
+_BUCKET_SIZE = {
+    Bucket.FIVE_MINUTES: timedelta(minutes=5),
+    Bucket.HOUR: timedelta(hours=1),
+    Bucket.DAY: timedelta(days=1),
+    Bucket.WEEK: timedelta(weeks=1),
+}
+_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
+# Weeks start on Monday; the epoch was a Thursday.
+_WEEK_ORIGIN = datetime(1970, 1, 5, tzinfo=UTC)
+
+_PER_SCAN = {SeriesName.DRIFTED_DEVICES, SeriesName.UNDESIRED_PATHS}
+
+
+def bucket_starts(start: datetime, end: datetime, bucket: Bucket) -> list[datetime]:
+    """UTC-aligned bucket starts covering ``[start, end)``.
+
+    Raises:
+        ValueError: the range holds more than 2,000 buckets.
+    """
+    size = _BUCKET_SIZE[bucket]
+    origin = _WEEK_ORIGIN if bucket is Bucket.WEEK else _EPOCH
+    first = origin + ((start - origin) // size) * size
+    count = -((first - end) // size)
+    if count > MAX_BUCKETS:
+        raise ValueError(f"{count:,} {bucket.value} buckets requested; at most {MAX_BUCKETS:,} per request")
+    return [first + index * size for index in range(count)]
+
+
+def _is_scan_end(event: AuditEvent) -> bool:
+    return event.workflow_type == "ScanDrift" and event.event_type in _RUN_END
+
+
+def _scan_points(events: Sequence[AuditEvent], name: SeriesName, start: datetime, end: datetime) -> list[Point]:
+    """One point per completed scan, at its end, so a spike is not averaged away."""
+    undesired: dict[str, int | None] = {}
+    if name is SeriesName.UNDESIRED_PATHS:
+        for event in events:
+            if not _is_scan_record(event) or not event.payload.get("paths"):
+                continue
+            # A record from before FR-012a makes its whole scan's count unknown.
+            count = len(event.payload["undesired_paths"]) if "undesired_paths" in event.payload else None
+            previous = undesired.get(event.workflow_id, 0)
+            undesired[event.workflow_id] = None if previous is None or count is None else previous + count
+    points = []
+    for event in events:
+        if not (_is_scan_end(event) and event.outcome == "success" and start <= event.timestamp < end):
+            continue
+        if name is SeriesName.DRIFTED_DEVICES:
+            value = event.payload.get("drifted")
+        else:
+            value = undesired.get(event.workflow_id, 0)
+        points.append(Point(t=event.timestamp, value=value))
+    return sorted(points, key=lambda point: point.t)
+
+
+def _counted_outcome(event: AuditEvent, name: SeriesName) -> str | None:
+    """``succeeded`` or ``failed`` when the event counts toward the series."""
+    if name is SeriesName.DEPLOYS:
+        if event.workflow_type == "DeployIntent" and event.event_type is AuditEventType.WORKFLOW_TERMINATED:
+            return "succeeded" if event.outcome == "success" else "failed"
+        return None
+    if (
+        event.event_type is AuditEventType.DRIFT_RESPONSE
+        and _device_id(event) is not None
+        and event.payload.get("decision") == "remediated"
+        and event.payload.get("result") in ("succeeded", "failed")
+    ):
+        return str(event.payload["result"])
+    return None
+
+
+def _counted_points(
+    events: Sequence[AuditEvent], name: SeriesName, starts: list[datetime], bucket: Bucket
+) -> list[Point]:
+    """Counts per bucket by outcome. A bucket where nothing ran, no scan and no
+    deploy, has no data: its counts are None, not 0 (US3 scenario 3)."""
+    if not starts:
+        return []
+    first, size = starts[0], _BUCKET_SIZE[bucket]
+    counts: dict[int, dict[str, int]] = {}
+    active: set[int] = set()
+    for event in events:
+        index = (event.timestamp - first) // size
+        if not 0 <= index < len(starts):
+            continue
+        outcome = _counted_outcome(event, name)
+        if outcome is not None:
+            per_bucket = counts.setdefault(index, {"succeeded": 0, "failed": 0})
+            per_bucket[outcome] += 1
+            active.add(index)
+        elif _is_scan_end(event) or _is_deploy_end(event):
+            active.add(index)
+    empty: dict[str, int | None] = {"succeeded": None, "failed": None}
+    return [
+        Point(
+            t=bucket_start,
+            by_outcome=dict(counts.get(index, {"succeeded": 0, "failed": 0})) if index in active else dict(empty),
+        )
+        for index, bucket_start in enumerate(starts)
+    ]
+
+
+def _markers(events: Sequence[AuditEvent], start: datetime, end: datetime) -> list[Marker]:
+    """One per reconcile, and one per scheduled run that remediated."""
+    runs = _split_runs(events)
+    scheduled = _scheduled_ids(runs, events)
+    markers = []
+    for run in runs:
+        at = run.start.timestamp
+        if not start <= at < end:
+            continue
+        if run.workflow_type == "ReconcileDevices":
+            kind: Literal["reconcile", "remediation"] = "reconcile"
+        elif run.workflow_type == "DriftResponse" and run.start.payload.get("mode") == "remediate":
+            kind = "remediation"
+        else:
+            continue
+        markers.append(Marker(t=at, kind=kind, workflow_id=run.workflow_id, trigger=_trigger(run, scheduled)))
+    return sorted(markers, key=lambda marker: marker.t)
+
+
+def project_series(
+    events: Sequence[AuditEvent],
+    name: SeriesName,
+    start: datetime,
+    end: datetime,
+    bucket: Bucket,
+) -> Series:
+    """One history series over ``[start, end)`` (research R8).
+
+    ``drifted_devices`` and ``undesired_paths`` have a point per scan and
+    ignore ``bucket``. ``deploys`` and ``repairs`` count per UTC-aligned
+    bucket. The range is never clamped to the data: before the first event
+    there are simply no points.
+
+    Raises:
+        ValueError: ``start >= end``, or more than 2,000 buckets.
+    """
+    if start >= end:
+        raise ValueError("start must be before end")
+    starts = bucket_starts(start, end, bucket)
+    if name in _PER_SCAN:
+        points = _scan_points(events, name, start, end)
+    else:
+        points = _counted_points(events, name, starts, bucket)
+    return Series(
+        name=name,
+        start=start,
+        end=end,
+        bucket=None if name in _PER_SCAN else bucket,
+        points=points,
+        markers=_markers(events, start, end),
+        first_event_at=min((event.timestamp for event in events), default=None),
+    )

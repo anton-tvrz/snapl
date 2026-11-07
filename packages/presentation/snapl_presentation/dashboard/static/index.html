@@ -59,6 +59,20 @@
   <ul id="running"></ul>
 </section>
 <section>
+  <h2>Last 24 hours</h2>
+  <div class="meta" id="history-meta"></div>
+  <table>
+    <thead>
+      <tr>
+        <th>Hour (UTC)</th><th>Scans</th><th>Most drifted devices</th><th class="wide">Most undesired paths</th>
+        <th>Deploys ok / failed</th><th class="wide">Repairs ok / failed</th>
+      </tr>
+    </thead>
+    <tbody id="history"></tbody>
+  </table>
+  <ul id="markers"></ul>
+</section>
+<section>
   <h2>Recent runs</h2>
   <div id="runs-problem" hidden></div>
   <table>
@@ -236,6 +250,63 @@ const PANELS = [
   ["/api/v1/schedule", (body) => renderSchedule(body.schedule, body.worker)],
 ];
 
+const HISTORY_MS = 60000;
+
+function counts(byOutcome) {
+  if (!byOutcome || byOutcome.succeeded === null) return "";
+  return byOutcome.succeeded + " / " + byOutcome.failed;
+}
+
+// One row per hour. Per-scan series are folded into their hour (the most
+// drifted any scan saw); an hour with no scan and no deploy says so rather
+// than showing zeros.
+function renderHistory(body) {
+  const byName = {};
+  for (const series of body.series) byName[series.name] = series;
+  const hours = byName.deploys.points;
+  const scans = byName.drifted_devices.points;
+  const undesired = byName.undesired_paths.points;
+  const repairs = byName.repairs.points;
+  const rows = [];
+  hours.forEach((hour, index) => {
+    const from = Date.parse(hour.t);
+    const to = from + 3600 * 1000;
+    const inHour = (point) => Date.parse(point.t) >= from && Date.parse(point.t) < to;
+    const hourScans = scans.filter(inHour);
+    const hourUndesired = undesired.filter(inHour).map((point) => point.value);
+    const row = document.createElement("tr");
+    row.append(el("td", hour.t.slice(0, 13).replace("T", " ") + ":00"));
+    if (!hourScans.length && hour.by_outcome.succeeded === null) {
+      const gap = el("td", "no scans", "state-never_scanned");
+      gap.colSpan = 5;
+      row.append(gap);
+    } else {
+      row.append(el("td", hourScans.length));
+      row.append(el("td", hourScans.length ? Math.max(...hourScans.map((point) => point.value)) : ""));
+      const known = hourUndesired.filter((value) => value !== null);
+      row.append(el("td", known.length ? Math.max(...known) : (hourUndesired.length ? "unknown" : ""), "wide"));
+      row.append(el("td", counts(hour.by_outcome)));
+      row.append(el("td", counts(repairs[index] && repairs[index].by_outcome), "wide"));
+    }
+    rows.push(row);
+  });
+  document.getElementById("history").replaceChildren(...rows.reverse());
+  const first = byName.deploys.first_event_at;
+  document.getElementById("history-meta").textContent =
+    first ? "The audit trail starts " + age(first) + "." : "No audit events read.";
+  const markers = byName.deploys.markers.map((marker) =>
+    el("li", age(marker.t) + ": " + marker.kind + " " + marker.workflow_id + " (" + marker.trigger + ")"));
+  document.getElementById("markers").replaceChildren(...markers);
+}
+
+async function refreshHistory() {
+  try {
+    renderHistory(await getJson("/api/v1/history"));
+  } catch (error) {
+    document.getElementById("history-meta").textContent = "History unavailable: " + error.message;
+  }
+}
+
 async function refresh() {
   const results = await Promise.allSettled(PANELS.map(([path, render]) => getJson(path).then(render)));
   const failed = results.filter((result) => result.status === "rejected");
@@ -249,6 +320,8 @@ async function refresh() {
 
 refresh();
 setInterval(refresh, REFRESH_MS);
+refreshHistory();
+setInterval(refreshHistory, HISTORY_MS);
 </script>
 </body>
 </html>
