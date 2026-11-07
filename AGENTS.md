@@ -36,7 +36,7 @@ snapl/
 │   │   └── snapl_executor/
 │   ├── collector/              # snapl-collector: live data retrieval
 │   │   └── snapl_collector/
-│   ├── observability/          # snapl-observability: drift, metrics, audit
+│   ├── observability/          # snapl-observability: drift, audit
 │   │   └── snapl_observability/
 │   ├── orchestrator/           # snapl-orchestrator: Temporal workflows
 │   │   └── snapl_orchestrator/
@@ -78,7 +78,7 @@ This is a **uv workspace monorepo** with six packages mapped to NAF building blo
 | `snapl-intent`       | `snapl_intent`         | Intent         | SoT interaction, desired state models, schemas    |
 | `snapl-executor`     | `snapl_executor`       | Executor       | Config deployment via gNMI, Jinja2 templates      |
 | `snapl-collector`    | `snapl_collector`      | Collector      | Live network data retrieval                       |
-| `snapl-observability`| `snapl_observability`  | Observability  | Drift detection, metrics, audit logging           |
+| `snapl-observability`| `snapl_observability`  | Observability  | Drift detection, audit logging (metrics: #147)    |
 | `snapl-orchestrator` | `snapl_orchestrator`   | Orchestrator   | Temporal workflows + activities                   |
 | `snapl-presentation` | `snapl_presentation`   | Presentation   | CLI / API user interface                          |
 

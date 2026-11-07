@@ -39,11 +39,12 @@ Each package under `packages/` maps to one NAF block:
 - `intent` — Source of Truth (Infrahub)
 - `executor` — Config deployment (gNMI)
 - `collector` — Live data retrieval
-- `observability` — Drift detection, metrics
+- `observability` — Drift detection, audit (metrics not yet: #147)
 - `orchestrator` — Temporal workflows
 - `presentation` — CLI interface
 
 ## Recent Changes
+- 010-dashboard-read-api (planned): fastapi>=0.115, uvicorn>=0.32, httpx>=0.28 in snapl-presentation; see ADR-0005
 - 004-observability-drift: Added Python 3.12+ + pydantic>=2.5, snapl-intent (workspace dep), snapl-collector (workspace dep)
 - 003-collector-gnmi: Added Python 3.12+ + pygnmi>=0.8, grpcio>=1.60, pydantic>=2.5, snapl-intent (workspace dep)
 - 002-executor-gnmi: Added Python 3.12+ + pygnmi>=0.8, grpcio>=1.60, jinja2>=3.1, pydantic>=2.5, snapl-intent (workspace dep)
