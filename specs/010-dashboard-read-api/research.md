@@ -15,6 +15,11 @@ Each entry records a decision, why it was made, and what was rejected. Facts abo
 - FastAPI serialises those models directly and generates an OpenAPI document from them. Spec 011's TypeScript types can be generated from that document, so the contract has one source.
 - It is async, which the Temporal client and `aiosqlite` need.
 
+**Checked on FastAPI 0.162.2** (2026-11-07), because R2 and the tests depend on it:
+- A route declared with `@router.get` answers `GET` only. `HEAD` gets `405`, like any other method. The framework's own routes (`openapi_url`, `/docs`, `/redoc`) answer `GET` and `HEAD`.
+- An included router shows up in `app.routes` as one `_IncludedRouter` entry. It has no `path` and an empty method set, and its routes sit under `.original_router.routes`.
+- `fastapi.testclient` warns that using it with `httpx` is deprecated in favour of `httpx2`. This is only a warning, since pytest doesn't treat warnings as errors here.
+
 **Alternatives considered**:
 - **Starlette alone**: smaller, but the response-model validation and OpenAPI generation would be hand-written.
 - **aiohttp**: no Pydantic integration.
@@ -26,7 +31,10 @@ The framework is a new required technology, recorded in ADR-0005.
 
 **Decision**: enforce it in three layers.
 
-1. **Routes**: every route is declared with `@router.get`. A unit test walks `app.routes` and fails on any route whose methods are not exactly `{GET, HEAD}`.
+1. **Routes**: every route is declared with `@router.get`, so it answers `GET` only, and `HEAD` gets `405` like every other method (R1). The app sets `docs_url=None` and `redoc_url=None`. The Swagger and ReDoc pages load scripts from a CDN, which FR-008 rules out, and the OpenAPI document stays at `/api/v1/openapi.json`.
+   - A unit test collects every route and fails on any route with a method outside `{GET, HEAD}`. Only the framework's OpenAPI route answers `HEAD`.
+   - The test descends into each included router's `original_router.routes`. A flat walk of `app.routes` passes vacuously, because the included-router entry has an empty method set.
+   - It also asserts that it found every route listed in `contracts/dashboard-api.md`.
 2. **Audit trail**: opened read-only. `SqliteAuditLog.initialize()` runs the schema DDL and sets WAL mode, which are writes. A new constructor flag, `read_only=True`, opens the database as `file:<path>?mode=ro` with `uri=True`, skips the DDL, and refuses `append()` with `AuditLogError`. No change to the `AuditLog` ABC.
 3. **Other sources**: only read calls on Temporal (`list_workflows`, `describe_task_queue`, `find_drift_schedule`) and on the intent store (`get_desired_state`, `identify`). A test fakes each client and fails on any call outside that list.
 
@@ -39,18 +47,30 @@ The framework is a new required technology, recorded in ADR-0005.
 **Decision**: an in-memory **read model** that is built once and then extended.
 
 - At startup the server reads the whole trail once through `query_by_time_range(epoch, now)`.
-- On every refresh it reads only events with a timestamp at or after the last one seen, through the same ABC method (FR-006).
-- Duplicates at the boundary are dropped by `event_id`.
-- The projections (per-device state, runs, schedule repairs, history buckets) are pure functions in `dashboard/projections.py`, from events to view models, so the unit tests need no database.
+- **On every refresh** it re-reads a trailing window, from 5 minutes before the newest timestamp seen up to now, through the same ABC method (FR-006). Events already held are dropped by `event_id`.
+- **Every 15 minutes** it rebuilds the read model from a full read in the background, and swaps it in only once the read has succeeded.
+- The projections (per-device state, runs, schedule repairs, history buckets) are pure functions in `dashboard/projections.py`, from events to view models, so the unit tests need no database. They order events by `timestamp`, never by arrival, because arrival order is not timestamp order (below).
+
+**Fact: rows do not arrive in timestamp order.** An event's `timestamp` is `workflow.now()`, taken when the workflow builds the event (`scan_drift.py:77`). The row is inserted later, by the `record_audit_event` activity.
+- The activity can be retried up to 5 times: 1, 2, 4 and 8 s apart, with a 10 s timeout per attempt (`_AUDIT_RETRY` in every workflow). A healthy worker can therefore insert a row about a minute after its timestamp.
+- If the worker dies between building the event and writing it, the row is inserted only once a worker picks the activity up again. That has no upper bound.
+- `ScanDrift` writes its per-device events from parallel activities, and several workflows write at once.
+
+So a read of "timestamp at or after the newest one seen" would skip any row that lands after a newer row has already been read, for as long as the process runs. Append-only rules out updates, not late inserts.
+
+**What the window guarantees**:
+- **5 minutes** covers the whole retry schedule several times over. Any row a healthy worker writes is seen on the next refresh.
+- **The 15-minute rebuild** catches rows delayed longer, for example by a worker restart. They appear at most 15 minutes after they land, never silently dropped. This is a stated limitation in `contracts/dashboard-api.md`.
+- At 5 s refreshes, the window costs a few hundred rows per read on a busy fabric.
 
 **Rationale**: the `AuditLog` ABC has no "latest per device" or "count by bucket" query, and adding one would widen a block contract for a single consumer.
-- 100,000 audit rows load in a few seconds once. After that, each refresh reads only the rows written in the last few seconds.
-- The trail is append-only by contract, so an incremental read can never miss an update to an existing row.
+- 100,000 audit rows load in a few seconds once. After that, each refresh reads only the trailing window.
 
 **Alternatives considered**:
 - **A new ABC method per view**: widens the contract (Principle V) and pushes view logic into the Orchestrator.
 - **Querying SQLite directly with GROUP BY**: forbidden by FR-006, and it couples Presentation to the storage schema.
 - **Re-reading the whole trail every 5 seconds**: fails SC-007.
+- **A cursor on the row id** (`query_since(row_id)` in the ABC): exact, and the cleanest fix for late rows. Rejected for 010 because it widens the ABC, and the event model carries no row id to hand back as a cursor. If the 15-minute rebuild proves too slow in practice, this is the fallback, as a spec amendment of its own.
 
 ## R4 — Device drift state and the missing/undesired split (FR-012, FR-012a)
 
@@ -73,7 +93,13 @@ The framework is a new required technology, recorded in ADR-0005.
 
 **Decision**:
 - **Splitting runs**: a run is the events of one `workflow_id` from a `WORKFLOW_STARTED` up to the next terminal event (`WORKFLOW_TERMINATED` or `WORKFLOW_CANCELLED`). A `WORKFLOW_STARTED` with no terminal event yet is open. It is shown as running only if Temporal lists that id as running (R6). Otherwise it is shown as `unfinished`, for example when the worker died mid-run.
-- **Trigger**: `schedule` if the run is a `DriftResponse` (its events carry `actor="schedule:…"`), or is named in one of that run's payloads (`scan_workflow_id`, `reconcile_workflow_id`). A `DeployIntent` run is also `schedule` when it starts inside a scheduled reconcile's window for the same device. Everything else is `operator`.
+- **New payload field (FR-016a)**: `DeployIntent`'s `WORKFLOW_STARTED` event gains `"parent_workflow_id"`. It holds `workflow.info().parent.workflow_id` when the run is a child, and `null` when an operator started it. This is an additive payload change, like FR-012a. The signature and existing fields are unchanged. Replay is unaffected, because Temporal does not compare activity inputs, and `workflow.info()` is deterministic.
+- **Trigger**:
+  - `schedule` if the run is a `DriftResponse` (its events carry `actor="schedule:…"`), or is named in one of that run's payloads (`scan_workflow_id`, `reconcile_workflow_id`).
+  - A `DeployIntent` run takes its parent's trigger: `schedule` when `parent_workflow_id` is a scheduled reconcile, `operator` when it is an operator-started reconcile. With `parent_workflow_id: null` it is `operator`.
+  - A `DeployIntent` run recorded before FR-016a has no `parent_workflow_id` key. Its trigger is `unknown`.
+  - Everything else is `operator`.
+- **Why not infer it from timing**: a first draft called a `DeployIntent` `schedule` when it started inside a scheduled reconcile's window for the same device. That mislabels a real case. A reconcile skips a device whose deploy is already in flight (`reconcile_devices.py:151`). An operator who runs `snapl deploy leaf-01` just after a scheduled reconcile starts, and before it reaches `leaf-01`, would have the run credited to the schedule. ADR-0004 rules that out. Only the parent id is evidence.
 - **Actor names**: only the actor the event carries. Operator-started workflows record none today. The spec was amended to say so, and adding an actor to them is out of scope.
 
 ## R6 — What is running now
@@ -111,9 +137,11 @@ The framework is a new required technology, recorded in ADR-0005.
 - **Coverage**: from Codecov's public API for the repository (`api.codecov.io/api/v2/github/{owner}/repos/{repo}`, totals for the branch), so no artifact download and no token are needed.
 - **Token**: `GITHUB_TOKEN` is used when set (FR-025).
 - **Cache**:
-  - Responses are cached with their `ETag` and re-asked with `If-None-Match`. GitHub does not count a `304` against the primary rate limit.
-  - The time between refreshes is 120 s with a token. Without one it is 600 s, so a refresh of up to 5 open PRs costs at most ~42 calls an hour against the unauthenticated 60.
+  - Responses are cached with their `ETag` and re-asked with `If-None-Match`. GitHub does not count a `304` against the primary rate limit, but **only when the request carries an `Authorization` header**. That is from GitHub's REST best-practices page, checked 2026-11-07. Without a token, every request counts, `304` or not, so ETags save bandwidth there but not budget.
+  - The time between refreshes is 120 s with a token. Without one it is 600 s, which is 6 refreshes an hour. A refresh costs `3 + N` calls: the `main` run, the PR list, and the check runs for `main` and each of `N` open PRs. With 5 open PRs that is 8 × 6 = 48 calls an hour, under the unauthenticated 60.
+  - **Unauthenticated PR cap**: 7 PRs would be 10 calls a refresh, which is exactly 60 an hour with nothing left for a restart. So without a token, check runs are fetched for at most **5** open PRs, the most recently updated first. `CiStatus.omitted_prs` counts the rest, and the view's remedy is `export GITHUB_TOKEN=…`. With a token there is no cap.
   - When `X-RateLimit-Remaining` drops below 10, the server stops asking until the reset time, and keeps serving the last answer with its age (FR-031).
+  - Codecov's API is a separate service and costs nothing against GitHub's limit.
 - One fetch runs at a time no matter how many tabs poll (single-flight lock).
 
 **Alternatives considered**:
@@ -127,7 +155,7 @@ The framework is a new required technology, recorded in ADR-0005.
 - **Folder**: each run gets `.snapl/test-runs/<UTC timestamp>-<suite>/`.
 - **Before pytest starts**, the helper writes `run.json` with:
   - `format: 1`, `suite`, `status: "running"`, `started_at`
-  - `commit` (`git rev-parse HEAD`), `branch`
+  - `commit` (`git rev-parse HEAD`), `tree` (`git rev-parse HEAD^{tree}`), `branch`
   - `dirty` (`git status --porcelain` non-empty)
   - `device_image`: the configured `image:` from `containerlab/dcfabric.yml`, recorded as configured, not inspected
   - `pid`
@@ -136,7 +164,19 @@ The framework is a new required technology, recorded in ADR-0005.
 - **Incomplete runs**: a run whose `status` is still `running` while its `pid` is not alive (or not ours) is shown as `incomplete`. That covers a killed terminal or a laptop lid closed mid-run.
 - **Gitignore**: `.snapl/` is added to `.gitignore`. `demo.reset` removes Docker volumes and the lab only (`tasks/demo.py:reset`), so the records survive it with no change (FR-029). A unit test in `test_demo.py` pins that.
 
-**Commits since (FR-028)**: `git rev-list --count <commit>..main`, against the local `main` ref. The view says "as of your last fetch". If `git merge-base --is-ancestor <commit> main` fails, the count is `unknown` with reason "commit not on main", e.g. a run on an unmerged or rebased branch.
+**Commits since (FR-028)**: counted against the local `main` ref, and the view says "as of your last fetch".
+
+**Fact: `main` is squash-merged.** It is linear, with one commit per PR. A live run is usually recorded on a PR branch, because that is where Principle III asks for evidence. That commit never becomes an ancestor of `main`. An ancestor test alone would show "unknown" for nearly every run that matters.
+
+The reader resolves the run's commit to a commit on `main` in this order:
+1. **Ancestor**: if `git merge-base --is-ancestor <commit> main` succeeds, count `git rev-list --count <commit>..main`. `matched_by` is `ancestor`.
+2. **Same tree**: otherwise, look for the newest commit among the last 500 on `main` (`git log -n 500 --format='%H %T' main`) whose tree equals the run's `tree`. If one exists, count from it. `matched_by` is `tree`. This works because a PR must be up to date with `main` before it merges. Squashing an up-to-date branch gives a commit whose tree is the branch head's tree.
+3. **Unknown**: otherwise, the count is `null` with a reason:
+   - "commit not on main yet" when the commit still exists locally (an open PR, or a run made before later pushes to the branch)
+   - "commit not in local history" when `git cat-file -e` fails (a rebased-away commit)
+   - "run recorded without a tree" for an older record
+
+A tree match does not hold if the run was made on an earlier commit of the PR than the one merged, or if the run was dirty. The dirty case is already flagged by `dirty`, and the view shows `matched_by` next to the count.
 
 ## R11 — The MVP page (FR-008 to FR-010)
 
@@ -155,7 +195,7 @@ The framework is a new required technology, recorded in ADR-0005.
 ## R13 — Source of Truth device list and identity (FR-011, FR-015)
 
 **Decision**:
-- **Device list**: `load_states(build_store(settings), use_case=…)`. Role comes from `DesiredState.device.role`.
+- **Device list**: `load_states(build_store(settings), settings, use_case=…)`. Role comes from `DesiredState.device.role`.
 - **Identity check**: `identify_sot`, the same check `snapl status` and spec 009 FR-031 use, run before the list is used. A foreign Infrahub makes the device view unavailable, with the identity detail as its reason.
 - **Cache**: 30 s, since the SoT changes only on seed or edit.
 - **SoT down**: the device view falls back to the device ids seen in the audit trail, with names from the last successful load in this process. It is labelled as `degraded`, with no roles.

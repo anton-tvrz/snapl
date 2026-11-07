@@ -73,7 +73,7 @@ The device view's `data` is `list[DeviceView]`, sorted by role (spines first) an
 ## Runs and schedule (US2)
 
 ### `Trigger` (StrEnum)
-`schedule`, `operator`
+`schedule`, `operator`, `unknown` (a `DeployIntent` recorded before FR-016a, whose parent cannot be told, research R5)
 
 ### `RunState` (StrEnum)
 `running`, `succeeded`, `failed`, `cancelled`, `unfinished` (started, no terminal event, and not running in Temporal)
@@ -200,6 +200,7 @@ Validation:
 | `authenticated` | `bool` |
 | `rate_limit_remaining` | `int \| None` |
 | `targets` | `list[CiTarget]` (`main` first, then PRs by number) |
+| `omitted_prs` | `int` (open PRs left out to stay inside the unauthenticated rate limit. Always 0 with a token, research R9) |
 
 ## Lab runs (US4)
 
@@ -218,6 +219,7 @@ The file format is in `contracts/lab-runs.md`. The reader's model:
 | `started_at` | `datetime \| None` |
 | `ended_at` | `datetime \| None` |
 | `commit` | `str \| None` |
+| `tree` | `str \| None` |
 | `branch` | `str \| None` |
 | `dirty` | `bool \| None` |
 | `device_image` | `str \| None` |
@@ -230,6 +232,7 @@ The file format is in `contracts/lab-runs.md`. The reader's model:
 | --- | --- |
 | `latest` | `dict[suite, LabRun]` (the newest readable run per suite) |
 | `commits_on_main_since` | `dict[suite, int \| None]` |
+| `matched_by` | `dict[suite, Literal["ancestor", "tree"]]` (only for suites whose count is known, research R10) |
 | `commits_unknown_reason` | `dict[suite, str]` (only for suites whose count is `None`) |
 | `runs` | `list[LabRun]` (newest first, at most 20) |
 
@@ -258,6 +261,16 @@ The file format is in `contracts/lab-runs.md`. The reader's model:
 | `undesired_paths` | `list[str]` | always present when `paths` is present. A subset of `paths`, in the same order |
 
 Existing keys (`status`, `drift_items`, `paths`, `error`) are unchanged. No `AuditEvent` field, `AuditEventType` value or schema DDL changes.
+
+### `DeployIntent` start audit payload (FR-016a)
+
+`snapl_orchestrator/workflows/deploy_intent.py`: the `WORKFLOW_STARTED` event, whose payload is empty today, gains one key:
+
+| key | type | when |
+| --- | --- | --- |
+| `parent_workflow_id` | `str \| None` | always present. `workflow.info().parent.workflow_id` for a child run (from `ReconcileDevices`), `null` for a run an operator started |
+
+No other event of the workflow changes.
 
 ### `SqliteAuditLog(read_only: bool = False)`
 

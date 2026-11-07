@@ -10,14 +10,15 @@ Give the loop one place to look at. `snapl dashboard` runs a local, read-only Fa
 - It exposes them as a typed, versioned JSON API (`/api/v1/…`), and serves one plain page that renders it every 5 seconds.
 
 The design:
-- **Read model**: the audit trail is read through the `AuditLog` ABC only, once at startup and then incrementally. It feeds pure projections: device state, runs, repeated repair failures and history series (R3).
+- **Read model**: the audit trail is read through the `AuditLog` ABC only, once at startup, then by re-reading a trailing 5-minute window, with a full rebuild every 15 minutes because rows land out of timestamp order. It feeds pure projections: device state, runs, repeated repair failures and history series (R3).
 - **Read-only, three ways** (R2):
   - GET-only routes, pinned by a route-table test
   - the audit trail opened in SQLite read-only mode, through a new `read_only` flag on `SqliteAuditLog`
   - fake clients that fail on any write call
 - **Failure is data**: every view carries source, availability, `fetched_at`, staleness, reason and remedy. A source failure never becomes an HTTP error, and never blocks other views (R15).
-- **Two small additions outside Presentation**:
+- **Three small additions outside Presentation**:
   - `ScanDrift` records `undesired_paths` per device, so drift direction survives into history (FR-012a, R4)
+  - `DeployIntent` records `parent_workflow_id` when it starts, so a run's trigger is recorded, not inferred from timing (FR-016a, R5)
   - `SqliteAuditLog(read_only=True)`
   No ABC, workflow signature or schema changes.
 - **Lab evidence**: `invoke test-e2e` and a new `invoke test-integration` record each live run under `.snapl/test-runs/`. The dashboard compares those runs against local `main` (R10).
@@ -78,7 +79,7 @@ Research decisions are in [research.md](research.md), types in [data-model.md](d
 |-----------|--------|----------|
 | I. NAF Alignment | PASS | An operator-facing view is Presentation. It reads the Orchestrator's audit log and schedule view and the Intent store, along the existing `presentation → orchestrator → {…}` direction. No new package, and no new ADR-0004 deviation. |
 | II. Spec-Driven Development | PASS | A new capability, specified before implementation. |
-| III. TDD | PASS | Every new source file is paired with its test file, listed first (Project Structure). Live evidence is spelled out in quickstart.md for the one boundary-adjacent change, FR-012a. A captured live audit DB backs the projection tests. |
+| III. TDD | PASS | Every new source file is paired with its test file, listed first (Project Structure). Live evidence is spelled out in quickstart.md for the two workflow payload changes, FR-012a and FR-016a. A captured live audit DB backs the projection tests. |
 | IV. Modularity | PASS | No new package. `projections.py` is pure. Sources sit behind small protocols, so each view is unit-testable without infrastructure. |
 | V. Contract-First | PASS | `contracts/dashboard-api.md`, `cli-dashboard.md` and `lab-runs.md` come before code. The OpenAPI snapshot makes the contract a test. No block ABC changes. |
 | VI. Single Vendor, Named Seams | PASS | No vendor names in dashboard models. `device_image` is an opaque string read from the lab topology. `test_vendor_seams.py` is unaffected, since no workflow imports change. |
@@ -106,7 +107,7 @@ specs/010-dashboard-read-api/
 │   └── lab-runs.md         # .snapl/test-runs record format
 ├── checklists/
 │   └── requirements.md     # Spec quality checklist
-└── tasks.md                # Phase 2 (/speckit-tasks — not created here)
+└── tasks.md                # Phase 2 (/speckit-tasks)
 ```
 
 ### Source Code (repository root)
@@ -133,6 +134,7 @@ tests/unit/test_presentation/
 
 tests/unit/test_orchestrator/
 ├── test_workflow_scan_drift.py       # EXTEND: per-device payload carries undesired_paths ⊆ paths, order kept
+├── test_workflow_deploy_intent.py    # EXTEND: WORKFLOW_STARTED carries parent_workflow_id (child vs operator)
 └── test_audit_sqlite.py              # EXTEND: read_only — mode=ro, no DDL, append refused, missing file refused
 
 tests/unit/test_tasks/
@@ -161,6 +163,7 @@ packages/presentation/pyproject.toml  # EXTEND: fastapi, uvicorn, httpx; package
 
 packages/orchestrator/snapl_orchestrator/
 ├── workflows/scan_drift.py           # EXTEND: _audit_device adds undesired_paths
+├── workflows/deploy_intent.py        # EXTEND: WORKFLOW_STARTED payload adds parent_workflow_id
 └── audit/sqlite.py                   # EXTEND: read_only flag
 
 tasks/
@@ -177,7 +180,7 @@ changelog/101.added.md                # implementation PR
 Unchanged by design:
 - Every package's `abc.py`, and `audit/schema.sql`.
 - Every workflow signature.
-- `deploy_intent.py`, `reconcile_devices.py`, `drift_response.py` and `schedules.py`.
+- `reconcile_devices.py`, `drift_response.py` and `schedules.py`. `deploy_intent.py` changes only in its start payload (FR-016a).
 - The executor, collector, observability, adapters and templates.
 - `development/docker-compose.yml`. Nothing new runs in Compose in 010.
 
@@ -193,9 +196,9 @@ Each step is red → green → refactor:
 1. **Foundation**:
    - `probes.py` move (refactor, behaviour pinned first)
    - `SqliteAuditLog(read_only=True)`
-   - `ScanDrift` `undesired_paths`
+   - `ScanDrift` `undesired_paths`, and `DeployIntent` `parent_workflow_id`
    - models and settings
-   - Capture `audit_demo_arc.sqlite` from a live run, after the `undesired_paths` change, so the fixture carries it. Live evidence item 1.
+   - Capture `audit_demo_arc.sqlite` from a live run, after both payload changes, so the fixture carries them. Live evidence item 1.
 2. **US1 (P1)**:
    - device projection
    - `SotSource` with the identity check
@@ -217,7 +220,7 @@ Each step is red → green → refactor:
 | I. NAF Alignment | PASS | The design adds no import against the dependency arrows. The two Orchestrator changes are Orchestrator code, used by Presentation in-process, which is the same pattern spec 009 used for `schedules.py`. |
 | III. TDD | PASS | Every new module has its test listed first. Projection tests run on a captured live DB, not hand-written events alone. |
 | V. Contract-First | PASS | Three contracts written. The OpenAPI snapshot turns contract drift into a failing test. The lab-run format is shared by its writer and reader through one fixture set. |
-| VI. Vendor seams | PASS | No new seam is touched. `undesired_paths` is derived from the vendor-neutral `DriftItem.undesired`. |
+| VI. Vendor seams | PASS | No new seam is touched. `undesired_paths` is derived from the vendor-neutral `DriftItem.undesired`, and `parent_workflow_id` from Temporal's workflow info. |
 | VII. Simplicity | JUSTIFIED | See Complexity Tracking. |
 | VIII.2 / VIII.5 | PASS | No write path exists. Undesired config is shown, and never offered for removal. |
 
@@ -228,4 +231,6 @@ Each step is red → green → refactor:
 | FastAPI + uvicorn | A typed HTTP contract generated from the same Pydantic models, async for Temporal and aiosqlite, and an OpenAPI document spec 011 can generate types from (R1) | stdlib `http.server` is synchronous. Starlette alone would mean hand-writing validation and OpenAPI |
 | In-memory read model with incremental reads | SC-007 (100k events in ≤ 1 s) without widening the `AuditLog` ABC (R3) | New ABC queries push view logic into the Orchestrator. Direct SQL breaks FR-006. Full re-reads fail SC-007 |
 | `undesired_paths` in the scan audit payload | Drift direction is otherwise lost after the scan returns, and history would have to guess it (R4, ADR-0004) | Inferring direction from `desired is None` is exactly the inference `DriftItem.undesired` exists to avoid |
+| `parent_workflow_id` in the deploy start payload | A run's trigger must be recorded, not inferred from timing. A reconcile skips a device whose deploy is in flight, so a time window credits operator deploys to the schedule (R5, ADR-0004) | Matching deploys to reconcile windows by time is the inference that mislabels |
+| Trailing-window re-read plus a 15-minute rebuild | Audit rows land out of timestamp order, because each row is written by a retried activity after its timestamp is taken (R3) | "Read from the newest timestamp seen" silently drops late rows. A row-id cursor widens the ABC |
 | ETag + adaptive refresh for CI | Unauthenticated GitHub allows 60 calls/hour, and the page polls every 5 s (R9) | A fixed short TTL exceeds the limit with a handful of open PRs |

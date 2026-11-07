@@ -26,7 +26,8 @@ Written before pytest starts and rewritten once it ends. Writes are atomic (writ
   "started_at": "2026-11-07T10:15:00Z",
   "ended_at": "2026-11-07T10:21:42Z",
   "exit_code": 0,
-  "commit": "122343f2a86ad36713da1e5ba782e79371287ddb",
+  "commit": "<40-hex commit sha>",
+  "tree": "<40-hex tree sha>",
   "branch": "main",
   "dirty": false,
   "device_image": "ghcr.io/nokia/srlinux:26.3.1",
@@ -40,6 +41,7 @@ Written before pytest starts and rewritten once it ends. Writes are atomic (writ
 | `status` | `running` | `passed` (exit 0), `failed` (exit 1), `interrupted` (KeyboardInterrupt or exit 2), or `failed` (any other non-zero) |
 | `ended_at`, `exit_code`, `counts` | absent | present. `counts` is absent if `junit.xml` is missing or unparseable |
 | `device_image` | from `containerlab/dcfabric.yml` | unchanged |
+| `tree` | `git rev-parse HEAD^{tree}`. Lets a run on a PR branch be matched to its squash commit on `main` (research R10) | unchanged |
 
 Reader rules:
 - **Incomplete**: `status == "running"` and `pid` is not a live process means `incomplete`.

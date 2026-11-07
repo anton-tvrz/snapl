@@ -2,7 +2,7 @@
 
 **Feature**: 010-dashboard-read-api | **Consumers**: the MVP page (010), the designed UI and snapshot export (011), metric proxying (012)
 
-The server listens on `127.0.0.1:${DASHBOARD_PORT:-18030}`. Every route is `GET` (and `HEAD`). Any other method returns `405` with no side effect. Models are in [data-model.md](../data-model.md). The machine-readable form is the generated OpenAPI document at `/api/v1/openapi.json`, which a unit test snapshots.
+The server listens on `127.0.0.1:${DASHBOARD_PORT:-18030}`. Every route is `GET` only. Any other method on a known route, `HEAD` included, returns `405` with no side effect, and an unknown route returns `404`. The one exception is the framework's own OpenAPI route, which also answers `HEAD` (research R1). The Swagger and ReDoc pages are turned off, because they load scripts from a CDN. Models are in [data-model.md](../data-model.md). The machine-readable form is the generated OpenAPI document at `/api/v1/openapi.json`, which a unit test snapshots.
 
 ## Common rules
 
@@ -14,13 +14,14 @@ The server listens on `127.0.0.1:${DASHBOARD_PORT:-18030}`. Every route is `GET`
 
   | source | refresh | notes |
   | --- | --- | --- |
-  | audit | every request | incremental read, research R3 |
+  | audit | every request | re-reads a trailing 5-minute window, and rebuilds from a full read every 15 minutes, research R3 |
   | temporal | 5 s | |
   | sot | 30 s | |
   | ci | 120 s with token, 600 s without | ETag, rate-limit backoff, research R9 |
   | lab_runs | every request | directory scan |
 
 - **Security**: no request makes the server write anywhere (FR-003). Audit payload strings are returned as data and never interpreted.
+- **Known limitation, late audit rows**: an audit row held back for more than 5 minutes after its timestamp, for example while the worker was down mid-write, shows up at the next 15-minute rebuild, not on the next refresh. It is never dropped (research R3).
 
 ## Routes
 
@@ -72,6 +73,8 @@ Returns `422` when `start >= end` or the range exceeds 2,000 buckets. The range 
 
 Without network access, or when rate-limited, `ci` is the last answer with `stale: true`, or `available: false` if there has never been one. The remedy for a spent rate limit is `export GITHUB_TOKEN=…`.
 
+Without a token, check runs are fetched for at most 5 open PRs, the most recently updated first. `omitted_prs` counts the rest, and the view carries the same remedy (research R9).
+
 ### `GET /api/v1/lab-runs`
 `Envelope + { lab: View[LabEvidence] }`.
 
@@ -82,6 +85,6 @@ When `.snapl/test-runs/` does not exist, the view is available with no runs, and
 
 ## Versioning
 
-A change is **compatible** when it only adds an optional field, a route, a query parameter, or an enum value that consumers are documented to tolerate. `DriftState`, `RunState` and `JobResult` consumers must render an unknown value as its raw string.
+A change is **compatible** when it only adds an optional field, a route, a query parameter, or an enum value that consumers are documented to tolerate. `DriftState`, `RunState`, `Trigger` and `JobResult` consumers must render an unknown value as its raw string.
 
 Any other change is **breaking**. It moves to `/api/v2/`, keeps `/api/v1/` until spec 011's UI has moved, and bumps `contract_version`.

@@ -104,8 +104,9 @@ The maintainer runs the live integration or end-to-end suite. Each run is record
 2. **Given** a run that is interrupted, **When** the dashboard is opened, **Then** that run is shown as incomplete, not as passed.
 3. **Given** the latest live run is at commit A and `main` has gained twelve commits since, **When** the dashboard is opened, **Then** it shows "12 commits on main since the last live run", with the run's age.
 4. **Given** a recorded run's commit is not in the local history (for example a rebased branch), **When** the dashboard is opened, **Then** the commit count is shown as unknown, with the reason.
-5. **Given** an open pull request whose unit-test job failed, **When** the dashboard is opened, **Then** the pull request's quality gate shows as failed and names the failed job, with a link to the run.
-6. **Given** `invoke demo.reset` runs, **When** the dashboard is opened afterwards, **Then** every recorded live run is still there.
+5. **Given** a live run recorded at a pull request's head commit, and that pull request then squash-merged into `main`, **When** `main` gains two more commits, **Then** the dashboard shows "2 commits on main since the last live run" and says the run was matched to `main` by its tree.
+6. **Given** an open pull request whose unit-test job failed, **When** the dashboard is opened, **Then** the pull request's quality gate shows as failed and names the failed job, with a link to the run.
+7. **Given** `invoke demo.reset` runs, **When** the dashboard is opened afterwards, **Then** every recorded live run is still there.
 
 ---
 
@@ -133,6 +134,7 @@ The dashboard draws on several sources that each run separately and fail separat
 - **A device in the audit trail that is no longer in the Source of Truth**: it is left out of the device view and kept in the runs view and history, labelled as no longer in intent.
 - **A device added to the Source of Truth and never deployed**: shown, as never deployed and never scanned.
 - **No worker polling**: runs started from the CLI sit queued. The dashboard says no worker is running (same check as the CLI) rather than showing those runs as running.
+- **Audit rows written late**: a row's timestamp is taken when the workflow builds the event, and the row is inserted later, after any retries. A row a healthy worker writes appears on the next refresh. A row held back longer, for example while the worker was down, appears at the next full rebuild of the read model, within 15 minutes. It is never dropped (research R3).
 - **Very long audit trail**: views stay responsive. Lists are bounded, history is aggregated on the server, and the page never receives the whole trail.
 - **Clock skew between the audit trail and the workflow engine**: times are shown as recorded by each source, in UTC on the wire, and the dashboard does not reconcile them.
 - **Port already in use**: the dashboard refuses to start and names the port and the variable that changes it. It never falls back to another port (#107: "it responds" is not "it is ours").
@@ -170,7 +172,8 @@ The dashboard draws on several sources that each run separately and fail separat
 
 #### Runs and schedule (US2)
 
-- **FR-016**: The runs view MUST list the most recent workflow runs (default 50, bounded at 500), newest first. Each run shows workflow type, target device or use case, start time, end time or "running", duration, outcome, reason, and trigger: the schedule, or an operator. The operator is named where the audit trail records one. Schedule changes record their actor today. Operator-started deploys, scans and reconciles do not, and naming them is out of scope.
+- **FR-016**: The runs view MUST list the most recent workflow runs (default 50, bounded at 500), newest first. Each run shows workflow type, target device or use case, start time, end time or "running", duration, outcome, reason, and trigger: the schedule, an operator, or unknown. The operator is named where the audit trail records one. Schedule changes record their actor today. Operator-started deploys, scans and reconciles do not, and naming them is out of scope. A trigger MUST come from what the audit trail records, never from timing. A deploy recorded before FR-016a, which cannot be told apart, is shown as `unknown`.
+- **FR-016a**: The deploy workflow's start audit record MUST also record the id of the workflow that started it as a child, or none when an operator started it. This is an additive payload field, like FR-012a. Existing fields and the workflow's signature are unchanged.
 - **FR-017**: Each run MUST carry a link to the run in the Temporal Web UI, built from the configured Web UI address.
 - **FR-018**: Runs still in progress MUST come from the workflow engine. Completed runs MUST come from the audit trail.
 - **FR-019**: The schedule view MUST show, for the use case: whether a schedule exists, its response mode, interval, paused state with reason and actor, last run time and outcome, and next run time.
@@ -189,13 +192,13 @@ The dashboard draws on several sources that each run separately and fail separat
 
 #### CI and live lab evidence (US4)
 
-- **FR-024**: The CI view MUST show the quality gate result and each of its jobs for `main` and for each open pull request, with links to the runs. It MUST also show the latest unit-test coverage CI reported. CI answers MUST be cached on the server for at least 120 seconds, so polling never exceeds the unauthenticated rate limit.
+- **FR-024**: The CI view MUST show the quality gate result and each of its jobs for `main` and for each open pull request, with links to the runs. It MUST also show the latest unit-test coverage CI reported. CI answers MUST be cached on the server for at least 120 seconds, so polling never exceeds the unauthenticated rate limit. Without a token, the view MAY cover only some open pull requests to stay inside that limit, and MUST say how many it left out.
 - **FR-025**: The CI view MUST work without credentials for the public repository, and MUST use a token from the environment when one is set.
 - **FR-026**: `invoke test-e2e`, and a new `invoke test-integration` that runs `tests/integration/` against the live stack, MUST record each run in a git-ignored folder under `.snapl/test-runs/`:
   - the test results in JUnit XML
-  - a metadata file with: commit, branch, dirty-tree flag, device image version, start and end time, suites run, and exit status
+  - a metadata file with: commit, the commit's tree, branch, dirty-tree flag, device image version, start and end time, suites run, and exit status
 - **FR-027**: A run whose metadata says it started but never finished MUST be shown as incomplete.
-- **FR-028**: The lab evidence view MUST show the latest run per suite, its result and age, and the number of commits on `main` since that run's commit, or "unknown" with a reason.
+- **FR-028**: The lab evidence view MUST show the latest run per suite, its result and age, and the number of commits on `main` since that run's commit, or "unknown" with a reason. `main` is squash-merged, so a run recorded on a pull request branch MUST also be matched to the `main` commit with the same tree. The view MUST say which way the run was matched (research R10).
 - **FR-029**: `invoke demo.reset` MUST NOT remove recorded lab runs.
 
 #### Failure and freshness (US5)

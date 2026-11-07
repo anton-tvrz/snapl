@@ -31,7 +31,7 @@ ls .snapl/test-runs/              # one folder per run; survives demo.reset
 
 ## Live evidence for the implementation PR (Principle III)
 
-FR-012a changes what the scan workflow records about drift, which sits next to the drift diff boundary. The implementation PR states in its body what was run and observed for each item:
+FR-012a and FR-016a change what the scan and deploy workflows record in the audit trail. FR-012a sits next to the drift diff boundary. The implementation PR states in its body what was run and observed for each item:
 
 1. **Direction is recorded**:
    - On a fabric deployed from intent, hand-add an interface address on `leaf-01` (undesired).
@@ -41,6 +41,8 @@ FR-012a changes what the scan workflow records about drift, which sits next to t
 2. **The demo arc, end to end**:
    - With the dashboard open, run deploy, induce drift, scan, reconcile, scan.
    - **Observe**: each step appears within 10 s (SC-001). The 24 h history shows the drifted count go 0 → 1 → 0 with a reconcile marker.
+   - **Observe**: the reconcile's deploys show trigger `operator`. Their audit records carry the reconcile's id as `parent_workflow_id`. A plain `snapl deploy` carries `null` (FR-016a).
+   - With a remediate-mode schedule, induce drift and wait for the next scheduled run. **Observe**: its deploys show trigger `schedule`.
    - Paste the overview JSON from after the final scan.
 3. **Sources failing independently (SC-003)**:
    - Stop the worker, then Temporal (`docker compose -f development/docker-compose.yml stop temporal`), then Infrahub.
@@ -49,5 +51,9 @@ FR-012a changes what the scan workflow records about drift, which sits next to t
    - Run `invoke demo.reset`, then `invoke demo.up`.
    - **Observe**: the history view still shows the scans from item 2, and the lab evidence view still lists the run recorded before the reset.
 5. **Lab evidence**:
-   - Run `invoke test-e2e` on `main`, make or pull three commits, refresh.
-   - **Observe**: "3 commits on main since the last live run".
+   - Run `invoke test-e2e` on `main`, then pull three commits that land on `main` afterwards, and refresh.
+   - **Observe**: "3 commits on main since the last live run", matched by `ancestor`.
+   - Don't make throwaway commits on your own `main` to test this. They would be counted, and then they diverge from `origin/main`.
+6. **Squash-merged evidence**:
+   - Run `invoke test-integration` at the head of the implementation PR's branch, clean tree, after it is up to date with `main`. Squash-merge the PR and pull `main`.
+   - **Observe**: the run is counted from the squash commit and shown as matched by `tree` (FR-028).

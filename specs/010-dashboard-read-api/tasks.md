@@ -69,11 +69,16 @@ Every story depends on these.
   - `initialize()` executes no DDL (the file's mtime and size are unchanged)
   - `append()` raises `AuditLogError("audit log opened read-only")`
   - a concurrent writable instance can still append while the read-only one is open (WAL)
+  - it opens a WAL-mode DB after the writer has closed, with and without the `-wal`/`-shm` files present. macOS keeps them on close, Linux deletes them, so cover both explicitly.
 - [ ] T007 [P] Extend tests/unit/test_orchestrator/test_workflow_scan_drift.py:
   - The per-device `detect_drift` audit payload carries `undesired_paths`. It is a subset of `paths`, in the same order, and contains exactly the paths whose `DriftItem.undesired` is true.
   - It is `[]` for a forward-only report.
   - It is absent when `paths` is absent (clean device).
   - Existing keys are unchanged (FR-012a, research R4).
+- [ ] T007a [P] Extend tests/unit/test_orchestrator/test_workflow_deploy_intent.py:
+  - An operator-started run's `WORKFLOW_STARTED` payload is `{"parent_workflow_id": None}`.
+  - A run started as a child of `ReconcileDevices` carries the parent's workflow id.
+  - No other event's payload changes (FR-016a, research R5).
 - [ ] T008 [P] Write tests/unit/test_presentation/test_dashboard_models.py:
   - `View` rejects `available=False` without `reason` and `remedy`, and rejects `stale=True` without `data` and `fetched_at`.
   - `Envelope.contract_version == "1"`.
@@ -94,11 +99,12 @@ Every story depends on these.
   - `:memory:` with `read_only=True` raises `ValueError`.
   - T006 passes.
 - [ ] T011 [P] In packages/orchestrator/snapl_orchestrator/workflows/scan_drift.py `_audit_device`, add `payload["undesired_paths"] = [i.path for i in report.items if i.undesired]` inside the existing `if report.items:` branch. T007 passes. `tests/unit/test_orchestrator/test_vendor_seams.py` still passes.
+- [ ] T011a [P] In packages/orchestrator/snapl_orchestrator/workflows/deploy_intent.py, pass `payload={"parent_workflow_id": parent.workflow_id if (parent := workflow.info().parent) else None}` to the `WORKFLOW_STARTED` `_record_event`. T007a passes. No `workflow.patched` is needed, because activity inputs are not part of replay.
 - [ ] T012 Create packages/presentation/snapl_presentation/dashboard/__init__.py and packages/presentation/snapl_presentation/dashboard/models.py with every model in data-model.md. Reuse `WorkflowReason` and `DriftScheduleView` from `snapl_orchestrator.models`. T008 passes.
 - [ ] T013 **Live evidence item 1** (quickstart.md):
-  - With T011 deployed to the worker, hand-add an interface address on `leaf-01` and change a BGP peer AS on `spine-01`.
+  - With T011 and T011a deployed to the worker, hand-add an interface address on `leaf-01` and change a BGP peer AS on `spine-01`.
   - Run deploy, scan, reconcile, scan per the quickstart.
-  - Verify `snapl audit --device leaf-01` shows `undesired_paths == paths`.
+  - Verify `snapl audit --device leaf-01` shows `undesired_paths == paths`, and that the reconcile's deploys carry its id as `parent_workflow_id`.
   - Copy the resulting audit DB to tests/unit/test_presentation/fixtures/audit_demo_arc.sqlite, with a README.md next to it recording the date, commit and steps.
   - **Needs the maintainer's lab.**
 
@@ -127,7 +133,10 @@ Every story depends on these.
   - Add one test over `audit_demo_arc.sqlite` asserting the observed states from T013.
 - [ ] T015 [P] [US1] Write tests/unit/test_presentation/test_dashboard_sources.py for `AuditSource`:
   - The first `refresh()` reads all events through `query_by_time_range` on a fake `AuditLog`.
-  - The next `refresh()` asks only from the last seen timestamp, and drops duplicates by `event_id`.
+  - The next `refresh()` asks from 5 minutes before the newest timestamp seen, and drops duplicates by `event_id`.
+  - **Late row**: after a refresh that has read an event at T, the fake log gains an event stamped T − 30 s. The next refresh includes it.
+  - **Very late row**: an event stamped T − 1 h appears after the next full rebuild, which runs 15 minutes later on an injected clock. A failed rebuild keeps the current read model.
+  - Projections receive events ordered by `timestamp`, whatever order they arrived in.
   - A missing audit file gives `available=False`, a reason naming the path, and remedy `Set SNAPL_AUDIT_DB …`, and the file is not created.
   - The source never calls `append` (the fake raises on it).
 - [ ] T016 [P] [US1] Add `SotSource` tests to test_dashboard_sources.py:
@@ -138,8 +147,9 @@ Every story depends on these.
 - [ ] T017 [P] [US1] Write tests/unit/test_presentation/test_dashboard_app.py, part 1:
   - `create_app(sources)` with fake sources.
   - `GET /api/v1/devices` returns the envelope and a `devices` view.
-  - Every route in `app.routes` under `/api` has methods ⊆ {GET, HEAD}.
-  - `POST`, `PUT`, `PATCH` and `DELETE` to `/api/v1/devices` return 405 (SC-006).
+  - Every route has methods ⊆ {GET, HEAD}, and only the framework's OpenAPI route has `HEAD`. Collect routes recursively through each included router's `original_router.routes`. FastAPI wraps an included router in one entry with an empty method set, so a flat walk of `app.routes` passes vacuously (research R1). Assert the collected set equals the contract's route list.
+  - `HEAD`, `POST`, `PUT`, `PATCH` and `DELETE` to `/api/v1/devices` return 405 (SC-006).
+  - `/docs` and `/redoc` return 404.
   - `/api/v1/openapi.json` matches the snapshot at tests/unit/test_presentation/fixtures/openapi_v1.json. Create the snapshot from the first green run and review it by hand against contracts/dashboard-api.md.
   - `GET /` returns HTML containing no `http://` or `https://` URL other than relative ones (FR-008).
 - [ ] T018 [P] [US1] Write tests/unit/test_presentation/test_cli_dashboard.py:
@@ -153,14 +163,14 @@ Every story depends on these.
 - [ ] T019 [US1] Implement `project_devices` in packages/presentation/snapl_presentation/dashboard/projections.py as a pure function `(events: Sequence[AuditEvent], states: Sequence[DesiredState] | None, names: Mapping[UUID, str]) -> list[DeviceView]` per research R4. T014 passes.
 - [ ] T020 [US1] Implement in packages/presentation/snapl_presentation/dashboard/sources.py:
   - a small `Cached[T]` helper: TTL, single-flight `asyncio.Lock`, keeps the last good value and marks it stale, injectable clock
-  - `AuditSource`: opens `SqliteAuditLog(read_only=True)`, incremental reads, dedup by `event_id`
+  - `AuditSource`: opens `SqliteAuditLog(read_only=True)`. It re-reads a trailing 5-minute window on each refresh and rebuilds from a full read every 15 minutes, swapping the result in only on success. It dedups by `event_id` and orders by `timestamp` (research R3).
   - `SotSource`: `load_states` and `build_store` from `resolve.py`, then `probes.identify_sot`
 
   Each source returns a `View`. T015 and T016 pass.
 - [ ] T021 [US1] Implement `create_app(sources, settings, use_case)` in packages/presentation/snapl_presentation/dashboard/app.py:
   - mount `/api/v1/devices`
   - serve `static/index.html` at `/` via `importlib.resources`
-  - set `openapi_url="/api/v1/openapi.json"`
+  - set `openapi_url="/api/v1/openapi.json"`, `docs_url=None` and `redoc_url=None`
   - register a 405 handler for non-GET methods
 
   T017 passes (except routes added in later phases).
@@ -197,7 +207,10 @@ Every story depends on these.
   - **Triggers**:
     - `DriftResponse` (actor `schedule:…`) → `schedule`
     - its `{wf}-scan` and `{wf}-reconcile` children → `schedule`
-    - a `DeployIntent` inside a scheduled reconcile's window for that device → `schedule`
+    - a `DeployIntent` whose `parent_workflow_id` is a scheduled `{wf}-reconcile` → `schedule`
+    - a `DeployIntent` whose parent is an operator-started reconcile, or with `parent_workflow_id: null` → `operator`
+    - a `DeployIntent` without the `parent_workflow_id` key (recorded before FR-016a) → `unknown`
+    - **regression**: an operator `DeployIntent` (`parent_workflow_id: null`) that starts inside a scheduled reconcile's window for the same device stays `operator`
     - a CLI scan → `operator`, with `actor` only when recorded
   - **Durations**: `duration_s` for running runs counts to an injected now.
   - **Limits**: `limit` and the `workflow_type` and `device` filters.
@@ -280,7 +293,7 @@ Every story depends on these.
 
 - [ ] T039 [P] [US4] Create fixtures in tests/unit/test_presentation/fixtures/lab_runs/: `passed-e2e/`, `failed-integration/`, `running-dead-pid/`, `corrupt-json/` and `format-2/`, each with `run.json` and, where relevant, `junit.xml`, per contracts/lab-runs.md.
 - [ ] T040 [P] [US4] Write tests/unit/test_tasks/test_lab_runs.py for `record_run(ctx, suite, command)` in tasks/lab_runs.py, with a stub command and a temp `SNAPL_TEST_RUNS_DIR`:
-  - `run.json` exists with `status: "running"`, `commit`, `branch`, `dirty`, `device_image` (parsed from containerlab/dcfabric.yml) and `pid` **before** the command runs (the stub asserts it).
+  - `run.json` exists with `status: "running"`, `commit`, `tree`, `branch`, `dirty`, `device_image` (parsed from containerlab/dcfabric.yml) and `pid` **before** the command runs (the stub asserts it).
   - After the run, the file is rewritten atomically with status from the exit code (0 → passed, 1 → failed, 2 or KeyboardInterrupt → interrupted, other → failed), `ended_at`, `exit_code` and `counts` parsed from junit.xml.
   - Missing junit.xml leaves out `counts`.
   - An unwritable folder prints a warning and the exit code is still pytest's.
@@ -290,14 +303,19 @@ Every story depends on these.
   - `running-dead-pid` → `incomplete`
   - `corrupt-json` and `format-2` → `unreadable` with a `problem`, and the others are still listed
   - `latest` is the newest readable run per suite
-  - `commits_on_main_since` counts `git rev-list <commit>..main`
-  - a commit not on main → `None` with reason "commit not on main"
+  - `commits_on_main_since` counts `git rev-list <commit>..main` for an ancestor, with `matched_by: ancestor`
+  - **squash merge**: a run on a branch commit, then a squash commit on `main` with the same tree, then two more commits → `2`, `matched_by: tree`
+  - a commit still in local history but not on main, with no tree match → `None` with reason "commit not on main yet"
+  - a commit missing from local history → `None` with reason "commit not in local history"
+  - a record with no `tree` and no ancestor → `None` with reason "run recorded without a tree"
   - a missing folder → available, no runs, remedy `uv run invoke test-e2e`
 - [ ] T043 [P] [US4] Write tests/unit/test_presentation/test_dashboard_ci.py with `httpx.MockTransport`. Capture real response bodies from the public API for `anton-tvrz/snapl` once and store them under fixtures/github/ and fixtures/codecov/ (Principle III).
   - Parse `main`'s gate and jobs from check-runs, plus open PRs and their heads.
   - Parse coverage from Codecov.
   - A `304` with `If-None-Match` reuses the cached body.
   - The refresh interval is 120 s with a token and 600 s without.
+  - Without a token and with 8 open PRs, check runs are fetched for the 5 most recently updated, and `omitted_prs == 3`. With a token, all 8 are fetched and `omitted_prs == 0`.
+  - The request budget assumes a `304` costs a call when unauthenticated (research R9). Assert the call count, not only the 200s.
   - `X-RateLimit-Remaining < 10` stops requests until `X-RateLimit-Reset`, and serves `stale: true`.
   - No network on first call → `available=False`, remedy `export GITHUB_TOKEN=…`.
   - The token never appears in any `View` or log record.
@@ -313,7 +331,11 @@ Every story depends on these.
 - [ ] T049 [US4] Extend static/index.html:
   - lab evidence panel: latest per suite, age, "N commits on main since the last live run", incomplete and unreadable runs
   - CI panel: `main` and each PR with gate, failed jobs, links and coverage
-- [ ] T050 [US4] **Live evidence item 5**: run `invoke test-e2e` on `main`, make three commits, and verify "3 commits on main since the last live run". **Needs the lab.**
+- [ ] T050 [US4] **Live evidence items 5 and 6** (quickstart.md):
+  - Run `invoke test-e2e` on `main`, then pull three commits that land on `main` afterwards. Verify "3 commits on main since the last live run", matched by `ancestor`. Don't make throwaway commits on your own `main`.
+  - Run `invoke test-integration` at PR E's up-to-date branch head, squash-merge it, pull, and verify the run is matched by `tree`.
+
+  **Needs the lab.**
 
 **Checkpoint**: Lab evidence and CI visible. PR E.
 
@@ -368,7 +390,7 @@ Every story depends on these.
 
 - **Phase 1 (Setup)** has no dependencies.
 - **Phase 2 (Foundational)** depends on Phase 1 and blocks every story.
-  - T013 (live fixture) depends on T011 and blocks the fixture-based assertions in T014.
+  - T013 (live fixture) depends on T011 and T011a, and blocks the fixture-based assertions in T014.
 - **US1 (Phase 3)** depends on Phase 2. It is the MVP.
 - **US2 (Phase 4)** depends on Phase 2 and on T020 (`Cached` and `AuditSource`) and T021 (`create_app`) from US1. It does not depend on US1's projections.
 - **US3 (Phase 5)** depends on T020 and T021 only.
@@ -383,7 +405,7 @@ Tests first, seen failing → projections and sources → routes → page → li
 ### Parallel opportunities
 
 - **Phase 1**: T002 and T003 in parallel.
-- **Phase 2**: T005 to T008 (tests) in parallel, then T010 and T011 in parallel. T009 and T012 touch different files and can run alongside.
+- **Phase 2**: T005 to T008 and T007a (tests) in parallel, then T010, T011 and T011a in parallel. T009 and T012 touch different files and can run alongside.
 - **US1 tests**: T014 to T018 all [P].
 - **US3 and US4** can be built in parallel once T020 and T021 exist.
 - **US4**: T046 and T047 in parallel. Its test tasks T039 to T044 are all [P].
