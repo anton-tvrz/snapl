@@ -194,6 +194,87 @@
         "title": "DevicesResponse",
         "type": "object"
       },
+      "DriftResponseMode": {
+        "description": "What a scheduled run does with what its scan found (constitution VIII.2).\n\nThe third response, ``suppress``, is a paused schedule: nothing runs, so\nnothing carries a mode.",
+        "enum": [
+          "report",
+          "remediate"
+        ],
+        "title": "DriftResponseMode",
+        "type": "string"
+      },
+      "DriftScheduleView": {
+        "additionalProperties": false,
+        "description": "A drift schedule projected out of Temporal, so Presentation never sees client types.",
+        "properties": {
+          "interval": {
+            "title": "Interval",
+            "type": "integer"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/DriftResponseMode"
+          },
+          "next_runs": {
+            "items": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "title": "Next Runs",
+            "type": "array"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "paused": {
+            "title": "Paused",
+            "type": "boolean"
+          },
+          "recent_runs": {
+            "items": {
+              "$ref": "#/components/schemas/ScheduledRunInfo"
+            },
+            "title": "Recent Runs",
+            "type": "array"
+          },
+          "running": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Running",
+            "type": "array"
+          },
+          "schedule_id": {
+            "title": "Schedule Id",
+            "type": "string"
+          },
+          "skipped_overlap": {
+            "default": 0,
+            "title": "Skipped Overlap",
+            "type": "integer"
+          },
+          "use_case_id": {
+            "title": "Use Case Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schedule_id",
+          "use_case_id",
+          "interval",
+          "mode",
+          "paused"
+        ],
+        "title": "DriftScheduleView",
+        "type": "object"
+      },
       "DriftState": {
         "enum": [
           "in_sync",
@@ -220,6 +301,375 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "RepeatedRepairFailure": {
+        "additionalProperties": false,
+        "properties": {
+          "consecutive_failures": {
+            "minimum": 3.0,
+            "title": "Consecutive Failures",
+            "type": "integer"
+          },
+          "device_id": {
+            "format": "uuid",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "last_failed_at": {
+            "format": "date-time",
+            "title": "Last Failed At",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "suggested_command": {
+            "title": "Suggested Command",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_id",
+          "name",
+          "consecutive_failures",
+          "last_failed_at",
+          "suggested_command"
+        ],
+        "title": "RepeatedRepairFailure",
+        "type": "object"
+      },
+      "RunState": {
+        "enum": [
+          "running",
+          "succeeded",
+          "failed",
+          "cancelled",
+          "unfinished"
+        ],
+        "title": "RunState",
+        "type": "string"
+      },
+      "RunSummary": {
+        "additionalProperties": false,
+        "description": "One completed scheduled run, as the schedule view summarises it.",
+        "properties": {
+          "clean": {
+            "title": "Clean",
+            "type": "integer"
+          },
+          "drifted": {
+            "title": "Drifted",
+            "type": "integer"
+          },
+          "errored": {
+            "title": "Errored",
+            "type": "integer"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "remediated": {
+            "title": "Remediated",
+            "type": "integer"
+          },
+          "succeeded": {
+            "title": "Succeeded",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "wrote": {
+            "title": "Wrote",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "total",
+          "clean",
+          "drifted",
+          "errored",
+          "remediated",
+          "succeeded",
+          "failed",
+          "wrote"
+        ],
+        "title": "RunSummary",
+        "type": "object"
+      },
+      "RunView": {
+        "additionalProperties": false,
+        "description": "One workflow run. Its identity is (workflow_id, started_at), because\n`deploy-intent-{device}` is reused across runs (research R5).",
+        "properties": {
+          "actor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor"
+          },
+          "duration_s": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration S"
+          },
+          "ended_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended At"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/RunState"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          },
+          "trigger": {
+            "$ref": "#/components/schemas/Trigger"
+          },
+          "web_ui_url": {
+            "title": "Web Ui Url",
+            "type": "string"
+          },
+          "workflow_id": {
+            "title": "Workflow Id",
+            "type": "string"
+          },
+          "workflow_type": {
+            "title": "Workflow Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workflow_id",
+          "workflow_type",
+          "target",
+          "started_at",
+          "state",
+          "trigger",
+          "web_ui_url"
+        ],
+        "title": "RunView",
+        "type": "object"
+      },
+      "RunsResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "contract_version": {
+            "const": "1",
+            "default": "1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "running": {
+            "$ref": "#/components/schemas/View_list_RunView__"
+          },
+          "runs": {
+            "$ref": "#/components/schemas/View_list_RunView__"
+          },
+          "use_case": {
+            "title": "Use Case",
+            "type": "string"
+          }
+        },
+        "required": [
+          "use_case",
+          "generated_at",
+          "runs",
+          "running"
+        ],
+        "title": "RunsResponse",
+        "type": "object"
+      },
+      "ScheduleResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "contract_version": {
+            "const": "1",
+            "default": "1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "schedule": {
+            "$ref": "#/components/schemas/View_ScheduleStatus_"
+          },
+          "use_case": {
+            "title": "Use Case",
+            "type": "string"
+          },
+          "worker": {
+            "$ref": "#/components/schemas/View_WorkerStatus_"
+          }
+        },
+        "required": [
+          "use_case",
+          "generated_at",
+          "schedule",
+          "worker"
+        ],
+        "title": "ScheduleResponse",
+        "type": "object"
+      },
+      "ScheduleStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "exists": {
+            "title": "Exists",
+            "type": "boolean"
+          },
+          "paused_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paused At"
+          },
+          "paused_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paused By"
+          },
+          "repeated_failures": {
+            "items": {
+              "$ref": "#/components/schemas/RepeatedRepairFailure"
+            },
+            "title": "Repeated Failures",
+            "type": "array"
+          },
+          "schedule": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DriftScheduleView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "suggested_command": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggested Command"
+          }
+        },
+        "required": [
+          "exists"
+        ],
+        "title": "ScheduleStatus",
+        "type": "object"
+      },
+      "ScheduledRunInfo": {
+        "additionalProperties": false,
+        "description": "One recent firing of a drift schedule.",
+        "properties": {
+          "scheduled_at": {
+            "format": "date-time",
+            "title": "Scheduled At",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "workflow_id": {
+            "title": "Workflow Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workflow_id",
+          "scheduled_at",
+          "started_at",
+          "status"
+        ],
+        "title": "ScheduledRunInfo",
+        "type": "object"
+      },
       "SourceName": {
         "enum": [
           "audit",
@@ -229,6 +679,15 @@
           "lab_runs"
         ],
         "title": "SourceName",
+        "type": "string"
+      },
+      "Trigger": {
+        "enum": [
+          "schedule",
+          "operator",
+          "unknown"
+        ],
+        "title": "Trigger",
         "type": "string"
       },
       "ValidationError": {
@@ -269,6 +728,140 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "View_ScheduleStatus_": {
+        "additionalProperties": false,
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScheduleStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fetched_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fetched At"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "remedy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remedy"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SourceName"
+          },
+          "stale": {
+            "default": false,
+            "title": "Stale",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "source",
+          "available"
+        ],
+        "title": "View[ScheduleStatus]",
+        "type": "object"
+      },
+      "View_WorkerStatus_": {
+        "additionalProperties": false,
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkerStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fetched_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fetched At"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "remedy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remedy"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SourceName"
+          },
+          "stale": {
+            "default": false,
+            "title": "Stale",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "source",
+          "available"
+        ],
+        "title": "View[WorkerStatus]",
         "type": "object"
       },
       "View_list_DeviceView__": {
@@ -342,6 +935,96 @@
         "title": "View[list[DeviceView]]",
         "type": "object"
       },
+      "View_list_RunView__": {
+        "additionalProperties": false,
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/RunView"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "fetched_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fetched At"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "remedy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remedy"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SourceName"
+          },
+          "stale": {
+            "default": false,
+            "title": "Stale",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "source",
+          "available"
+        ],
+        "title": "View[list[RunView]]",
+        "type": "object"
+      },
+      "WorkerStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "pollers": {
+            "title": "Pollers",
+            "type": "integer"
+          },
+          "task_queue": {
+            "title": "Task Queue",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pollers",
+          "task_queue"
+        ],
+        "title": "WorkerStatus",
+        "type": "object"
+      },
       "WorkflowReason": {
         "description": "Terminal reason codes for any WorkflowResult.",
         "enum": [
@@ -412,6 +1095,153 @@
           }
         },
         "summary": "Devices"
+      }
+    },
+    "/api/v1/runs": {
+      "get": {
+        "operationId": "runs_api_v1_runs_get",
+        "parameters": [
+          {
+            "description": "Defaults to the server's --use-case.",
+            "in": "query",
+            "name": "use_case",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to the server's --use-case.",
+              "title": "Use Case"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Repeatable.",
+            "in": "query",
+            "name": "workflow_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Repeatable.",
+              "title": "Workflow Type"
+            }
+          },
+          {
+            "description": "A device name.",
+            "in": "query",
+            "name": "device",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A device name.",
+              "title": "Device"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Runs"
+      }
+    },
+    "/api/v1/schedule": {
+      "get": {
+        "operationId": "schedule_api_v1_schedule_get",
+        "parameters": [
+          {
+            "description": "Defaults to the server's --use-case.",
+            "in": "query",
+            "name": "use_case",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to the server's --use-case.",
+              "title": "Use Case"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Schedule"
       }
     }
   }

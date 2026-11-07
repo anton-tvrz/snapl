@@ -17,8 +17,16 @@ import pytest
 from snapl_intent.models import DesiredState, Device
 from snapl_orchestrator.audit.sqlite import SqliteAuditLog
 from snapl_orchestrator.models import AuditEvent, AuditEventType, WorkflowReason
-from snapl_presentation.dashboard.models import DriftState
-from snapl_presentation.dashboard.projections import project_devices
+from snapl_orchestrator.worker.client import RunningWorkflowInfo
+from snapl_presentation.dashboard.models import DriftState, RunState, Trigger
+from snapl_presentation.dashboard.projections import (
+    RunFilters,
+    latest_pause,
+    project_devices,
+    project_repeated_failures,
+    project_running,
+    project_runs,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -352,3 +360,519 @@ async def test_live_demo_arc_ends_with_only_leaf_01_drifted():
     assert all(view.last_deploy is not None and view.last_deploy.success for view in views.values())
     assert views["spine-01"].last_deploy.workflow_id == f"deploy-intent-{_ARC['spine-01'][1]}"
     assert views["spine-01"].last_deploy.ended_at.minute == 20
+
+
+# =============================================================================
+# Runs (T024, research R5)
+# =============================================================================
+
+UI = "http://localhost:18034"
+NOW = T0 + timedelta(hours=1)
+
+
+def _wf(
+    workflow_id: str,
+    workflow_type: str,
+    event_type: AuditEventType,
+    at: datetime,
+    *,
+    target=None,
+    outcome: str | None = None,
+    reason: WorkflowReason | None = None,
+    payload: dict | None = None,
+    actor: str | None = None,
+) -> AuditEvent:
+    return AuditEvent(
+        event_id=uuid4(),
+        workflow_id=workflow_id,
+        workflow_type=workflow_type,
+        target_id=target,
+        event_type=event_type,
+        outcome=outcome,
+        reason=reason,
+        payload=payload or {},
+        timestamp=at,
+        actor=actor,
+    )
+
+
+def _run(workflow_id, workflow_type, start, end=None, *, target=None, ok=True, start_payload=None, actor=None):
+    """A run's start and, optionally, its end."""
+    events = [
+        _wf(
+            workflow_id,
+            workflow_type,
+            AuditEventType.WORKFLOW_STARTED,
+            start,
+            target=target,
+            payload=start_payload,
+            actor=actor,
+        )
+    ]
+    if end is not None:
+        events.append(
+            _wf(
+                workflow_id,
+                workflow_type,
+                AuditEventType.WORKFLOW_TERMINATED,
+                end,
+                target=target,
+                outcome="success" if ok else "failure",
+                reason=WorkflowReason.SUCCEEDED if ok else WorkflowReason.APPLY_FAILED,
+                payload=None if ok else {"detail": "apply rejected by device"},
+                actor=actor,
+            )
+        )
+    return events
+
+
+def _runs(events, running_ids=(), **kwargs):
+    return project_runs(
+        events,
+        set(running_ids) if running_ids is not None else None,
+        NOW,
+        names={LEAF: "leaf-01", SPINE: "spine-01"},
+        ui_address=UI,
+        namespace="default",
+        **kwargs,
+    )
+
+
+DEPLOY_LEAF = f"deploy-intent-{LEAF}"
+SCHEDULED = "drift-response-dcfabric-2026-11-07T21:00:00Z"
+
+
+def test_two_runs_under_one_workflow_id_are_two_views():
+    events = [
+        *_run(
+            DEPLOY_LEAF,
+            "DeployIntent",
+            T0,
+            T0 + timedelta(seconds=4),
+            target=LEAF,
+            start_payload={"parent_workflow_id": None},
+        ),
+        *_run(
+            DEPLOY_LEAF,
+            "DeployIntent",
+            T0 + timedelta(minutes=10),
+            T0 + timedelta(minutes=10, seconds=3),
+            target=LEAF,
+            ok=False,
+            start_payload={"parent_workflow_id": None},
+        ),
+    ]
+
+    runs = _runs(events)
+
+    assert [(r.workflow_id, r.started_at) for r in runs] == [
+        (DEPLOY_LEAF, T0 + timedelta(minutes=10)),
+        (DEPLOY_LEAF, T0),
+    ]
+    newest, oldest = runs
+    assert newest.state is RunState.FAILED
+    assert newest.reason == "apply_failed: apply rejected by device"
+    assert newest.duration_s == 3
+    assert oldest.state is RunState.SUCCEEDED
+    assert oldest.reason is None
+    assert oldest.target == "leaf-01"
+
+
+def test_open_run_is_running_only_if_temporal_lists_it():
+    events = _run("scan-drift-dcfabric-1", "ScanDrift", T0, target="dcfabric")
+
+    [running] = _runs(events, running_ids={"scan-drift-dcfabric-1"})
+    [unfinished] = _runs(events, running_ids=set())
+
+    assert running.state is RunState.RUNNING
+    assert running.duration_s == 3600
+    assert running.ended_at is None
+    assert unfinished.state is RunState.UNFINISHED
+    assert unfinished.duration_s is None
+
+
+def test_a_new_start_closes_an_open_run_as_unfinished():
+    """A worker that died mid-deploy leaves a start with no end. The next run
+    under the same id must not swallow it, and only the latest can be running."""
+    events = [
+        *_run(DEPLOY_LEAF, "DeployIntent", T0, target=LEAF, start_payload={"parent_workflow_id": None}),
+        *_run(
+            DEPLOY_LEAF,
+            "DeployIntent",
+            T0 + timedelta(minutes=5),
+            target=LEAF,
+            start_payload={"parent_workflow_id": None},
+        ),
+    ]
+
+    newest, oldest = _runs(events, running_ids={DEPLOY_LEAF})
+
+    assert newest.state is RunState.RUNNING
+    assert oldest.state is RunState.UNFINISHED
+
+
+def test_cancelled_run():
+    events = [
+        *_run(DEPLOY_LEAF, "DeployIntent", T0, target=LEAF, start_payload={"parent_workflow_id": None}),
+        _wf(
+            DEPLOY_LEAF,
+            "DeployIntent",
+            AuditEventType.WORKFLOW_CANCELLED,
+            T0 + timedelta(seconds=2),
+            target=LEAF,
+            outcome="cancelled",
+        ),
+    ]
+
+    [run] = _runs(events)
+
+    assert run.state is RunState.CANCELLED
+    assert run.ended_at == T0 + timedelta(seconds=2)
+
+
+def test_events_before_their_start_row_are_ignored():
+    """A late row whose start has not arrived yet does not invent a run."""
+    events = [
+        _wf(
+            DEPLOY_LEAF,
+            "DeployIntent",
+            AuditEventType.WORKFLOW_TERMINATED,
+            T0,
+            target=LEAF,
+            outcome="success",
+            reason=WorkflowReason.SUCCEEDED,
+        ),
+    ]
+
+    assert _runs(events) == []
+
+
+def test_unknown_temporal_state_leaves_open_runs_unfinished():
+    events = _run("scan-drift-dcfabric-1", "ScanDrift", T0, target="dcfabric")
+
+    [run] = _runs(events, running_ids=None)
+
+    assert run.state is RunState.UNFINISHED
+
+
+# --- triggers ------------------------------------------------------------------
+
+
+def _scheduled_arc(*, reconcile_parent_payload=True):
+    """A scheduled remediate run: DriftResponse, its scan and reconcile children,
+    and the deploy the reconcile started."""
+    actor = "schedule:drift-response-dcfabric"
+    return [
+        *_run(
+            SCHEDULED,
+            "DriftResponse",
+            T0,
+            T0 + timedelta(seconds=30),
+            target="dcfabric",
+            actor=actor,
+            start_payload={"mode": "remediate"},
+        ),
+        *_run(
+            f"{SCHEDULED}-scan", "ScanDrift", T0 + timedelta(seconds=1), T0 + timedelta(seconds=10), target="dcfabric"
+        ),
+        *_run(f"{SCHEDULED}-reconcile", "ReconcileDevices", T0 + timedelta(seconds=11), T0 + timedelta(seconds=25)),
+        *_run(
+            DEPLOY_LEAF,
+            "DeployIntent",
+            T0 + timedelta(seconds=12),
+            T0 + timedelta(seconds=20),
+            target=LEAF,
+            start_payload={"parent_workflow_id": f"{SCHEDULED}-reconcile"},
+        ),
+    ]
+
+
+def test_a_scheduled_response_and_everything_it_started_is_schedule():
+    runs = {r.workflow_id: r for r in _runs(_scheduled_arc())}
+
+    assert {wf: r.trigger for wf, r in runs.items()} == {
+        SCHEDULED: Trigger.SCHEDULE,
+        f"{SCHEDULED}-scan": Trigger.SCHEDULE,
+        f"{SCHEDULED}-reconcile": Trigger.SCHEDULE,
+        DEPLOY_LEAF: Trigger.SCHEDULE,
+    }
+    assert runs[SCHEDULED].actor == "schedule:drift-response-dcfabric"
+    assert runs[f"{SCHEDULED}-scan"].actor is None
+
+
+def test_a_deploy_from_an_operator_reconcile_is_operator():
+    events = [
+        *_run("reconcile-1", "ReconcileDevices", T0, T0 + timedelta(seconds=20)),
+        *_run(
+            DEPLOY_LEAF,
+            "DeployIntent",
+            T0 + timedelta(seconds=1),
+            T0 + timedelta(seconds=5),
+            target=LEAF,
+            start_payload={"parent_workflow_id": "reconcile-1"},
+        ),
+    ]
+
+    runs = {r.workflow_id: r.trigger for r in _runs(events)}
+
+    assert runs == {"reconcile-1": Trigger.OPERATOR, DEPLOY_LEAF: Trigger.OPERATOR}
+
+
+def test_an_operator_deploy_is_operator():
+    events = _run(
+        DEPLOY_LEAF,
+        "DeployIntent",
+        T0,
+        T0 + timedelta(seconds=4),
+        target=LEAF,
+        start_payload={"parent_workflow_id": None},
+    )
+
+    assert _runs(events)[0].trigger is Trigger.OPERATOR
+
+
+def test_a_deploy_recorded_before_fr_016a_is_unknown():
+    events = _run(DEPLOY_LEAF, "DeployIntent", T0, T0 + timedelta(seconds=4), target=LEAF)
+
+    assert _runs(events)[0].trigger is Trigger.UNKNOWN
+
+
+def test_a_deploy_whose_scheduled_parent_is_not_in_the_trail_is_unknown():
+    """A `{wf}-reconcile` parent names a scheduled run by its form, but the run
+    itself is not in the trail to confirm it."""
+    events = _run(
+        DEPLOY_LEAF,
+        "DeployIntent",
+        T0,
+        T0 + timedelta(seconds=4),
+        target=LEAF,
+        start_payload={"parent_workflow_id": "drift-response-x-2026-01-01T00:00:00Z-reconcile"},
+    )
+
+    assert _runs(events)[0].trigger is Trigger.UNKNOWN
+
+
+def test_operator_deploy_inside_a_scheduled_reconcile_window_stays_operator():
+    """Regression for the timing rule R5 rejected: only the parent id is evidence."""
+    spine_deploy = f"deploy-intent-{SPINE}"
+    events = [
+        *_scheduled_arc(),
+        *_run(
+            spine_deploy,
+            "DeployIntent",
+            T0 + timedelta(seconds=13),
+            T0 + timedelta(seconds=18),
+            target=SPINE,
+            start_payload={"parent_workflow_id": None},
+        ),
+    ]
+
+    runs = {r.workflow_id: r.trigger for r in _runs(events)}
+
+    assert runs[spine_deploy] is Trigger.OPERATOR
+
+
+def test_a_cli_scan_is_operator_with_no_invented_actor():
+    events = _run("scan-drift-dcfabric-1", "ScanDrift", T0, T0 + timedelta(seconds=9), target="dcfabric")
+
+    [run] = _runs(events)
+
+    assert run.trigger is Trigger.OPERATOR
+    assert run.actor is None
+    assert run.target == "dcfabric"
+
+
+# --- limits, filters and links -------------------------------------------------
+
+
+def test_limit_keeps_the_newest():
+    events = [
+        e
+        for minute in range(5)
+        for e in _run(
+            f"scan-{minute}",
+            "ScanDrift",
+            T0 + timedelta(minutes=minute),
+            T0 + timedelta(minutes=minute, seconds=5),
+            target="dcfabric",
+        )
+    ]
+
+    assert [r.workflow_id for r in _runs(events, limit=2)] == ["scan-4", "scan-3"]
+
+
+def test_filters_by_workflow_type_and_device():
+    events = _scheduled_arc()
+
+    deploys = _runs(events, filters=RunFilters(workflow_types=frozenset({"DeployIntent"})))
+    leaf = _runs(events, filters=RunFilters(device="leaf-01"))
+    spine = _runs(events, filters=RunFilters(device="spine-01"))
+
+    assert [r.workflow_id for r in deploys] == [DEPLOY_LEAF]
+    assert [r.workflow_id for r in leaf] == [DEPLOY_LEAF]
+    assert spine == []
+
+
+def test_web_ui_link_opens_the_workflow_id():
+    events = _run(SCHEDULED, "DriftResponse", T0, target="dcfabric", actor="schedule:drift-response-dcfabric")
+
+    [run] = _runs(events)
+
+    assert run.web_ui_url == f"{UI}/namespaces/default/workflows/drift-response-dcfabric-2026-11-07T21%3A00%3A00Z"
+
+
+# --- running, from Temporal ----------------------------------------------------
+
+
+def test_running_view_prefers_the_audit_run_and_keeps_temporal_only_ones():
+    events = _run(SCHEDULED, "DriftResponse", T0, target="dcfabric", actor="schedule:drift-response-dcfabric")
+    runs = _runs(events, running_ids={SCHEDULED, "scan-drift-dcfabric-9"})
+    infos = [
+        RunningWorkflowInfo(workflow_id=SCHEDULED, workflow_type="DriftResponse", start_time=T0, task_queue="q"),
+        RunningWorkflowInfo(
+            workflow_id="scan-drift-dcfabric-9",
+            workflow_type="ScanDrift",
+            start_time=NOW - timedelta(seconds=7),
+            task_queue="q",
+        ),
+    ]
+
+    running = project_running(infos, runs, NOW, ui_address=UI, namespace="default")
+
+    assert [r.workflow_id for r in running] == ["scan-drift-dcfabric-9", SCHEDULED]
+    assert all(r.state is RunState.RUNNING for r in running)
+    assert running[1].trigger is Trigger.SCHEDULE
+    # Not in the trail yet: what started it is not known.
+    assert running[0].trigger is Trigger.UNKNOWN
+    assert running[0].duration_s == 7
+
+
+# =============================================================================
+# Repeated failed repairs (T025, research R7)
+# =============================================================================
+
+
+def _response(device_id, at, *, decision="remediated", result="failed"):
+    payload = {"decision": decision, "scan_workflow_id": "s", "paths": ["/a"]}
+    if decision == "remediated":
+        payload |= {"reconcile_workflow_id": "r", "result": result}
+    return _wf(
+        SCHEDULED,
+        "DriftResponse",
+        AuditEventType.DRIFT_RESPONSE,
+        at,
+        target=device_id,
+        payload=payload,
+        actor="schedule:drift-response-dcfabric",
+    )
+
+
+def _failures(events):
+    return project_repeated_failures(events, {LEAF: "leaf-01", SPINE: "spine-01"}, use_case="dcfabric")
+
+
+def test_three_consecutive_failed_repairs_are_reported():
+    events = [_response(LEAF, T0 + timedelta(minutes=5 * i)) for i in range(3)]
+
+    [failure] = _failures(events)
+
+    assert failure.device_id == LEAF
+    assert failure.name == "leaf-01"
+    assert failure.consecutive_failures == 3
+    assert failure.last_failed_at == T0 + timedelta(minutes=10)
+    assert failure.suggested_command == "snapl schedule mode report --use-case dcfabric"
+
+
+def test_a_success_resets_the_count():
+    events = [
+        _response(LEAF, T0),
+        _response(LEAF, T0 + timedelta(minutes=5)),
+        _response(LEAF, T0 + timedelta(minutes=10), result="succeeded"),
+        _response(LEAF, T0 + timedelta(minutes=15)),
+        _response(LEAF, T0 + timedelta(minutes=20)),
+    ]
+
+    assert _failures(events) == []
+
+
+def test_unknown_and_skipped_neither_count_nor_reset():
+    events = [
+        _response(LEAF, T0),
+        _response(LEAF, T0 + timedelta(minutes=5), result="unknown"),
+        _response(LEAF, T0 + timedelta(minutes=10)),
+        _response(LEAF, T0 + timedelta(minutes=15), result="skipped"),
+        _response(LEAF, T0 + timedelta(minutes=20)),
+    ]
+
+    [failure] = _failures(events)
+
+    assert failure.consecutive_failures == 3
+
+
+def test_a_run_that_did_not_attempt_the_device_does_not_reset():
+    events = [
+        _response(LEAF, T0),
+        _response(LEAF, T0 + timedelta(minutes=5)),
+        _response(LEAF, T0 + timedelta(minutes=10), decision="undesired_only"),
+        _response(LEAF, T0 + timedelta(minutes=15)),
+    ]
+
+    [failure] = _failures(events)
+
+    assert failure.consecutive_failures == 3
+    assert failure.last_failed_at == T0 + timedelta(minutes=15)
+
+
+def test_devices_under_the_threshold_are_omitted():
+    events = [_response(LEAF, T0), _response(LEAF, T0 + timedelta(minutes=5)), _response(SPINE, T0)]
+
+    assert _failures(events) == []
+
+
+def test_use_case_level_responses_are_not_device_repairs():
+    events = [
+        _wf(
+            SCHEDULED,
+            "DriftResponse",
+            AuditEventType.DRIFT_RESPONSE,
+            T0 + timedelta(minutes=i),
+            target="dcfabric",
+            payload={"mode": "remediate", "remediated": 1},
+            actor="schedule:drift-response-dcfabric",
+        )
+        for i in range(3)
+    ]
+
+    assert _failures(events) == []
+
+
+# =============================================================================
+# Schedule pause details
+# =============================================================================
+
+
+def _schedule_change(at, change, *, actor="anton", target="dcfabric"):
+    return _wf(
+        "drift-response-dcfabric",
+        "DriftSchedule",
+        AuditEventType.SCHEDULE_CHANGED,
+        at,
+        target=target,
+        payload={"change": change},
+        actor=actor,
+    )
+
+
+def test_latest_pause_for_the_use_case():
+    events = [
+        _schedule_change(T0, "paused", actor="alice"),
+        _schedule_change(T0 + timedelta(minutes=1), "resumed", actor="bob"),
+        _schedule_change(T0 + timedelta(minutes=2), "paused", actor="carol"),
+        _schedule_change(T0 + timedelta(minutes=3), "paused", actor="dave", target="campus"),
+    ]
+
+    assert latest_pause(events, use_case="dcfabric") == ("carol", T0 + timedelta(minutes=2))
+
+
+def test_no_pause_recorded():
+    assert latest_pause([], use_case="dcfabric") is None

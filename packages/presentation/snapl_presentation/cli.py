@@ -689,9 +689,18 @@ def _serve_dashboard(settings: CliSettings, use_case: str, host: str, port: int)
     import uvicorn  # noqa: PLC0415
 
     from snapl_presentation.dashboard.app import create_app  # noqa: PLC0415
-    from snapl_presentation.dashboard.sources import AuditSource, SotSource, Sources  # noqa: PLC0415
+    from snapl_presentation.dashboard.sources import (  # noqa: PLC0415
+        AuditSource,
+        SotSource,
+        Sources,
+        TemporalSource,
+    )
 
-    sources = Sources(audit=AuditSource(settings.audit_db), sot=SotSource(settings, use_case))
+    sources = Sources(
+        audit=AuditSource(settings.audit_db),
+        sot=SotSource(settings, use_case),
+        temporal=TemporalSource(settings, use_case),
+    )
     app_ = create_app(sources, settings, use_case)
     server = uvicorn.Server(uvicorn.Config(app_, host=host, port=port, log_level="warning", access_log=False))
     asyncio.run(server.serve())
