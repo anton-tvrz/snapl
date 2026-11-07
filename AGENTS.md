@@ -133,7 +133,7 @@ Vendor-specific code lives only in the gNMI block implementations, Jinja templat
 
 ## Work Tracking
 
-Issues live in `anton-tvrz/snapl`; the board is https://github.com/users/anton-tvrz/projects/4. New issues are not auto-added to the board — see `dev/guides/tracking-work.md` for the labeling convention and the `gh project item-add` step.
+Issues live in `anton-tvrz/snapl`; the board is https://github.com/users/anton-tvrz/projects/4. The board's Auto-add workflow puts new issues and PRs on it. See `dev/guides/tracking-work.md` for the labeling convention, the sub-issue-per-PR pattern, and adding an older issue by hand.
 
 ## Conventions
 
