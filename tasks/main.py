@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from invoke import task
+from invoke.exceptions import Exit
 
+from .lab_runs import record_run
 from .shared import execute_command
 
 
@@ -62,7 +64,26 @@ def test_e2e(ctx):
     snapl's own instance (see #107).
     """
     print("Running the end-to-end demo arc (seeds the SoT and writes to devices)...")
-    execute_command(ctx, "SNAPL_E2E=1 pytest tests/e2e -m e2e -v")
+    _recorded(ctx, "e2e", "SNAPL_E2E=1 pytest tests/e2e -m e2e -v")
+
+
+@task
+def test_integration(ctx):
+    """Run the integration tests against a live stack.
+
+    They dial real devices and services, so the stack and the lab must be up
+    first (`invoke demo.up`). Like test-e2e, each run is recorded under
+    `.snapl/test-runs/` for the dashboard (spec 010 FR-026).
+    """
+    print("Running the integration tests against the live stack...")
+    _recorded(ctx, "integration", "pytest tests/integration -m integration -v")
+
+
+def _recorded(ctx, suite: str, command: str) -> None:
+    """Run a live suite through the lab-run recorder, failing the task as pytest did."""
+    code = record_run(ctx, suite, command)
+    if code:
+        raise Exit(code=code)
 
 
 @task(pre=[lint, scan])

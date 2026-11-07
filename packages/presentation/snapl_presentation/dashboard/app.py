@@ -21,8 +21,10 @@ from pydantic import AwareDatetime  # noqa: TC002 — FastAPI resolves query typ
 
 from snapl_presentation.dashboard.models import (
     Bucket,
+    CiStatus,
     DeviceView,
     Envelope,
+    LabEvidence,
     RunView,
     ScheduleStatus,
     Series,
@@ -60,6 +62,14 @@ class DevicesResponse(Envelope):
 class RunsResponse(Envelope):
     runs: View[list[RunView]]
     running: View[list[RunView]]
+
+
+class CiResponse(Envelope):
+    ci: View[CiStatus]
+
+
+class LabRunsResponse(Envelope):
+    lab: View[LabEvidence]
 
 
 class HistoryResponse(Envelope):
@@ -305,6 +315,18 @@ def create_app(
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         return HistoryResponse(use_case=served, generated_at=clock(), series=projected)
+
+    @router.get("/ci", response_model=CiResponse)
+    async def ci(requested: UseCaseQuery = None) -> CiResponse:
+        """`main` and the open PRs: quality gate, jobs and coverage (research R9)."""
+        served = _check_use_case(requested)
+        return CiResponse(use_case=served, generated_at=clock(), ci=await sources.ci.refresh())
+
+    @router.get("/lab-runs", response_model=LabRunsResponse)
+    async def lab_runs(requested: UseCaseQuery = None) -> LabRunsResponse:
+        """The recorded live lab runs and how current they are (research R10)."""
+        served = _check_use_case(requested)
+        return LabRunsResponse(use_case=served, generated_at=clock(), lab=await sources.lab_runs.refresh())
 
     app.include_router(router)
 

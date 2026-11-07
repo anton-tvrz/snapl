@@ -28,7 +28,16 @@ from snapl_orchestrator.models import (
 )
 from snapl_orchestrator.worker.client import RunningWorkflowInfo
 from snapl_presentation.dashboard.app import create_app
-from snapl_presentation.dashboard.models import SourceName, View
+from snapl_presentation.dashboard.models import (
+    CiStatus,
+    CiTarget,
+    JobResult,
+    LabEvidence,
+    LabRun,
+    LabRunStatus,
+    SourceName,
+    View,
+)
 from snapl_presentation.dashboard.sources import Sources, TemporalSnapshot
 from snapl_presentation.settings import CliSettings
 
@@ -37,12 +46,13 @@ pytestmark = pytest.mark.unit
 T0 = datetime(2026, 11, 7, 21, 0, tzinfo=UTC)
 SNAPSHOT = Path(__file__).parent / "fixtures" / "openapi_v1.json"
 
-# The routes served so far. Later phases add ci, lab-runs, overview and
-# sources (contracts/dashboard-api.md).
+# The routes served so far. PR F adds overview and sources (contracts/dashboard-api.md).
 CONTRACT_ROUTES = {
     ("/", "GET"),
+    ("/api/v1/ci", "GET"),
     ("/api/v1/devices", "GET"),
     ("/api/v1/history", "GET"),
+    ("/api/v1/lab-runs", "GET"),
     ("/api/v1/runs", "GET"),
     ("/api/v1/schedule", "GET"),
     ("/api/v1/openapi.json", "GET"),
@@ -98,16 +108,42 @@ def _temporal_ok(schedule: DriftScheduleView | None = None, running: list | None
     )
 
 
+def _ci_ok() -> View[Any]:
+    main = CiTarget(kind="main", head_sha="a" * 40, gate=JobResult.SUCCESS, jobs=[], coverage_pct=None)
+    return View(
+        source=SourceName.CI,
+        available=True,
+        fetched_at=T0,
+        data=CiStatus(repo="anton-tvrz/snapl", authenticated=False, targets=[main]),
+    )
+
+
+def _lab_ok() -> View[Any]:
+    run = LabRun(id="20261107T101500Z-e2e", suite="e2e", status=LabRunStatus.PASSED, commit="b" * 40, passed=14)
+    return View(
+        source=SourceName.LAB_RUNS,
+        available=True,
+        fetched_at=T0,
+        data=LabEvidence(
+            latest={"e2e": run}, commits_on_main_since={"e2e": 3}, matched_by={"e2e": "ancestor"}, runs=[run]
+        ),
+    )
+
+
 def _client(
     audit: View[Any] | None = None,
     sot: View[Any] | None = None,
     names: dict | None = None,
     temporal: View[Any] | None = None,
+    ci: View[Any] | None = None,
+    lab: View[Any] | None = None,
 ) -> TestClient:
     sources = Sources(
         audit=FakeSource(audit or _audit_ok()),
         sot=FakeSource(sot or _sot_ok(), names),
         temporal=FakeSource(temporal or _temporal_ok()),
+        ci=FakeSource(ci or _ci_ok()),
+        lab_runs=FakeSource(lab or _lab_ok()),
     )
     app = create_app(sources, CliSettings(), "dcfabric", clock=lambda: T0 + timedelta(seconds=5))
     return TestClient(app)
@@ -213,7 +249,10 @@ def test_every_route_only_reads_and_matches_the_contract():
     assert {path for path, method in routes if method == "HEAD"} == {"/api/v1/openapi.json"}
 
 
-@pytest.mark.parametrize("path", ["/api/v1/devices", "/api/v1/runs", "/api/v1/schedule", "/api/v1/history"])
+@pytest.mark.parametrize(
+    "path",
+    ["/api/v1/devices", "/api/v1/runs", "/api/v1/schedule", "/api/v1/history", "/api/v1/ci", "/api/v1/lab-runs"],
+)
 @pytest.mark.parametrize("method", ["HEAD", "POST", "PUT", "PATCH", "DELETE"])
 def test_other_methods_are_refused(method: str, path: str):
     assert _client().request(method, path).status_code == 405
@@ -495,3 +534,39 @@ def test_history_range_is_never_clamped_to_the_data():
 )
 def test_history_rejects_bad_ranges(params: dict):
     assert _history_client().get("/api/v1/history", params=params).status_code == 422
+
+
+# --- /api/v1/lab-runs and /api/v1/ci (T044) -------------------------------------
+
+
+def test_lab_runs_returns_the_evidence_view():
+    body = _client().get("/api/v1/lab-runs").json()
+
+    assert body["contract_version"] == "1"
+    lab = body["lab"]
+    assert lab["source"] == "lab_runs"
+    assert lab["data"]["latest"]["e2e"]["status"] == "passed"
+    assert lab["data"]["commits_on_main_since"] == {"e2e": 3}
+    assert lab["data"]["matched_by"] == {"e2e": "ancestor"}
+
+
+def test_ci_returns_the_ci_view():
+    body = _client().get("/api/v1/ci").json()
+
+    ci = body["ci"]
+    assert ci["source"] == "ci"
+    assert ci["data"]["repo"] == "anton-tvrz/snapl"
+    assert ci["data"]["targets"][0]["gate"] == "success"
+    assert ci["data"]["omitted_prs"] == 0
+
+
+def test_ci_down_is_a_view_not_an_error():
+    down = View(
+        source=SourceName.CI, available=False, reason="GitHub could not be reached", remedy="export GITHUB_TOKEN=…"
+    )
+
+    response = _client(ci=down).get("/api/v1/ci")
+
+    assert response.status_code == 200
+    assert response.json()["ci"]["available"] is False
+    assert response.json()["ci"]["remedy"] == "export GITHUB_TOKEN=…"

@@ -11,6 +11,181 @@
         "title": "Bucket",
         "type": "string"
       },
+      "CiJob": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "result": {
+            "$ref": "#/components/schemas/JobResult"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "result",
+          "url"
+        ],
+        "title": "CiJob",
+        "type": "object"
+      },
+      "CiResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "ci": {
+            "$ref": "#/components/schemas/View_CiStatus_"
+          },
+          "contract_version": {
+            "const": "1",
+            "default": "1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "use_case": {
+            "title": "Use Case",
+            "type": "string"
+          }
+        },
+        "required": [
+          "use_case",
+          "generated_at",
+          "ci"
+        ],
+        "title": "CiResponse",
+        "type": "object"
+      },
+      "CiStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "authenticated": {
+            "title": "Authenticated",
+            "type": "boolean"
+          },
+          "omitted_prs": {
+            "default": 0,
+            "title": "Omitted Prs",
+            "type": "integer"
+          },
+          "rate_limit_remaining": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Limit Remaining"
+          },
+          "repo": {
+            "title": "Repo",
+            "type": "string"
+          },
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/CiTarget"
+            },
+            "title": "Targets",
+            "type": "array"
+          }
+        },
+        "required": [
+          "repo",
+          "authenticated",
+          "targets"
+        ],
+        "title": "CiStatus",
+        "type": "object"
+      },
+      "CiTarget": {
+        "additionalProperties": false,
+        "properties": {
+          "coverage_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverage Pct"
+          },
+          "gate": {
+            "$ref": "#/components/schemas/JobResult"
+          },
+          "head_sha": {
+            "title": "Head Sha",
+            "type": "string"
+          },
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/CiJob"
+            },
+            "title": "Jobs",
+            "type": "array"
+          },
+          "kind": {
+            "enum": [
+              "main",
+              "pull_request"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Number"
+          },
+          "run_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Url"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "kind",
+          "head_sha",
+          "gate",
+          "jobs"
+        ],
+        "title": "CiTarget",
+        "type": "object"
+      },
       "DeployOutcome": {
         "additionalProperties": false,
         "properties": {
@@ -343,6 +518,305 @@
           "series"
         ],
         "title": "HistoryResponse",
+        "type": "object"
+      },
+      "JobResult": {
+        "enum": [
+          "success",
+          "failure",
+          "cancelled",
+          "skipped",
+          "in_progress",
+          "queued",
+          "neutral"
+        ],
+        "title": "JobResult",
+        "type": "string"
+      },
+      "LabEvidence": {
+        "additionalProperties": false,
+        "properties": {
+          "commits_on_main_since": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "propertyNames": {
+              "enum": [
+                "e2e",
+                "integration"
+              ]
+            },
+            "title": "Commits On Main Since",
+            "type": "object"
+          },
+          "commits_unknown_reason": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "enum": [
+                "e2e",
+                "integration"
+              ]
+            },
+            "title": "Commits Unknown Reason",
+            "type": "object"
+          },
+          "latest": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/LabRun"
+            },
+            "propertyNames": {
+              "enum": [
+                "e2e",
+                "integration"
+              ]
+            },
+            "title": "Latest",
+            "type": "object"
+          },
+          "matched_by": {
+            "additionalProperties": {
+              "enum": [
+                "ancestor",
+                "tree"
+              ],
+              "type": "string"
+            },
+            "propertyNames": {
+              "enum": [
+                "e2e",
+                "integration"
+              ]
+            },
+            "title": "Matched By",
+            "type": "object"
+          },
+          "runs": {
+            "items": {
+              "$ref": "#/components/schemas/LabRun"
+            },
+            "maxItems": 20,
+            "title": "Runs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "latest",
+          "commits_on_main_since",
+          "runs"
+        ],
+        "title": "LabEvidence",
+        "type": "object"
+      },
+      "LabRun": {
+        "additionalProperties": false,
+        "properties": {
+          "branch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch"
+          },
+          "commit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Commit"
+          },
+          "device_image": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Image"
+          },
+          "dirty": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dirty"
+          },
+          "ended_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended At"
+          },
+          "errors": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Errors"
+          },
+          "failed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failed"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "passed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Passed"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Problem"
+          },
+          "skipped": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skipped"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/LabRunStatus"
+          },
+          "suite": {
+            "enum": [
+              "e2e",
+              "integration"
+            ],
+            "title": "Suite",
+            "type": "string"
+          },
+          "tree": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tree"
+          }
+        },
+        "required": [
+          "id",
+          "suite",
+          "status"
+        ],
+        "title": "LabRun",
+        "type": "object"
+      },
+      "LabRunStatus": {
+        "enum": [
+          "running",
+          "passed",
+          "failed",
+          "interrupted",
+          "incomplete",
+          "unreadable"
+        ],
+        "title": "LabRunStatus",
+        "type": "string"
+      },
+      "LabRunsResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "contract_version": {
+            "const": "1",
+            "default": "1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "lab": {
+            "$ref": "#/components/schemas/View_LabEvidence_"
+          },
+          "use_case": {
+            "title": "Use Case",
+            "type": "string"
+          }
+        },
+        "required": [
+          "use_case",
+          "generated_at",
+          "lab"
+        ],
+        "title": "LabRunsResponse",
         "type": "object"
       },
       "Marker": {
@@ -928,6 +1402,140 @@
         "title": "ValidationError",
         "type": "object"
       },
+      "View_CiStatus_": {
+        "additionalProperties": false,
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CiStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fetched_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fetched At"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "remedy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remedy"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SourceName"
+          },
+          "stale": {
+            "default": false,
+            "title": "Stale",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "source",
+          "available"
+        ],
+        "title": "View[CiStatus]",
+        "type": "object"
+      },
+      "View_LabEvidence_": {
+        "additionalProperties": false,
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LabEvidence"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fetched_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fetched At"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "remedy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remedy"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SourceName"
+          },
+          "stale": {
+            "default": false,
+            "title": "Stale",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "source",
+          "available"
+        ],
+        "title": "View[LabEvidence]",
+        "type": "object"
+      },
       "View_ScheduleStatus_": {
         "additionalProperties": false,
         "properties": {
@@ -1247,6 +1855,55 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/ci": {
+      "get": {
+        "description": "`main` and the open PRs: quality gate, jobs and coverage (research R9).",
+        "operationId": "ci_api_v1_ci_get",
+        "parameters": [
+          {
+            "description": "Defaults to the server's --use-case.",
+            "in": "query",
+            "name": "use_case",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to the server's --use-case.",
+              "title": "Use Case"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CiResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ci"
+      }
+    },
     "/api/v1/devices": {
       "get": {
         "operationId": "devices_api_v1_devices_get",
@@ -1412,6 +2069,55 @@
           }
         },
         "summary": "History"
+      }
+    },
+    "/api/v1/lab-runs": {
+      "get": {
+        "description": "The recorded live lab runs and how current they are (research R10).",
+        "operationId": "lab_runs_api_v1_lab_runs_get",
+        "parameters": [
+          {
+            "description": "Defaults to the server's --use-case.",
+            "in": "query",
+            "name": "use_case",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to the server's --use-case.",
+              "title": "Use Case"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabRunsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Lab Runs"
       }
     },
     "/api/v1/runs": {

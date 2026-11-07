@@ -139,6 +139,11 @@ So a read of "timestamp at or after the newest one seen" would skip any row that
   2. `GET /repos/{repo}/pulls?state=open`
   3. For `main`'s head and each open PR's head: `GET /repos/{repo}/commits/{sha}/check-runs`. The check runs named under the quality gate give the per-job results.
 - **Coverage**: from Codecov's public API for the repository (`api.codecov.io/api/v2/github/{owner}/repos/{repo}`, totals for the branch), so no artifact download and no token are needed.
+- *Amended in PR E, from the API capture of 2026-11-07* (`tests/unit/test_presentation/fixtures/github/README.md`):
+  - **`main` runs no CI.** The quality workflow is called from `pr-validation.yml` on pull requests only. A push to `main` runs issue automation and nothing else, so call 1 returns no runs and `main`'s head has no quality gate. Call 1 is replaced by `GET /repos/{repo}/commits/main/pulls`, which returns the PR that produced `main`'s head. `main`'s gate and jobs are that PR head's check runs. This holds for the same reason as R10's tree match: a PR must be up to date to merge, so the squash commit has the PR head's tree. The budget is unchanged at 3 + N.
+  - **Coverage is per commit, and Codecov has none yet.** Codecov returned no branches and 404 for every commit tried, because uploads come from PR runs only, if at all. Coverage is read from `GET api.codecov.io/api/v2/github/{owner}/repos/{repo}/commits/{sha}/` for the PR head behind `main`, and is `null` whenever Codecov has nothing.
+  - **Check runs repeat.** A workflow re-run, from the `labeled` trigger, leaves several check runs with the same name on one commit. The latest per name, by id, is the job's result.
+  - **No gate yet.** A PR whose head has no quality-gate check run is shown with gate `queued`.
 - **Token**: `GITHUB_TOKEN` is used when set (FR-025).
 - **Cache**:
   - Responses are cached with their `ETag` and re-asked with `If-None-Match`. GitHub does not count a `304` against the primary rate limit, but **only when the request carries an `Authorization` header**. That is from GitHub's REST best-practices page, checked 2026-11-07. Without a token, every request counts, `304` or not, so ETags save bandwidth there but not budget.

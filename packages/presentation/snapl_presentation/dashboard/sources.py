@@ -68,11 +68,13 @@ class NamedViewSource(ViewSource, Protocol):
 
 @dataclass(frozen=True)
 class Sources:
-    """The sources one app serves from. Later phases add CI and lab runs."""
+    """The sources one app serves from, one per ``SourceName``."""
 
     audit: ViewSource
     sot: NamedViewSource
     temporal: ViewSource
+    ci: ViewSource
+    lab_runs: ViewSource
 
 
 def _failure(exc: Exception, remedy: str) -> SourceUnavailable:

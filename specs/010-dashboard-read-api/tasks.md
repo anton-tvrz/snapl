@@ -291,15 +291,15 @@ Every story depends on these.
 
 ### Tests (write first, verify they fail)
 
-- [ ] T039 [P] [US4] Create fixtures in tests/unit/test_presentation/fixtures/lab_runs/: `passed-e2e/`, `failed-integration/`, `running-dead-pid/`, `corrupt-json/` and `format-2/`, each with `run.json` and, where relevant, `junit.xml`, per contracts/lab-runs.md.
-- [ ] T040 [P] [US4] Write tests/unit/test_tasks/test_lab_runs.py for `record_run(ctx, suite, command)` in tasks/lab_runs.py, with a stub command and a temp `SNAPL_TEST_RUNS_DIR`:
+- [x] T039 [P] [US4] Create fixtures in tests/unit/test_presentation/fixtures/lab_runs/: `passed-e2e/`, `failed-integration/`, `running-dead-pid/`, `corrupt-json/` and `format-2/`, each with `run.json` and, where relevant, `junit.xml`, per contracts/lab-runs.md.
+- [x] T040 [P] [US4] Write tests/unit/test_tasks/test_lab_runs.py for `record_run(ctx, suite, command)` in tasks/lab_runs.py, with a stub command and a temp `SNAPL_TEST_RUNS_DIR`:
   - `run.json` exists with `status: "running"`, `commit`, `tree`, `branch`, `dirty`, `device_image` (parsed from containerlab/dcfabric.yml) and `pid` **before** the command runs (the stub asserts it).
   - After the run, the file is rewritten atomically with status from the exit code (0 → passed, 1 → failed, 2 or KeyboardInterrupt → interrupted, other → failed), `ended_at`, `exit_code` and `counts` parsed from junit.xml.
   - Missing junit.xml leaves out `counts`.
   - An unwritable folder prints a warning and the exit code is still pytest's.
   - The last printed line matches contracts/cli-dashboard.md.
-- [ ] T041 [P] [US4] Extend tests/unit/test_tasks/test_demo.py: `demo.reset` does not touch `.snapl/` (create a sentinel file, run reset with patched `dev.lab_destroy` and `dev.down`, then assert it still exists) (FR-029).
-- [ ] T042 [P] [US4] Write tests/unit/test_presentation/test_dashboard_lab_runs.py over the T039 fixtures and a temp git repo:
+- [x] T041 [P] [US4] Extend tests/unit/test_tasks/test_demo.py: `demo.reset` does not touch `.snapl/` (create a sentinel file, run reset with patched `dev.lab_destroy` and `dev.down`, then assert it still exists) (FR-029).
+- [x] T042 [P] [US4] Write tests/unit/test_presentation/test_dashboard_lab_runs.py over the T039 fixtures and a temp git repo:
   - `running-dead-pid` → `incomplete`
   - `corrupt-json` and `format-2` → `unreadable` with a `problem`, and the others are still listed
   - `latest` is the newest readable run per suite
@@ -309,7 +309,7 @@ Every story depends on these.
   - a commit missing from local history → `None` with reason "commit not in local history"
   - a record with no `tree` and no ancestor → `None` with reason "run recorded without a tree"
   - a missing folder → available, no runs, remedy `uv run invoke test-e2e`
-- [ ] T043 [P] [US4] Write tests/unit/test_presentation/test_dashboard_ci.py with `httpx.MockTransport`. Capture real response bodies from the public API for `anton-tvrz/snapl` once and store them under fixtures/github/ and fixtures/codecov/ (Principle III).
+- [x] T043 [P] [US4] Write tests/unit/test_presentation/test_dashboard_ci.py with `httpx.MockTransport`. Capture real response bodies from the public API for `anton-tvrz/snapl` once and store them under fixtures/github/ and fixtures/codecov/ (Principle III).
   - Parse `main`'s gate and jobs from check-runs, plus open PRs and their heads.
   - Parse coverage from Codecov.
   - A `304` with `If-None-Match` reuses the cached body.
@@ -320,15 +320,15 @@ Every story depends on these.
   - No network on first call → `available=False`, remedy `export GITHUB_TOKEN=…`.
   - The token never appears in any `View` or log record.
   - The repo comes from `git remote get-url origin` (https and ssh forms) unless `SNAPL_GITHUB_REPO` is set.
-- [ ] T044 [P] [US4] Extend test_dashboard_app.py with `/api/v1/lab-runs` and `/api/v1/ci` over fake sources, and update the OpenAPI snapshot.
+- [x] T044 [P] [US4] Extend test_dashboard_app.py with `/api/v1/lab-runs` and `/api/v1/ci` over fake sources, and update the OpenAPI snapshot.
 
 ### Implementation
 
-- [ ] T045 [US4] Implement tasks/lab_runs.py (`record_run`). In tasks/main.py, route `test_e2e` through it (adding `--junitxml`), and add `test_integration` running `pytest tests/integration -m integration -v`. Its docstring says the live stack must be up. T040 and T041 pass.
-- [ ] T046 [P] [US4] Implement packages/presentation/snapl_presentation/dashboard/lab_runs.py: the reader, liveness via `os.kill(pid, 0)`, and the git commit count via `subprocess.run([...], check=False)` with a timeout and no shell. T042 passes.
-- [ ] T047 [P] [US4] Implement packages/presentation/snapl_presentation/dashboard/ci.py: an `httpx.AsyncClient` with ETag cache, adaptive refresh, rate-limit backoff and single-flight lock. T043 passes.
-- [ ] T048 [US4] Add `/api/v1/lab-runs` and `/api/v1/ci` to packages/presentation/snapl_presentation/dashboard/app.py, and wire `LabRunSource` and `CiSource` into `snapl dashboard`. T044 passes.
-- [ ] T049 [US4] Extend static/index.html:
+- [x] T045 [US4] Implement tasks/lab_runs.py (`record_run`). In tasks/main.py, route `test_e2e` through it (adding `--junitxml`), and add `test_integration` running `pytest tests/integration -m integration -v`. Its docstring says the live stack must be up. T040 and T041 pass.
+- [x] T046 [P] [US4] Implement packages/presentation/snapl_presentation/dashboard/lab_runs.py: the reader, liveness via `os.kill(pid, 0)`, and the git commit count via `subprocess.run([...], check=False)` with a timeout and no shell. T042 passes.
+- [x] T047 [P] [US4] Implement packages/presentation/snapl_presentation/dashboard/ci.py: an `httpx.AsyncClient` with ETag cache, adaptive refresh, rate-limit backoff and single-flight lock. T043 passes.
+- [x] T048 [US4] Add `/api/v1/lab-runs` and `/api/v1/ci` to packages/presentation/snapl_presentation/dashboard/app.py, and wire `LabRunSource` and `CiSource` into `snapl dashboard`. T044 passes.
+- [x] T049 [US4] Extend static/index.html:
   - lab evidence panel: latest per suite, age, "N commits on main since the last live run", incomplete and unreadable runs
   - CI panel: `main` and each PR with gate, failed jobs, links and coverage
 - [ ] T050 [US4] **Live evidence items 5 and 6** (quickstart.md):
