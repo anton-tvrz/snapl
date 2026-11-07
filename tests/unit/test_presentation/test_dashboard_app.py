@@ -19,10 +19,17 @@ import pytest
 from fastapi.testclient import TestClient
 
 from snapl_intent.models import DesiredState, Device
-from snapl_orchestrator.models import AuditEvent, AuditEventType
+from snapl_orchestrator.models import (
+    AuditEvent,
+    AuditEventType,
+    DriftResponseMode,
+    DriftScheduleView,
+    WorkflowReason,
+)
+from snapl_orchestrator.worker.client import RunningWorkflowInfo
 from snapl_presentation.dashboard.app import create_app
 from snapl_presentation.dashboard.models import SourceName, View
-from snapl_presentation.dashboard.sources import Sources
+from snapl_presentation.dashboard.sources import Sources, TemporalSnapshot
 from snapl_presentation.settings import CliSettings
 
 pytestmark = pytest.mark.unit
@@ -30,11 +37,13 @@ pytestmark = pytest.mark.unit
 T0 = datetime(2026, 11, 7, 21, 0, tzinfo=UTC)
 SNAPSHOT = Path(__file__).parent / "fixtures" / "openapi_v1.json"
 
-# The routes PR B serves. Later phases add runs, schedule, history, ci,
-# lab-runs, overview and sources (contracts/dashboard-api.md).
+# The routes served so far. Later phases add history, ci, lab-runs, overview
+# and sources (contracts/dashboard-api.md).
 CONTRACT_ROUTES = {
     ("/", "GET"),
     ("/api/v1/devices", "GET"),
+    ("/api/v1/runs", "GET"),
+    ("/api/v1/schedule", "GET"),
     ("/api/v1/openapi.json", "GET"),
     ("/api/v1/openapi.json", "HEAD"),
 }
@@ -79,8 +88,26 @@ def _sot_ok() -> View[Any]:
     return View(source=SourceName.SOT, available=True, fetched_at=T0, data=[LEAF, SPINE])
 
 
-def _client(audit: View[Any] | None = None, sot: View[Any] | None = None, names: dict | None = None) -> TestClient:
-    sources = Sources(audit=FakeSource(audit or _audit_ok()), sot=FakeSource(sot or _sot_ok(), names))
+def _temporal_ok(schedule: DriftScheduleView | None = None, running: list | None = None) -> View[Any]:
+    return View(
+        source=SourceName.TEMPORAL,
+        available=True,
+        fetched_at=T0,
+        data=TemporalSnapshot(running=running or [], pollers=1, schedule=schedule),
+    )
+
+
+def _client(
+    audit: View[Any] | None = None,
+    sot: View[Any] | None = None,
+    names: dict | None = None,
+    temporal: View[Any] | None = None,
+) -> TestClient:
+    sources = Sources(
+        audit=FakeSource(audit or _audit_ok()),
+        sot=FakeSource(sot or _sot_ok(), names),
+        temporal=FakeSource(temporal or _temporal_ok()),
+    )
     app = create_app(sources, CliSettings(), "dcfabric", clock=lambda: T0 + timedelta(seconds=5))
     return TestClient(app)
 
@@ -185,9 +212,10 @@ def test_every_route_only_reads_and_matches_the_contract():
     assert {path for path, method in routes if method == "HEAD"} == {"/api/v1/openapi.json"}
 
 
+@pytest.mark.parametrize("path", ["/api/v1/devices", "/api/v1/runs", "/api/v1/schedule"])
 @pytest.mark.parametrize("method", ["HEAD", "POST", "PUT", "PATCH", "DELETE"])
-def test_other_methods_on_devices_are_refused(method: str):
-    assert _client().request(method, "/api/v1/devices").status_code == 405
+def test_other_methods_are_refused(method: str, path: str):
+    assert _client().request(method, path).status_code == 405
 
 
 @pytest.mark.parametrize("path", ["/docs", "/redoc"])
@@ -218,3 +246,193 @@ def test_page_is_html_with_no_external_urls():
 def test_page_never_renders_through_innerhtml():
     """Audit payloads hold device-supplied strings (research R11)."""
     assert "innerHTML" not in _client().get("/").text
+
+
+# --- /api/v1/runs (T027) --------------------------------------------------------
+
+
+def _deploy_run() -> list[AuditEvent]:
+    deploy = f"deploy-intent-{LEAF.device.id}"
+    common = {"workflow_id": deploy, "workflow_type": "DeployIntent", "target_id": LEAF.device.id}
+    return [
+        AuditEvent(
+            event_id=uuid4(),
+            event_type=AuditEventType.WORKFLOW_STARTED,
+            timestamp=T0,
+            payload={"parent_workflow_id": None},
+            **common,
+        ),
+        AuditEvent(
+            event_id=uuid4(),
+            event_type=AuditEventType.WORKFLOW_TERMINATED,
+            outcome="success",
+            reason=WorkflowReason.SUCCEEDED,
+            timestamp=T0 + timedelta(seconds=4),
+            **common,
+        ),
+    ]
+
+
+def _scan_start(workflow_id: str = "scan-drift-dcfabric-2") -> AuditEvent:
+    return AuditEvent(
+        event_id=uuid4(),
+        workflow_id=workflow_id,
+        workflow_type="ScanDrift",
+        target_id="dcfabric",
+        event_type=AuditEventType.WORKFLOW_STARTED,
+        timestamp=T0 + timedelta(seconds=1),
+    )
+
+
+def _runs_audit() -> View[Any]:
+    return View(source=SourceName.AUDIT, available=True, fetched_at=T0, data=[*_deploy_run(), _scan_start()])
+
+
+def _temporal_down() -> View[Any]:
+    return View(
+        source=SourceName.TEMPORAL, available=False, reason="Temporal unreachable", remedy="uv run invoke dev.deps"
+    )
+
+
+def test_runs_returns_runs_and_what_is_running():
+    temporal = _temporal_ok(
+        running=[
+            RunningWorkflowInfo(
+                workflow_id="scan-drift-dcfabric-2",
+                workflow_type="ScanDrift",
+                start_time=T0 + timedelta(seconds=1),
+                task_queue="snapl",
+            )
+        ]
+    )
+
+    body = _client(audit=_runs_audit(), temporal=temporal).get("/api/v1/runs").json()
+
+    runs = body["runs"]["data"]
+    assert [(r["workflow_type"], r["state"], r["trigger"]) for r in runs] == [
+        ("ScanDrift", "running", "operator"),
+        ("DeployIntent", "succeeded", "operator"),
+    ]
+    assert runs[1]["target"] == "leaf-01"
+    assert runs[1]["web_ui_url"].startswith("http://localhost:18034/namespaces/default/workflows/deploy-intent-")
+    assert [r["workflow_id"] for r in body["running"]["data"]] == ["scan-drift-dcfabric-2"]
+
+
+@pytest.mark.parametrize(("limit", "status"), [(0, 422), (1, 200), (500, 200), (501, 422)])
+def test_runs_limit_bounds(limit: int, status: int):
+    assert _client().get("/api/v1/runs", params={"limit": limit}).status_code == status
+
+
+def test_runs_filters_are_repeatable_and_by_device():
+    client = _client(audit=_runs_audit())
+
+    both = client.get("/api/v1/runs", params=[("workflow_type", "DeployIntent"), ("workflow_type", "ScanDrift")])
+    deploys = client.get("/api/v1/runs", params={"workflow_type": "DeployIntent"})
+    leaf = client.get("/api/v1/runs", params={"device": "leaf-01"})
+
+    assert len(both.json()["runs"]["data"]) == 2
+    assert [r["workflow_type"] for r in deploys.json()["runs"]["data"]] == ["DeployIntent"]
+    assert [r["target"] for r in leaf.json()["runs"]["data"]] == ["leaf-01"]
+
+
+def test_runs_with_temporal_down_still_lists_the_trail():
+    audit = View(source=SourceName.AUDIT, available=True, fetched_at=T0, data=[_scan_start()])
+
+    body = _client(audit=audit, temporal=_temporal_down()).get("/api/v1/runs").json()
+
+    assert body["runs"]["available"] is True
+    assert [r["state"] for r in body["runs"]["data"]] == ["unfinished"]
+    assert body["running"]["available"] is False
+    assert body["running"]["remedy"] == "uv run invoke dev.deps"
+
+
+# --- /api/v1/schedule (T027) ----------------------------------------------------
+
+
+def _schedule(*, paused: bool = False) -> DriftScheduleView:
+    return DriftScheduleView(
+        schedule_id="drift-response-dcfabric",
+        use_case_id="dcfabric",
+        interval=timedelta(minutes=5),
+        mode=DriftResponseMode.REMEDIATE,
+        paused=paused,
+        note="maintenance window" if paused else None,
+        next_runs=[T0 + timedelta(minutes=5)],
+    )
+
+
+def _failed_repairs() -> list[AuditEvent]:
+    return [
+        AuditEvent(
+            event_id=uuid4(),
+            workflow_id=f"drift-response-dcfabric-{i}",
+            workflow_type="DriftResponse",
+            target_id=LEAF.device.id,
+            event_type=AuditEventType.DRIFT_RESPONSE,
+            payload={"decision": "remediated", "result": "failed", "scan_workflow_id": "s", "paths": []},
+            timestamp=T0 + timedelta(minutes=5 * i),
+            actor="schedule:drift-response-dcfabric",
+        )
+        for i in range(3)
+    ]
+
+
+def _pause() -> AuditEvent:
+    return AuditEvent(
+        event_id=uuid4(),
+        workflow_id="drift-response-dcfabric",
+        workflow_type="DriftSchedule",
+        target_id="dcfabric",
+        event_type=AuditEventType.SCHEDULE_CHANGED,
+        payload={"change": "paused"},
+        timestamp=T0,
+        actor="alice",
+    )
+
+
+def test_schedule_with_temporal_down_still_reports_repeated_failures_as_stale():
+    audit = View(source=SourceName.AUDIT, available=True, fetched_at=T0, data=_failed_repairs())
+
+    body = _client(audit=audit, temporal=_temporal_down()).get("/api/v1/schedule").json()
+
+    schedule = body["schedule"]
+    assert schedule["available"] is False
+    assert schedule["remedy"] == "uv run invoke dev.deps"
+    assert schedule["stale"] is True
+    [failure] = schedule["data"]["repeated_failures"]
+    assert failure["name"] == "leaf-01"
+    assert failure["consecutive_failures"] == 3
+    # Temporal never answered: nothing suggests creating a schedule that may exist.
+    assert schedule["data"]["suggested_command"] is None
+    assert body["worker"]["available"] is False
+
+
+def test_schedule_paused_names_who_paused_it():
+    audit = View(source=SourceName.AUDIT, available=True, fetched_at=T0, data=[_pause()])
+
+    body = _client(audit=audit, temporal=_temporal_ok(_schedule(paused=True))).get("/api/v1/schedule").json()
+
+    data = body["schedule"]["data"]
+    assert data["exists"] is True
+    assert data["schedule"]["paused"] is True
+    assert data["schedule"]["note"] == "maintenance window"
+    assert data["schedule"]["interval"] == 300
+    assert data["paused_by"] == "alice"
+    assert data["paused_at"] == "2026-11-07T21:00:00Z"
+    assert body["worker"]["data"] == {"pollers": 1, "task_queue": "snapl-orchestrator"}
+
+
+def test_running_schedule_does_not_carry_an_old_pause():
+    audit = View(source=SourceName.AUDIT, available=True, fetched_at=T0, data=[_pause()])
+
+    body = _client(audit=audit, temporal=_temporal_ok(_schedule())).get("/api/v1/schedule").json()
+
+    assert body["schedule"]["data"]["paused_by"] is None
+    assert body["schedule"]["data"]["paused_at"] is None
+
+
+def test_no_schedule_suggests_creating_one():
+    data = _client().get("/api/v1/schedule").json()["schedule"]["data"]
+
+    assert data["exists"] is False
+    assert data["suggested_command"] == "snapl schedule create --use-case dcfabric"

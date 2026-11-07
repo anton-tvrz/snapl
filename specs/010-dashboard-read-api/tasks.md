@@ -200,7 +200,7 @@ Every story depends on these.
 
 ### Tests (write first, verify they fail)
 
-- [ ] T024 [P] [US2] Add run projection tests to tests/unit/test_presentation/test_dashboard_projections.py:
+- [x] T024 [P] [US2] Add run projection tests to tests/unit/test_presentation/test_dashboard_projections.py:
   - **Run splitting**:
     - two `DeployIntent` runs under the same `deploy-intent-{id}` become two `RunView`s, keyed by `(workflow_id, started_at)`
     - a started run with no terminal event is `running` if its id is in the running set, else `unfinished`
@@ -215,29 +215,29 @@ Every story depends on these.
   - **Durations**: `duration_s` for running runs counts to an injected now.
   - **Limits**: `limit` and the `workflow_type` and `device` filters.
   - **Links**: `web_ui_url` format from research R12.
-- [ ] T025 [P] [US2] Add repeated-failure tests: `project_repeated_failures(events, threshold=3)` per research R7.
+- [x] T025 [P] [US2] Add repeated-failure tests: `project_repeated_failures(events, threshold=3)` per research R7.
   - Count consecutive `result == "failed"` remediation records per device.
   - `succeeded` resets the count.
   - `unknown` and `skipped` neither count nor reset.
   - A scheduled run that didn't attempt the device doesn't reset.
   - Devices under 3 are omitted.
-- [ ] T026 [P] [US2] Add `TemporalSource` tests to test_dashboard_sources.py with fake functions:
+- [x] T026 [P] [US2] Add `TemporalSource` tests to test_dashboard_sources.py with fake functions:
   - `list_running_workflows`, `count_pollers` and `find_drift_schedule` are each called at most once per 5 s TTL.
   - Probe failure gives `available=False` and the remedy `uv run invoke dev.deps` without calling `connect`.
   - No schedule gives `ScheduleStatus(exists=False, suggested_command="snapl schedule create --use-case dcfabric")`.
   - `paused_by` and `paused_at` come from the latest `SCHEDULE_CHANGED` with change `paused`.
   - The fake client raises on any method outside the read list (research R2).
-- [ ] T027 [P] [US2] Extend test_dashboard_app.py:
+- [x] T027 [P] [US2] Extend test_dashboard_app.py:
   - `/api/v1/runs` with limit bounds 1–500 (422 outside).
   - `/api/v1/schedule`: with Temporal down, `schedule.available` is false while `repeated_failures` is still present with `stale: true` (contracts/dashboard-api.md).
   - Update the OpenAPI snapshot.
 
 ### Implementation
 
-- [ ] T028 [US2] Implement `project_runs(events, running_ids, now, limit, filters, ui_address, namespace)` and `project_repeated_failures(events, names, threshold=3)` in packages/presentation/snapl_presentation/dashboard/projections.py. T024 and T025 pass.
-- [ ] T029 [US2] Implement `TemporalSource` in packages/presentation/snapl_presentation/dashboard/sources.py using `probes.connect`, `worker.client.list_running_workflows`, `probes.count_pollers` and `schedules.find_drift_schedule`. T026 passes.
-- [ ] T030 [US2] Add `/api/v1/runs` and `/api/v1/schedule` to packages/presentation/snapl_presentation/dashboard/app.py. T027 passes.
-- [ ] T031 [US2] Extend static/index.html:
+- [x] T028 [US2] Implement `project_runs(events, running_ids, now, limit, filters, ui_address, namespace)` and `project_repeated_failures(events, names, threshold=3)` in packages/presentation/snapl_presentation/dashboard/projections.py. T024 and T025 pass.
+- [x] T029 [US2] Implement `TemporalSource` in packages/presentation/snapl_presentation/dashboard/sources.py using `probes.connect`, `worker.client.list_running_workflows`, `probes.count_pollers` and `schedules.find_drift_schedule`. T026 passes.
+- [x] T030 [US2] Add `/api/v1/runs` and `/api/v1/schedule` to packages/presentation/snapl_presentation/dashboard/app.py. T027 passes.
+- [x] T031 [US2] Extend static/index.html:
   - runs table with Web UI links
   - running list
   - schedule panel: mode, interval, paused with reason and actor, next and last run, the repeated-failure warning with its command, and worker pollers

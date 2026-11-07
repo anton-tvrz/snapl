@@ -46,6 +46,31 @@
     <tbody id="devices"></tbody>
   </table>
 </section>
+<section>
+  <h2>Schedule</h2>
+  <div id="schedule-problem" hidden></div>
+  <div id="schedule"></div>
+  <div id="failures"></div>
+  <div class="meta" id="worker"></div>
+</section>
+<section>
+  <h2>Running now</h2>
+  <div id="running-problem" hidden></div>
+  <ul id="running"></ul>
+</section>
+<section>
+  <h2>Recent runs</h2>
+  <div id="runs-problem" hidden></div>
+  <table>
+    <thead>
+      <tr>
+        <th>Started</th><th>Workflow</th><th>Target</th><th>State</th>
+        <th class="wide">Trigger</th><th class="wide">Took</th>
+      </tr>
+    </thead>
+    <tbody id="runs"></tbody>
+  </table>
+</section>
 <script>
 "use strict";
 
@@ -104,17 +129,107 @@ function deviceRow(device) {
   return row;
 }
 
+function seconds(total) {
+  if (total === null || total === undefined) return "";
+  if (total < 120) return total + " s";
+  return Math.round(total / 60) + " min";
+}
+
+// A link into the Temporal Web UI. The address comes from the API, so the
+// page's own source names no other origin.
+function runLink(run) {
+  const link = el("a", run.workflow_type);
+  link.href = run.web_ui_url;
+  link.rel = "noopener noreferrer";
+  link.target = "_blank";
+  link.title = run.workflow_id;
+  return link;
+}
+
+function runRow(run) {
+  const row = document.createElement("tr");
+  row.append(el("td", age(run.started_at)));
+  const name = el("td");
+  name.append(runLink(run));
+  row.append(name);
+  row.append(el("td", run.target || ""));
+  const state = el("td", run.state);
+  if (run.reason) state.append(el("div", run.reason, "paths"));
+  row.append(state);
+  row.append(el("td", run.trigger + (run.actor ? " (" + run.actor + ")" : ""), "wide"));
+  row.append(el("td", seconds(run.duration_s), "wide"));
+  return row;
+}
+
+function runningItem(run) {
+  const item = el("li");
+  item.append(runLink(run));
+  item.append(el("span", " " + (run.target || "") + " · " + seconds(run.duration_s) + " so far · " + run.trigger));
+  return item;
+}
+
+function renderSchedule(view, worker) {
+  showProblem(document.getElementById("schedule-problem"), view);
+  const box = document.getElementById("schedule");
+  box.replaceChildren();
+  const status = view.data;
+  // Only a current answer from Temporal can say whether a schedule exists.
+  if (status && view.available) {
+    if (!status.exists) {
+      box.append(el("div", "No drift schedule. Create one with:"));
+      box.append(el("code", status.suggested_command));
+    } else {
+      const s = status.schedule;
+      box.append(el("div", "Mode " + s.mode + " · every " + seconds(s.interval) +
+        (s.paused ? " · paused" : " · active")));
+      if (s.paused) {
+        const who = status.paused_by ? " by " + status.paused_by + " " + age(status.paused_at) : "";
+        box.append(el("div", "Paused" + who + (s.note ? ": " + s.note : ""), "paths"));
+      }
+      if (s.next_runs.length) box.append(el("div", "Next run " + s.next_runs[0], "paths"));
+      const last = s.recent_runs[s.recent_runs.length - 1];
+      if (last) box.append(el("div", "Last run " + age(last.started_at) + ": " + last.status, "paths"));
+    }
+  }
+  const failures = document.getElementById("failures");
+  failures.replaceChildren();
+  for (const failure of (status && status.repeated_failures) || []) {
+    const warning = el("div", failure.name + ": " + failure.consecutive_failures +
+      " scheduled repairs failed in a row. Stop repairing with ", "problem");
+    warning.append(el("code", failure.suggested_command));
+    failures.append(warning);
+  }
+  const workerLine = document.getElementById("worker");
+  if (worker.data) {
+    workerLine.textContent = worker.data.pollers + " worker(s) polling " + worker.data.task_queue;
+  } else {
+    workerLine.textContent = "Worker state unknown";
+  }
+}
+
+async function getJson(path) {
+  const response = await fetch(path, { cache: "no-store" });
+  if (!response.ok) throw new Error(path + ": HTTP " + response.status);
+  return response.json();
+}
+
 async function refresh() {
   const meta = document.getElementById("meta");
   try {
-    const response = await fetch("/api/v1/devices", { cache: "no-store" });
-    if (!response.ok) throw new Error("HTTP " + response.status);
-    const body = await response.json();
-    const view = body.devices;
-    meta.textContent = "Use case " + body.use_case + " · read-only · refreshed every 5 s";
+    const [devices, runs, schedule] = await Promise.all([
+      getJson("/api/v1/devices"), getJson("/api/v1/runs"), getJson("/api/v1/schedule"),
+    ]);
+    const view = devices.devices;
+    meta.textContent = "Use case " + devices.use_case + " · read-only · refreshed every 5 s";
     showProblem(document.getElementById("devices-problem"), view);
     document.getElementById("devices-age").textContent = "Data read " + age(view.fetched_at);
     document.getElementById("devices").replaceChildren(...(view.data || []).map(deviceRow));
+
+    renderSchedule(schedule.schedule, schedule.worker);
+    showProblem(document.getElementById("running-problem"), runs.running);
+    document.getElementById("running").replaceChildren(...(runs.running.data || []).map(runningItem));
+    showProblem(document.getElementById("runs-problem"), runs.runs);
+    document.getElementById("runs").replaceChildren(...(runs.runs.data || []).map(runRow));
   } catch (error) {
     meta.textContent = "The dashboard server did not answer (" + error.message + "). Is snapl dashboard running?";
   }

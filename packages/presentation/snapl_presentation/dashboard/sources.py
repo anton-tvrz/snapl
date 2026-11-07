@@ -29,7 +29,8 @@ if TYPE_CHECKING:
     from snapl_intent.abc import IntentStore
     from snapl_intent.models import DesiredState
     from snapl_orchestrator.audit.abc import AuditLog
-    from snapl_orchestrator.models import AuditEvent
+    from snapl_orchestrator.models import AuditEvent, DriftScheduleView
+    from snapl_orchestrator.worker.client import RunningWorkflowInfo
     from snapl_presentation.settings import CliSettings
 
     Clock = Callable[[], datetime]
@@ -67,10 +68,11 @@ class NamedViewSource(ViewSource, Protocol):
 
 @dataclass(frozen=True)
 class Sources:
-    """The sources one app serves from. Later phases add Temporal, CI and lab runs."""
+    """The sources one app serves from. Later phases add CI and lab runs."""
 
     audit: ViewSource
     sot: NamedViewSource
+    temporal: ViewSource
 
 
 def _failure(exc: Exception, remedy: str) -> SourceUnavailable:
@@ -269,3 +271,95 @@ class SotSource:
             raise SourceUnavailable(exc.message, STACK_REMEDY) from exc
         self.names = {state.device.id: state.device.name for state in states}
         return states
+
+
+# --- Temporal ------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class TemporalSnapshot:
+    """What Temporal says now: running workflows, the worker, the schedule."""
+
+    running: list[RunningWorkflowInfo]
+    pollers: int
+    schedule: DriftScheduleView | None
+
+
+async def _list_running(client: Any, *, task_queue: str | None = None) -> list[RunningWorkflowInfo]:
+    from snapl_orchestrator.worker.client import list_running_workflows  # noqa: PLC0415
+
+    return await list_running_workflows(client, task_queue=task_queue)
+
+
+async def _find_schedule(client: Any, *, use_case_id: str) -> DriftScheduleView | None:
+    from snapl_orchestrator.schedules import find_drift_schedule  # noqa: PLC0415
+
+    return await find_drift_schedule(client, use_case_id=use_case_id)
+
+
+class TemporalSource:
+    """Running workflows, the worker's pollers and the schedule, cached 5 s.
+
+    Every call is a read (research R2): list workflows, describe the task
+    queue, describe the schedule. A dead or stalled Temporal must not freeze
+    the server, whose other views share its event loop. So each refresh
+    probes TCP first, even with a client already connected, and every read
+    has the connect timeout (``probes.connect`` explains why).
+    """
+
+    def __init__(
+        self,
+        settings: CliSettings,
+        use_case: str,
+        *,
+        probe: Callable[[str, float], Awaitable[str | None]] = probes.probe,
+        connect: Callable[[CliSettings], Awaitable[Any]] = probes.connect,
+        list_running: Callable[..., Awaitable[list[RunningWorkflowInfo]]] = _list_running,
+        count_pollers: Callable[[Any, CliSettings], Awaitable[int]] = probes.count_pollers,
+        find_schedule: Callable[..., Awaitable[DriftScheduleView | None]] = _find_schedule,
+        clock: Clock = utcnow,
+        ttl: timedelta = timedelta(seconds=5),
+    ) -> None:
+        self._settings = settings
+        self._use_case = use_case
+        self._probe = probe
+        self._connect = connect
+        self._list_running = list_running
+        self._count_pollers = count_pollers
+        self._find_schedule = find_schedule
+        self._client: Any = None
+        self._cached: Cached[TemporalSnapshot] = Cached(
+            SourceName.TEMPORAL, self._load, ttl=ttl, clock=clock, remedy=STACK_REMEDY
+        )
+
+    async def refresh(self) -> View[TemporalSnapshot]:
+        return await self._cached.get()
+
+    async def _load(self) -> TemporalSnapshot:
+        settings = self._settings
+        failure = await self._probe(settings.temporal_host, settings.connect_timeout)
+        if failure is not None:
+            self._client = None
+            raise SourceUnavailable(f"Temporal unreachable at {settings.temporal_host}: {failure}", STACK_REMEDY)
+        try:
+            if self._client is None:
+                self._client = await self._connect(settings)
+            client = self._client
+            running = await self._bounded(self._list_running(client, task_queue=settings.task_queue))
+            pollers = await self._bounded(self._count_pollers(client, settings))
+            schedule = await self._bounded(self._find_schedule(client, use_case_id=self._use_case))
+        except CliError as exc:
+            self._client = None
+            raise SourceUnavailable(exc.message, STACK_REMEDY) from exc
+        except Exception:
+            # A fresh client next time: this one may be the problem.
+            self._client = None
+            raise
+        return TemporalSnapshot(running=running, pollers=pollers, schedule=schedule)
+
+    async def _bounded[R](self, read: Awaitable[R]) -> R:
+        timeout = self._settings.connect_timeout
+        try:
+            return await asyncio.wait_for(read, timeout=timeout)
+        except TimeoutError as exc:
+            raise SourceUnavailable(f"Temporal did not answer within {timeout:g}s", STACK_REMEDY) from exc
