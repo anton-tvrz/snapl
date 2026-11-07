@@ -64,7 +64,7 @@ An operator wants to know what ran while they were not looking. The dashboard li
 
 **Acceptance Scenarios**:
 
-1. **Given** an audit trail with operator-started and schedule-started runs, **When** the operator opens the runs view, **Then** each run shows its type, target, start time, duration, outcome and reason, and whether an operator (named) or the schedule started it.
+1. **Given** an audit trail with operator-started and schedule-started runs, **When** the operator opens the runs view, **Then** each run shows its type, target, start time, duration, outcome and reason. It also shows whether the schedule or an operator started it, naming the operator where the audit trail records one.
 2. **Given** a run, **When** the operator wants its full history, **Then** the dashboard links to that run in the Temporal Web UI.
 3. **Given** a workflow still in progress, **When** the dashboard is opened, **Then** it is shown as running, with how long it has been running.
 4. **Given** a remediate-mode schedule whose repair of a device has failed on three or more consecutive runs, **When** the dashboard is opened, **Then** the schedule view says so, names the device and the count, and shows the command to switch back to report mode.
@@ -162,14 +162,15 @@ The dashboard draws on several sources that each run separately and fail separat
 #### Devices (US1)
 
 - **FR-011**: The device view MUST list every device of the use case in the Source of Truth, with its name and role.
-- **FR-012**: Each device MUST show one drift state from its most recent scan: `in_sync`, `missing` (intent not on the device), `undesired` (on the device, not in intent), `missing_and_undesired`, `error` (with reason), or `never_scanned`.
+- **FR-012**: Each device MUST show one drift state from its most recent scan: `in_sync`, `missing` (intent not on the device), `undesired` (on the device, not in intent), `missing_and_undesired`, `error` (with reason), or `never_scanned`. A scan recorded before this feature carries no direction for its paths. It MUST be shown as `drifted`, with its paths and no breakdown, instead of guessing.
+- **FR-012a**: The scan workflow's per-device audit record MUST also record which of its paths are undesired. This is an additive payload field. Existing fields and the workflow's signature are unchanged.
 - **FR-013**: Each device MUST show the time of its most recent scan and the outcome, reason and time of its most recent deploy, or that there has been none.
 - **FR-014**: Each drifted device MUST list the differing paths from its most recent scan, separating missing from undesired paths.
 - **FR-015**: Before showing the device view, the server MUST check the Source of Truth's identity the same way spec 009 FR-031 does, and refuse a foreign one.
 
 #### Runs and schedule (US2)
 
-- **FR-016**: The runs view MUST list the most recent workflow runs (default 50, bounded at 500), newest first. Each run shows workflow type, target device or use case, start time, end time or "running", duration, outcome, reason, and trigger (the named operator or the schedule).
+- **FR-016**: The runs view MUST list the most recent workflow runs (default 50, bounded at 500), newest first. Each run shows workflow type, target device or use case, start time, end time or "running", duration, outcome, reason, and trigger: the schedule, or an operator. The operator is named where the audit trail records one. Schedule changes record their actor today. Operator-started deploys, scans and reconciles do not, and naming them is out of scope.
 - **FR-017**: Each run MUST carry a link to the run in the Temporal Web UI, built from the configured Web UI address.
 - **FR-018**: Runs still in progress MUST come from the workflow engine. Completed runs MUST come from the audit trail.
 - **FR-019**: The schedule view MUST show, for the use case: whether a schedule exists, its response mode, interval, paused state with reason and actor, last run time and outcome, and next run time.
