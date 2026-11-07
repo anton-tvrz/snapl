@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>snapl dashboard</title>
+<!--
+  The spec 010 MVP page. It proves the API's data and nothing more: spec 011
+  replaces it, and the API does not change. One file, no framework, no build
+  step, and no request to any other origin (FR-008). Every value is rendered
+  with textContent, because audit payloads hold device-supplied strings.
+-->
+<style>
+  :root { color-scheme: light dark; --muted: #6b7280; --bad: #b91c1c; --warn: #b45309; --ok: #15803d; }
+  body { font: 14px/1.45 system-ui, sans-serif; margin: 0 auto; max-width: 72rem; padding: 1rem; }
+  h1 { font-size: 1.25rem; margin: 0 0 .25rem; }
+  .meta { color: var(--muted); margin-bottom: 1rem; }
+  .problem { border-left: 4px solid var(--bad); padding: .5rem .75rem; margin: .5rem 0 1rem; }
+  .problem.stale { border-color: var(--warn); }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { text-align: left; padding: .4rem .5rem; border-bottom: 1px solid rgba(127,127,127,.25); vertical-align: top; }
+  th { font-weight: 600; }
+  code { font: 12px/1.4 ui-monospace, monospace; user-select: all; }
+  .state-in_sync { color: var(--ok); }
+  .state-missing, .state-missing_and_undesired, .state-drifted, .state-error { color: var(--bad); }
+  .state-undesired { color: var(--warn); }
+  .state-never_scanned { color: var(--muted); }
+  .paths { color: var(--muted); font-size: 12px; }
+  @media (max-width: 40rem) { .wide { display: none; } }
+</style>
+</head>
+<body>
+<h1>snapl dashboard</h1>
+<div class="meta" id="meta">Loading…</div>
+<section>
+  <h2>Devices</h2>
+  <div id="devices-problem" hidden></div>
+  <div class="meta" id="devices-age"></div>
+  <table>
+    <thead>
+      <tr>
+        <th>Device</th><th>Role</th><th>State</th><th class="wide">Last scan</th>
+        <th class="wide">Last deploy</th><th>Next step</th>
+      </tr>
+    </thead>
+    <tbody id="devices"></tbody>
+  </table>
+</section>
+<script>
+"use strict";
+
+const REFRESH_MS = 5000;
+
+function el(tag, text, className) {
+  const node = document.createElement(tag);
+  if (text !== undefined && text !== null) node.textContent = String(text);
+  if (className) node.className = className;
+  return node;
+}
+
+function age(iso) {
+  if (!iso) return "never";
+  const seconds = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000));
+  if (seconds < 60) return seconds + " s ago";
+  if (seconds < 3600) return Math.round(seconds / 60) + " min ago";
+  if (seconds < 86400) return Math.round(seconds / 3600) + " h ago";
+  return Math.round(seconds / 86400) + " d ago";
+}
+
+// A view that is down, or stale, says why and what to run.
+function showProblem(box, view) {
+  box.replaceChildren();
+  if (view.available) { box.hidden = true; return; }
+  box.hidden = false;
+  box.className = view.stale ? "problem stale" : "problem";
+  const what = view.stale ? "Showing data from " + age(view.fetched_at) + ". " : "";
+  box.append(el("div", what + view.source + " unavailable: " + view.reason));
+  if (view.remedy) {
+    const fix = el("div", "Try: ");
+    fix.append(el("code", view.remedy));
+    box.append(fix);
+  }
+}
+
+function deviceRow(device) {
+  const row = document.createElement("tr");
+  row.append(el("td", device.name + (device.in_intent ? "" : " (not in intent)")));
+  row.append(el("td", device.role || "unknown"));
+
+  const state = el("td", device.drift_state.replaceAll("_", " "), "state-" + device.drift_state);
+  const paths = [].concat(device.missing_paths, device.undesired_paths, device.unclassified_paths);
+  for (const path of paths) state.append(el("div", path, "paths"));
+  if (device.error) state.append(el("div", device.error, "paths"));
+  row.append(state);
+
+  row.append(el("td", age(device.last_scanned_at), "wide"));
+  const deploy = device.last_deploy;
+  row.append(el("td", deploy ? (deploy.success ? "succeeded " : "failed ") + age(deploy.ended_at) : "none", "wide"));
+
+  const next = el("td");
+  if (device.suggested_command) next.append(el("code", device.suggested_command));
+  if (device.note) next.append(el("div", device.note, "paths"));
+  row.append(next);
+  return row;
+}
+
+async function refresh() {
+  const meta = document.getElementById("meta");
+  try {
+    const response = await fetch("/api/v1/devices", { cache: "no-store" });
+    if (!response.ok) throw new Error("HTTP " + response.status);
+    const body = await response.json();
+    const view = body.devices;
+    meta.textContent = "Use case " + body.use_case + " · read-only · refreshed every 5 s";
+    showProblem(document.getElementById("devices-problem"), view);
+    document.getElementById("devices-age").textContent = "Data read " + age(view.fetched_at);
+    document.getElementById("devices").replaceChildren(...(view.data || []).map(deviceRow));
+  } catch (error) {
+    meta.textContent = "The dashboard server did not answer (" + error.message + "). Is snapl dashboard running?";
+  }
+}
+
+refresh();
+setInterval(refresh, REFRESH_MS);
+</script>
+</body>
+</html>
