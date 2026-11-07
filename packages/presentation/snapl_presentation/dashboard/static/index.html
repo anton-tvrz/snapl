@@ -293,7 +293,7 @@ function renderHistory(body) {
   document.getElementById("history").replaceChildren(...rows.reverse());
   const first = byName.deploys.first_event_at;
   document.getElementById("history-meta").textContent =
-    first ? "The audit trail starts " + age(first) + "." : "The audit trail is empty.";
+    first ? "The audit trail starts " + age(first) + "." : "No audit events read.";
   const markers = byName.deploys.markers.map((marker) =>
     el("li", age(marker.t) + ": " + marker.kind + " " + marker.workflow_id + " (" + marker.trigger + ")"));
   document.getElementById("markers").replaceChildren(...markers);
