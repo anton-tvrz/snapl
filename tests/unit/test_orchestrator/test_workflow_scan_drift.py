@@ -370,3 +370,76 @@ async def test_device_that_errors_is_audited_as_a_failure(make_desired) -> None:
     assert len(events) == 1
     assert events[0].event_type is AuditEventType.ACTIVITY_FAILED
     assert events[0].outcome == "failure"
+
+
+# ---------------------------------------------------------------------------
+# FR-012a (spec 010, research R4): the direction of each difference survives
+# into the audit trail, so history can tell missing from undesired config.
+# ---------------------------------------------------------------------------
+
+_FORWARD = DriftItem(
+    path="/interface[name=ethernet-1/1]/admin-state",
+    desired="enable",
+    actual="disable",
+    entity_kind="Interface",
+)
+_UNDESIRED_A = DriftItem(
+    path="/interface[name=ethernet-1/7]/description",
+    desired=None,
+    actual="hand-added",
+    entity_kind="Interface",
+    undesired=True,
+)
+_UNDESIRED_B = DriftItem(
+    path="/interface[name=ethernet-1/9]",
+    desired=None,
+    actual={"admin-state": "enable"},
+    entity_kind="Interface",
+    undesired=True,
+)
+
+
+async def _scan_one_device_payload(make_desired, items: list[DriftItem]) -> dict:
+    states = [make_desired("leaf-01")]
+    audit = InMemoryAuditLog()
+    collector = MagicMock()
+    collector.collect = AsyncMock(side_effect=lambda device, _paths: _collect(device))
+    status = DriftStatus.DRIFTED if items else DriftStatus.CLEAN
+    observer = MagicMock()
+    observer.detect_drift = AsyncMock(side_effect=lambda desired, _c: _report(desired.device, status, items=items))
+    observer.emit_event = AsyncMock()
+
+    async with await WorkflowEnvironment.start_time_skipping(data_converter=pydantic_data_converter) as env:
+        await _run(
+            env,
+            _build_activities(
+                intent_store=_intent_store(states), collector=collector, observer=observer, audit_log=audit
+            ),
+            USE_CASE,
+        )
+
+    events = await audit.query_by_device(states[0].device.id)
+    assert len(events) == 1
+    return events[0].payload
+
+
+@pytest.mark.asyncio
+async def test_per_device_event_names_the_undesired_paths_in_order(make_desired) -> None:
+    payload = await _scan_one_device_payload(make_desired, [_UNDESIRED_A, _FORWARD, _UNDESIRED_B])
+
+    assert payload["paths"] == [_UNDESIRED_A.path, _FORWARD.path, _UNDESIRED_B.path]
+    assert payload["undesired_paths"] == [_UNDESIRED_A.path, _UNDESIRED_B.path]
+
+
+@pytest.mark.asyncio
+async def test_forward_only_drift_records_no_undesired_paths(make_desired) -> None:
+    payload = await _scan_one_device_payload(make_desired, [_FORWARD])
+
+    assert payload["undesired_paths"] == []
+
+
+@pytest.mark.asyncio
+async def test_clean_device_records_neither_paths_nor_undesired_paths(make_desired) -> None:
+    payload = await _scan_one_device_payload(make_desired, [])
+
+    assert payload == {"status": DriftStatus.CLEAN.value, "drift_items": 0}

@@ -96,6 +96,10 @@ async def _audit_device(*, workflow_id: str, report: DriftReport) -> None:
     payload: dict = {"status": report.status.value, "drift_items": len(report.items)}
     if report.items:
         payload["paths"] = [item.path for item in report.items]
+        # The direction of each difference, kept so history can tell missing
+        # config from undesired config after the scan has returned (spec 010
+        # FR-012a). A subset of `paths`, in the same order.
+        payload["undesired_paths"] = [item.path for item in report.items if item.undesired]
     if report.error:
         payload["error"] = report.error
 
