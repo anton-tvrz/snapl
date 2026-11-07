@@ -213,25 +213,37 @@ async function getJson(path) {
   return response.json();
 }
 
-async function refresh() {
-  const meta = document.getElementById("meta");
-  try {
-    const [devices, runs, schedule] = await Promise.all([
-      getJson("/api/v1/devices"), getJson("/api/v1/runs"), getJson("/api/v1/schedule"),
-    ]);
-    const view = devices.devices;
-    meta.textContent = "Use case " + devices.use_case + " · read-only · refreshed every 5 s";
-    showProblem(document.getElementById("devices-problem"), view);
-    document.getElementById("devices-age").textContent = "Data read " + age(view.fetched_at);
-    document.getElementById("devices").replaceChildren(...(view.data || []).map(deviceRow));
+function renderDevices(body) {
+  const view = body.devices;
+  document.getElementById("meta").textContent = "Use case " + body.use_case + " · read-only · refreshed every 5 s";
+  showProblem(document.getElementById("devices-problem"), view);
+  document.getElementById("devices-age").textContent = "Data read " + age(view.fetched_at);
+  document.getElementById("devices").replaceChildren(...(view.data || []).map(deviceRow));
+}
 
-    renderSchedule(schedule.schedule, schedule.worker);
-    showProblem(document.getElementById("running-problem"), runs.running);
-    document.getElementById("running").replaceChildren(...(runs.running.data || []).map(runningItem));
-    showProblem(document.getElementById("runs-problem"), runs.runs);
-    document.getElementById("runs").replaceChildren(...(runs.runs.data || []).map(runRow));
-  } catch (error) {
-    meta.textContent = "The dashboard server did not answer (" + error.message + "). Is snapl dashboard running?";
+function renderRuns(body) {
+  showProblem(document.getElementById("running-problem"), body.running);
+  document.getElementById("running").replaceChildren(...(body.running.data || []).map(runningItem));
+  showProblem(document.getElementById("runs-problem"), body.runs);
+  document.getElementById("runs").replaceChildren(...(body.runs.data || []).map(runRow));
+}
+
+// Each panel is fetched and rendered on its own, so one failing route never
+// blanks the others.
+const PANELS = [
+  ["/api/v1/devices", renderDevices],
+  ["/api/v1/runs", renderRuns],
+  ["/api/v1/schedule", (body) => renderSchedule(body.schedule, body.worker)],
+];
+
+async function refresh() {
+  const results = await Promise.allSettled(PANELS.map(([path, render]) => getJson(path).then(render)));
+  const failed = results.filter((result) => result.status === "rejected");
+  if (failed.length === PANELS.length) {
+    document.getElementById("meta").textContent =
+      "The dashboard server did not answer (" + failed[0].reason.message + "). Is snapl dashboard running?";
+  } else if (failed.length) {
+    console.warn("dashboard panels failed:", failed.map((result) => result.reason.message));
   }
 }
 

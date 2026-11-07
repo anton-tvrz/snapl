@@ -76,7 +76,7 @@ The device view's `data` is `list[DeviceView]`, sorted by role (spines first) an
 `schedule`, `operator`, `unknown` (a `DeployIntent` recorded before FR-016a, whose parent cannot be told, research R5)
 
 ### `RunState` (StrEnum)
-`running`, `succeeded`, `failed`, `cancelled`, `unfinished` (started, no terminal event, and not running in Temporal)
+`running`, `succeeded`, `failed`, `cancelled`, `unfinished` (started, no terminal event, and not confirmed running: Temporal does not list it, a later run of the same id has started, or Temporal could not be asked)
 
 ### `RunView`
 
