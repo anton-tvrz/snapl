@@ -198,3 +198,15 @@ def test_a_failed_run_fails_the_task_with_pytests_code():
         main.test_e2e(MagicMock(spec=Context))
 
     assert exited.value.code == 1
+
+
+def test_the_last_line_is_relative_to_the_current_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("SNAPL_TEST_RUNS_DIR", str(tmp_path / ".snapl" / "test-runs"))
+
+    lab_runs.record_run(_ctx(), "e2e", "pytest")
+
+    last = capsys.readouterr().out.strip().splitlines()[-1]
+    assert re.match(r"^Lab run recorded: \.snapl/test-runs/\d{8}T\d{6}Z-e2e \(passed: 14", last), last

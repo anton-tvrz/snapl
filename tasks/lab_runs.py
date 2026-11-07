@@ -96,6 +96,14 @@ def _write(folder: Path, record: dict[str, Any]) -> None:
     tmp.replace(folder / "run.json")
 
 
+def _shown(folder: Path) -> Path:
+    """The folder relative to where the task was run from, when it is under it."""
+    try:
+        return folder.relative_to(Path.cwd())
+    except ValueError:
+        return folder
+
+
 def _runs_dir() -> Path:
     configured = os.environ.get("SNAPL_TEST_RUNS_DIR")
     return Path(configured) if configured else DEFAULT_RUNS_DIR
@@ -152,5 +160,5 @@ def record_run(ctx, suite: str, command: str) -> int:
             if counts
             else "no test counts"
         )
-        print(f"Lab run recorded: {folder} ({summary})")
+        print(f"Lab run recorded: {_shown(folder)} ({summary})")
     return exit_code
