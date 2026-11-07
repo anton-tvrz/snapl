@@ -14,6 +14,7 @@ no gNMI and no drift computation — a bug in the loop is never fixed here.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import functools
 import getpass
 import re
@@ -644,6 +645,90 @@ def _schedule_status_row(view: Any, use_case: str) -> tuple[str, bool, str]:
         return ("drift schedule", True, "none — snapl schedule create")
     state = f'paused — "{view.note}"' if view.paused and view.note else ("paused" if view.paused else "active")
     return ("drift schedule", True, f"{use_case}: every {format_interval(view.interval)}, {view.mode.value}, {state}")
+
+
+# ---------------------------------------------------------------------------
+# snapl dashboard (spec 010, contracts/cli-dashboard.md)
+# ---------------------------------------------------------------------------
+
+
+def _is_loopback(host: str) -> bool:
+    import ipaddress  # noqa: PLC0415
+
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _port_in_use(host: str, port: int) -> bool:
+    """Whether ``host:port`` is taken, checked the way uvicorn will bind it.
+
+    Checked before serving so a taken port is one clear line, never a uvicorn
+    traceback, and never a silent move to another port (#107).
+    """
+    import socket  # noqa: PLC0415
+
+    with socket.socket(socket.AF_INET6 if ":" in host else socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            sock.bind((host, port))
+        except OSError:
+            return True
+    return False
+
+
+def _serve_dashboard(settings: CliSettings, use_case: str, host: str, port: int) -> None:
+    """Build the sources and serve until interrupted.
+
+    No source is required at start-up (FR-007): each one reports its own
+    failure in the views, and a missing audit file is never created.
+    """
+    import uvicorn  # noqa: PLC0415
+
+    from snapl_presentation.dashboard.app import create_app  # noqa: PLC0415
+    from snapl_presentation.dashboard.sources import AuditSource, SotSource, Sources  # noqa: PLC0415
+
+    sources = Sources(audit=AuditSource(settings.audit_db), sot=SotSource(settings, use_case))
+    app_ = create_app(sources, settings, use_case)
+    server = uvicorn.Server(uvicorn.Config(app_, host=host, port=port, log_level="warning", access_log=False))
+    asyncio.run(server.serve())
+
+
+@app.command()
+def dashboard(
+    use_case: UseCaseOpt = DEFAULT_USE_CASE,
+    port: Annotated[int | None, typer.Option("--port", help="Port to serve on [env: DASHBOARD_PORT].")] = None,
+    host: Annotated[str | None, typer.Option("--host", help="Address to bind [env: DASHBOARD_HOST].")] = None,
+) -> None:
+    """Serve a local, read-only dashboard of the fabric and the loop."""
+    settings = CliSettings.from_env()
+    host = host or settings.dashboard_host
+    port = port if port is not None else settings.dashboard_port
+
+    if not _is_loopback(host):
+        _stderr.print(
+            f"[yellow]warning:[/] the dashboard has no authentication; anyone who can reach {host}:{port} can read it.",
+            highlight=False,
+            soft_wrap=True,
+        )
+    if _port_in_use(host, port):
+        _stderr.print(
+            f"[red]error:[/] port {port} is in use. Set DASHBOARD_PORT or pass --port.",
+            highlight=False,
+            soft_wrap=True,
+        )
+        raise typer.Exit(int(ExitCode.ERROR))
+
+    url_host = f"[{host}]" if ":" in host else host
+    typer.echo(f"Dashboard for {use_case} at http://{url_host}:{port} (read-only, Ctrl-C to stop)")
+    # Nothing runs server-side on the dashboard's behalf: stopping it is the
+    # whole of what Ctrl-C means here, so it is a clean exit.
+    with contextlib.suppress(KeyboardInterrupt):
+        _serve_dashboard(settings, use_case, host, port)
+    raise typer.Exit(int(ExitCode.OK))
 
 
 def main() -> None:

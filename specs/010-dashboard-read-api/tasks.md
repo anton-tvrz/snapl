@@ -120,7 +120,7 @@ Every story depends on these.
 
 ### Tests (write first, verify they fail)
 
-- [ ] T014 [P] [US1] Write the device projection tests in tests/unit/test_presentation/test_dashboard_projections.py:
+- [x] T014 [P] [US1] Write the device projection tests in tests/unit/test_presentation/test_dashboard_projections.py:
   - Feed `project_devices(events, states)` hand-built event lists covering every `DriftState`:
     - in_sync, missing, undesired, missing_and_undesired
     - drifted (event without `undesired_paths`)
@@ -131,7 +131,7 @@ Every story depends on these.
   - `suggested_command` is `snapl reconcile <name>` for forward drift, and `None` with the #65 note for undesired-only drift.
   - Sorting is spines first, then by name.
   - Add one test over `audit_demo_arc.sqlite` asserting the observed states from T013.
-- [ ] T015 [P] [US1] Write tests/unit/test_presentation/test_dashboard_sources.py for `AuditSource`:
+- [x] T015 [P] [US1] Write tests/unit/test_presentation/test_dashboard_sources.py for `AuditSource`:
   - The first `refresh()` reads all events through `query_by_time_range` on a fake `AuditLog`.
   - The next `refresh()` asks from 5 minutes before the newest timestamp seen, and drops duplicates by `event_id`.
   - **Late row**: after a refresh that has read an event at T, the fake log gains an event stamped T − 30 s. The next refresh includes it.
@@ -139,12 +139,12 @@ Every story depends on these.
   - Projections receive events ordered by `timestamp`, whatever order they arrived in.
   - A missing audit file gives `available=False`, a reason naming the path, and remedy `Set SNAPL_AUDIT_DB …`, and the file is not created.
   - The source never calls `append` (the fake raises on it).
-- [ ] T016 [P] [US1] Add `SotSource` tests to test_dashboard_sources.py:
+- [x] T016 [P] [US1] Add `SotSource` tests to test_dashboard_sources.py:
   - Devices and roles come from a fake store's `get_desired_state`.
   - The result is cached for 30 s, using an injected clock.
   - A foreign identity (`is_foreign=True`) gives `available=False` with the identity detail as reason (FR-015).
   - A store error gives `available=False` with the remedy `uv run invoke dev.deps`, and keeps the last good data with `stale=True`.
-- [ ] T017 [P] [US1] Write tests/unit/test_presentation/test_dashboard_app.py, part 1:
+- [x] T017 [P] [US1] Write tests/unit/test_presentation/test_dashboard_app.py, part 1:
   - `create_app(sources)` with fake sources.
   - `GET /api/v1/devices` returns the envelope and a `devices` view.
   - Every route has methods ⊆ {GET, HEAD}, and only the framework's OpenAPI route has `HEAD`. Collect routes recursively through each included router's `original_router.routes`. FastAPI wraps an included router in one entry with an empty method set, so a flat walk of `app.routes` passes vacuously (research R1). Assert the collected set equals the contract's route list.
@@ -152,7 +152,7 @@ Every story depends on these.
   - `/docs` and `/redoc` return 404.
   - `/api/v1/openapi.json` matches the snapshot at tests/unit/test_presentation/fixtures/openapi_v1.json. Create the snapshot from the first green run and review it by hand against contracts/dashboard-api.md.
   - `GET /` returns HTML containing no `http://` or `https://` URL other than relative ones (FR-008).
-- [ ] T018 [P] [US1] Write tests/unit/test_presentation/test_cli_dashboard.py:
+- [x] T018 [P] [US1] Write tests/unit/test_presentation/test_cli_dashboard.py:
   - `snapl dashboard` resolves port and host from options, then env, then defaults.
   - A port already bound (a socket the test opens) exits with `ExitCode.ERROR` and the message from contracts/cli-dashboard.md, without starting uvicorn (patched).
   - `--host 0.0.0.0` prints the no-authentication warning.
@@ -160,27 +160,27 @@ Every story depends on these.
 
 ### Implementation
 
-- [ ] T019 [US1] Implement `project_devices` in packages/presentation/snapl_presentation/dashboard/projections.py as a pure function `(events: Sequence[AuditEvent], states: Sequence[DesiredState] | None, names: Mapping[UUID, str]) -> list[DeviceView]` per research R4. T014 passes.
-- [ ] T020 [US1] Implement in packages/presentation/snapl_presentation/dashboard/sources.py:
+- [x] T019 [US1] Implement `project_devices` in packages/presentation/snapl_presentation/dashboard/projections.py as a pure function `(events: Sequence[AuditEvent], states: Sequence[DesiredState] | None, names: Mapping[UUID, str]) -> list[DeviceView]` per research R4. T014 passes.
+- [x] T020 [US1] Implement in packages/presentation/snapl_presentation/dashboard/sources.py:
   - a small `Cached[T]` helper: TTL, single-flight `asyncio.Lock`, keeps the last good value and marks it stale, injectable clock
   - `AuditSource`: opens `SqliteAuditLog(read_only=True)`. It re-reads a trailing 5-minute window on each refresh and rebuilds from a full read every 15 minutes, swapping the result in only on success. It dedups by `event_id` and orders by `timestamp` (research R3).
   - `SotSource`: `load_states` and `build_store` from `resolve.py`, then `probes.identify_sot`
 
   Each source returns a `View`. T015 and T016 pass.
-- [ ] T021 [US1] Implement `create_app(sources, settings, use_case)` in packages/presentation/snapl_presentation/dashboard/app.py:
+- [x] T021 [US1] Implement `create_app(sources, settings, use_case)` in packages/presentation/snapl_presentation/dashboard/app.py:
   - mount `/api/v1/devices`
   - serve `static/index.html` at `/` via `importlib.resources`
   - set `openapi_url="/api/v1/openapi.json"`, `docs_url=None` and `redoc_url=None`
   - register a 405 handler for non-GET methods
 
   T017 passes (except routes added in later phases).
-- [ ] T022 [US1] Create packages/presentation/snapl_presentation/dashboard/static/index.html:
+- [x] T022 [US1] Create packages/presentation/snapl_presentation/dashboard/static/index.html:
   - one page, inline CSS and JS, no external requests
   - fetches `/api/v1/devices` every 5 s
   - renders a device table with `textContent` only
   - shows each view's `fetched_at` age and any reason or remedy
   - shows `suggested_command` as copyable text, not a button (FR-008 to FR-010)
-- [ ] T023 [US1] Add the `dashboard` command to packages/presentation/snapl_presentation/cli.py per contracts/cli-dashboard.md:
+- [x] T023 [US1] Add the `dashboard` command to packages/presentation/snapl_presentation/cli.py per contracts/cli-dashboard.md:
   - pre-bind port check
   - non-loopback warning
   - builds sources from `CliSettings`
