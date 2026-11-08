@@ -75,7 +75,7 @@ An operator deletes an interface from the Source of Truth and redeploys. The int
 ### Edge Cases
 
 - An interface exists on the device with **only** `enabled=false` and no other values — the unconfigured-port shape. MUST NOT be flagged.
-- An interface exists with `enabled=true` and nothing else. `enabled` alone is not evidence of intent-worthy configuration on a port that may simply be up; it MUST NOT be flagged on its own.
+- An interface exists with `enabled=true` and nothing else. ~~`enabled` alone is not evidence of intent-worthy configuration on a port that may simply be up; it MUST NOT be flagged on its own.~~ *Amended 2026-11-08 (#175)*: on SR Linux 26.3.1 a port with no config entry reports `admin-state disable`, and an entry defaults to `enable` the moment it exists. An enabled port is therefore one somebody created, and it MUST be flagged as `enabled: true`. A disabled bare port is still the unconfigured shape above.
 - A protected interface carries obviously undesired config. It is still not flagged — protection outranks detection, and the operator is told through documentation, not through a drift item they cannot action safely.
 - The device reports an entity whose key cannot be parsed. It is ignored rather than treated as undesired; an unreadable key is not evidence of sprawl.
 - Intent and device agree that an entity should exist, but every managed field is null on both sides. No drift, in either direction.
@@ -86,7 +86,7 @@ An operator deletes an interface from the Source of Truth and redeploys. The int
 
 - **FR-001**: The System MUST compare actual state against desired state in both directions: entities desired but missing or differing (existing behaviour), and entities present on the device but absent from intent (new).
 - **FR-002**: The System MUST treat an actual entity as **undesired** only when it carries at least one managed field with a non-default value. An entity whose managed fields are all unset MUST NOT be reported.
-- **FR-003**: The System MUST NOT treat `enabled` alone as evidence that an entity is configured. Only the value-bearing fields (`description`, `ip_address`, `prefix_length`, `mtu` for interfaces; `peer_asn`, `peer_group` for BGP neighbours) qualify an entity as configured.
+- **FR-003** *(amended 2026-11-08, #175)*: Only the value-bearing fields qualify an entity as configured: `description`, `ip_address`, `prefix_length`, `mtu` and `enabled` for interfaces, and `peer_asn` and `peer_group` for BGP neighbours. A field holding the device's own default doesn't count, per FR-002: `mtu` 9232, and `enabled=false` for an interface. *Was*: `enabled` never counted. The live lab disproved the reason given, that "a port may simply be up". See the amended edge case. For BGP neighbours `enabled` still doesn't count, because a neighbour entry only exists if somebody created it.
 - **FR-004**: The System MUST maintain a **protected set** of entity keys that are never reported as undesired and never removed, containing at minimum the management interface (`mgmt0`) and the system interface (`system0`).
 - **FR-005**: The protected set MUST be defined once, next to the entity field map it belongs to, and MUST be consulted by both detection and (when it lands) removal. Two independent lists that can drift apart are prohibited.
 - **FR-006**: The System MUST emit undesired findings as `DriftItem` entries with `desired=None` and `actual` set to the observed value, so existing consumers need no new model.
@@ -100,7 +100,7 @@ An operator deletes an interface from the Source of Truth and redeploys. The int
 ### Key Entities
 
 - **Managed Field**: A field the executor's templates actually render, and therefore one snapl can be held responsible for. Already enumerated per entity in `ENTITY_FIELD_MAP`.
-- **Value-Bearing Field**: The subset of managed fields whose presence indicates deliberate configuration, excluding `enabled`. The test for "is this entity configured at all?"
+- **Value-Bearing Field**: The subset of managed fields whose presence, with a value other than the device default, indicates deliberate configuration. The test for "is this entity configured at all?" For interfaces it includes `enabled` (FR-003, amended).
 - **Protected Entity**: An entity key snapl never reports as undesired and never deletes, because losing it costs reachability or the device's identity.
 - **Undesired Entity**: An actual entity, not protected, matching a managed entity kind's path shape, absent from intent, carrying at least one value-bearing field.
 

@@ -148,16 +148,20 @@ def test_a_real_change_is_flagged_as_drift(collected: dict) -> None:
 _DESCRIPTION_ONLY_FIXTURE = _FIXTURE.parent / "srlinux_v26_3_1_description_only_port.json"
 
 
-def test_a_description_only_port_reports_just_the_description_as_undesired() -> None:
-    """Real v26.3.1 payload (#122): the device adds its default mtu to a port given only a
-    description, and that default must not read as hand-added config. The untouched
-    neighbouring port stays invisible."""
+def test_a_description_only_port_reports_its_description_and_enabled_as_undesired() -> None:
+    """Real v26.3.1 payload (#122, #175): the device adds its default mtu to a port given
+    only a description, and that default must not read as hand-added config. Creating
+    the entry also enables the port, which is reported (spec 007 FR-003, amended). The
+    untouched neighbouring port reports disabled and stays invisible."""
     collected = json.loads(_DESCRIPTION_ONLY_FIXTURE.read_text())
     normalized = normalize_srlinux_state(collected)
     assert normalized["/interface[name=ethernet-1/7]"]["mtu"] == 9232, "fixture no longer shows the device default"
+    assert normalized["/interface[name=ethernet-1/7]"]["enabled"] is True, "a created entry defaults to enable"
+    assert normalized["/interface[name=ethernet-1/8]"]["enabled"] is False, "an untouched port reports disable"
 
     items = diff_desired_vs_actual(_desired_matching_fixture(), normalized)
 
     assert [(item.path, item.actual) for item in items if item.undesired] == [
-        ("/interface[name=ethernet-1/7]/description", "hand-added-by-operator")
+        ("/interface[name=ethernet-1/7]/description", "hand-added-by-operator"),
+        ("/interface[name=ethernet-1/7]/enabled", True),
     ]

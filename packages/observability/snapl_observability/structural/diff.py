@@ -38,15 +38,17 @@ ENTITY_FIELD_MAP: dict[str, dict[str, Any]] = {
         # exists. A chassis port nobody touched is reported by SR Linux with
         # every one of these unset — a spine reports ~30 of them — so without
         # this test the reverse diff would bury every scan in inventory.
-        # `enabled` is excluded on purpose: a port being up is not evidence
-        # that anyone intended anything by it.
-        "value_fields": ("description", "ip_address", "prefix_length", "mtu"),
-        # Values the device reports on its own once a port carries any config,
-        # with nobody having set them: SR Linux (v26.3.1) adds mtu 9232 to a port
-        # given only a description (#122). A default is not intent, so it neither
-        # marks a port as configured nor appears as an undesired item. Only the
-        # reverse diff consults this — a desired mtu is always compared strictly.
-        "device_defaults": {"mtu": 9232},
+        # `enabled` counts too (#175, spec 007 FR-003 as amended): a port with no
+        # config entry reports admin-state disable, and an entry defaults to
+        # enable the moment it exists, so an enabled port is one somebody made.
+        "value_fields": ("description", "ip_address", "prefix_length", "mtu", "enabled"),
+        # Values the device reports on its own, with nobody having set them. A
+        # default is not intent, so it neither marks a port as configured nor
+        # appears as an undesired item. SR Linux (v26.3.1) adds mtu 9232 to a port
+        # given only a description (#122), and reports every port nobody created
+        # as disabled (#175). Only the reverse diff consults this — a desired
+        # value is always compared strictly.
+        "device_defaults": {"mtu": 9232, "enabled": False},
         # Never reported as undesired, and never deleted once removal lands
         # (#65). These carry real config and are indistinguishable by shape
         # from something an operator added by hand — mgmt0 holds the very
