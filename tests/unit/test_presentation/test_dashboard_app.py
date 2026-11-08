@@ -804,3 +804,64 @@ def test_devices_and_schedule_agree_with_snapl_status_and_schedule_show():
         r["workflow_id"] for r in overview["running"]["data"]
     ]
     assert overview["schedule"]["data"]["schedule"] == shown
+
+
+class SlowSource:
+    """Answers after ``delay`` seconds; counts how often it was asked."""
+
+    def __init__(self, view: View[Any], delay: float) -> None:
+        self.view = view
+        self.delay = delay
+        self.calls = 0
+        self.names: dict = {}
+
+    async def refresh(self) -> View[Any]:
+        import asyncio
+
+        self.calls += 1
+        await asyncio.sleep(self.delay)
+        return self.view
+
+
+def test_a_slow_source_is_fetched_once_in_the_background(monkeypatch: pytest.MonkeyPatch):
+    """A request waits only a short budget for a slow source. The fetch keeps
+    running, and a later request gets its answer, instead of cancelling it and
+    starting again on every poll (which would spend GitHub's rate limit)."""
+    import time
+
+    from snapl_presentation.dashboard import app as app_module
+
+    monkeypatch.setattr(app_module, "REQUEST_BUDGET_S", 0.2)
+    slow = SlowSource(_ci_ok(), delay=0.5)
+    # One event loop for every request, as under uvicorn: a TestClient used
+    # outside `with` runs each request in a loop of its own.
+    with _app_with({SourceName.CI: slow}, settings=CliSettings()) as client:
+        first, elapsed = _overview(client)
+        time.sleep(0.6)
+        second, _ = _overview(client)
+
+    assert elapsed < 2
+    assert first["ci"]["available"] is False
+    assert "still" in first["ci"]["reason"]
+    assert second["ci"]["available"] is True
+    assert second["ci"]["data"]["repo"] == "anton-tvrz/snapl"
+    assert slow.calls == 1
+
+
+def test_ci_is_not_cut_off_by_the_connect_timeout(monkeypatch: pytest.MonkeyPatch):
+    """A cold CI refresh is several GitHub calls in a row, each with its own
+    timeout. SNAPL_CONNECT_TIMEOUT bounds connecting to the stack, not that."""
+    import time
+
+    from snapl_presentation.dashboard import app as app_module
+
+    monkeypatch.setattr(app_module, "REQUEST_BUDGET_S", 0.1)
+    slow = SlowSource(_ci_ok(), delay=0.5)
+
+    with _app_with({SourceName.CI: slow}, settings=CliSettings(connect_timeout=0.3)) as client:
+        _overview(client)
+        time.sleep(0.6)
+        second, _ = _overview(client)
+
+    assert second["ci"]["available"] is True
+    assert slow.calls == 1

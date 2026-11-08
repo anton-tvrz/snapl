@@ -99,15 +99,27 @@ _FAILURE_REMEDY = {
 }
 
 
-class _Reader:
-    """Reads each source within its timeout, and never lets one fail the request.
+# How long one request waits for a source before answering without it. The
+# source's own fetch keeps running (bounded by SNAPL_CONNECT_TIMEOUT), and a
+# later request picks up its answer (SC-003: the page answers within 2 s).
+REQUEST_BUDGET_S = 1.5
+# A source whose fetch is longer than one connection gets its own bound. A cold
+# CI refresh is 3 + N GitHub calls in a row, each with its own 10 s timeout.
+_FETCH_BOUND_S = {SourceName.CI: 60.0}
 
-    A source that raises or does not answer within ``SNAPL_CONNECT_TIMEOUT``
-    becomes an unavailable view with a reason and a remedy (FR-007). If it
-    answered earlier in this process, that answer is kept, marked stale
-    (FR-031). Sources normally report their own failures as views; this
-    catches the ones that do not, so one bad source never takes the others
-    down with it (SC-003).
+
+class _Reader:
+    """Reads each source without letting one fail or stall the request.
+
+    Each source has at most one fetch in flight, shared by every request, and
+    bounded by ``SNAPL_CONNECT_TIMEOUT`` (CI by longer, ``_FETCH_BOUND_S``). A request waits for it only
+    ``REQUEST_BUDGET_S``. If the fetch is still running, the request answers
+    without it and the fetch carries on: cancelling it would make a slow
+    source, such as GitHub on a cold start, start again on every poll.
+
+    A source that raises or times out becomes an unavailable view with a
+    reason and a remedy (FR-007). If it answered earlier in this process, that
+    answer is kept, marked stale (FR-031).
     """
 
     def __init__(self, sources: Sources, timeout: float) -> None:
@@ -119,26 +131,49 @@ class _Reader:
             SourceName.LAB_RUNS: sources.lab_runs,
         }
         self._timeout = timeout
+        self._tasks: dict[SourceName, asyncio.Task[View[Any]]] = {}
         self._last: dict[SourceName, View[Any]] = {}
 
+    def _bound(self, name: SourceName) -> float:
+        return max(self._timeout, _FETCH_BOUND_S.get(name, 0.0))
+
+    def _fetch(self, name: SourceName) -> asyncio.Task[View[Any]]:
+        task = self._tasks.get(name)
+        if task is None:
+            task = asyncio.create_task(asyncio.wait_for(self._sources[name].refresh(), timeout=self._bound(name)))
+            # Its outcome is read by the next request; this keeps an unread
+            # failure from being logged as "never retrieved".
+            task.add_done_callback(lambda done: done.cancelled() or done.exception())
+            self._tasks[name] = task
+        return task
+
     async def read(self, name: SourceName) -> View[Any]:
+        task = self._fetch(name)
+        budget = min(self._timeout, REQUEST_BUDGET_S)
         try:
-            view = await asyncio.wait_for(self._sources[name].refresh(), timeout=self._timeout)
+            view = await asyncio.wait_for(asyncio.shield(task), timeout=budget)
         except TimeoutError:
-            failure = f"{name.value} did not answer within {self._timeout:g}s"
+            if not task.done():
+                return self._without(name, f"still waiting for {name.value} (more than {budget:g}s so far)")
+            del self._tasks[name]
+            return self._without(name, f"{name.value} did not answer within {self._bound(name):g}s")
         except Exception as exc:
-            failure = f"{name.value} failed: {first_line(str(exc)) or type(exc).__name__}"
-        else:
-            if view.data is not None and view.fetched_at is not None:
-                self._last[name] = view
-            return view
+            del self._tasks[name]
+            return self._without(name, f"{name.value} failed: {first_line(str(exc)) or type(exc).__name__}")
+        del self._tasks[name]
+        if view.data is not None and view.fetched_at is not None:
+            self._last[name] = view
+        return view
+
+    def _without(self, name: SourceName, reason: str) -> View[Any]:
+        """An unavailable view, carrying the last answer as stale if there was one."""
         last = self._last.get(name)
         return View(
             source=name,
             available=False,
             stale=last is not None,
             fetched_at=last.fetched_at if last else None,
-            reason=failure,
+            reason=reason,
             remedy=_FAILURE_REMEDY[name],
             data=last.data if last else None,
         )
