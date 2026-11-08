@@ -241,7 +241,7 @@ Every story depends on these.
   - runs table with Web UI links
   - running list
   - schedule panel: mode, interval, paused with reason and actor, next and last run, the repeated-failure warning with its command, and worker pollers
-- [ ] T032 [US2] **Live evidence item 2** (quickstart.md): run the demo arc with the dashboard open, record that each step appeared within 10 s (SC-001), and save the overview JSON for the PR body. **Needs the lab.**
+- [x] T032 [US2] **Live evidence item 2** (quickstart.md): run the demo arc with the dashboard open, record that each step appeared within 10 s (SC-001), and save the overview JSON for the PR body. **Needs the lab.** Done 2026-11-08 at `0c3443f`, evidence in #171's PR. The run found the 500 that PR fixes.
 
 **Checkpoint**: US1 and US2 both work independently. PR C.
 
