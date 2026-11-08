@@ -2,7 +2,8 @@
 
 ## Status
 
-Proposed
+- **Decision 1** (FastAPI and uvicorn, spec 010): Accepted on 2026-11-08, once spec 010's implementation PRs (#154, #160, #162, #164, #166, #168) had merged.
+- **Decisions 2 and 3** (specs 011 and 012): Proposed.
 
 ## Date
 
