@@ -86,6 +86,19 @@ When `.snapl/test-runs/` does not exist, the view is available with no runs, and
 ### `GET /api/v1/sources`
 `Envelope + { sources: list[View[None]] }`. One entry per `SourceName`, giving availability, reason, remedy and `fetched_at` without the data. The page uses it for its status strip, and SC-003 tests use it.
 
+### `GET /api/v1/links`
+`Envelope + { links: list[Link], reason: str | null, remedy: str | null }`, where `Link` is `{ group: "stack" | "github" | "api" | "docs", label, url }`. Added after 010's PRs at the maintainer's request (#173). It is a compatible change under the versioning rules below.
+
+- **Settings:** every URL is built from the settings the server already reads, so the links point at the stack and repo the views describe:
+  - Infrahub: `INFRAHUB_ADDRESS`.
+  - The Temporal Web UI's workflows page and the use case's drift schedule: `TEMPORAL_UI_ADDRESS` and the namespace.
+  - The repository, its pull requests and Actions: the resolved GitHub repo.
+  - The project board: `SNAPL_PROJECT_BOARD_URL`.
+  - The quickstart and the demo scenarios, on `main`.
+- **API links:** these are paths on this dashboard.
+- **No repo:** when no GitHub repo resolves, the repository and docs links are left out, and `reason` and `remedy` say so.
+- **Page:** fetches this route once at load. The settings don't change while the server runs.
+
 ## Versioning
 
 A change is **compatible** when it only adds an optional field, a route, a query parameter, or an enum value that consumers are documented to tolerate. `DriftState`, `RunState`, `Trigger` and `JobResult` consumers must render an unknown value as its raw string.

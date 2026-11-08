@@ -381,6 +381,11 @@ Every story depends on these.
 - [x] T061 [P] Add changelog/101.added.md: "`snapl dashboard`: a local, read-only dashboard and JSON API over the audit trail, Temporal, the Source of Truth, CI and recorded live lab runs (spec 010)." Add changelog/101.changed.md: "`invoke test-e2e` now records each run under `.snapl/test-runs/`; new `invoke test-integration`."
 - [x] T062 Mark ADR-0005 `Accepted` for its 010 section once the implementation PRs merge.
 - [x] T063 Run `uv run invoke lint`, `uv run mypy packages/`, `uv run invoke test-unit` and `uv run invoke scan`. Confirm ≥ 80% coverage on `snapl_presentation/dashboard/` and `tasks/lab_runs.py`.
+- [x] T064 Add `GET /api/v1/links` and a links strip at the top of the page (#173):
+  - Infrahub, the Temporal Web UI, the drift schedule, GitHub (repo, pull requests, Actions, project board), the API, and the quickstart and demo scenarios.
+  - Every URL is built from the server's settings. `SNAPL_PROJECT_BOARD_URL` is new.
+  - The OpenAPI snapshot gains the route.
+  - This was asked for by the maintainer after the T032 run.
 - [ ] T063a Walk the whole of quickstart.md once more and paste the evidence into a PR. **Needs the lab.** (Split from T063 in PR F: the walk needs the maintainer's lab, the checks above do not.)
 
 ---

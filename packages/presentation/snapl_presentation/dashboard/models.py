@@ -360,3 +360,27 @@ class Overview(Envelope):
     worker: View[WorkerStatus]
     ci: View[CiStatus]
     lab: View[LabEvidence]
+
+
+# --- Links (#173) ---------------------------------------------------------------
+
+
+class LinkGroup(StrEnum):
+    STACK = "stack"
+    GITHUB = "github"
+    API = "api"
+    DOCS = "docs"
+
+
+class Link(_Model):
+    group: LinkGroup
+    label: str
+    # Absolute, or a path on this dashboard (the API links).
+    url: str
+
+
+class LinksResponse(Envelope):
+    links: list[Link]
+    # Set when some links are left out, saying which and why.
+    reason: str | None = None
+    remedy: str | None = None

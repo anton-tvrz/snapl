@@ -703,14 +703,15 @@ def _serve_dashboard(settings: CliSettings, use_case: str, host: str, port: int)
     # The checkout the dashboard runs from: its git history and its lab-run
     # records are the ones to describe.
     checkout = Path.cwd()
+    repo = resolve_repo(settings.github_repo, checkout)
     sources = Sources(
         audit=AuditSource(settings.audit_db),
         sot=SotSource(settings, use_case),
         temporal=TemporalSource(settings, use_case),
-        ci=CiSource(resolve_repo(settings.github_repo, checkout), settings.github_token),
+        ci=CiSource(repo, settings.github_token),
         lab_runs=LabRunSource(Path(settings.test_runs_dir), checkout),
     )
-    app_ = create_app(sources, settings, use_case)
+    app_ = create_app(sources, settings, use_case, repo=repo)
     server = uvicorn.Server(uvicorn.Config(app_, host=host, port=port, log_level="warning", access_log=False))
     asyncio.run(server.serve())
 

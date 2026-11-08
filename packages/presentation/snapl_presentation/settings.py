@@ -28,6 +28,10 @@ DEFAULT_TEMPORAL_UI_PORT = 18034
 # Loopback only: the dashboard has no authentication (spec 010 FR-002).
 DEFAULT_DASHBOARD_HOST = "127.0.0.1"
 DEFAULT_TEST_RUNS_DIR = ".snapl/test-runs"
+# The project board is a user-level GitHub project, not linked to the repo, so
+# it cannot be derived from the remote (#173). Empty SNAPL_PROJECT_BOARD_URL
+# keeps the default; there is no way to unset it from the environment.
+DEFAULT_PROJECT_BOARD_URL = "https://github.com/users/anton-tvrz/projects/4"
 
 
 @dataclass(frozen=True)
@@ -51,6 +55,7 @@ class CliSettings:
     github_repo: str | None = None
     github_token: str | None = field(default=None, repr=False)
     test_runs_dir: str = DEFAULT_TEST_RUNS_DIR
+    project_board_url: str | None = DEFAULT_PROJECT_BOARD_URL
 
     @classmethod
     def from_env(cls) -> CliSettings:
@@ -69,4 +74,5 @@ class CliSettings:
             github_repo=os.environ.get("SNAPL_GITHUB_REPO") or None,
             github_token=os.environ.get("GITHUB_TOKEN") or None,
             test_runs_dir=os.environ.get("SNAPL_TEST_RUNS_DIR") or DEFAULT_TEST_RUNS_DIR,
+            project_board_url=os.environ.get("SNAPL_PROJECT_BOARD_URL") or DEFAULT_PROJECT_BOARD_URL,
         )

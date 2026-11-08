@@ -30,11 +30,15 @@
   .sources li { font-size: 12px; }
   .source-up::before { content: "● "; color: var(--ok); }
   .source-down::before { content: "● "; color: var(--bad); }
+  .links { display: flex; flex-wrap: wrap; gap: .25rem 1.25rem; font-size: 12px; margin: 0 0 .5rem; }
+  .links .group { color: var(--muted); margin-right: .35rem; }
+  .links a { margin-right: .6rem; }
   @media (max-width: 40rem) { .wide { display: none; } }
 </style>
 </head>
 <body>
 <h1>snapl dashboard</h1>
+<nav class="links" id="links" aria-label="Links"></nav>
 <div class="meta" id="meta">Loading…</div>
 <ul class="sources" id="sources"></ul>
 <section>
@@ -434,6 +438,25 @@ async function refresh() {
   }
 }
 
+const LINK_GROUPS = { stack: "Stack", github: "GitHub", api: "API", docs: "Docs" };
+
+function renderLinks(body) {
+  const groups = new Map();
+  for (const item of body.links) {
+    if (!groups.has(item.group)) groups.set(item.group, []);
+    groups.get(item.group).push(link(item.label, item.url));
+  }
+  const spans = [...groups].map(([group, anchors]) => {
+    const span = el("span");
+    span.append(el("span", LINK_GROUPS[group] || group, "group"), ...anchors);
+    return span;
+  });
+  if (body.reason) spans.push(el("span", body.reason + " (" + body.remedy + ")"));
+  document.getElementById("links").replaceChildren(...spans);
+}
+
+// The links follow the server's settings, which do not change while it runs.
+getJson("/api/v1/links").then(renderLinks, () => {});
 refresh();
 setInterval(refresh, REFRESH_MS);
 refreshHistory();
