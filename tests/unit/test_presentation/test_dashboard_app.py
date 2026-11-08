@@ -848,6 +848,22 @@ def test_a_slow_source_is_fetched_once_in_the_background(monkeypatch: pytest.Mon
     assert slow.calls == 1
 
 
+def test_requests_that_share_one_fetch_all_get_its_answer():
+    """The page asks for the overview and the sources at the same moment, so
+    several requests wait on one fetch. Each of them gets a 200 with the
+    answer; found live in T032, where the second request to finish got a 500."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    slow = SlowSource(_ci_ok(), delay=0.1)
+
+    with _app_with({SourceName.CI: slow}) as client, ThreadPoolExecutor(max_workers=4) as pool:
+        responses = list(pool.map(lambda _: client.get("/api/v1/overview"), range(4)))
+
+    assert [r.status_code for r in responses] == [200] * 4
+    assert all(r.json()["ci"]["available"] for r in responses)
+    assert slow.calls == 1
+
+
 def test_ci_is_not_cut_off_by_the_connect_timeout(monkeypatch: pytest.MonkeyPatch):
     """A cold CI refresh is several GitHub calls in a row, each with its own
     timeout. SNAPL_CONNECT_TIMEOUT bounds connecting to the stack, not that."""
