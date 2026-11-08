@@ -17,6 +17,8 @@ _DASHBOARD_VARS = (
     "GITHUB_TOKEN",
     "SNAPL_TEST_RUNS_DIR",
     "SNAPL_PROJECT_BOARD_URL",
+    "PROMETHEUS_ADDRESS",
+    "PROMETHEUS_PORT",
 )
 
 
@@ -69,3 +71,21 @@ def test_repr_never_shows_the_github_token(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setenv("GITHUB_TOKEN", "ghp_secret_value")
 
     assert "ghp_secret_value" not in repr(CliSettings.from_env())
+
+
+def test_prometheus_address_defaults_to_the_registry_port() -> None:
+    """Spec 012: the metrics store's host port is 18090 (host-resource-registry)."""
+    assert CliSettings.from_env().prometheus_address == "http://localhost:18090"
+
+
+def test_prometheus_address_follows_the_port_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PROMETHEUS_PORT", "28090")
+
+    assert CliSettings.from_env().prometheus_address == "http://localhost:28090"
+
+
+def test_prometheus_address_wins_over_the_port(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PROMETHEUS_ADDRESS", "http://prom.example:9090")
+    monkeypatch.setenv("PROMETHEUS_PORT", "28090")
+
+    assert CliSettings.from_env().prometheus_address == "http://prom.example:9090"
