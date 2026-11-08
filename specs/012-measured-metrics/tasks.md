@@ -173,13 +173,13 @@ Each PR says `Closes` a task issue under #147 and carries `changelog/147.added.m
 
 ### Tests (write first, verify they fail)
 
-- [ ] T028 [P] [US4] tests/unit/test_tasks/test_history.py, archive:
+- [x] T028 [P] [US4] tests/unit/test_tasks/test_history.py, archive:
   - **Setup:** a temp checkout with an audit DB written by `SqliteAuditLog`, a `.snapl/test-runs/` tree, and a stub HTTP server on a free port. The stub plays both Prometheus (it answers the snapshot POST and creates `snapshots/<name>/` under a temp data dir) and the dashboard (it serves canned JSON).
   - **Contents:** the archive holds every path in contracts/history-tasks.md. `manifest.json` matches data-model.md. The audit copy opens with `sqlite3` and has the same row count.
   - **Snapshot clean-up:** the snapshot directory is removed from the live data dir afterwards.
   - **Missing parts:** with Prometheus down, or the dashboard down, the archive is still written, the part is `present: false` with a reason, and the exit is 1 (FR-018).
   - **Output location:** `SNAPL_ARCHIVE_DIR` is honoured. No `.partial` file is left behind.
-- [ ] T029 [P] [US2] tests/unit/test_tasks/test_history.py, purge:
+- [x] T029 [P] [US2] tests/unit/test_tasks/test_history.py, purge:
   - It refuses while the stub answers on `PROMETHEUS_PORT`.
   - It refuses without a TTY and without `--yes`.
   - Any typed answer other than `purge` deletes nothing.
@@ -188,8 +188,8 @@ Each PR says `Closes` a task issue under #147 and carries `changelog/147.added.m
 
 ### Implementation
 
-- [ ] T030 [US4] tasks/history.py: `archive` (R9). Register it in tasks/__init__.py as the `history` collection.
-- [ ] T031 [US2] tasks/history.py: `purge` (R10).
+- [x] T030 [US4] tasks/history.py: `archive` (R9). Register it in tasks/__init__.py as the `history` collection.
+- [x] T031 [US2] tasks/history.py: `purge` (R10).
 - [ ] T032 [US4] **Needs the lab.** Quickstart item 6: archive with everything up, check all five parts with standard tools, then archive with the dashboard stopped.
 
 ---
