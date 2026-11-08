@@ -63,6 +63,8 @@ CONTRACT_ROUTES = {
     ("/api/v1/sources", "GET"),
     ("/api/v1/openapi.json", "GET"),
     ("/api/v1/openapi.json", "HEAD"),
+    # Prometheus text format for scrapers, outside /api/v1 (spec 012 R8).
+    ("/metrics", "GET"),
 }
 
 
@@ -1134,3 +1136,97 @@ def test_overview_never_reads_prometheus_but_sources_does():
     entry = {e["source"]: e for e in client.get("/api/v1/sources").json()["sources"]}["prometheus"]
     assert calls == ["refresh"]
     assert entry["available"] is True
+
+
+# --- GET /metrics, the dashboard's own exposition (spec 012, T018) -------------
+
+_SAMPLE = re.compile(r'^(snapl_dashboard_source_[a-z_]+)\{source="([a-z_]+)"\} (\S+)$', re.MULTILINE)
+
+
+def _samples(text: str) -> dict[tuple[str, str], float]:
+    return {(name, source): float(value) for name, source, value in _SAMPLE.findall(text)}
+
+
+def test_metrics_exposition_is_prometheus_text_and_reflects_the_last_reads():
+    client = _app_with({SourceName.SOT: RaisingSource()})
+    client.get("/api/v1/sources")
+
+    response = client.get("/metrics")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/plain; version=0.0.4")
+    samples = _samples(response.text)
+    up = {source: value for (name, source), value in samples.items() if name == "snapl_dashboard_source_up"}
+    assert up == {name.value: (0.0 if name is SourceName.SOT else 1.0) for name in SourceName}
+    durations = [v for (name, _), v in samples.items() if name.endswith("_fetch_duration_milliseconds")]
+    assert len(durations) == len(SourceName)
+    assert all(v >= 0 for v in durations)
+
+
+def test_metrics_exposition_omits_sources_not_yet_read():
+    client = _app_with({})
+
+    assert _samples(client.get("/metrics").text) == {}
+
+    client.get("/api/v1/ci")
+    assert {source for _, source in _samples(client.get("/metrics").text)} == {"ci"}
+
+
+def test_metrics_exposition_costs_no_fetch():
+    slow = SlowSource(_ci_ok(), delay=0)
+    client = _app_with({SourceName.CI: slow})
+    client.get("/api/v1/ci")
+
+    client.get("/metrics")
+    client.get("/metrics")
+
+    assert slow.calls == 1
+
+
+def test_a_metrics_query_counts_as_a_prometheus_read():
+    from snapl_presentation.dashboard.sources import SourceUnavailable
+
+    client = _client(prometheus=FakePrometheus(fail=SourceUnavailable("bad_data: nope", "check it")))
+    client.get("/api/v1/metrics/worker-up")
+
+    assert _samples(client.get("/metrics").text)[("snapl_dashboard_source_up", "prometheus")] == 0.0
+
+
+@pytest.mark.parametrize("method", ["HEAD", "POST", "PUT", "PATCH", "DELETE"])
+def test_metrics_exposition_only_answers_get(method: str):
+    assert _client().request(method, "/metrics").status_code == 405
+
+
+def test_metrics_exposition_is_not_in_the_openapi_document():
+    paths = _client().get("/api/v1/openapi.json").json()["paths"]
+
+    assert "/metrics" not in paths
+
+
+# --- the page's Metrics section (spec 012, T019) --------------------------------
+
+
+def test_page_fetches_every_metrics_view():
+    page = _client().get("/").text
+
+    assert "/api/v1/metrics/" in page
+    for view in MetricsViewName:
+        assert f'"{view.value}"' in page, view
+
+
+def test_page_has_a_range_selector_for_1h_24h_and_7d():
+    page = _client().get("/").text
+
+    for value in ("1h", "24h", "7d"):
+        assert f'<option value="{value}"' in page
+
+
+def test_page_remembers_the_range_only_inside_try_catch():
+    """localStorage can throw (private windows, blocked storage); the page must not."""
+    page = _client().get("/").text
+
+    uses = [m.start() for m in re.finditer(r"localStorage", page)]
+    assert uses
+    for at in uses:
+        before = page[:at]
+        assert before.rfind("try {") > before.rfind("}"), "every localStorage use sits directly in a try block"

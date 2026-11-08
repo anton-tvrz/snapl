@@ -119,23 +119,23 @@ Each PR says `Closes` a task issue under #147 and carries `changelog/147.added.m
 
 ### Tests (write first, verify they fail)
 
-- [ ] T017 [P] [US3] tests/unit/test_presentation/test_dashboard_exposition.py:
+- [x] T017 [P] [US3] tests/unit/test_presentation/test_dashboard_exposition.py:
   - `render_exposition(outcomes)` produces valid text format 0.0.4: `# HELP` and `# TYPE` lines, then one sample per source for `snapl_dashboard_source_up` (1/0) and `snapl_dashboard_source_fetch_duration_milliseconds`.
   - A source never fetched is omitted.
   - Parse the output with a minimal line parser in the test to prove the shape.
-- [ ] T018 [US3] Extend tests/unit/test_presentation/test_dashboard_app.py:
+- [x] T018 [US3] Extend tests/unit/test_presentation/test_dashboard_app.py:
   - `GET /metrics` returns `text/plain; version=0.0.4` and reflects the last outcome of each source after a `/api/v1/sources` request. One source fails, so it shows 0.
   - HEAD returns 405.
   - The route isn't in the OpenAPI document.
-- [ ] T019 [P] [US1] Extend the page tests in test_dashboard_app.py:
+- [x] T019 [P] [US1] Extend the page tests in test_dashboard_app.py:
   - The page fetches `/api/v1/metrics/` for each view.
   - It contains a range selector with `1h`, `24h` and `7d`.
   - It still has no absolute URL and no `innerHTML`.
 
 ### Implementation
 
-- [ ] T020 [US3] `_Reader` records each source's last outcome (answered or not, and the duration in ms) without an extra fetch. Add packages/presentation/snapl_presentation/dashboard/exposition.py and the `GET /metrics` route (R8).
-- [ ] T021 [US1] packages/presentation/snapl_presentation/dashboard/static/index.html, the Metrics section (contracts/metrics-api.md, "Page"):
+- [x] T020 [US3] `_Reader` records each source's last outcome (answered or not, and the duration in ms) without an extra fetch. Add packages/presentation/snapl_presentation/dashboard/exposition.py and the `GET /metrics` route (R8).
+- [x] T021 [US1] packages/presentation/snapl_presentation/dashboard/static/index.html, the Metrics section (contracts/metrics-api.md, "Page"):
   - one panel per view, refreshed every 30 s;
   - small inline SVG line charts built with `createElementNS`;
   - up/down strips for `worker-up` and `source-health`;

@@ -12,17 +12,19 @@ inside a ``200`` (FR-005, FR-007).
 from __future__ import annotations
 
 import asyncio
+import time
 from datetime import datetime, timedelta
 from importlib import resources
 from typing import TYPE_CHECKING, Annotated, Any
 from urllib.parse import quote
 
 from fastapi import APIRouter, FastAPI, HTTPException, Path, Query
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse
 from pydantic import AwareDatetime  # noqa: TC002 — FastAPI resolves query types at runtime
 
 from snapl_orchestrator.models import drift_schedule_id
 from snapl_presentation.dashboard.ci import REPO_REMEDY
+from snapl_presentation.dashboard.exposition import CONTENT_TYPE, SourceOutcome, render_exposition
 from snapl_presentation.dashboard.models import (
     Bucket,
     CiStatus,
@@ -152,6 +154,9 @@ class _Reader:
         # one of its reads (a metrics view over a range, spec 012).
         self._tasks: dict[Hashable, asyncio.Task[View[Any]]] = {}
         self._last: dict[Hashable, View[Any]] = {}
+        # How each source's latest finished fetch went, for GET /metrics
+        # (spec 012 R8). Recorded as fetches finish, so reading it costs none.
+        self.outcomes: dict[SourceName, SourceOutcome] = {}
 
     def _bound(self, name: SourceName) -> float:
         return max(self._timeout, _FETCH_BOUND_S.get(name, 0.0))
@@ -161,12 +166,19 @@ class _Reader:
     ) -> asyncio.Task[View[Any]]:
         task = self._tasks.get(key)
         if task is None:
+            started = time.monotonic()
             task = asyncio.create_task(asyncio.wait_for(load(), timeout=self._bound(name)))
-            # Its outcome is read by the next request; this keeps an unread
-            # failure from being logged as "never retrieved".
-            task.add_done_callback(lambda done: done.cancelled() or done.exception())
+            # Retrieving the exception here also keeps an unread failure from
+            # being logged as "never retrieved".
+            task.add_done_callback(lambda done: self._record(name, done, started))
             self._tasks[key] = task
         return task
+
+    def _record(self, name: SourceName, done: asyncio.Task[View[Any]], started: float) -> None:
+        if done.cancelled():
+            return
+        answered = done.exception() is None and done.result().available
+        self.outcomes[name] = SourceOutcome(answered=answered, duration_ms=(time.monotonic() - started) * 1000)
 
     def _forget(self, key: Hashable, task: asyncio.Task[View[Any]]) -> None:
         """Let the next request start a new fetch. Several requests can wait on
@@ -655,6 +667,15 @@ def create_app(
         return compose_links(settings, served, repo, generated_at=clock())
 
     app.include_router(router)
+
+    @app.get("/metrics", response_class=PlainTextResponse, include_in_schema=False)
+    async def exposition() -> PlainTextResponse:
+        """The dashboard's own metrics for Prometheus to scrape (spec 012 R8).
+
+        Outside /api/v1 because that is where scrapers look, and outside the
+        OpenAPI document because it isn't part of the JSON contract.
+        """
+        return PlainTextResponse(render_exposition(reader.outcomes), media_type=CONTENT_TYPE)
 
     page = _page()
 
