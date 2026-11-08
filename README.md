@@ -38,7 +38,8 @@ Single vendor: Nokia SR Linux. Vendor-specific code is confined to a few named p
 
 - **Removal is not implemented (#65).** Apply is a merge, so config deleted from intent stays on the device. snapl *detects* that undesired config and reports it, but does not remove it. Convergence is true for additions and changes.
 - **Self-healing is opt-in, per use case.** `demo.up` creates a report-only drift schedule (every 5 minutes); scheduled repairs happen only after `snapl schedule mode remediate`. A scheduled repair never removes config (#65), and a failed repair is retried every run until an operator switches back to report (#136).
-- **A local, read-only dashboard, not metrics.** `snapl dashboard` serves a page and a JSON API on 127.0.0.1: device drift, workflow runs, the drift schedule, history from the audit trail, CI status, and recorded live lab runs (spec 010). There are no metrics yet (#147) and no designed UI yet (#146), and the dashboard has no authentication.
+- **A local, read-only dashboard.** `snapl dashboard` serves a page and a JSON API on 127.0.0.1: device drift, workflow runs, the drift schedule, history from the audit trail, CI status, and recorded live lab runs (spec 010). It has no designed UI yet (#146) and no authentication.
+- **Lab metrics, not monitoring.** Prometheus in the dev stack records how long workflows and gNMI calls take, gNMI errors, how long activities wait for a worker, and whether the worker and the dashboard's sources were up (spec 012). The dashboard charts them. There is no alerting, and the numbers describe a lab on one machine.
 - **Config-level verification only.** Intent describes configuration. Operational expectations (BGP sessions established, interfaces oper-up) are not yet checked.
 
 ## Quick start
@@ -56,6 +57,13 @@ uv run snapl deploy spine-01
 uv run snapl scan
 uv run snapl schedule show        # the report-only drift schedule demo.up created
 uv run snapl dashboard            # http://127.0.0.1:18030, read-only, in its own terminal
+```
+
+Metrics and the audit trail outlive `demo.reset`: they live under `.snapl/` and the reset deletes only Docker volumes. To keep them beyond the machine, or to start the metrics over:
+
+```bash
+uv run invoke history.archive     # audit DB, metrics snapshot, lab runs and a dashboard export, in one tarball
+uv run invoke history.purge       # delete the stored metrics (stop the stack first), and nothing else
 ```
 
 [`docs/demo-scenarios.md`](docs/demo-scenarios.md) walks through the full demo: deploy, inducing drift by hand, scanning, reconciling, and reading the audit trail.

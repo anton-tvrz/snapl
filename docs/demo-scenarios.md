@@ -317,6 +317,29 @@ The dashboard is local and read-only, and has no authentication, so keep it on 1
 
 ---
 
+## Scenario 11 — How long did it take? (measured metrics)
+
+**Story:** "Every deploy and scan leaves a timing behind, and the dashboard charts it."
+
+Prometheus starts with the stack (`demo.up`). Keep the worker and `snapl dashboard` running, and open the dashboard's Metrics section with the range at 1 h.
+
+```bash
+uv run snapl deploy spine-01
+uv run snapl scan
+```
+
+**Point at:**
+- gNMI call duration: one line per device and operation. The deploy adds `configure` for spine-01, and the scan adds `collect` for every device. Prometheus scrapes every 15 s and each line is a 95th percentile over at least a minute, so give it a minute to settle.
+- Workflow duration: `DeployIntent` and `ScanDrift` end to end, gNMI calls included.
+- Worker up: stop the worker and its strip turns red within a minute. Start it again and it turns green.
+- Dashboard sources up: the strip records when each source stopped answering, so an outage stays visible after it ends. It only moves while the page is open, because the page's polling is what reads the sources.
+
+**Expect:** `curl -s localhost:18091/metrics | grep snapl_gnmi_call_duration_count` prints the counters the gNMI panels are built from, one per device, operation and outcome.
+
+The numbers come from a six-node lab on one machine. Quote them as that.
+
+---
+
 ## Suggested 10-minute demo arc
 
 | # | beat | command | *min* |
@@ -348,7 +371,7 @@ snapl scan; echo $?   # 0 clean, 2 drifted, 1 something broke
 
 ```bash
 uv run invoke demo.check     # is it still ready? (safe anytime, changes nothing)
-uv run invoke demo.reset     # destroy lab + stack + volumes
+uv run invoke demo.reset     # destroy lab + stack + volumes (.snapl/ stays: metrics, lab runs, archives)
 uv run invoke demo.up        # rebuild from scratch
 ```
 
@@ -358,6 +381,10 @@ One thing resets on its own and will surprise you otherwise:
   SQLite on the `temporal_data` volume, so the Web UI keeps every workflow you
   ran. `demo.reset` does wipe it, along with every other volume, so a rehearsal
   that starts from `reset` starts with an empty UI.
+- **Metrics survive `demo.reset`.** Prometheus keeps its data in
+  `.snapl/prometheus/`, a host directory rather than a volume, so the charts
+  still show earlier rehearsals. `uv run invoke history.purge` deletes them when
+  you want an empty chart.
 - **SR Linux nodes keep their pushed config** across a container restart, but
   not across `lab-destroy`. After a redeploy the fabric is unconfigured, so
   Scenario 1's deploy is doing real work again — which is what you want.
