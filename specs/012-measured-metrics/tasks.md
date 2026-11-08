@@ -150,21 +150,21 @@ Each PR says `Closes` a task issue under #147 and carries `changelog/147.added.m
 
 ### Tests (write first, verify they fail)
 
-- [ ] T022 [P] [US2] Extend tests/unit/test_infrastructure/test_compose.py for a `prometheus` service:
+- [x] T022 [P] [US2] Extend tests/unit/test_infrastructure/test_compose.py for a `prometheus` service:
   - image exactly `prom/prometheus:v3.10.0`;
   - port `127.0.0.1:${PROMETHEUS_PORT:-18090}:9090`;
   - a bind mount from `../.snapl/prometheus` to `/prometheus`, and no named volume for it;
   - flags include `--storage.tsdb.retention.size=` and `--web.enable-admin-api`, and none includes `retention.time`;
   - `extra_hosts` has `host.docker.internal:host-gateway`.
-- [ ] T023 [P] [US2] A new test file next to test_compose.py for development/prometheus/prometheus.yml: the jobs `snapl-worker` → `host.docker.internal:18091` and `snapl-dashboard` → `host.docker.internal:18030`, at a 15 s interval.
-- [ ] T024 [P] [US2] Extend tests/unit/test_tasks/test_dev.py and test_demo.py:
+- [x] T023 [P] [US2] A new test file next to test_compose.py for development/prometheus/prometheus.yml: the jobs `snapl-worker` → `host.docker.internal:18091` and `snapl-dashboard` → `host.docker.internal:18030`, at a 15 s interval.
+- [x] T024 [P] [US2] Extend tests/unit/test_tasks/test_dev.py and test_demo.py:
   - `dev.deps` creates `.snapl/prometheus` (mode 0777) before `compose up`.
   - No command run by `dev.down(volumes=True)` or `demo.reset` names `.snapl` (FR-009).
 
 ### Implementation
 
-- [ ] T025 [US2] development/docker-compose.yml: the `prometheus` service (contracts/history-tasks.md, "Compose"). development/prometheus/prometheus.yml.
-- [ ] T026 [US2] tasks/dev.py: `deps` creates the directory. dev/knowledge/host-resource-registry.md: move 18090 and 18091 from reserved to in use.
+- [x] T025 [US2] development/docker-compose.yml: the `prometheus` service (contracts/history-tasks.md, "Compose"). development/prometheus/prometheus.yml.
+- [x] T026 [US2] tasks/dev.py: `deps` creates the directory. dev/knowledge/host-resource-registry.md: move 18090 and 18091 from reserved to in use.
 - [ ] T027 [US2] **Needs the lab.** Run `invoke dev.deps`, then confirm Prometheus is ready on 18090, both targets are listed, and `.snapl/prometheus/` holds data. Paste `curl localhost:18090/api/v1/targets | jq '.data.activeTargets[] | {job: .labels.job, health}'` into the PR.
 
 ---
