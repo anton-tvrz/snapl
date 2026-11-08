@@ -83,7 +83,7 @@ Each PR says `Closes` a task issue under #147 and carries `changelog/147.added.m
 
 ### Tests (write first, verify they fail)
 
-- [ ] T011 [P] [US1] tests/unit/test_presentation/test_dashboard_prometheus.py, against the captured fixtures through `httpx.MockTransport`:
+- [x] T011 [P] [US1] tests/unit/test_presentation/test_dashboard_prometheus.py, against the captured fixtures through `httpx.MockTransport`:
   - `parse_matrix` turns `range_gnmi_duration_p95.json` into `MetricSeries` with only the view's labels. `__name__`, `job` and `instance` are dropped. String values parse to float.
   - `NaN`/`+Inf`/`-Inf` become `None`; synthesise these from a captured file by replacing one value, and say so in the test.
   - `range_absent_metric.json` gives an empty series list with the note "no data in range".
@@ -92,7 +92,7 @@ Each PR says `Closes` a task issue under #147 and carries `changelog/147.added.m
   - `choose_step(start, end, requested)` never yields more than 10,000 points, and returns the requested step when it fits (FR-013).
   - Each `MetricsViewName` maps to exactly the query in data-model.md, with `$ns` and `$uc` from settings. A test asserts that no request parameter reaches the query string except `start`, `end` and `step` (FR-011).
   - The cache: two calls within 15 s for the same rounded range make one HTTP request.
-- [ ] T012 [US1] Extend tests/unit/test_presentation/test_dashboard_app.py:
+- [x] T012 [US1] Extend tests/unit/test_presentation/test_dashboard_app.py:
   - `GET /api/v1/metrics/gnmi-duration` returns `MetricsResponse` with `source: "prometheus"`.
   - An unknown view returns 404, `start >= end` returns 422, and a naive datetime returns 422.
   - With a failing `PrometheusSource`, it returns 200 and `available: false` with the remedy (FR-012).
@@ -103,10 +103,10 @@ Each PR says `Closes` a task issue under #147 and carries `changelog/147.added.m
 
 ### Implementation
 
-- [ ] T013 [US1] packages/presentation/snapl_presentation/dashboard/models.py: `SourceName.PROMETHEUS`, `MetricsViewName`, `MetricPoint`, `MetricSeries`, `MetricsData` and `MetricsResponse` (data-model.md). Add the prometheus remedy to `_FAILURE_REMEDY` in app.py.
-- [ ] T014 [US1] packages/presentation/snapl_presentation/dashboard/prometheus.py: `VIEWS`, `choose_step`, `parse_matrix` and `PrometheusSource(address, namespace, use_case)` with the keyed 15 s cache (R7). `refresh()` implements 010's source protocol by probing `GET /-/ready` and returning a `View[None]`, which is what `/sources` shows. The metrics routes call a separate `query(view, start, end, step)` method. Add `prometheus` to `Sources` and wire it in `cli.py`'s `_serve_dashboard`.
-- [ ] T015 [US1] app.py: the `/api/v1/metrics/{view}` route through `_Reader` (keyed per view and range, so one slow range doesn't block another). Regenerate tests/unit/test_presentation/fixtures/openapi_v1.json and check by script that the change is additive only, as done in #174. **Expected:** the `SourceName` schema changes because it gains `prometheus`. That is the compatible change T016 records, not a contract break, so don't stop the PR for it. Any other changed schema is a break.
-- [ ] T016 [US5] specs/010-dashboard-read-api/contracts/dashboard-api.md:
+- [x] T013 [US1] packages/presentation/snapl_presentation/dashboard/models.py: `SourceName.PROMETHEUS`, `MetricsViewName`, `MetricPoint`, `MetricSeries`, `MetricsData` and `MetricsResponse` (data-model.md). Add the prometheus remedy to `_FAILURE_REMEDY` in app.py.
+- [x] T014 [US1] packages/presentation/snapl_presentation/dashboard/prometheus.py: `VIEWS`, `choose_step`, `parse_matrix` and `PrometheusSource(address, namespace, use_case)` with the keyed 15 s cache (R7). `refresh()` implements 010's source protocol by probing `GET /-/ready` and returning a `View[None]`, which is what `/sources` shows. The metrics routes call a separate `query(view, start, end, step)` method. Add `prometheus` to `Sources` and wire it in `cli.py`'s `_serve_dashboard`.
+- [x] T015 [US1] app.py: the `/api/v1/metrics/{view}` route through `_Reader` (keyed per view and range, so one slow range doesn't block another). Regenerate tests/unit/test_presentation/fixtures/openapi_v1.json and check by script that the change is additive only, as done in #174. **Expected:** the `SourceName` schema changes because it gains `prometheus`. That is the compatible change T016 records, not a contract break, so don't stop the PR for it. Any other changed schema is a break.
+- [x] T016 [US5] specs/010-dashboard-read-api/contracts/dashboard-api.md:
   - Add `SourceName` to the enums consumers must tolerate.
   - Add a dated note pointing at 012's contracts/metrics-api.md (research R7).
   - List this under "Spec amendments" in the PR body.

@@ -693,6 +693,7 @@ def _serve_dashboard(settings: CliSettings, use_case: str, host: str, port: int)
     from snapl_presentation.dashboard.app import create_app  # noqa: PLC0415
     from snapl_presentation.dashboard.ci import CiSource, resolve_repo  # noqa: PLC0415
     from snapl_presentation.dashboard.lab_runs import LabRunSource  # noqa: PLC0415
+    from snapl_presentation.dashboard.prometheus import PrometheusSource  # noqa: PLC0415
     from snapl_presentation.dashboard.sources import (  # noqa: PLC0415
         AuditSource,
         SotSource,
@@ -710,6 +711,9 @@ def _serve_dashboard(settings: CliSettings, use_case: str, host: str, port: int)
         temporal=TemporalSource(settings, use_case),
         ci=CiSource(repo, settings.github_token),
         lab_runs=LabRunSource(Path(settings.test_runs_dir), checkout),
+        prometheus=PrometheusSource(
+            settings.prometheus_address, settings.temporal_namespace, use_case, timeout=settings.connect_timeout
+        ),
     )
     app_ = create_app(sources, settings, use_case, repo=repo)
     server = uvicorn.Server(uvicorn.Config(app_, host=host, port=port, log_level="warning", access_log=False))

@@ -17,7 +17,7 @@ from importlib import resources
 from typing import TYPE_CHECKING, Annotated, Any
 from urllib.parse import quote
 
-from fastapi import APIRouter, FastAPI, HTTPException, Query
+from fastapi import APIRouter, FastAPI, HTTPException, Path, Query
 from fastapi.responses import HTMLResponse
 from pydantic import AwareDatetime  # noqa: TC002 — FastAPI resolves query types at runtime
 
@@ -32,6 +32,9 @@ from snapl_presentation.dashboard.models import (
     Link,
     LinkGroup,
     LinksResponse,
+    MetricsData,
+    MetricsResponse,
+    MetricsViewName,
     Overview,
     RunView,
     ScheduleStatus,
@@ -50,11 +53,12 @@ from snapl_presentation.dashboard.projections import (
     project_runs,
     project_series,
 )
-from snapl_presentation.dashboard.sources import AUDIT_REMEDY, STACK_REMEDY, Sources, utcnow
+from snapl_presentation.dashboard.prometheus import SCRAPE_INTERVAL_S, plan_range
+from snapl_presentation.dashboard.sources import AUDIT_REMEDY, STACK_REMEDY, Sources, SourceUnavailable, utcnow
 from snapl_presentation.exceptions import first_line
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Awaitable, Callable, Hashable
 
     from snapl_presentation.settings import CliSettings
 
@@ -102,6 +106,7 @@ _FAILURE_REMEDY = {
     SourceName.TEMPORAL: STACK_REMEDY,
     SourceName.CI: "export GITHUB_TOKEN=…",
     SourceName.LAB_RUNS: "Check SNAPL_TEST_RUNS_DIR, or record a run: uv run invoke test-e2e",
+    SourceName.PROMETHEUS: STACK_REMEDY,
 }
 
 
@@ -112,6 +117,11 @@ REQUEST_BUDGET_S = 1.5
 # A source whose fetch is longer than one connection gets its own bound. A cold
 # CI refresh is 3 + N GitHub calls in a row, each with its own 10 s timeout.
 _FETCH_BOUND_S = {SourceName.CI: 60.0}
+
+# The metrics route's limits (spec 012 contracts/metrics-api.md).
+_METRICS_DEFAULT_RANGE = timedelta(hours=1)
+_METRICS_MAX_RANGE = timedelta(days=400)
+_METRICS_DEFAULT_POINTS = 240
 
 
 class _Reader:
@@ -135,59 +145,75 @@ class _Reader:
             SourceName.TEMPORAL: sources.temporal,
             SourceName.CI: sources.ci,
             SourceName.LAB_RUNS: sources.lab_runs,
+            SourceName.PROMETHEUS: sources.prometheus,
         }
         self._timeout = timeout
-        self._tasks: dict[SourceName, asyncio.Task[View[Any]]] = {}
-        self._last: dict[SourceName, View[Any]] = {}
+        # Keyed by SourceName for a source's refresh, or by a longer key for
+        # one of its reads (a metrics view over a range, spec 012).
+        self._tasks: dict[Hashable, asyncio.Task[View[Any]]] = {}
+        self._last: dict[Hashable, View[Any]] = {}
 
     def _bound(self, name: SourceName) -> float:
         return max(self._timeout, _FETCH_BOUND_S.get(name, 0.0))
 
-    def _fetch(self, name: SourceName) -> asyncio.Task[View[Any]]:
-        task = self._tasks.get(name)
+    def _fetch(
+        self, key: Hashable, name: SourceName, load: Callable[[], Awaitable[View[Any]]]
+    ) -> asyncio.Task[View[Any]]:
+        task = self._tasks.get(key)
         if task is None:
-            task = asyncio.create_task(asyncio.wait_for(self._sources[name].refresh(), timeout=self._bound(name)))
+            task = asyncio.create_task(asyncio.wait_for(load(), timeout=self._bound(name)))
             # Its outcome is read by the next request; this keeps an unread
             # failure from being logged as "never retrieved".
             task.add_done_callback(lambda done: done.cancelled() or done.exception())
-            self._tasks[name] = task
+            self._tasks[key] = task
         return task
 
-    def _forget(self, name: SourceName, task: asyncio.Task[View[Any]]) -> None:
+    def _forget(self, key: Hashable, task: asyncio.Task[View[Any]]) -> None:
         """Let the next request start a new fetch. Several requests can wait on
         one fetch and each gets here once it is done; only the first removes
         it, and never a newer fetch that a later request has already started."""
-        if self._tasks.get(name) is task:
-            del self._tasks[name]
+        if self._tasks.get(key) is task:
+            del self._tasks[key]
 
     async def read(self, name: SourceName) -> View[Any]:
-        task = self._fetch(name)
+        return await self.read_keyed(name, name, self._sources[name].refresh)
+
+    async def read_keyed(self, key: Hashable, name: SourceName, load: Callable[[], Awaitable[View[Any]]]) -> View[Any]:
+        """Read through ``load``, single-flight per ``key``, within the request budget.
+
+        A ``SourceUnavailable`` keeps its own reason and remedy, such as
+        Prometheus's error text (spec 012 FR-012).
+        """
+        task = self._fetch(key, name, load)
         budget = min(self._timeout, REQUEST_BUDGET_S)
         try:
             view = await asyncio.wait_for(asyncio.shield(task), timeout=budget)
         except TimeoutError:
             if not task.done():
-                return self._without(name, f"still waiting for {name.value} (more than {budget:g}s so far)")
-            self._forget(name, task)
-            return self._without(name, f"{name.value} did not answer within {self._bound(name):g}s")
+                return self._without(key, name, f"still waiting for {name.value} (more than {budget:g}s so far)")
+            self._forget(key, task)
+            return self._without(key, name, f"{name.value} did not answer within {self._bound(name):g}s")
+        except SourceUnavailable as exc:
+            self._forget(key, task)
+            return self._without(key, name, exc.reason, exc.remedy)
         except Exception as exc:
-            self._forget(name, task)
-            return self._without(name, f"{name.value} failed: {first_line(str(exc)) or type(exc).__name__}")
-        self._forget(name, task)
+            self._forget(key, task)
+            return self._without(key, name, f"{name.value} failed: {first_line(str(exc)) or type(exc).__name__}")
+        self._forget(key, task)
         if view.data is not None and view.fetched_at is not None:
-            self._last[name] = view
+            self._last[key] = view
         return view
 
-    def _without(self, name: SourceName, reason: str) -> View[Any]:
+    def _without(self, key: Hashable, name: SourceName, reason: str, remedy: str | None = None) -> View[Any]:
         """An unavailable view, carrying the last answer as stale if there was one."""
-        last = self._last.get(name)
+        last = self._last.get(key)
         return View(
             source=name,
             available=False,
             stale=last is not None,
             fetched_at=last.fetched_at if last else None,
             reason=reason,
-            remedy=_FAILURE_REMEDY[name],
+            remedy=remedy or _FAILURE_REMEDY[name],
             data=last.data if last else None,
         )
 
@@ -577,6 +603,50 @@ def create_app(
                 for view in views
             ],
         )
+
+    @router.get("/metrics/{view}", response_model=MetricsResponse)
+    async def metrics(
+        view: Annotated[
+            str,
+            Path(
+                description="A named view. Any other name is 404.",
+                json_schema_extra={"enum": [name.value for name in MetricsViewName]},
+            ),
+        ],
+        requested: UseCaseQuery = None,
+        start: Annotated[AwareDatetime | None, Query(description="Defaults to end - 1h.")] = None,
+        end: Annotated[AwareDatetime | None, Query(description="Defaults to now.")] = None,
+        step: Annotated[
+            int | None, Query(ge=1, description="Seconds. Defaults to max(15, range / 240); raised when needed.")
+        ] = None,
+    ) -> MetricsResponse:
+        """One named metrics view from Prometheus (spec 012, contracts/metrics-api.md).
+
+        The request picks the view and the range; the query is the server's
+        (FR-011). Prometheus being down or refusing the query is a view with
+        `available: false`, never an HTTP error (FR-012).
+        """
+        served = _check_use_case(requested)
+        try:
+            name = MetricsViewName(view)
+        except ValueError:
+            raise HTTPException(status_code=404, detail=f"no metrics view named {view!r}") from None
+        range_end = end or clock()
+        range_start = start or range_end - _METRICS_DEFAULT_RANGE
+        if range_start >= range_end:
+            raise HTTPException(status_code=422, detail="start must be before end")
+        if range_end - range_start > _METRICS_MAX_RANGE:
+            raise HTTPException(status_code=422, detail="the range may span at most 400 days")
+        span_s = int((range_end - range_start).total_seconds())
+        plan = plan_range(range_start, range_end, step or max(SCRAPE_INTERVAL_S, span_s // _METRICS_DEFAULT_POINTS))
+
+        async def load() -> View[MetricsData]:
+            data = await sources.prometheus.query(name, plan)
+            return View(source=SourceName.PROMETHEUS, available=True, fetched_at=clock(), data=data)
+
+        # Keyed per view and range, so one slow range never blocks another.
+        metrics_view = await reader.read_keyed((SourceName.PROMETHEUS, name, plan), SourceName.PROMETHEUS, load)
+        return MetricsResponse(use_case=served, generated_at=clock(), metrics=metrics_view)
 
     @router.get("/links", response_model=LinksResponse)
     async def links(requested: UseCaseQuery = None) -> LinksResponse:

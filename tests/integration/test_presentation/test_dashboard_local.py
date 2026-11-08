@@ -37,6 +37,7 @@ from snapl_orchestrator.workflows.scan_drift import ScanDriftWorkflow
 from snapl_presentation.dashboard.app import create_app
 from snapl_presentation.dashboard.lab_runs import LabRunSource
 from snapl_presentation.dashboard.models import SourceName, View
+from snapl_presentation.dashboard.prometheus import PrometheusSource
 from snapl_presentation.dashboard.sources import AuditSource, SotSource, Sources, TemporalSource
 from snapl_presentation.settings import CliSettings
 
@@ -131,6 +132,8 @@ async def test_overview_shows_a_real_scan_and_its_device_state(local_env, tmp_pa
         temporal=TemporalSource(settings, USE_CASE),
         ci=_NoCi(),
         lab_runs=LabRunSource(tmp_path / "test-runs", tmp_path),
+        # Nothing listens on port 1: the overview must not depend on metrics (spec 012).
+        prometheus=PrometheusSource("http://127.0.0.1:1", settings.temporal_namespace, USE_CASE, timeout=1),
     )
     app = create_app(sources, settings, USE_CASE)
 
