@@ -147,6 +147,13 @@ class _Reader:
             self._tasks[name] = task
         return task
 
+    def _forget(self, name: SourceName, task: asyncio.Task[View[Any]]) -> None:
+        """Let the next request start a new fetch. Several requests can wait on
+        one fetch and each gets here once it is done; only the first removes
+        it, and never a newer fetch that a later request has already started."""
+        if self._tasks.get(name) is task:
+            del self._tasks[name]
+
     async def read(self, name: SourceName) -> View[Any]:
         task = self._fetch(name)
         budget = min(self._timeout, REQUEST_BUDGET_S)
@@ -155,12 +162,12 @@ class _Reader:
         except TimeoutError:
             if not task.done():
                 return self._without(name, f"still waiting for {name.value} (more than {budget:g}s so far)")
-            del self._tasks[name]
+            self._forget(name, task)
             return self._without(name, f"{name.value} did not answer within {self._bound(name):g}s")
         except Exception as exc:
-            del self._tasks[name]
+            self._forget(name, task)
             return self._without(name, f"{name.value} failed: {first_line(str(exc)) or type(exc).__name__}")
-        del self._tasks[name]
+        self._forget(name, task)
         if view.data is not None and view.fetched_at is not None:
             self._last[name] = view
         return view
