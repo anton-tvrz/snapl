@@ -53,6 +53,7 @@ CONTRACT_ROUTES = {
     ("/api/v1/devices", "GET"),
     ("/api/v1/history", "GET"),
     ("/api/v1/lab-runs", "GET"),
+    ("/api/v1/links", "GET"),
     ("/api/v1/overview", "GET"),
     ("/api/v1/runs", "GET"),
     ("/api/v1/schedule", "GET"),
@@ -140,6 +141,7 @@ def _client(
     ci: View[Any] | None = None,
     lab: View[Any] | None = None,
     settings: CliSettings | None = None,
+    repo: str | None = "anton-tvrz/snapl",
 ) -> TestClient:
     sources = Sources(
         audit=FakeSource(audit or _audit_ok()),
@@ -148,7 +150,7 @@ def _client(
         ci=FakeSource(ci or _ci_ok()),
         lab_runs=FakeSource(lab or _lab_ok()),
     )
-    app = create_app(sources, settings or CliSettings(), "dcfabric", clock=lambda: T0 + timedelta(seconds=5))
+    app = create_app(sources, settings or CliSettings(), "dcfabric", clock=lambda: T0 + timedelta(seconds=5), repo=repo)
     return TestClient(app)
 
 
@@ -293,12 +295,75 @@ def test_page_is_html_with_no_external_urls():
     assert response.headers["content-type"].startswith("text/html")
     assert "/api/v1/overview" in response.text
     assert "/api/v1/sources" in response.text
+    assert "/api/v1/links" in response.text
     assert re.findall(r"https?://", response.text) == []
 
 
 def test_page_never_renders_through_innerhtml():
     """Audit payloads hold device-supplied strings (research R11)."""
     assert "innerHTML" not in _client().get("/").text
+
+
+# --- /api/v1/links (#173) -------------------------------------------------------
+
+LINK_SETTINGS = CliSettings(
+    infrahub_address="http://infrahub.example:18000",
+    temporal_ui_address="http://temporal.example:18034/",
+    temporal_namespace="lab",
+    project_board_url="https://github.com/users/someone/projects/9",
+)
+
+
+def _links(client: TestClient) -> dict:
+    response = client.get("/api/v1/links")
+    assert response.status_code == 200
+    return response.json()
+
+
+def test_links_point_at_the_stack_and_repo_the_dashboard_reads():
+    body = _links(_client(settings=LINK_SETTINGS, repo="someone/fork"))
+
+    assert body["use_case"] == "dcfabric"
+    assert body["reason"] is None
+    assert body["remedy"] is None
+    assert [(link["group"], link["label"], link["url"]) for link in body["links"]] == [
+        ("stack", "Infrahub", "http://infrahub.example:18000"),
+        ("stack", "Temporal", "http://temporal.example:18034/namespaces/lab/workflows"),
+        ("stack", "Drift schedule", "http://temporal.example:18034/namespaces/lab/schedules/drift-response-dcfabric"),
+        ("github", "Repository", "https://github.com/someone/fork"),
+        ("github", "Pull requests", "https://github.com/someone/fork/pulls"),
+        ("github", "Actions", "https://github.com/someone/fork/actions"),
+        ("github", "Project board", "https://github.com/users/someone/projects/9"),
+        ("api", "OpenAPI", "/api/v1/openapi.json"),
+        ("api", "Overview JSON", "/api/v1/overview"),
+        (
+            "docs",
+            "Quickstart",
+            "https://github.com/someone/fork/blob/main/specs/010-dashboard-read-api/quickstart.md",
+        ),
+        ("docs", "Demo scenarios", "https://github.com/someone/fork/blob/main/docs/demo-scenarios.md"),
+    ]
+
+
+def test_without_a_repo_the_repo_links_are_left_out_and_it_says_what_to_set():
+    settings = CliSettings(project_board_url=None)
+
+    body = _links(_client(settings=settings, repo=None))
+
+    assert {link["group"] for link in body["links"]} == {"stack", "api"}
+    assert "GitHub repo" in body["reason"]
+    assert body["remedy"] == "export SNAPL_GITHUB_REPO=owner/name"
+
+
+def test_the_docs_linked_from_the_dashboard_exist():
+    """A moved doc would leave a dead link on the page."""
+    root = Path(__file__).resolve().parents[3]
+    body = _links(_client(settings=LINK_SETTINGS, repo="someone/fork"))
+
+    for link in body["links"]:
+        if link["group"] == "docs":
+            path = link["url"].split("/blob/main/", 1)[1]
+            assert (root / path).is_file(), path
 
 
 # --- /api/v1/runs (T027) --------------------------------------------------------

@@ -15,17 +15,23 @@ import asyncio
 from datetime import datetime, timedelta
 from importlib import resources
 from typing import TYPE_CHECKING, Annotated, Any
+from urllib.parse import quote
 
 from fastapi import APIRouter, FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from pydantic import AwareDatetime  # noqa: TC002 — FastAPI resolves query types at runtime
 
+from snapl_orchestrator.models import drift_schedule_id
+from snapl_presentation.dashboard.ci import REPO_REMEDY
 from snapl_presentation.dashboard.models import (
     Bucket,
     CiStatus,
     DeviceView,
     Envelope,
     LabEvidence,
+    Link,
+    LinkGroup,
+    LinksResponse,
     Overview,
     RunView,
     ScheduleStatus,
@@ -189,6 +195,51 @@ class _Reader:
         # `read` turns every failure into a view, so one slow source costs the
         # request its timeout, never the other sources' answers.
         return list(await asyncio.gather(*(self.read(name) for name in names)))
+
+
+_DOCS = (
+    ("Quickstart", "specs/010-dashboard-read-api/quickstart.md"),
+    ("Demo scenarios", "docs/demo-scenarios.md"),
+)
+
+
+def compose_links(settings: CliSettings, use_case: str, repo: str | None, *, generated_at: datetime) -> LinksResponse:
+    """Links built from the settings the server reads, so they point at the same
+    stack and repo the views describe (#173). Without a repo the GitHub and docs
+    links are left out, and the response says what to set."""
+    ui = settings.temporal_ui_address.rstrip("/")
+    namespace = quote(settings.temporal_namespace, safe="")
+    links = [
+        Link(group=LinkGroup.STACK, label="Infrahub", url=settings.infrahub_address),
+        Link(group=LinkGroup.STACK, label="Temporal", url=f"{ui}/namespaces/{namespace}/workflows"),
+        Link(
+            group=LinkGroup.STACK,
+            label="Drift schedule",
+            url=f"{ui}/namespaces/{namespace}/schedules/{quote(drift_schedule_id(use_case), safe='')}",
+        ),
+    ]
+    github = f"https://github.com/{repo}" if repo else None
+    if github:
+        links += [
+            Link(group=LinkGroup.GITHUB, label="Repository", url=github),
+            Link(group=LinkGroup.GITHUB, label="Pull requests", url=f"{github}/pulls"),
+            Link(group=LinkGroup.GITHUB, label="Actions", url=f"{github}/actions"),
+        ]
+    if settings.project_board_url:
+        links.append(Link(group=LinkGroup.GITHUB, label="Project board", url=settings.project_board_url))
+    links += [
+        Link(group=LinkGroup.API, label="OpenAPI", url="/api/v1/openapi.json"),
+        Link(group=LinkGroup.API, label="Overview JSON", url="/api/v1/overview"),
+    ]
+    if github:
+        links += [Link(group=LinkGroup.DOCS, label=label, url=f"{github}/blob/main/{path}") for label, path in _DOCS]
+    return LinksResponse(
+        use_case=use_case,
+        generated_at=generated_at,
+        links=links,
+        reason=None if github else "no GitHub repo: the repository and docs links are left out",
+        remedy=None if github else REPO_REMEDY,
+    )
 
 
 def compose_devices(audit: View[Any], sot: View[Any], names: dict) -> View[list[DeviceView]]:
@@ -371,8 +422,12 @@ def create_app(
     use_case: str,
     *,
     clock: Callable[[], datetime] = utcnow,
+    repo: str | None = None,
 ) -> FastAPI:
-    """The dashboard for one use case, served from ``sources``."""
+    """The dashboard for one use case, served from ``sources``.
+
+    ``repo`` is the GitHub ``owner/name`` the CI view reads, for the links.
+    """
     app = FastAPI(
         title="snapl dashboard",
         version="1",
@@ -522,6 +577,12 @@ def create_app(
                 for view in views
             ],
         )
+
+    @router.get("/links", response_model=LinksResponse)
+    async def links(requested: UseCaseQuery = None) -> LinksResponse:
+        """Where to look next: the stack's own UIs, GitHub, this API and the docs."""
+        served = _check_use_case(requested)
+        return compose_links(settings, served, repo, generated_at=clock())
 
     app.include_router(router)
 

@@ -16,6 +16,7 @@ _DASHBOARD_VARS = (
     "SNAPL_GITHUB_REPO",
     "GITHUB_TOKEN",
     "SNAPL_TEST_RUNS_DIR",
+    "SNAPL_PROJECT_BOARD_URL",
 )
 
 
@@ -34,6 +35,7 @@ def test_dashboard_defaults_match_the_host_resource_registry() -> None:
     assert settings.github_repo is None
     assert settings.github_token is None
     assert settings.test_runs_dir == ".snapl/test-runs"
+    assert settings.project_board_url == "https://github.com/users/anton-tvrz/projects/4"
 
 
 def test_dashboard_settings_come_from_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -43,6 +45,7 @@ def test_dashboard_settings_come_from_the_environment(monkeypatch: pytest.Monkey
     monkeypatch.setenv("SNAPL_GITHUB_REPO", "someone/fork")
     monkeypatch.setenv("GITHUB_TOKEN", "ghp_test")
     monkeypatch.setenv("SNAPL_TEST_RUNS_DIR", "/tmp/runs")  # noqa: S108 — a value under test
+    monkeypatch.setenv("SNAPL_PROJECT_BOARD_URL", "https://github.com/users/someone/projects/9")
 
     settings = CliSettings.from_env()
 
@@ -52,6 +55,7 @@ def test_dashboard_settings_come_from_the_environment(monkeypatch: pytest.Monkey
     assert settings.github_repo == "someone/fork"
     assert settings.github_token == "ghp_test"  # noqa: S105 — a fake token under test
     assert settings.test_runs_dir == "/tmp/runs"  # noqa: S108
+    assert settings.project_board_url == "https://github.com/users/someone/projects/9"
 
 
 def test_temporal_ui_address_follows_the_ui_port_override(monkeypatch: pytest.MonkeyPatch) -> None:
