@@ -196,24 +196,24 @@ Each PR says `Closes` a task issue under #147 and carries `changelog/147.added.m
 
 ## Phase 7: Docs and Governance
 
-- [ ] T033 [P] README.md:
+- [x] T033 [P] README.md:
   - Replace "no metrics until #147" with what 012 delivers.
   - Add `history.archive` and `history.purge`.
   - Say that `demo.reset` keeps metrics.
-- [ ] T034 [P] AGENTS.md:
+- [x] T034 [P] AGENTS.md:
   - Add Prometheus to the stack.
   - Add `WORKER_METRICS_PORT` and the history tasks to Key Commands.
   - Remove any "monitoring" claim that isn't true.
-- [ ] T035 [P] docs/demo-scenarios.md: a short "How long did it take?" scenario: deploy, scan, then the gNMI panel. Run it through the humanizer skill.
-- [ ] T036 [P] dev/scripts/capture_prometheus_fixtures.py, test first. tests/unit/test_dev_scripts/test_capture_prometheus_fixtures.py runs the script's `capture(address, out_dir)` against a stub HTTP server on a free port, and asserts the file names and the `{http_status, body}` shape, including a 400 case:
+- [x] T035 [P] docs/demo-scenarios.md: a short "How long did it take?" scenario: deploy, scan, then the gNMI panel. Run it through the humanizer skill.
+- [x] T036 [P] dev/scripts/capture_prometheus_fixtures.py, test first. tests/unit/test_dev_scripts/test_capture_prometheus_fixtures.py runs the script's `capture(address, out_dir)` against a stub HTTP server on a free port, and asserts the file names and the `{http_status, body}` shape, including a 400 case:
   - Commit the capture script (research R11).
   - It queries a Prometheus at a given address with the six views' queries plus the error, empty, buildinfo, ready and snapshot cases.
   - It writes `{http_status, body}` files.
   - Lint-clean (ruff and bandit; urllib against a local address needs a justified `# nosec` on its own line, per 010's convention).
   - Update the fixtures README to point at it.
-- [ ] T037 dev/adr/0005-dashboard-and-metrics-stack.md, Decision 3: record v3.10.0, the measured facts (R1–R4) and the Linux caveat. Leave the status Proposed until T042.
-- [ ] T038 changelog/147.added.md, as the slices land: worker metrics, Prometheus in the stack, dashboard metrics and source health, `history.archive` and `history.purge`.
-- [ ] T039 Run `uv run invoke lint`, `uv run mypy packages/`, `uv run bandit -r packages/ -c pyproject.toml -q`, `uv run invoke test-unit` and `uv run invoke scan`. Confirm ≥ 80 % coverage on the new modules.
+- [x] T037 dev/adr/0005-dashboard-and-metrics-stack.md, Decision 3: record v3.10.0, the measured facts (R1–R4) and the Linux caveat. Leave the status Proposed until T042.
+- [x] T038 changelog/147.added.md, as the slices land: worker metrics, Prometheus in the stack, dashboard metrics and source health, `history.archive` and `history.purge`.
+- [x] T039 Run `uv run invoke lint`, `uv run mypy packages/`, `uv run bandit -r packages/ -c pyproject.toml -q`, `uv run invoke test-unit` and `uv run invoke scan`. Confirm ≥ 80 % coverage on the new modules.
 
 ### Lab evidence (deferred in unattended runs)
 

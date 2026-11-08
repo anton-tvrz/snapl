@@ -3,7 +3,8 @@
 ## Status
 
 - **Decision 1** (FastAPI and uvicorn, spec 010): Accepted on 2026-11-08, once spec 010's implementation PRs (#154, #160, #162, #164, #166, #168) had merged.
-- **Decisions 2 and 3** (specs 011 and 012): Proposed.
+- **Decision 2** (spec 011): Proposed.
+- **Decision 3** (spec 012): Proposed. Implemented by #180, #182, #184, #186 and #188. It is accepted once the live evidence in spec 012's quickstart (items 1–5) is in (T042).
 
 ## Date
 
@@ -47,6 +48,15 @@ Prometheus runs in the Compose stack on 18090. It scrapes:
 **Retention is by size only** (`--storage.tsdb.retention.size`, with no time limit), and the data lives in a git-ignored host directory, not a Docker volume. Two reasons:
 - A time limit deletes everything on the first start after a long break from the project.
 - `demo.reset` removes Docker volumes, and a reset should restart the lab, not erase what was learned from it.
+
+**Version and measured facts** (spec 012 research, checked on 2026-11-08 against temporalio 1.25.0 and Prometheus v3.10.0 on macOS with OrbStack):
+- **Pinned to `prom/prometheus:v3.10.0`**, the version the dashboard's fixtures were captured from. A bump re-captures them (`dev/scripts/capture_prometheus_fixtures.py`).
+- **One endpoint, no new dependency (R1).** An activity's histogram, recorded through `activity.metric_meter()`, appears on the same endpoint as the SDK's own metrics. The runtime adds `activity_type`, `namespace`, `task_queue` and `service_name` itself. So the worker serves everything from `Runtime(telemetry=TelemetryConfig(metrics=PrometheusConfig(...)))`, and no package takes `prometheus_client`.
+- **Loopback is reachable from Compose on OrbStack (R2).** Prometheus in a container scraped a server bound to `127.0.0.1` on the host through `host.docker.internal`, so the worker binds `127.0.0.1:18091` and stays off the LAN.
+- **A taken port fails at `Runtime()` construction (R3)**, with `ValueError: … Address already in use`, before any client connects. The worker catches it, logs a warning, and runs without metrics.
+- **`timedelta` histograms are exported in milliseconds (R4)**, with the runtime's default buckets. The gNMI metric is named `snapl_gnmi_call_duration`, with no unit suffix, and the unit is stated in its description and in the dashboard's views.
+
+**Linux caveat (not measured).** On Linux Docker, `host.docker.internal` needs `extra_hosts: host-gateway` (the Compose service carries it) and reaches the bridge address, not loopback. A Linux host must start the worker with `WORKER_METRICS_BIND=0.0.0.0` (or the bridge IP), and the dashboard with a matching `DASHBOARD_HOST`, for Prometheus to scrape them. Nothing automates this.
 
 ### Diagram
 

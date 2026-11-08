@@ -18,6 +18,7 @@ These were captured on 2026-11-08 from a real **Prometheus v3.10.0** (`prom/prom
 | `range_gnmi_duration_p95.json` | `query_range`, `gnmi-duration` query | matrix by `device`, `operation` |
 | `range_gnmi_errors.json` | `query_range`, `gnmi-errors` query | matrix by `device` |
 | `range_activity_schedule_to_start_p95.json` | `query_range`, `worker-lag` query | matrix, one unlabelled series |
+| `range_worker_up.json` | `query_range`, `worker-up` query | not in the first capture. The script writes it, from T043 on |
 | `range_source_up.json` | `query_range` `snapl_dashboard_source_up` | matrix by `source`, with temporal dropping to 0 |
 | `range_absent_metric.json` | `query_range` of a metric that doesn't exist | `result: []` (success, no data) |
 | `instant_up.json` | `query` `up` | vector |
@@ -27,4 +28,13 @@ These were captured on 2026-11-08 from a real **Prometheus v3.10.0** (`prom/prom
 | `ready.json` | `/-/ready` | 200 text |
 | `admin_snapshot.json` | `POST /api/v1/admin/tsdb/snapshot` | `{"status":"success","data":{"name":…}}` |
 
-The capture scripts aren't committed yet: spec 012's research.md R11 records what they did. Task T036 commits a re-runnable `dev/scripts/capture_prometheus_fixtures.py`, and T043 re-captures these files from the real stack.
+## Re-capturing
+
+`dev/scripts/capture_prometheus_fixtures.py` asks a running Prometheus everything above, using the dashboard's own view queries (`render_query`), and rewrites these files:
+
+```bash
+uv run invoke dev.deps                       # Prometheus on 18090; run the worker and snapl dashboard too
+uv run python dev/scripts/capture_prometheus_fixtures.py   # --address, --out, --namespace, --use-case
+```
+
+The admin snapshot it requests stays in Prometheus's data directory (`.snapl/prometheus/snapshots/`). Delete it by hand. Task T043 re-captures these files from the real stack and worker, and updates the tests if a shape changed.
