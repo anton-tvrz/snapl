@@ -30,7 +30,7 @@ Each PR says `Closes` a task issue under #147 and carries `changelog/147.added.m
 ## Phase 1: Setup
 
 - [x] T001 [P] Add the Prometheus captures in tests/unit/test_presentation/fixtures/prometheus/ to `.secrets.baseline`. Done in the docs PR: detect-secrets flagged Prometheus's revision hash in `buildinfo.json`, and `uvx detect-secrets==1.5.0 scan --baseline .secrets.baseline` added that one entry.
-- [ ] T002 [P] Extend tests/unit/test_presentation/test_settings.py: `CliSettings.from_env()` resolves `prometheus_address` from `PROMETHEUS_ADDRESS`, else `http://localhost:${PROMETHEUS_PORT:-18090}`. Add `PROMETHEUS_ADDRESS` and `PROMETHEUS_PORT` to `_DASHBOARD_VARS`. Then add the field in packages/presentation/snapl_presentation/settings.py.
+- [x] T002 [P] Extend tests/unit/test_presentation/test_settings.py: `CliSettings.from_env()` resolves `prometheus_address` from `PROMETHEUS_ADDRESS`, else `http://localhost:${PROMETHEUS_PORT:-18090}`. Add `PROMETHEUS_ADDRESS` and `PROMETHEUS_PORT` to `_DASHBOARD_VARS`. Then add the field in packages/presentation/snapl_presentation/settings.py.
 
 ---
 
@@ -40,22 +40,22 @@ Each PR says `Closes` a task issue under #147 and carries `changelog/147.added.m
 
 ### Tests (write first, verify they fail)
 
-- [ ] T003 [P] [US1] tests/unit/test_orchestrator/test_metrics.py:
+- [x] T003 [P] [US1] tests/unit/test_orchestrator/test_metrics.py:
   - `record_gnmi_call(device, operation, started, outcome)` records one `snapl_gnmi_call_duration` sample in milliseconds with exactly the labels `device`, `use_case`, `operation` and `outcome` (data-model.md).
   - Use a fake `MetricMeter` (temporalio.common.MetricMeter's interface) injected through a parameter, or `activity.metric_meter` patched. No runtime.
   - A test asserts that the label keys are exactly that set (SC-006).
   - `GnmiOperation` is `configure`/`collect`, and `CallOutcome` is `ok`/`error`.
-- [ ] T004 [P] [US1] tests/unit/test_orchestrator/test_activities_timing.py (or extend the existing activity tests):
+- [x] T004 [P] [US1] tests/unit/test_orchestrator/test_activities_timing.py (or extend the existing activity tests):
   - `apply_config` records `configure` with `ok` when `ApplyResult.success` is true, and `error` when it is false (FR-005).
   - On a raised exception it records `error` and re-raises the same exception object (FR-004).
   - `collect_drift_state` does the same with `collect` and `CollectResult.success`.
   - Use the activity test environment (`temporalio.testing.ActivityEnvironment`) with the recorder patched.
-- [ ] T005 [P] [US5] tests/unit/test_orchestrator/test_worker_metrics.py:
+- [x] T005 [P] [US5] tests/unit/test_orchestrator/test_worker_metrics.py:
   - `build_runtime(port=…, bind="127.0.0.1")` returns a `Runtime` on a free port.
   - With the port already bound by a test socket, it returns `None` and logs a warning containing the port and `WORKER_METRICS_PORT` (research R3).
   - With `port="off"` it returns `None` without trying to bind.
   - `metrics_settings_from_env()` reads `WORKER_METRICS_PORT` (default 18091) and `WORKER_METRICS_BIND` (default `127.0.0.1`), and rejects a non-numeric port other than `off` with a clear error.
-- [ ] T006 [US1] tests/integration/test_orchestrator/test_worker_metrics_live.py, marked `integration`:
+- [x] T006 [US1] tests/integration/test_orchestrator/test_worker_metrics_live.py, marked `integration`:
   - Start `WorkflowEnvironment.start_local(runtime=build_runtime(free_port))`.
   - Run a worker with the real `apply_config` activity over a fake executor that returns success, then HTTP GET the endpoint.
   - Assert that a `snapl_gnmi_call_duration_count{…operation="configure",outcome="ok"…}` line is present and that `temporal_workflow_endtoend_latency` is present.
@@ -63,14 +63,14 @@ Each PR says `Closes` a task issue under #147 and carries `changelog/147.added.m
 
 ### Implementation
 
-- [ ] T007 [US1] packages/orchestrator/snapl_orchestrator/metrics.py: `GnmiOperation`, `CallOutcome` and `record_gnmi_call`, using `activity.metric_meter().create_histogram_timedelta("snapl_gnmi_call_duration", …, "ms")`. It is the only place the name and labels appear (R5).
-- [ ] T008 [US1] packages/orchestrator/snapl_orchestrator/activities/executor.py and collector.py:
+- [x] T007 [US1] packages/orchestrator/snapl_orchestrator/metrics.py: `GnmiOperation`, `CallOutcome` and `record_gnmi_call`, using `activity.metric_meter().create_histogram_timedelta("snapl_gnmi_call_duration", …, "ms")`. It is the only place the name and labels appear (R5).
+- [x] T008 [US1] packages/orchestrator/snapl_orchestrator/activities/executor.py and collector.py:
   - Time each call with `time.monotonic()` in `try/finally`.
   - Derive the outcome from `result.success`, or `error` on an exception.
   - Call `record_gnmi_call`.
   - Behaviour and return values are otherwise unchanged.
-- [ ] T009 [US5] packages/orchestrator/snapl_orchestrator/worker/metrics.py: `metrics_settings_from_env()` and `build_runtime()` (R3).
-- [ ] T010 [US5] packages/orchestrator/snapl_orchestrator/worker/run.py:
+- [x] T009 [US5] packages/orchestrator/snapl_orchestrator/worker/metrics.py: `metrics_settings_from_env()` and `build_runtime()` (R3).
+- [x] T010 [US5] packages/orchestrator/snapl_orchestrator/worker/run.py:
   - Call `build_runtime()` before `Client.connect`, and pass `runtime=` when it isn't `None`.
   - Log `metrics: http://<bind>:<port>/metrics` or the warning from T009 (contracts/history-tasks.md).
   - Extend the existing run_worker tests so that a taken port still reaches `Worker(...)`.

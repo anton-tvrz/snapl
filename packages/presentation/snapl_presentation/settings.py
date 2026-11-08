@@ -25,6 +25,7 @@ DEFAULT_CONNECT_TIMEOUT = 10.0
 # Host ports from dev/knowledge/host-resource-registry.md.
 DEFAULT_DASHBOARD_PORT = 18030
 DEFAULT_TEMPORAL_UI_PORT = 18034
+DEFAULT_PROMETHEUS_PORT = 18090
 # Loopback only: the dashboard has no authentication (spec 010 FR-002).
 DEFAULT_DASHBOARD_HOST = "127.0.0.1"
 DEFAULT_TEST_RUNS_DIR = ".snapl/test-runs"
@@ -56,6 +57,8 @@ class CliSettings:
     github_token: str | None = field(default=None, repr=False)
     test_runs_dir: str = DEFAULT_TEST_RUNS_DIR
     project_board_url: str | None = DEFAULT_PROJECT_BOARD_URL
+    # Metrics store (spec 012).
+    prometheus_address: str = f"http://localhost:{DEFAULT_PROMETHEUS_PORT}"
 
     @classmethod
     def from_env(cls) -> CliSettings:
@@ -75,4 +78,6 @@ class CliSettings:
             github_token=os.environ.get("GITHUB_TOKEN") or None,
             test_runs_dir=os.environ.get("SNAPL_TEST_RUNS_DIR") or DEFAULT_TEST_RUNS_DIR,
             project_board_url=os.environ.get("SNAPL_PROJECT_BOARD_URL") or DEFAULT_PROJECT_BOARD_URL,
+            prometheus_address=os.environ.get("PROMETHEUS_ADDRESS")
+            or f"http://localhost:{os.environ.get('PROMETHEUS_PORT') or DEFAULT_PROMETHEUS_PORT}",
         )

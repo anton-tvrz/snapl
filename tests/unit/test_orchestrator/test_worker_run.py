@@ -187,6 +187,9 @@ class TestWorkerRegistration:
         from unittest.mock import AsyncMock, MagicMock
 
         import snapl_orchestrator.worker.run as run_mod
+
+        # Never bind the maintainer's 18091 from a unit test (spec 012).
+        monkeypatch.setenv("WORKER_METRICS_PORT", "off")
         from snapl_orchestrator.workflows.drift_response import DriftResponseWorkflow
 
         client = MagicMock()
@@ -208,3 +211,89 @@ class TestWorkerRegistration:
         assert len(captured["activities"]) == 6
         client.create_schedule.assert_not_called()
         client.get_schedule_handle.assert_not_called()
+
+
+class TestWorkerMetrics:
+    """run_worker serves metrics through the SDK runtime, and never stops for them (spec 012, T010, FR-002)."""
+
+    @staticmethod
+    def _free_port() -> int:
+        import socket
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("127.0.0.1", 0))
+            return s.getsockname()[1]
+
+    @staticmethod
+    def _patch(monkeypatch):
+        from unittest.mock import AsyncMock, MagicMock
+
+        import snapl_orchestrator.worker.run as run_mod
+
+        connect = AsyncMock(return_value=MagicMock())
+        monkeypatch.setattr(run_mod.Client, "connect", connect)
+        workers: list = []
+
+        class _FakeWorker:
+            def __init__(self, client, **kwargs):
+                workers.append((client, kwargs))
+
+            async def run(self):
+                return None
+
+        monkeypatch.setattr(run_mod, "Worker", _FakeWorker)
+        return run_mod, connect, workers
+
+    async def test_passes_the_metrics_runtime_to_the_client(self, monkeypatch, caplog):
+        import logging
+        from unittest.mock import MagicMock
+
+        from temporalio.runtime import Runtime
+
+        run_mod, connect, workers = self._patch(monkeypatch)
+        port = self._free_port()
+        monkeypatch.setenv("WORKER_METRICS_PORT", str(port))
+        monkeypatch.delenv("WORKER_METRICS_BIND", raising=False)
+
+        with caplog.at_level(logging.INFO, logger="snapl_orchestrator.worker.run"):
+            await run_mod.run_worker(activities=MagicMock())
+
+        assert isinstance(connect.await_args.kwargs["runtime"], Runtime)
+        assert len(workers) == 1
+        assert f"metrics: http://127.0.0.1:{port}/metrics" in [r.getMessage() for r in caplog.records]
+
+    async def test_a_taken_port_still_starts_the_worker(self, monkeypatch, caplog):
+        import logging
+        import socket
+        from unittest.mock import MagicMock
+
+        run_mod, connect, workers = self._patch(monkeypatch)
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as holder:
+            holder.bind(("127.0.0.1", 0))
+            holder.listen()
+            port = holder.getsockname()[1]
+            monkeypatch.setenv("WORKER_METRICS_PORT", str(port))
+
+            with caplog.at_level(logging.INFO):
+                await run_mod.run_worker(activities=MagicMock())
+
+        assert connect.await_args.kwargs["runtime"] is None
+        assert len(workers) == 1
+        messages = [r.getMessage() for r in caplog.records]
+        assert f"metrics off: port {port} in use (set WORKER_METRICS_PORT to move it, or off)" in messages
+        assert not any(m.startswith("metrics: http") for m in messages)
+
+    async def test_off_connects_with_the_default_runtime(self, monkeypatch, caplog):
+        import logging
+        from unittest.mock import MagicMock
+
+        run_mod, connect, workers = self._patch(monkeypatch)
+        monkeypatch.setenv("WORKER_METRICS_PORT", "off")
+
+        with caplog.at_level(logging.INFO, logger="snapl_orchestrator.worker.run"):
+            await run_mod.run_worker(activities=MagicMock())
+
+        assert connect.await_args.kwargs["runtime"] is None
+        assert len(workers) == 1
+        assert "metrics off: WORKER_METRICS_PORT=off" in [r.getMessage() for r in caplog.records]

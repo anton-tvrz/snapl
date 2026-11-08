@@ -29,6 +29,7 @@ from snapl_orchestrator.activities.observability import detect_drift
 from snapl_orchestrator.audit.sqlite import SqliteAuditLog
 from snapl_orchestrator.exceptions import OrchestratorConfigError
 from snapl_orchestrator.worker.client import DEFAULT_NAMESPACE, DEFAULT_TEMPORAL_HOST
+from snapl_orchestrator.worker.metrics import build_runtime, metrics_settings_from_env
 from snapl_orchestrator.worker.sandbox import build_workflow_runner
 from snapl_orchestrator.workflows.deploy_intent import DeployIntentWorkflow
 from snapl_orchestrator.workflows.drift_response import DriftResponseWorkflow
@@ -66,6 +67,10 @@ async def run_worker(*, activities: Activities | None = None) -> None:
         SRLINUX_PASSWORD        — required
         SRLINUX_PORT            — gNMI port (default 57400)
         SRLINUX_INSECURE        — plaintext gNMI (default 'true'; set 'false' for TLS)
+
+    Env vars (always):
+        WORKER_METRICS_PORT     — Prometheus endpoint port (default 18091; 'off' disables)
+        WORKER_METRICS_BIND     — its bind address (default 127.0.0.1)
     """
     temporal_host = os.environ.get("TEMPORAL_HOST", DEFAULT_TEMPORAL_HOST)
     namespace = os.environ.get("TEMPORAL_NAMESPACE", DEFAULT_NAMESPACE)
@@ -77,10 +82,21 @@ async def run_worker(*, activities: Activities | None = None) -> None:
 
     set_activities(activities)
 
+    # Before connecting: the runtime is fixed for the client's lifetime, and a
+    # taken port fails here, at construction (spec 012 R3). None keeps the
+    # SDK's default runtime, so the worker runs without metrics (FR-002).
+    metrics = metrics_settings_from_env()
+    runtime = build_runtime(port=metrics.port, bind=metrics.bind)
+    if runtime is not None:
+        logger.info("metrics: %s", metrics.url)
+    elif metrics.port == "off":
+        logger.info("metrics off: WORKER_METRICS_PORT=off")
+
     client = await Client.connect(
         temporal_host,
         namespace=namespace,
         data_converter=pydantic_data_converter,
+        runtime=runtime,
     )
 
     worker = Worker(
