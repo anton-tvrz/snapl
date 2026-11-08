@@ -33,6 +33,19 @@
   .links { display: flex; flex-wrap: wrap; gap: .25rem 1.25rem; font-size: 12px; margin: 0 0 .5rem; }
   .links .group { color: var(--muted); margin-right: .35rem; }
   .links a { margin-right: .6rem; }
+  .metrics-head { display: flex; align-items: baseline; gap: 1rem; }
+  .metric-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr)); gap: 1rem; }
+  .metric h3 { font-size: 13px; margin: 0 0 .25rem; }
+  .chart { display: block; width: 100%; height: 90px; border-bottom: 1px solid rgba(127,127,127,.25); }
+  .line { fill: none; stroke: var(--c); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+  .dot { fill: var(--c); }
+  .swatch { display: inline-block; width: .6rem; height: .6rem; margin-right: .3rem; background: var(--c); }
+  .c0 { --c: #2563eb; } .c1 { --c: #d97706; } .c2 { --c: #059669; }
+  .c3 { --c: #db2777; } .c4 { --c: #7c3aed; } .c5 { --c: #0891b2; }
+  .strip-row { display: flex; align-items: center; gap: .5rem; font-size: 12px; margin: .15rem 0; }
+  .strip-label { flex: 0 0 5.5rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+  .strip { flex: 1; height: 10px; }
+  .strip .up { fill: var(--ok); } .strip .down { fill: var(--bad); } .strip .gap { fill: rgba(127,127,127,.25); }
   @media (max-width: 40rem) { .wide { display: none; } }
 </style>
 </head>
@@ -110,6 +123,23 @@
     </thead>
     <tbody id="runs"></tbody>
   </table>
+</section>
+<section>
+  <div class="metrics-head">
+    <h2>Metrics</h2>
+    <label>Range
+      <select id="metrics-range">
+        <option value="1h">1 h</option>
+        <option value="24h">24 h</option>
+        <option value="7d">7 d</option>
+      </select>
+    </label>
+  </div>
+  <div class="meta">From Prometheus, refreshed every 30 s. Durations are the 95th percentile.</div>
+  <div class="metric-grid" id="metrics"></div>
+  <!-- Parsed into the SVG namespace by the HTML parser; the charts read the
+       namespace from it, so the page itself names no URL (FR-008). -->
+  <svg id="svg-ns" style="display: none" aria-hidden="true"></svg>
 </section>
 <script>
 "use strict";
@@ -455,12 +485,184 @@ function renderLinks(body) {
   document.getElementById("links").replaceChildren(...spans);
 }
 
+// --- Metrics (spec 012) --------------------------------------------------------
+
+const METRICS_MS = 30000;
+const METRIC_VIEWS = [
+  { name: "workflow-duration", title: "Workflow duration" },
+  { name: "gnmi-duration", title: "gNMI call duration" },
+  { name: "gnmi-errors", title: "gNMI errors" },
+  { name: "worker-lag", title: "Activity wait before a worker picks it up" },
+  { name: "worker-up", title: "Worker up" },
+  { name: "source-health", title: "Dashboard sources up" },
+];
+const RANGES = { "1h": 3600, "24h": 86400, "7d": 604800 };
+const RANGE_KEY = "snapl.metrics.range";
+const SVG_NS = document.getElementById("svg-ns").namespaceURI;
+const CHART_W = 320;
+const CHART_H = 90;
+
+// The chosen range is a convenience: blocked storage only means the default.
+function loadRange() {
+  try {
+    const saved = localStorage.getItem(RANGE_KEY);
+    if (Object.hasOwn(RANGES, saved)) return saved;
+  } catch (error) {
+    console.warn("range not restored:", error);
+  }
+  return "1h";
+}
+
+function saveRange(value) {
+  try {
+    localStorage.setItem(RANGE_KEY, value);
+  } catch (error) {
+    console.warn("range not saved:", error);
+  }
+}
+
+function svg(tag, attributes) {
+  const node = document.createElementNS(SVG_NS, tag);
+  for (const [name, value] of Object.entries(attributes)) node.setAttribute(name, String(value));
+  return node;
+}
+
+function formatValue(value, unit) {
+  if (value === null || value === undefined) return "no data";
+  if (unit === "ms") return value >= 1000 ? (value / 1000).toFixed(2) + " s" : Math.round(value) + " ms";
+  if (unit === "per_second") return value.toFixed(3) + "/s";
+  return value >= 1 ? "up" : "down";
+}
+
+function seriesLabel(labels) {
+  const parts = Object.values(labels);
+  return parts.length ? parts.join(" ") : "all";
+}
+
+function latest(series) {
+  for (let i = series.points.length - 1; i >= 0; i--) {
+    if (series.points[i].value !== null) return series.points[i].value;
+  }
+  return null;
+}
+
+// One polyline per unbroken run of points: a null value is a gap, not a zero.
+function lineChart(data) {
+  const start = Date.parse(data.start);
+  const span = Math.max(1, Date.parse(data.end) - start);
+  const values = data.series.flatMap((series) => series.points.map((point) => point.value)).filter((v) => v !== null);
+  const top = values.length && Math.max(...values) > 0 ? Math.max(...values) * 1.1 : 1;
+  const chart = svg("svg", { viewBox: "0 0 " + CHART_W + " " + CHART_H, preserveAspectRatio: "none", class: "chart" });
+  data.series.forEach((series, index) => {
+    const colour = "c" + (index % 6);
+    let run = [];
+    const flush = () => {
+      if (run.length === 1) {
+        const [x, y] = run[0].split(",");
+        chart.append(svg("circle", { cx: x, cy: y, r: 1.5, class: "dot " + colour }));
+      } else if (run.length > 1) {
+        chart.append(svg("polyline", { points: run.join(" "), class: "line " + colour }));
+      }
+      run = [];
+    };
+    for (const point of series.points) {
+      if (point.value === null) { flush(); continue; }
+      const x = ((Date.parse(point.t) - start) / span) * CHART_W;
+      const y = CHART_H - (point.value / top) * CHART_H;
+      run.push(x.toFixed(1) + "," + y.toFixed(1));
+    }
+    flush();
+  });
+  return chart;
+}
+
+// Up/down over time, one row per series: green up, red down, grey no data.
+function upStrips(data) {
+  const start = Date.parse(data.start);
+  const span = Math.max(1, Date.parse(data.end) - start);
+  const width = Math.max(0.5, (data.step * 1000 / span) * CHART_W);
+  const box = el("div");
+  for (const series of data.series) {
+    const row = el("div", null, "strip-row");
+    row.append(el("span", seriesLabel(series.labels), "strip-label"));
+    const bar = svg("svg", { viewBox: "0 0 " + CHART_W + " 10", preserveAspectRatio: "none", class: "strip" });
+    for (const point of series.points) {
+      const state = point.value === null ? "gap" : point.value >= 1 ? "up" : "down";
+      const x = ((Date.parse(point.t) - start) / span) * CHART_W;
+      bar.append(svg("rect", { x: x.toFixed(2), y: 0, width: width.toFixed(2), height: 10, class: state }));
+    }
+    row.append(bar);
+    box.append(row);
+  }
+  return box;
+}
+
+function buildMetricPanels() {
+  const panels = METRIC_VIEWS.map((view) => {
+    const panel = el("div", null, "metric");
+    panel.id = "metric-" + view.name;
+    const problem = el("div");
+    problem.hidden = true;
+    panel.append(el("h3", view.title), problem, el("div"), el("div", null, "paths"));
+    return panel;
+  });
+  document.getElementById("metrics").replaceChildren(...panels);
+}
+
+function renderMetric(view, metrics) {
+  const [, problem, chart, legend] = document.getElementById("metric-" + view.name).children;
+  showProblem(problem, metrics);
+  const data = metrics.data;
+  if (!data) {
+    chart.replaceChildren();
+    legend.replaceChildren();
+    return;
+  }
+  chart.replaceChildren(data.unit === "up" ? upStrips(data) : lineChart(data));
+  const items = data.unit === "up" ? [] : data.series.map((series, index) => {
+    const item = el("div", seriesLabel(series.labels) + ": " + formatValue(latest(series), data.unit));
+    item.prepend(el("span", null, "swatch c" + (index % 6)));
+    return item;
+  });
+  if (data.note) items.push(el("div", data.note));
+  legend.replaceChildren(...items);
+}
+
+async function refreshMetrics() {
+  const range = document.getElementById("metrics-range").value;
+  const start = new Date(Date.now() - RANGES[range] * 1000).toISOString();
+  await Promise.allSettled(METRIC_VIEWS.map(async (view) => {
+    try {
+      const body = await getJson("/api/v1/metrics/" + view.name + "?start=" + encodeURIComponent(start));
+      renderMetric(view, body.metrics);
+    } catch (error) {
+      const [, problem] = document.getElementById("metric-" + view.name).children;
+      problem.hidden = false;
+      problem.className = "problem";
+      problem.replaceChildren(el("div", "The dashboard server did not answer: " + error.message));
+    }
+  }));
+}
+
+function startMetrics() {
+  buildMetricPanels();
+  const select = document.getElementById("metrics-range");
+  select.value = loadRange();
+  select.addEventListener("change", () => {
+    saveRange(select.value);
+    refreshMetrics();
+  });
+  refreshMetrics();
+  setInterval(refreshMetrics, METRICS_MS);
+}
+
 // The links follow the server's settings, which do not change while it runs.
 getJson("/api/v1/links").then(renderLinks, () => {});
 refresh();
 setInterval(refresh, REFRESH_MS);
 refreshHistory();
 setInterval(refreshHistory, HISTORY_MS);
+startMetrics();
 </script>
 </body>
 </html>
