@@ -536,3 +536,16 @@ def test_reset_leaves_lab_run_records_alone(tmp_path, monkeypatch):
     lab_destroy.assert_called_once()
     down.assert_called_once()
     assert sentinel.read_text() == '{"format": 1}'
+
+
+def test_reset_runs_no_command_that_names_snapl():
+    """FR-009: everything a reset runs (lab destroy, down --volumes) leaves .snapl alone,
+    which now holds the metrics store as well as the lab runs (spec 012 T024)."""
+    ctx = _ctx()
+
+    demo.reset(ctx)
+
+    commands = [call.args[0] for call in ctx.run.call_args_list]
+    assert commands, "reset ran nothing"
+    assert any("down --volumes" in command for command in commands)
+    assert not any(".snapl" in command for command in commands)

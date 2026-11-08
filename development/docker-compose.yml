@@ -25,6 +25,7 @@
 #   RabbitMQ:     localhost:${RABBITMQ_PORT:-18072} (mgmt :${RABBITMQ_MGMT_PORT:-18015})
 #   Prefect:      localhost:${PREFECT_PORT:-18042}
 #   Temporal:     localhost:${TEMPORAL_PORT:-18033} (Web UI http://localhost:${TEMPORAL_UI_PORT:-18034})
+#   Prometheus:   http://127.0.0.1:${PROMETHEUS_PORT:-18090}
 #
 # Default admin login: admin / infrahub
 # Default API token:   1ad8b66d-cca3-4523-821c-52c3d7e69100
@@ -216,6 +217,41 @@ services:
       - "${TEMPORAL_UI_PORT:-18034}:8233"
     healthcheck:
       test: ["CMD", "temporal", "operator", "cluster", "health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+
+  # ---------------------------------------------------------------------------
+  # Prometheus — the metrics store (spec 012, research R6)
+  #
+  # Scrapes the worker and the dashboard, which run on the host
+  # (prometheus/prometheus.yml). Its data is a bind mount under .snapl/, not a
+  # named volume, so `dev.down --volumes` and `demo.reset` keep months of
+  # history; `invoke history.purge` is the one way to delete it. `dev.deps`
+  # creates the directory first, writable by the image's `nobody` user.
+  #
+  # Retention is by size only: with no time limit set, Prometheus 3 keeps
+  # data until the size limit. The admin API is on for `history.archive`
+  # snapshots, which is why the port is published on loopback only.
+  # Pinned: the dashboard's fixtures were captured from this version.
+  # ---------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v3.10.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.size=${PROMETHEUS_RETENTION_SIZE:-2GB}
+      - --web.enable-admin-api
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PORT:-18090}:9090"
+    volumes:
+      - ../.snapl/prometheus:/prometheus
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "wget", "-qO", "/dev/null", "http://localhost:9090/-/ready"]
       interval: 5s
       timeout: 5s
       retries: 20
