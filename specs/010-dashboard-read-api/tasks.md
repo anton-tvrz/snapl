@@ -349,19 +349,19 @@ Every story depends on these.
 
 ### Tests (write first, verify they fail)
 
-- [ ] T051 [P] [US5] Add a parametrised failure matrix to test_dashboard_app.py:
+- [x] T051 [P] [US5] Add a parametrised failure matrix to test_dashboard_app.py:
   - For each `SourceName`, a fake that raises or times out.
   - Assert `GET /api/v1/overview` returns 200 within 2 s (SC-003).
   - Assert only the dependent views have `available: false` with reason and remedy.
   - Assert the others equal the all-healthy response.
   - Also all sources down at once → 200 (FR-007).
-- [ ] T052 [P] [US5] Add `/api/v1/sources` tests: one entry per `SourceName`, with no `data`, and `fetched_at` matching the last successful read.
-- [ ] T053 [P] [US5] Add a cross-check test (SC-002): over the same fakes, `/api/v1/devices` and `/api/v1/schedule` agree with what `snapl status --json` and `snapl schedule show --json` render, using the CLI's renderer on the same inputs.
+- [x] T052 [P] [US5] Add `/api/v1/sources` tests: one entry per `SourceName`, with no `data`, and `fetched_at` matching the last successful read.
+- [x] T053 [P] [US5] Add a cross-check test (SC-002): over the same fakes, `/api/v1/devices` and `/api/v1/schedule` agree with what `snapl status --json` and `snapl schedule show --json` render, using the CLI's renderer on the same inputs.
 
 ### Implementation
 
-- [ ] T054 [US5] Add `/api/v1/overview` and `/api/v1/sources` to packages/presentation/snapl_presentation/dashboard/app.py. Fetch views with `asyncio.gather(..., return_exceptions=True)`, wrap each in the source's timeout (`SNAPL_CONNECT_TIMEOUT`), and turn every exception into an unavailable view. T051 to T053 pass.
-- [ ] T055 [US5] Switch static/index.html to a single `/api/v1/overview` poll every 5 s, plus `/api/v1/history` every 60 s. Add a source status strip from `/api/v1/sources` showing each source's state, age and remedy.
+- [x] T054 [US5] Add `/api/v1/overview` and `/api/v1/sources` to packages/presentation/snapl_presentation/dashboard/app.py. Fetch views with `asyncio.gather(..., return_exceptions=True)`, wrap each in the source's timeout (`SNAPL_CONNECT_TIMEOUT`), and turn every exception into an unavailable view. T051 to T053 pass.
+- [x] T055 [US5] Switch static/index.html to a single `/api/v1/overview` poll every 5 s, plus `/api/v1/history` every 60 s. Add a source status strip from `/api/v1/sources` showing each source's state, age and remedy.
 - [ ] T056 [US5] **Live evidence items 3 and 4**:
   - Stop the worker, then Temporal, then Infrahub, and record what the page showed each time.
   - Run `demo.reset` then `demo.up`, and record that history and lab runs survived.
