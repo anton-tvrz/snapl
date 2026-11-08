@@ -25,7 +25,7 @@ Every addition below is **compatible** under 010's versioning rules: new routes,
 
 ## `GET /api/v1/sources` (amended)
 
-The list includes `prometheus`. Its `fetched_at` is the last successful metrics query, and it is `available: false` when the last query failed.
+The list includes `prometheus`. Its entry comes from probing Prometheus's `GET /-/ready`, through 010's source protocol like every other source. So it is known before the page's first metrics request, and `available: false` with the `dev.deps` remedy when Prometheus doesn't answer. The `prometheus` source feeds `/sources` and the metrics routes only, never `/overview`.
 
 **Amendment to 010's contract:** `SourceName` joins the enums whose unknown values consumers must render as raw strings. The only existing consumer is 010's own page, which already does this.
 

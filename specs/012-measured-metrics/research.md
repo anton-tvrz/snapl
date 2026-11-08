@@ -64,7 +64,7 @@ One helper, `snapl_orchestrator/metrics.py:record_gnmi_call(device, operation, s
 
 ## R7 — Dashboard metrics API (FR-011–FR-013, FR-016)
 
-- **Client**: `PrometheusSource` in `snapl_presentation/dashboard/prometheus.py`, using httpx (already a dependency).
+- **Client**: `PrometheusSource` in `snapl_presentation/dashboard/prometheus.py`, using httpx (already a dependency). Its `refresh()` probes `GET /-/ready` for `/sources`, which is 010's protocol unchanged. The metrics routes use a separate `query()` method.
   - It is fetched through 010's `_Reader`: the 1.5 s request budget, and a stale last-good answer.
   - The cache is keyed by `(view, start, end, step)`. Entries live 15 s, the scrape interval, so polling never queries faster than data arrives.
 - **Named views only**: a dict from view name to a PromQL template is the only place queries live.

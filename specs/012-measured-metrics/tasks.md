@@ -96,15 +96,16 @@ Each PR says `Closes` a task issue under #147 and carries `changelog/147.added.m
   - `GET /api/v1/metrics/gnmi-duration` returns `MetricsResponse` with `source: "prometheus"`.
   - An unknown view returns 404, `start >= end` returns 422, and a naive datetime returns 422.
   - With a failing `PrometheusSource`, it returns 200 and `available: false` with the remedy (FR-012).
-  - `/api/v1/sources` lists `prometheus`.
+  - `/api/v1/sources` lists `prometheus`. Its entry comes from `PrometheusSource.refresh()`, which probes `GET /-/ready` (fixture `ready.json`), so 010's `_Reader.read_all(*SourceName)` needs no special case.
+  - **Existing tests:** tests that loop over every `SourceName` (the `FIELD` map, the per-source failure matrix, the sources-strip tests) map `prometheus` to no overview view. It feeds `/sources` and the metrics routes only, never `/overview`.
   - `CONTRACT_ROUTES` gains the new route.
   - The OpenAPI snapshot test fails until T015.
 
 ### Implementation
 
 - [ ] T013 [US1] packages/presentation/snapl_presentation/dashboard/models.py: `SourceName.PROMETHEUS`, `MetricsViewName`, `MetricPoint`, `MetricSeries`, `MetricsData` and `MetricsResponse` (data-model.md). Add the prometheus remedy to `_FAILURE_REMEDY` in app.py.
-- [ ] T014 [US1] packages/presentation/snapl_presentation/dashboard/prometheus.py: `VIEWS`, `choose_step`, `parse_matrix` and `PrometheusSource(address, namespace, use_case)` with the keyed 15 s cache (R7). Add `prometheus` to `Sources` and wire it in `cli.py`'s `_serve_dashboard`.
-- [ ] T015 [US1] app.py: the `/api/v1/metrics/{view}` route through `_Reader` (keyed per view and range, so one slow range doesn't block another). Regenerate tests/unit/test_presentation/fixtures/openapi_v1.json and check by script that the change is additive only, as done in #174.
+- [ ] T014 [US1] packages/presentation/snapl_presentation/dashboard/prometheus.py: `VIEWS`, `choose_step`, `parse_matrix` and `PrometheusSource(address, namespace, use_case)` with the keyed 15 s cache (R7). `refresh()` implements 010's source protocol by probing `GET /-/ready` and returning a `View[None]`, which is what `/sources` shows. The metrics routes call a separate `query(view, start, end, step)` method. Add `prometheus` to `Sources` and wire it in `cli.py`'s `_serve_dashboard`.
+- [ ] T015 [US1] app.py: the `/api/v1/metrics/{view}` route through `_Reader` (keyed per view and range, so one slow range doesn't block another). Regenerate tests/unit/test_presentation/fixtures/openapi_v1.json and check by script that the change is additive only, as done in #174. **Expected:** the `SourceName` schema changes because it gains `prometheus`. That is the compatible change T016 records, not a contract break, so don't stop the PR for it. Any other changed schema is a break.
 - [ ] T016 [US5] specs/010-dashboard-read-api/contracts/dashboard-api.md:
   - Add `SourceName` to the enums consumers must tolerate.
   - Add a dated note pointing at 012's contracts/metrics-api.md (research R7).
@@ -204,7 +205,7 @@ Each PR says `Closes` a task issue under #147 and carries `changelog/147.added.m
   - Add `WORKER_METRICS_PORT` and the history tasks to Key Commands.
   - Remove any "monitoring" claim that isn't true.
 - [ ] T035 [P] docs/demo-scenarios.md: a short "How long did it take?" scenario: deploy, scan, then the gNMI panel. Run it through the humanizer skill.
-- [ ] T036 [P] dev/scripts/capture_prometheus_fixtures.py:
+- [ ] T036 [P] dev/scripts/capture_prometheus_fixtures.py, test first. tests/unit/test_dev_scripts/test_capture_prometheus_fixtures.py runs the script's `capture(address, out_dir)` against a stub HTTP server on a free port, and asserts the file names and the `{http_status, body}` shape, including a 400 case:
   - Commit the capture script (research R11).
   - It queries a Prometheus at a given address with the six views' queries plus the error, empty, buildinfo, ready and snapshot cases.
   - It writes `{http_status, body}` files.
@@ -220,7 +221,7 @@ Each PR says `Closes` a task issue under #147 and carries `changelog/147.added.m
 - [ ] T041 **Needs the lab.** Quickstart item 2 (SC-004).
 - [ ] T042 **Needs the lab.** Quickstart items 3–5 (SC-002, SC-003). Then mark ADR-0005 Decision 3 Accepted.
 - [ ] T043 **Needs the lab.** Quickstart item 7: re-capture the fixtures from the real stack with T036's script, and update the tests if the shapes changed.
-- [ ] T044 After all of 012 has merged: bump the constitution to 2.1.0 (minor), listing FastAPI/uvicorn (010) and Prometheus (012) under Technology Stack (FR-021). Node waits for 011.
+- [ ] T044 **Needs the lab.** After T042 (live evidence in, ADR-0005 Decision 3 Accepted): bump the constitution to 2.1.0 (minor), listing FastAPI/uvicorn (010) and Prometheus (012) under Technology Stack (FR-021). Node waits for 011.
 
 ---
 
