@@ -11,6 +11,7 @@ inside a ``200`` (FR-005, FR-007).
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta
 from importlib import resources
 from typing import TYPE_CHECKING, Annotated, Any
@@ -25,6 +26,7 @@ from snapl_presentation.dashboard.models import (
     DeviceView,
     Envelope,
     LabEvidence,
+    Overview,
     RunView,
     ScheduleStatus,
     Series,
@@ -42,7 +44,8 @@ from snapl_presentation.dashboard.projections import (
     project_runs,
     project_series,
 )
-from snapl_presentation.dashboard.sources import Sources, utcnow
+from snapl_presentation.dashboard.sources import AUDIT_REMEDY, STACK_REMEDY, Sources, utcnow
+from snapl_presentation.exceptions import first_line
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -79,6 +82,106 @@ class HistoryResponse(Envelope):
 class ScheduleResponse(Envelope):
     schedule: View[ScheduleStatus]
     worker: View[WorkerStatus]
+
+
+class SourcesResponse(Envelope):
+    # One per SourceName: availability, age, reason and remedy, without data.
+    sources: list[View[None]]
+
+
+# What to run when a source raised or timed out instead of answering.
+_FAILURE_REMEDY = {
+    SourceName.AUDIT: AUDIT_REMEDY,
+    SourceName.SOT: STACK_REMEDY,
+    SourceName.TEMPORAL: STACK_REMEDY,
+    SourceName.CI: "export GITHUB_TOKEN=…",
+    SourceName.LAB_RUNS: "Check SNAPL_TEST_RUNS_DIR, or record a run: uv run invoke test-e2e",
+}
+
+
+# How long one request waits for a source before answering without it. The
+# source's own fetch keeps running (bounded by SNAPL_CONNECT_TIMEOUT), and a
+# later request picks up its answer (SC-003: the page answers within 2 s).
+REQUEST_BUDGET_S = 1.5
+# A source whose fetch is longer than one connection gets its own bound. A cold
+# CI refresh is 3 + N GitHub calls in a row, each with its own 10 s timeout.
+_FETCH_BOUND_S = {SourceName.CI: 60.0}
+
+
+class _Reader:
+    """Reads each source without letting one fail or stall the request.
+
+    Each source has at most one fetch in flight, shared by every request, and
+    bounded by ``SNAPL_CONNECT_TIMEOUT`` (CI by longer, ``_FETCH_BOUND_S``). A request waits for it only
+    ``REQUEST_BUDGET_S``. If the fetch is still running, the request answers
+    without it and the fetch carries on: cancelling it would make a slow
+    source, such as GitHub on a cold start, start again on every poll.
+
+    A source that raises or times out becomes an unavailable view with a
+    reason and a remedy (FR-007). If it answered earlier in this process, that
+    answer is kept, marked stale (FR-031).
+    """
+
+    def __init__(self, sources: Sources, timeout: float) -> None:
+        self._sources = {
+            SourceName.AUDIT: sources.audit,
+            SourceName.SOT: sources.sot,
+            SourceName.TEMPORAL: sources.temporal,
+            SourceName.CI: sources.ci,
+            SourceName.LAB_RUNS: sources.lab_runs,
+        }
+        self._timeout = timeout
+        self._tasks: dict[SourceName, asyncio.Task[View[Any]]] = {}
+        self._last: dict[SourceName, View[Any]] = {}
+
+    def _bound(self, name: SourceName) -> float:
+        return max(self._timeout, _FETCH_BOUND_S.get(name, 0.0))
+
+    def _fetch(self, name: SourceName) -> asyncio.Task[View[Any]]:
+        task = self._tasks.get(name)
+        if task is None:
+            task = asyncio.create_task(asyncio.wait_for(self._sources[name].refresh(), timeout=self._bound(name)))
+            # Its outcome is read by the next request; this keeps an unread
+            # failure from being logged as "never retrieved".
+            task.add_done_callback(lambda done: done.cancelled() or done.exception())
+            self._tasks[name] = task
+        return task
+
+    async def read(self, name: SourceName) -> View[Any]:
+        task = self._fetch(name)
+        budget = min(self._timeout, REQUEST_BUDGET_S)
+        try:
+            view = await asyncio.wait_for(asyncio.shield(task), timeout=budget)
+        except TimeoutError:
+            if not task.done():
+                return self._without(name, f"still waiting for {name.value} (more than {budget:g}s so far)")
+            del self._tasks[name]
+            return self._without(name, f"{name.value} did not answer within {self._bound(name):g}s")
+        except Exception as exc:
+            del self._tasks[name]
+            return self._without(name, f"{name.value} failed: {first_line(str(exc)) or type(exc).__name__}")
+        del self._tasks[name]
+        if view.data is not None and view.fetched_at is not None:
+            self._last[name] = view
+        return view
+
+    def _without(self, name: SourceName, reason: str) -> View[Any]:
+        """An unavailable view, carrying the last answer as stale if there was one."""
+        last = self._last.get(name)
+        return View(
+            source=name,
+            available=False,
+            stale=last is not None,
+            fetched_at=last.fetched_at if last else None,
+            reason=reason,
+            remedy=_FAILURE_REMEDY[name],
+            data=last.data if last else None,
+        )
+
+    async def read_all(self, *names: SourceName) -> list[View[Any]]:
+        # `read` turns every failure into a view, so one slow source costs the
+        # request its timeout, never the other sources' answers.
+        return list(await asyncio.gather(*(self.read(name) for name in names)))
 
 
 def compose_devices(audit: View[Any], sot: View[Any], names: dict) -> View[list[DeviceView]]:
@@ -139,7 +242,8 @@ def compose_schedule(
     """The schedule and worker views (contracts/dashboard-api.md).
 
     Repeated failures come from the audit trail, so they are reported even when
-    Temporal is down, marked stale. When Temporal has never answered, nothing
+    Temporal is down, marked stale. When the audit trail is down instead, the
+    view is unavailable: its failure list could not be read. When Temporal has never answered, nothing
     is known about the schedule: ``exists`` is false only because the model
     needs a value, ``available`` is false, and no command suggests creating a
     schedule that may well exist.
@@ -163,6 +267,7 @@ def compose_schedule(
 
     schedule = snapshot.schedule
     pause = latest_pause(events, use_case=use_case) if schedule is not None and schedule.paused else None
+    worker = WorkerStatus(pollers=snapshot.pollers, task_queue=task_queue)
     status = ScheduleStatus(
         exists=schedule is not None,
         schedule=schedule,
@@ -171,8 +276,75 @@ def compose_schedule(
         repeated_failures=failures,
         suggested_command=None if schedule is not None else f"snapl schedule create --use-case {use_case}",
     )
-    worker = WorkerStatus(pollers=snapshot.pollers, task_queue=task_queue)
+    if not audit.available:
+        # The pause actor and the repeated failures come from the audit trail:
+        # without it, an empty failure list would claim repairs are fine.
+        schedule_view = View(
+            source=SourceName.AUDIT,
+            available=False,
+            stale=audit.stale,
+            fetched_at=temporal.fetched_at,
+            reason=f"the audit trail could not be read: {audit.reason}",
+            remedy=audit.remedy,
+            data=status,
+        )
+        return schedule_view, _from_temporal(temporal, worker)
     return _from_temporal(temporal, status), _from_temporal(temporal, worker)
+
+
+def compose_runs(
+    audit: View[Any],
+    temporal: View[Any],
+    names: dict,
+    settings: CliSettings,
+    now: datetime,
+    *,
+    limit: int,
+    filters: RunFilters = RunFilters(),  # noqa: B008 — frozen, so sharing it is safe
+) -> tuple[View[list[RunView]], View[list[RunView]]]:
+    """The runs view (from the audit trail) and the running view (from Temporal)."""
+    events = audit.data or []
+    # Only a current answer says what is running; a stale one could be wrong.
+    snapshot = temporal.data if temporal.available else None
+    projected = project_runs(
+        events,
+        {info.workflow_id for info in snapshot.running} if snapshot else None,
+        now,
+        names=names,
+        ui_address=settings.temporal_ui_address,
+        namespace=settings.temporal_namespace,
+        limit=limit,
+        filters=filters,
+    )
+    runs_view: View[list[RunView]] = View(
+        source=SourceName.AUDIT,
+        available=audit.available,
+        stale=audit.stale,
+        fetched_at=audit.fetched_at,
+        reason=audit.reason,
+        remedy=audit.remedy,
+        data=projected,
+    )
+    running = None
+    if temporal.data is not None:
+        # Running runs are always taken unfiltered: the panel shows all of them.
+        every_run = project_runs(
+            events,
+            {info.workflow_id for info in temporal.data.running},
+            now,
+            names=names,
+            ui_address=settings.temporal_ui_address,
+            namespace=settings.temporal_namespace,
+            limit=500,
+        )
+        running = project_running(
+            temporal.data.running,
+            every_run,
+            now,
+            ui_address=settings.temporal_ui_address,
+            namespace=settings.temporal_namespace,
+        )
+    return runs_view, _from_temporal(temporal, running)
 
 
 def _device_names(sot: View[Any], last_known: dict) -> dict:
@@ -202,6 +374,7 @@ def create_app(
         redoc_url=None,
     )
     router = APIRouter(prefix="/api/v1")
+    reader = _Reader(sources, settings.connect_timeout)
 
     def _check_use_case(requested: str | None) -> str:
         if requested is not None and requested != use_case:
@@ -214,8 +387,7 @@ def create_app(
     @router.get("/devices", response_model=DevicesResponse)
     async def devices(requested: UseCaseQuery = None) -> DevicesResponse:
         served = _check_use_case(requested)
-        audit = await sources.audit.refresh()
-        sot = await sources.sot.refresh()
+        audit, sot = await reader.read_all(SourceName.AUDIT, SourceName.SOT)
         return DevicesResponse(
             use_case=served,
             generated_at=clock(),
@@ -230,64 +402,24 @@ def create_app(
         device: Annotated[str | None, Query(description="A device name.")] = None,
     ) -> RunsResponse:
         served = _check_use_case(requested)
-        audit = await sources.audit.refresh()
-        temporal = await sources.temporal.refresh()
-        names = _device_names(await sources.sot.refresh(), sources.sot.names)
-        # Only a current answer says what is running; a stale one could be wrong.
-        snapshot = temporal.data if temporal.available else None
-        projected = project_runs(
-            audit.data or [],
-            {info.workflow_id for info in snapshot.running} if snapshot else None,
+        audit, temporal, sot = await reader.read_all(SourceName.AUDIT, SourceName.TEMPORAL, SourceName.SOT)
+        runs_view, running_view = compose_runs(
+            audit,
+            temporal,
+            _device_names(sot, sources.sot.names),
+            settings,
             clock(),
-            names=names,
-            ui_address=settings.temporal_ui_address,
-            namespace=settings.temporal_namespace,
             limit=limit,
             filters=RunFilters(workflow_types=frozenset(workflow_type or ()), device=device),
         )
-        runs_view: View[list[RunView]] = View(
-            source=SourceName.AUDIT,
-            available=audit.available,
-            stale=audit.stale,
-            fetched_at=audit.fetched_at,
-            reason=audit.reason,
-            remedy=audit.remedy,
-            data=projected,
-        )
-        running = None
-        if temporal.data is not None:
-            # Running runs are always taken unfiltered: the panel shows all of them.
-            every_run = project_runs(
-                audit.data or [],
-                {info.workflow_id for info in temporal.data.running},
-                clock(),
-                names=names,
-                ui_address=settings.temporal_ui_address,
-                namespace=settings.temporal_namespace,
-                limit=500,
-            )
-            running = project_running(
-                temporal.data.running,
-                every_run,
-                clock(),
-                ui_address=settings.temporal_ui_address,
-                namespace=settings.temporal_namespace,
-            )
-        return RunsResponse(
-            use_case=served,
-            generated_at=clock(),
-            runs=runs_view,
-            running=_from_temporal(temporal, running),
-        )
+        return RunsResponse(use_case=served, generated_at=clock(), runs=runs_view, running=running_view)
 
     @router.get("/schedule", response_model=ScheduleResponse)
     async def schedule(requested: UseCaseQuery = None) -> ScheduleResponse:
         served = _check_use_case(requested)
-        audit = await sources.audit.refresh()
-        temporal = await sources.temporal.refresh()
-        names = _device_names(await sources.sot.refresh(), sources.sot.names)
+        audit, temporal, sot = await reader.read_all(SourceName.AUDIT, SourceName.TEMPORAL, SourceName.SOT)
         schedule_view, worker_view = compose_schedule(
-            temporal, audit, names, use_case=served, task_queue=settings.task_queue
+            temporal, audit, _device_names(sot, sources.sot.names), use_case=served, task_queue=settings.task_queue
         )
         return ScheduleResponse(use_case=served, generated_at=clock(), schedule=schedule_view, worker=worker_view)
 
@@ -309,7 +441,7 @@ def create_app(
         range_end = end or clock()
         range_start = start or range_end - timedelta(hours=24)
         names = series or list(SeriesName)
-        audit = await sources.audit.refresh()
+        audit = await reader.read(SourceName.AUDIT)
         try:
             projected = [project_series(audit.data or [], name, range_start, range_end, bucket) for name in names]
         except ValueError as exc:
@@ -320,13 +452,69 @@ def create_app(
     async def ci(requested: UseCaseQuery = None) -> CiResponse:
         """`main` and the open PRs: quality gate, jobs and coverage (research R9)."""
         served = _check_use_case(requested)
-        return CiResponse(use_case=served, generated_at=clock(), ci=await sources.ci.refresh())
+        return CiResponse(use_case=served, generated_at=clock(), ci=await reader.read(SourceName.CI))
 
     @router.get("/lab-runs", response_model=LabRunsResponse)
     async def lab_runs(requested: UseCaseQuery = None) -> LabRunsResponse:
         """The recorded live lab runs and how current they are (research R10)."""
         served = _check_use_case(requested)
-        return LabRunsResponse(use_case=served, generated_at=clock(), lab=await sources.lab_runs.refresh())
+        return LabRunsResponse(use_case=served, generated_at=clock(), lab=await reader.read(SourceName.LAB_RUNS))
+
+    @router.get("/overview", response_model=Overview)
+    async def overview(
+        requested: UseCaseQuery = None,
+        runs_limit: Annotated[int, Query(ge=1, le=500)] = 50,
+    ) -> Overview:
+        """Everything the page needs, in one request (US5).
+
+        Every source is read at once, each within its timeout, so the slowest
+        source bounds the request and a failing one only marks its own views.
+        """
+        served = _check_use_case(requested)
+        audit, sot, temporal, ci_view, lab_view = await reader.read_all(
+            SourceName.AUDIT, SourceName.SOT, SourceName.TEMPORAL, SourceName.CI, SourceName.LAB_RUNS
+        )
+        names = _device_names(sot, sources.sot.names)
+        now = clock()
+        runs_view, running_view = compose_runs(audit, temporal, names, settings, now, limit=runs_limit)
+        schedule_view, worker_view = compose_schedule(
+            temporal, audit, names, use_case=served, task_queue=settings.task_queue
+        )
+        return Overview(
+            use_case=served,
+            generated_at=now,
+            devices=compose_devices(audit, sot, sources.sot.names),
+            runs=runs_view,
+            running=running_view,
+            schedule=schedule_view,
+            worker=worker_view,
+            ci=ci_view,
+            lab=lab_view,
+        )
+
+    @router.get("/sources", response_model=SourcesResponse)
+    async def sources_status(requested: UseCaseQuery = None) -> SourcesResponse:
+        """Each source's state and the age of its last good read, without the data.
+
+        ``stale`` is always false here: the model ties it to the data, which this
+        view leaves out. ``fetched_at`` carries the age instead.
+        """
+        served = _check_use_case(requested)
+        views = await reader.read_all(*SourceName)
+        return SourcesResponse(
+            use_case=served,
+            generated_at=clock(),
+            sources=[
+                View(
+                    source=view.source,
+                    available=view.available,
+                    fetched_at=view.fetched_at,
+                    reason=view.reason,
+                    remedy=view.remedy,
+                )
+                for view in views
+            ],
+        )
 
     app.include_router(router)
 

@@ -26,12 +26,17 @@
   .state-undesired { color: var(--warn); }
   .state-never_scanned { color: var(--muted); }
   .paths { color: var(--muted); font-size: 12px; }
+  .sources { list-style: none; display: flex; flex-wrap: wrap; gap: .5rem 1rem; padding: 0; margin: 0 0 1rem; }
+  .sources li { font-size: 12px; }
+  .source-up::before { content: "● "; color: var(--ok); }
+  .source-down::before { content: "● "; color: var(--bad); }
   @media (max-width: 40rem) { .wide { display: none; } }
 </style>
 </head>
 <body>
 <h1>snapl dashboard</h1>
 <div class="meta" id="meta">Loading…</div>
+<ul class="sources" id="sources"></ul>
 <section>
   <h2>Devices</h2>
   <div id="devices-problem" hidden></div>
@@ -327,15 +332,39 @@ function renderCi(body) {
   }
 }
 
-// Each panel is fetched and rendered on its own, so one failing route never
-// blanks the others.
-const PANELS = [
-  ["/api/v1/devices", renderDevices],
-  ["/api/v1/runs", renderRuns],
-  ["/api/v1/schedule", (body) => renderSchedule(body.schedule, body.worker)],
-  ["/api/v1/lab-runs", renderLab],
-  ["/api/v1/ci", renderCi],
-];
+// The sources strip: each source's state, the age of its last good read, and
+// what to run when it is down.
+function renderSources(body) {
+  const items = body.sources.map((source) => {
+    const item = el("li", source.source + " · " + (source.fetched_at ? age(source.fetched_at) : "never read"),
+      source.available ? "source-up" : "source-down");
+    if (!source.available && source.remedy) {
+      item.append(el("span", " · "));
+      item.append(el("code", source.remedy));
+    }
+    return item;
+  });
+  document.getElementById("sources").replaceChildren(...items);
+}
+
+// One overview request feeds every panel. Each panel renders on its own, so a
+// view with an unexpected shape never blanks the others.
+function renderOverview(body) {
+  const panels = [
+    () => renderDevices({ use_case: body.use_case, devices: body.devices }),
+    () => renderRuns({ runs: body.runs, running: body.running }),
+    () => renderSchedule(body.schedule, body.worker),
+    () => renderLab({ lab: body.lab }),
+    () => renderCi({ ci: body.ci }),
+  ];
+  for (const render of panels) {
+    try {
+      render();
+    } catch (error) {
+      console.warn("dashboard panel failed:", error);
+    }
+  }
+}
 
 const HISTORY_MS = 60000;
 
@@ -395,13 +424,13 @@ async function refreshHistory() {
 }
 
 async function refresh() {
-  const results = await Promise.allSettled(PANELS.map(([path, render]) => getJson(path).then(render)));
-  const failed = results.filter((result) => result.status === "rejected");
-  if (failed.length === PANELS.length) {
+  const [overview, sources] = await Promise.allSettled([getJson("/api/v1/overview"), getJson("/api/v1/sources")]);
+  if (sources.status === "fulfilled") renderSources(sources.value);
+  if (overview.status === "fulfilled") {
+    renderOverview(overview.value);
+  } else {
     document.getElementById("meta").textContent =
-      "The dashboard server did not answer (" + failed[0].reason.message + "). Is snapl dashboard running?";
-  } else if (failed.length) {
-    console.warn("dashboard panels failed:", failed.map((result) => result.reason.message));
+      "The dashboard server did not answer (" + overview.reason.message + "). Is snapl dashboard running?";
   }
 }
 

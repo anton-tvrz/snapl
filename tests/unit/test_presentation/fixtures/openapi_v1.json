@@ -852,6 +852,60 @@
         "title": "Marker",
         "type": "object"
       },
+      "Overview": {
+        "additionalProperties": false,
+        "properties": {
+          "ci": {
+            "$ref": "#/components/schemas/View_CiStatus_"
+          },
+          "contract_version": {
+            "const": "1",
+            "default": "1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "devices": {
+            "$ref": "#/components/schemas/View_list_DeviceView__"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "lab": {
+            "$ref": "#/components/schemas/View_LabEvidence_"
+          },
+          "running": {
+            "$ref": "#/components/schemas/View_list_RunView__"
+          },
+          "runs": {
+            "$ref": "#/components/schemas/View_list_RunView__"
+          },
+          "schedule": {
+            "$ref": "#/components/schemas/View_ScheduleStatus_"
+          },
+          "use_case": {
+            "title": "Use Case",
+            "type": "string"
+          },
+          "worker": {
+            "$ref": "#/components/schemas/View_WorkerStatus_"
+          }
+        },
+        "required": [
+          "use_case",
+          "generated_at",
+          "devices",
+          "runs",
+          "running",
+          "schedule",
+          "worker",
+          "ci",
+          "lab"
+        ],
+        "title": "Overview",
+        "type": "object"
+      },
       "Point": {
         "additionalProperties": false,
         "properties": {
@@ -1353,6 +1407,40 @@
         "title": "SourceName",
         "type": "string"
       },
+      "SourcesResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "contract_version": {
+            "const": "1",
+            "default": "1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/View_NoneType_"
+            },
+            "title": "Sources",
+            "type": "array"
+          },
+          "use_case": {
+            "title": "Use Case",
+            "type": "string"
+          }
+        },
+        "required": [
+          "use_case",
+          "generated_at",
+          "sources"
+        ],
+        "title": "SourcesResponse",
+        "type": "object"
+      },
       "Trigger": {
         "enum": [
           "schedule",
@@ -1534,6 +1622,67 @@
           "available"
         ],
         "title": "View[LabEvidence]",
+        "type": "object"
+      },
+      "View_NoneType_": {
+        "additionalProperties": false,
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "data": {
+            "title": "Data",
+            "type": "null"
+          },
+          "fetched_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fetched At"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "remedy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remedy"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SourceName"
+          },
+          "stale": {
+            "default": false,
+            "title": "Stale",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "source",
+          "available"
+        ],
+        "title": "View[NoneType]",
         "type": "object"
       },
       "View_ScheduleStatus_": {
@@ -2120,6 +2269,67 @@
         "summary": "Lab Runs"
       }
     },
+    "/api/v1/overview": {
+      "get": {
+        "description": "Everything the page needs, in one request (US5).\n\nEvery source is read at once, each within its timeout, so the slowest\nsource bounds the request and a failing one only marks its own views.",
+        "operationId": "overview_api_v1_overview_get",
+        "parameters": [
+          {
+            "description": "Defaults to the server's --use-case.",
+            "in": "query",
+            "name": "use_case",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to the server's --use-case.",
+              "title": "Use Case"
+            }
+          },
+          {
+            "in": "query",
+            "name": "runs_limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Runs Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Overview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Overview"
+      }
+    },
     "/api/v1/runs": {
       "get": {
         "operationId": "runs_api_v1_runs_get",
@@ -2265,6 +2475,55 @@
           }
         },
         "summary": "Schedule"
+      }
+    },
+    "/api/v1/sources": {
+      "get": {
+        "description": "Each source's state and the age of its last good read, without the data.\n\n``stale`` is always false here: the model ties it to the data, which this\nview leaves out. ``fetched_at`` carries the age instead.",
+        "operationId": "sources_status_api_v1_sources_get",
+        "parameters": [
+          {
+            "description": "Defaults to the server's --use-case.",
+            "in": "query",
+            "name": "use_case",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to the server's --use-case.",
+              "title": "Use Case"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourcesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sources Status"
       }
     }
   }

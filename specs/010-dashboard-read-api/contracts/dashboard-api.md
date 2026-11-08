@@ -11,6 +11,7 @@ The server listens on `127.0.0.1:${DASHBOARD_PORT:-18030}`. Every route is `GET`
 - **`use_case`**: query parameter, default the server's `--use-case`. A use case the server was not started for returns `422`. One server serves one use case in 010.
 - **Times**: query times are ISO 8601 and must carry an offset. A naive time returns `422`.
 - **Caching**: each source has its own refresh time, so requests never wait on a slow source longer than its timeout (`SNAPL_CONNECT_TIMEOUT`, default 10 s):
+  - *Amended in PR F*: a request waits at most 1.5 s for any one source, or `SNAPL_CONNECT_TIMEOUT` if that is shorter. A source still fetching after that is shown as unavailable ("still waiting"), or with its last answer marked stale. Its fetch keeps running, shared by every request, and the next request picks up the answer. Restarting it on every poll would never let a slow source finish, and would spend GitHub's rate limit. Each fetch is bounded by `SNAPL_CONNECT_TIMEOUT`, except CI's, which is bounded at 60 s: a cold CI refresh is several GitHub calls in a row, each with its own 10 s timeout.
 
   | source | refresh | notes |
   | --- | --- | --- |
@@ -55,6 +56,8 @@ Known limitation: `web_ui_url` opens the workflow id's page, not one run's. The 
 `Envelope + { schedule: View[ScheduleStatus], worker: View[WorkerStatus] }`.
 
 Source: `temporal` for current state and the worker, plus `audit` for the pause actor and repeated failures. If Temporal is down, `schedule.available` is false, and `remedy` is `uv run invoke dev.deps`. `repeated_failures` is still computed from the audit trail and returned in `data`, marked `stale: true`.
+
+*Amended in PR F*: if the audit trail is down instead, `schedule.available` is also false, with the audit trail's reason and remedy. `data` still holds Temporal's schedule, but its `repeated_failures` and `paused_by` could not be read, and an empty list must not read as "repairs are fine". `worker` is unaffected.
 
 ### `GET /api/v1/history`
 `Envelope + { series: list[Series] }`.

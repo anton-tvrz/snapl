@@ -46,15 +46,17 @@ pytestmark = pytest.mark.unit
 T0 = datetime(2026, 11, 7, 21, 0, tzinfo=UTC)
 SNAPSHOT = Path(__file__).parent / "fixtures" / "openapi_v1.json"
 
-# The routes served so far. PR F adds overview and sources (contracts/dashboard-api.md).
+# Every route in contracts/dashboard-api.md.
 CONTRACT_ROUTES = {
     ("/", "GET"),
     ("/api/v1/ci", "GET"),
     ("/api/v1/devices", "GET"),
     ("/api/v1/history", "GET"),
     ("/api/v1/lab-runs", "GET"),
+    ("/api/v1/overview", "GET"),
     ("/api/v1/runs", "GET"),
     ("/api/v1/schedule", "GET"),
+    ("/api/v1/sources", "GET"),
     ("/api/v1/openapi.json", "GET"),
     ("/api/v1/openapi.json", "HEAD"),
 }
@@ -137,6 +139,7 @@ def _client(
     temporal: View[Any] | None = None,
     ci: View[Any] | None = None,
     lab: View[Any] | None = None,
+    settings: CliSettings | None = None,
 ) -> TestClient:
     sources = Sources(
         audit=FakeSource(audit or _audit_ok()),
@@ -145,7 +148,7 @@ def _client(
         ci=FakeSource(ci or _ci_ok()),
         lab_runs=FakeSource(lab or _lab_ok()),
     )
-    app = create_app(sources, CliSettings(), "dcfabric", clock=lambda: T0 + timedelta(seconds=5))
+    app = create_app(sources, settings or CliSettings(), "dcfabric", clock=lambda: T0 + timedelta(seconds=5))
     return TestClient(app)
 
 
@@ -251,7 +254,16 @@ def test_every_route_only_reads_and_matches_the_contract():
 
 @pytest.mark.parametrize(
     "path",
-    ["/api/v1/devices", "/api/v1/runs", "/api/v1/schedule", "/api/v1/history", "/api/v1/ci", "/api/v1/lab-runs"],
+    [
+        "/api/v1/devices",
+        "/api/v1/runs",
+        "/api/v1/schedule",
+        "/api/v1/history",
+        "/api/v1/ci",
+        "/api/v1/lab-runs",
+        "/api/v1/overview",
+        "/api/v1/sources",
+    ],
 )
 @pytest.mark.parametrize("method", ["HEAD", "POST", "PUT", "PATCH", "DELETE"])
 def test_other_methods_are_refused(method: str, path: str):
@@ -279,7 +291,8 @@ def test_page_is_html_with_no_external_urls():
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/html")
-    assert "/api/v1/devices" in response.text
+    assert "/api/v1/overview" in response.text
+    assert "/api/v1/sources" in response.text
     assert re.findall(r"https?://", response.text) == []
 
 
@@ -570,3 +583,285 @@ def test_ci_down_is_a_view_not_an_error():
     assert response.status_code == 200
     assert response.json()["ci"]["available"] is False
     assert response.json()["ci"]["remedy"] == "export GITHUB_TOKEN=…"
+
+
+# =============================================================================
+# Failure is data (US5): /api/v1/overview and /api/v1/sources
+# =============================================================================
+
+
+class RaisingSource:
+    def __init__(self) -> None:
+        self.names: dict = {}
+
+    async def refresh(self) -> View[Any]:
+        raise RuntimeError("connection reset by peer")
+
+
+class HangingSource:
+    def __init__(self) -> None:
+        self.names: dict = {}
+
+    async def refresh(self) -> View[Any]:
+        import asyncio
+
+        await asyncio.sleep(30)
+        raise AssertionError("unreachable")
+
+
+FAST = CliSettings(connect_timeout=0.2)
+
+# Which overview views each source feeds (contracts/dashboard-api.md).
+DEPENDENT = {
+    SourceName.AUDIT: {"devices", "runs", "schedule"},
+    SourceName.SOT: {"devices"},
+    SourceName.TEMPORAL: {"running", "schedule", "worker"},
+    SourceName.CI: {"ci"},
+    SourceName.LAB_RUNS: {"lab"},
+}
+VIEWS = ("devices", "runs", "running", "schedule", "worker", "ci", "lab")
+FIELD = {
+    SourceName.AUDIT: "audit",
+    SourceName.SOT: "sot",
+    SourceName.TEMPORAL: "temporal",
+    SourceName.CI: "ci",
+    SourceName.LAB_RUNS: "lab_runs",
+}
+
+
+def _app_with(failing: dict[SourceName, Any], settings: CliSettings = FAST) -> TestClient:
+    healthy = {
+        "audit": FakeSource(_audit_ok()),
+        "sot": FakeSource(_sot_ok()),
+        "temporal": FakeSource(_temporal_ok(_schedule())),
+        "ci": FakeSource(_ci_ok()),
+        "lab_runs": FakeSource(_lab_ok()),
+    }
+    for name, source in failing.items():
+        healthy[FIELD[name]] = source
+    app = create_app(Sources(**healthy), settings, "dcfabric", clock=lambda: T0 + timedelta(seconds=5))
+    return TestClient(app)
+
+
+def _overview(client: TestClient) -> tuple[dict, float]:
+    import time
+
+    started = time.perf_counter()
+    response = client.get("/api/v1/overview")
+    elapsed = time.perf_counter() - started
+    assert response.status_code == 200
+    return response.json(), elapsed
+
+
+@pytest.mark.parametrize("failure", [RaisingSource, HangingSource], ids=["raises", "hangs"])
+@pytest.mark.parametrize("source", list(SourceName), ids=[name.value for name in SourceName])
+def test_one_failing_source_affects_only_its_own_views(source: SourceName, failure):
+    healthy, _ = _overview(_app_with({}))
+
+    body, elapsed = _overview(_app_with({source: failure()}))
+
+    assert elapsed < 2
+    for view in VIEWS:
+        if view in DEPENDENT[source]:
+            assert body[view]["available"] is False, view
+            assert body[view]["reason"], view
+            assert body[view]["remedy"], view
+        else:
+            assert body[view] == healthy[view], view
+
+
+def test_every_source_down_is_still_200():
+    body, elapsed = _overview(_app_with({name: HangingSource() for name in SourceName}))
+
+    assert elapsed < 2
+    assert all(body[view]["available"] is False for view in VIEWS)
+    assert all(body[view]["remedy"] for view in VIEWS)
+
+
+def test_overview_carries_the_envelope_and_honours_runs_limit():
+    client = _app_with({})
+
+    body, _ = _overview(client)
+
+    assert body["contract_version"] == "1"
+    assert body["use_case"] == "dcfabric"
+    assert client.get("/api/v1/overview", params={"runs_limit": 0}).status_code == 422
+    assert client.get("/api/v1/overview", params={"runs_limit": 501}).status_code == 422
+
+
+def test_a_source_that_fails_after_answering_serves_its_last_data_as_stale():
+    flaky = FakeSource(_ci_ok())
+    client = _app_with({SourceName.CI: flaky})
+    first, _ = _overview(client)
+
+    flaky.view = None  # type: ignore[assignment]
+
+    async def boom() -> View[Any]:
+        raise RuntimeError("TLS handshake failed")
+
+    flaky.refresh = boom  # type: ignore[method-assign]
+    second, _ = _overview(client)
+
+    assert second["ci"]["available"] is False
+    assert second["ci"]["stale"] is True
+    assert second["ci"]["data"] == first["ci"]["data"]
+    assert second["ci"]["fetched_at"] == first["ci"]["fetched_at"]
+    assert "TLS handshake failed" in second["ci"]["reason"]
+
+
+# --- /api/v1/sources (T052) ----------------------------------------------------
+
+
+def test_sources_lists_every_source_without_data():
+    body = _app_with({}).get("/api/v1/sources").json()
+
+    assert [entry["source"] for entry in body["sources"]] == [name.value for name in SourceName]
+    assert all(entry["data"] is None for entry in body["sources"])
+    assert all(entry["available"] for entry in body["sources"])
+
+
+def test_sources_reports_the_last_successful_read_of_a_failing_source():
+    last_good = T0 - timedelta(minutes=3)
+    temporal = View(
+        source=SourceName.TEMPORAL,
+        available=False,
+        stale=True,
+        fetched_at=last_good,
+        reason="Temporal unreachable",
+        remedy="uv run invoke dev.deps",
+        data=TemporalSnapshot(running=[], pollers=1, schedule=None),
+    )
+
+    body = _app_with({SourceName.TEMPORAL: FakeSource(temporal)}).get("/api/v1/sources").json()
+
+    entry = {e["source"]: e for e in body["sources"]}["temporal"]
+    assert entry["available"] is False
+    assert entry["fetched_at"] == "2026-11-07T20:57:00Z"
+    assert entry["reason"] == "Temporal unreachable"
+    assert entry["remedy"] == "uv run invoke dev.deps"
+    assert entry["data"] is None
+
+
+def test_sources_reports_a_source_that_raised():
+    body = _app_with({SourceName.SOT: RaisingSource()}).get("/api/v1/sources").json()
+
+    entry = {e["source"]: e for e in body["sources"]}["sot"]
+    assert entry["available"] is False
+    assert "connection reset by peer" in entry["reason"]
+    assert entry["remedy"] == "uv run invoke dev.deps"
+
+
+# --- the dashboard and the CLI agree (T053, SC-002) -----------------------------
+
+
+def test_devices_and_schedule_agree_with_snapl_status_and_schedule_show():
+    """The same inputs, through the CLI's own commands and through the API."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from typer.testing import CliRunner
+
+    from snapl_intent.infrahub.identity import IdentityCheck, SotIdentity
+    from snapl_presentation import cli
+
+    running = [
+        RunningWorkflowInfo(
+            workflow_id="scan-drift-dcfabric-7",
+            workflow_type="ScanDrift",
+            start_time=T0,
+            task_queue="snapl-orchestrator",
+        )
+    ]
+    schedule = _schedule(paused=True)
+    states = [LEAF, SPINE]
+    with (
+        patch.object(cli, "_connect", AsyncMock(return_value=MagicMock())),
+        patch.object(cli, "count_pollers", AsyncMock(return_value=1)),
+        patch("snapl_orchestrator.worker.client.list_running_workflows", AsyncMock(return_value=running)),
+        patch("snapl_orchestrator.schedules.find_drift_schedule", AsyncMock(return_value=schedule)),
+        patch("snapl_orchestrator.schedules.describe_drift_schedule", AsyncMock(return_value=schedule)),
+        patch.object(cli, "build_store", return_value=MagicMock()),
+        patch.object(cli, "load_states", AsyncMock(return_value=states)),
+        patch.object(cli, "identify_sot", AsyncMock(return_value=IdentityCheck(SotIdentity.OURS, "ours"))),
+    ):
+        status = json.loads(CliRunner().invoke(cli.app, ["status", "--json"]).stdout)
+        shown = json.loads(CliRunner().invoke(cli.app, ["schedule", "show", "--json"]).stdout)
+
+    temporal = View(
+        source=SourceName.TEMPORAL,
+        available=True,
+        fetched_at=T0,
+        data=TemporalSnapshot(running=running, pollers=1, schedule=schedule),
+    )
+    sot = View(source=SourceName.SOT, available=True, fetched_at=T0, data=states)
+    client = _app_with({SourceName.TEMPORAL: FakeSource(temporal), SourceName.SOT: FakeSource(sot)})
+    overview, _ = _overview(client)
+
+    checks = {check["name"]: check for check in status["checks"]}
+    assert checks["'dcfabric' seeded"]["detail"] == f"{len(overview['devices']['data'])} devices"
+    assert {d["name"] for d in overview["devices"]["data"]} == {s.device.name for s in states}
+    assert checks["worker"]["detail"].startswith(f"{overview['worker']['data']['pollers']} polling")
+    assert [w["workflow_id"] for w in status["running_workflows"]] == [
+        r["workflow_id"] for r in overview["running"]["data"]
+    ]
+    assert overview["schedule"]["data"]["schedule"] == shown
+
+
+class SlowSource:
+    """Answers after ``delay`` seconds; counts how often it was asked."""
+
+    def __init__(self, view: View[Any], delay: float) -> None:
+        self.view = view
+        self.delay = delay
+        self.calls = 0
+        self.names: dict = {}
+
+    async def refresh(self) -> View[Any]:
+        import asyncio
+
+        self.calls += 1
+        await asyncio.sleep(self.delay)
+        return self.view
+
+
+def test_a_slow_source_is_fetched_once_in_the_background(monkeypatch: pytest.MonkeyPatch):
+    """A request waits only a short budget for a slow source. The fetch keeps
+    running, and a later request gets its answer, instead of cancelling it and
+    starting again on every poll (which would spend GitHub's rate limit)."""
+    import time
+
+    from snapl_presentation.dashboard import app as app_module
+
+    monkeypatch.setattr(app_module, "REQUEST_BUDGET_S", 0.2)
+    slow = SlowSource(_ci_ok(), delay=0.5)
+    # One event loop for every request, as under uvicorn: a TestClient used
+    # outside `with` runs each request in a loop of its own.
+    with _app_with({SourceName.CI: slow}, settings=CliSettings()) as client:
+        first, elapsed = _overview(client)
+        time.sleep(0.6)
+        second, _ = _overview(client)
+
+    assert elapsed < 2
+    assert first["ci"]["available"] is False
+    assert "still" in first["ci"]["reason"]
+    assert second["ci"]["available"] is True
+    assert second["ci"]["data"]["repo"] == "anton-tvrz/snapl"
+    assert slow.calls == 1
+
+
+def test_ci_is_not_cut_off_by_the_connect_timeout(monkeypatch: pytest.MonkeyPatch):
+    """A cold CI refresh is several GitHub calls in a row, each with its own
+    timeout. SNAPL_CONNECT_TIMEOUT bounds connecting to the stack, not that."""
+    import time
+
+    from snapl_presentation.dashboard import app as app_module
+
+    monkeypatch.setattr(app_module, "REQUEST_BUDGET_S", 0.1)
+    slow = SlowSource(_ci_ok(), delay=0.5)
+
+    with _app_with({SourceName.CI: slow}, settings=CliSettings(connect_timeout=0.3)) as client:
+        _overview(client)
+        time.sleep(0.6)
+        second, _ = _overview(client)
+
+    assert second["ci"]["available"] is True
+    assert slow.calls == 1
