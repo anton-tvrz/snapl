@@ -6,6 +6,7 @@ See [AGENTS.md](AGENTS.md) for full project context.
 - Lint: `uv run invoke lint`
 - Format: `uv run invoke format`
 - Test: `uv run invoke test-unit`
+- Live tests (need the lab): `uv run invoke test-e2e`, `uv run invoke test-integration`. Each run is recorded under `.snapl/test-runs/`
 - Start infra: `uv run invoke dev.deps`
 - Start worker: `uv run invoke orchestrator.start`
 - Branch from `main`, PR to `main`
@@ -44,7 +45,7 @@ Each package under `packages/` maps to one NAF block:
 - `presentation` — CLI interface
 
 ## Recent Changes
-- 010-dashboard-read-api (planned): fastapi>=0.115, uvicorn>=0.32, httpx>=0.28 in snapl-presentation; see ADR-0005
+- 010-dashboard-read-api: `snapl dashboard`, a local read-only page and JSON API (`/api/v1/*`); fastapi>=0.115, uvicorn>=0.32, httpx>=0.28 in snapl-presentation; see ADR-0005
 - 004-observability-drift: Added Python 3.12+ + pydantic>=2.5, snapl-intent (workspace dep), snapl-collector (workspace dep)
 - 003-collector-gnmi: Added Python 3.12+ + pygnmi>=0.8, grpcio>=1.60, pydantic>=2.5, snapl-intent (workspace dep)
 - 002-executor-gnmi: Added Python 3.12+ + pygnmi>=0.8, grpcio>=1.60, jinja2>=3.1, pydantic>=2.5, snapl-intent (workspace dep)

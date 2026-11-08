@@ -288,6 +288,29 @@ snapl audit --workflow drift-response-dcfabric   # every policy change, with who
 
 ---
 
+## Scenario 10 — Watch the loop (the dashboard)
+
+**Story:** "Everything the CLI shows, on one page that keeps itself current."
+
+```bash
+uv run snapl dashboard            # http://127.0.0.1:18030, in its own terminal
+```
+
+Open the page, then run beats 1 to 3 of the demo arc in another terminal.
+
+**Point at:**
+- Devices: each device's drift state and its direction. A few seconds after `snapl scan`, the device you changed by hand shows `undesired` or `missing`, with the exact paths and the command that fixes it. Undesired-only drift gets a note and no command, because removal isn't automatic (#65).
+- Recent runs: the deploy, scan and reconcile appear as each finishes, with its trigger (`operator` or `schedule`) and a link to the Temporal Web UI.
+- Schedule: the report-only schedule that `demo.up` created, its next run, and who paused it, if anyone did.
+- Last 24 hours: the number of drifted devices at each scan, with the reconcile marked. An hour with no scans reads "no scans".
+- The source strip: stop the worker or Temporal, and the strip names what is down and what to run. Only the views that depend on that source change.
+
+**Expect:** the page keeps loading whatever is down. `curl -s localhost:18030/api/v1/overview | jq` returns the data the page shows.
+
+The dashboard is local and read-only, and has no authentication, so keep it on 127.0.0.1.
+
+---
+
 ## Suggested 10-minute demo arc
 
 | # | beat | command | *min* |
@@ -297,6 +320,8 @@ snapl audit --workflow drift-response-dcfabric   # every policy change, with who
 | 3 | **Reconcile, rescan clean** — closed loop | `snapl reconcile --drifted --yes`, then `snapl scan` | 2 |
 | 4 | **Kill the worker mid-deploy** — durability is the differentiator | `snapl deploy leaf-01`, Ctrl-C the worker | 2 |
 | 5 | **Audit log** — everything you just did, from SQLite | `snapl audit --device spine-01` | 2 |
+
+Keep the dashboard (Scenario 10) open on a second screen through the arc: each beat shows up on it within seconds.
 
 Scenarios 4–6 are the Q&A reserve: "what if the SoT is stale / someone cancels / a device is down?"
 

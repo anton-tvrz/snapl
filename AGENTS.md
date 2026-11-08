@@ -80,7 +80,7 @@ This is a **uv workspace monorepo** with six packages mapped to NAF building blo
 | `snapl-collector`    | `snapl_collector`      | Collector      | Live network data retrieval                       |
 | `snapl-observability`| `snapl_observability`  | Observability  | Drift detection, audit logging (metrics: #147)    |
 | `snapl-orchestrator` | `snapl_orchestrator`   | Orchestrator   | Temporal workflows + activities                   |
-| `snapl-presentation` | `snapl_presentation`   | Presentation   | CLI / API user interface                          |
+| `snapl-presentation` | `snapl_presentation`   | Presentation   | `snapl` CLI and the read-only `snapl dashboard`   |
 
 **Dependency direction** (no circular deps):
 ```
@@ -106,6 +106,11 @@ uv run invoke scan                      # Security scan (bandit)
 # Testing
 uv run invoke test-unit                 # Run unit tests
 uv run pytest tests/unit/ -m unit -v    # Direct pytest
+uv run invoke test-e2e                  # Demo arc against the live stack (records the run)
+uv run invoke test-integration          # Integration tests against the live stack (records the run)
+
+# Operating
+uv run snapl dashboard                  # Local read-only dashboard + JSON API (spec 010)
 
 # Spec-Driven Development
 /speckit-constitution                   # View/update constitution

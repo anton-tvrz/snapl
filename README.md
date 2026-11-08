@@ -38,7 +38,7 @@ Single vendor: Nokia SR Linux. Vendor-specific code is confined to a few named p
 
 - **Removal is not implemented (#65).** Apply is a merge, so config deleted from intent stays on the device. snapl *detects* that undesired config and reports it, but does not remove it. Convergence is true for additions and changes.
 - **Self-healing is opt-in, per use case.** `demo.up` creates a report-only drift schedule (every 5 minutes); scheduled repairs happen only after `snapl schedule mode remediate`. A scheduled repair never removes config (#65), and a failed repair is retried every run until an operator switches back to report (#136).
-- **No metrics or dashboards (#101).** Drift and audit are visible through the CLI and the Temporal Web UI only.
+- **A local, read-only dashboard, not metrics.** `snapl dashboard` serves a page and a JSON API on 127.0.0.1: device drift, workflow runs, the drift schedule, history from the audit trail, CI status, and recorded live lab runs (spec 010). There are no metrics yet (#147) and no designed UI yet (#146), and the dashboard has no authentication.
 - **Config-level verification only.** Intent describes configuration. Operational expectations (BGP sessions established, interfaces oper-up) are not yet checked.
 
 ## Quick start
@@ -55,6 +55,7 @@ uv run snapl status
 uv run snapl deploy spine-01
 uv run snapl scan
 uv run snapl schedule show        # the report-only drift schedule demo.up created
+uv run snapl dashboard            # http://127.0.0.1:18030, read-only, in its own terminal
 ```
 
 [`docs/demo-scenarios.md`](docs/demo-scenarios.md) walks through the full demo: deploy, inducing drift by hand, scanning, reconciling, and reading the audit trail.
@@ -71,7 +72,8 @@ The governing rules are in the [constitution](.specify/memory/constitution.md); 
 ```bash
 uv run invoke lint        # ruff
 uv run invoke test-unit   # unit tests, no infrastructure needed
-uv run invoke test-e2e    # the demo arc end to end, against a live stack
+uv run invoke test-e2e    # the demo arc end to end, against a live stack (run recorded in .snapl/test-runs/)
+uv run invoke test-integration  # the integration tests, against a live stack (run recorded the same way)
 ```
 
 ## Lineage
