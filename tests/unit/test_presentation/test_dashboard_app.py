@@ -35,6 +35,8 @@ from snapl_presentation.dashboard.models import (
     LabEvidence,
     LabRun,
     LabRunStatus,
+    MetricsData,
+    MetricsViewName,
     SourceName,
     View,
 )
@@ -54,6 +56,7 @@ CONTRACT_ROUTES = {
     ("/api/v1/history", "GET"),
     ("/api/v1/lab-runs", "GET"),
     ("/api/v1/links", "GET"),
+    ("/api/v1/metrics/{view}", "GET"),
     ("/api/v1/overview", "GET"),
     ("/api/v1/runs", "GET"),
     ("/api/v1/schedule", "GET"),
@@ -70,6 +73,24 @@ class FakeSource:
 
     async def refresh(self) -> View[Any]:
         return self.view
+
+
+class FakePrometheus:
+    """A metrics source: ready for /sources, and canned or failing range queries."""
+
+    def __init__(self, ready: View[Any] | None = None, *, fail: Exception | None = None) -> None:
+        self.ready = ready or View(source=SourceName.PROMETHEUS, available=True, fetched_at=T0)
+        self.fail = fail
+        self.plans: list = []
+
+    async def refresh(self) -> View[Any]:
+        return self.ready
+
+    async def query(self, view: MetricsViewName, plan) -> MetricsData:
+        self.plans.append((view, plan))
+        if self.fail is not None:
+            raise self.fail
+        return MetricsData(view=view, unit="ms", start=plan.start, end=plan.end, step=plan.step, series=[])
 
 
 SPINE = DesiredState(
@@ -142,6 +163,7 @@ def _client(
     lab: View[Any] | None = None,
     settings: CliSettings | None = None,
     repo: str | None = "anton-tvrz/snapl",
+    prometheus: Any = None,
 ) -> TestClient:
     sources = Sources(
         audit=FakeSource(audit or _audit_ok()),
@@ -149,6 +171,7 @@ def _client(
         temporal=FakeSource(temporal or _temporal_ok()),
         ci=FakeSource(ci or _ci_ok()),
         lab_runs=FakeSource(lab or _lab_ok()),
+        prometheus=prometheus or FakePrometheus(),
     )
     app = create_app(sources, settings or CliSettings(), "dcfabric", clock=lambda: T0 + timedelta(seconds=5), repo=repo)
     return TestClient(app)
@@ -265,6 +288,7 @@ def test_every_route_only_reads_and_matches_the_contract():
         "/api/v1/lab-runs",
         "/api/v1/overview",
         "/api/v1/sources",
+        "/api/v1/metrics/gnmi-duration",
     ],
 )
 @pytest.mark.parametrize("method", ["HEAD", "POST", "PUT", "PATCH", "DELETE"])
@@ -683,6 +707,8 @@ DEPENDENT = {
     SourceName.TEMPORAL: {"running", "schedule", "worker"},
     SourceName.CI: {"ci"},
     SourceName.LAB_RUNS: {"lab"},
+    # Feeds /sources and the metrics routes, never the overview (spec 012).
+    SourceName.PROMETHEUS: set(),
 }
 VIEWS = ("devices", "runs", "running", "schedule", "worker", "ci", "lab")
 FIELD = {
@@ -691,6 +717,7 @@ FIELD = {
     SourceName.TEMPORAL: "temporal",
     SourceName.CI: "ci",
     SourceName.LAB_RUNS: "lab_runs",
+    SourceName.PROMETHEUS: "prometheus",
 }
 
 
@@ -701,6 +728,7 @@ def _app_with(failing: dict[SourceName, Any], settings: CliSettings = FAST) -> T
         "temporal": FakeSource(_temporal_ok(_schedule())),
         "ci": FakeSource(_ci_ok()),
         "lab_runs": FakeSource(_lab_ok()),
+        "prometheus": FakePrometheus(),
     }
     for name, source in failing.items():
         healthy[FIELD[name]] = source
@@ -946,3 +974,163 @@ def test_ci_is_not_cut_off_by_the_connect_timeout(monkeypatch: pytest.MonkeyPatc
 
     assert second["ci"]["available"] is True
     assert slow.calls == 1
+
+
+# --- /api/v1/metrics/{view} (spec 012, T012) -----------------------------------
+
+
+def test_metrics_returns_the_envelope_and_a_prometheus_view():
+    prometheus = FakePrometheus()
+
+    response = _client(prometheus=prometheus).get(
+        "/api/v1/metrics/gnmi-duration",
+        params={"start": "2026-11-07T20:00:00Z", "end": "2026-11-07T21:00:00Z"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["contract_version"] == "1"
+    assert body["use_case"] == "dcfabric"
+    view = body["metrics"]
+    assert view["source"] == "prometheus"
+    assert view["available"] is True
+    assert view["data"]["view"] == "gnmi-duration"
+    assert view["data"]["step"] == 15
+    [(name, plan)] = prometheus.plans
+    assert name is MetricsViewName.GNMI_DURATION
+    assert (plan.start, plan.end) == (T0 - timedelta(hours=1), T0)
+
+
+def test_metrics_defaults_to_the_last_hour_at_15_s():
+    prometheus = FakePrometheus()
+
+    assert _client(prometheus=prometheus).get("/api/v1/metrics/worker-up").status_code == 200
+
+    [(_, plan)] = prometheus.plans
+    now = T0 + timedelta(seconds=5)
+    assert plan.step == 15
+    assert plan.end == now - timedelta(seconds=now.timestamp() % 15)
+    assert plan.end - plan.start == timedelta(hours=1)
+
+
+def test_metrics_default_step_keeps_a_long_range_to_about_240_points():
+    prometheus = FakePrometheus()
+
+    _client(prometheus=prometheus).get(
+        "/api/v1/metrics/worker-up", params={"start": "2026-10-31T21:00:00Z", "end": "2026-11-07T21:00:00Z"}
+    )
+
+    [(_, plan)] = prometheus.plans
+    assert plan.step == 7 * 24 * 3600 // 240
+
+
+def test_metrics_unknown_view_is_404():
+    assert _client().get("/api/v1/metrics/cpu").status_code == 404
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"start": "2026-11-07T21:00:00Z", "end": "2026-11-07T21:00:00Z"},
+        {"start": "2026-11-07T21:00:00Z", "end": "2026-11-07T20:00:00Z"},
+        {"start": "2026-11-07T20:00:00", "end": "2026-11-07T21:00:00Z"},
+        {"start": "2025-10-01T00:00:00Z", "end": "2026-11-07T21:00:00Z"},
+        {"step": "0"},
+        {"use_case": "campus"},
+    ],
+    ids=["empty", "reversed", "naive", "over-400-days", "zero-step", "other-use-case"],
+)
+def test_metrics_rejects_a_bad_request(params: dict[str, str]):
+    prometheus = FakePrometheus()
+
+    assert _client(prometheus=prometheus).get("/api/v1/metrics/gnmi-duration", params=params).status_code == 422
+    assert prometheus.plans == []
+
+
+def test_metrics_with_prometheus_down_is_200_unavailable_with_the_remedy():
+    from snapl_presentation.dashboard.sources import SourceUnavailable
+
+    failing = FakePrometheus(fail=SourceUnavailable("Prometheus not reachable at http://x:1", "uv run invoke dev.deps"))
+
+    response = _client(prometheus=failing).get("/api/v1/metrics/gnmi-errors")
+
+    assert response.status_code == 200
+    view = response.json()["metrics"]
+    assert view["available"] is False
+    assert view["reason"] == "Prometheus not reachable at http://x:1"
+    assert view["remedy"] == "uv run invoke dev.deps"
+    assert view["data"] is None
+
+
+def test_metrics_with_prometheus_raising_anything_else_is_still_a_view():
+    response = _client(prometheus=FakePrometheus(fail=RuntimeError("boom"))).get("/api/v1/metrics/gnmi-errors")
+
+    view = response.json()["metrics"]
+    assert response.status_code == 200
+    assert view["available"] is False
+    assert "boom" in view["reason"]
+    assert view["remedy"] == "uv run invoke dev.deps"
+
+
+def test_metrics_keeps_the_last_good_answer_for_the_same_range_as_stale():
+    from snapl_presentation.dashboard.sources import SourceUnavailable
+
+    prometheus = FakePrometheus()
+    client = _client(prometheus=prometheus)
+    params = {"start": "2026-11-07T20:00:00Z", "end": "2026-11-07T21:00:00Z"}
+    first = client.get("/api/v1/metrics/gnmi-duration", params=params).json()["metrics"]
+
+    prometheus.fail = SourceUnavailable("bad_data: query timed out", "check Prometheus")
+    second = client.get("/api/v1/metrics/gnmi-duration", params=params).json()["metrics"]
+    other_view = client.get("/api/v1/metrics/gnmi-errors", params=params).json()["metrics"]
+
+    assert second["available"] is False
+    assert second["stale"] is True
+    assert second["data"] == first["data"]
+    assert second["reason"] == "bad_data: query timed out"
+    assert other_view["stale"] is False
+    assert other_view["data"] is None
+
+
+def test_metrics_requests_never_choose_the_promql():
+    """FR-011: only start, end and step come from the request. Through the real
+    client, an extra `query` parameter changes nothing Prometheus sees."""
+    import httpx
+
+    from snapl_presentation.dashboard.prometheus import PrometheusSource
+
+    seen: list[httpx.Request] = []
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"status": "success", "data": {"resultType": "matrix", "result": []}})
+
+    real = PrometheusSource(
+        "http://prom.test:9090", "default", "dcfabric", transport=httpx.MockTransport(answer), clock=lambda: T0
+    )
+    client = _client(prometheus=real)
+
+    client.get("/api/v1/metrics/worker-up", params={"query": "up", "match[]": "x"})
+
+    [request] = seen
+    assert dict(request.url.params)["query"] == 'up{job="snapl-worker"}'
+    assert set(request.url.params) == {"query", "start", "end", "step"}
+
+
+def test_overview_never_reads_prometheus_but_sources_does():
+    calls: list[str] = []
+
+    class Counting(FakePrometheus):
+        async def refresh(self) -> View[Any]:
+            calls.append("refresh")
+            return await super().refresh()
+
+    client = _app_with({SourceName.PROMETHEUS: Counting()})
+
+    body, _ = _overview(client)
+    assert "metrics" not in body
+    assert calls == []
+
+    entry = {e["source"]: e for e in client.get("/api/v1/sources").json()["sources"]}["prometheus"]
+    assert calls == ["refresh"]
+    assert entry["available"] is True

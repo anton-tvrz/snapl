@@ -101,6 +101,8 @@ When `.snapl/test-runs/` does not exist, the view is available with no runs, and
 
 ## Versioning
 
-A change is **compatible** when it only adds an optional field, a route, a query parameter, or an enum value that consumers are documented to tolerate. `DriftState`, `RunState`, `Trigger` and `JobResult` consumers must render an unknown value as its raw string.
+A change is **compatible** when it only adds an optional field, a route, a query parameter, or an enum value that consumers are documented to tolerate. `DriftState`, `RunState`, `Trigger`, `JobResult` and `SourceName` consumers must render an unknown value as its raw string.
+
+**Amended 2026-11-08 (spec 012):** `SourceName` joined the list above, and gained `prometheus`. The routes `GET /api/v1/metrics/{view}` and `GET /metrics` were added. See [012's contracts/metrics-api.md](../../012-measured-metrics/contracts/metrics-api.md). This page already rendered the source name as a raw string, so no consumer broke.
 
 Any other change is **breaking**. It moves to `/api/v2/`, keeps `/api/v1/` until spec 011's UI has moved, and bumps `contract_version`.

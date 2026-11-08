@@ -42,6 +42,8 @@ class SourceName(StrEnum):
     SOT = "sot"
     CI = "ci"
     LAB_RUNS = "lab_runs"
+    # Spec 012. Feeds /sources and the metrics routes, never the overview.
+    PROMETHEUS = "prometheus"
 
 
 class View[T](_Model):
@@ -384,3 +386,48 @@ class LinksResponse(Envelope):
     # Set when some links are left out, saying which and why.
     reason: str | None = None
     remedy: str | None = None
+
+
+# --- Metrics (spec 012) ----------------------------------------------------------
+
+
+class MetricsViewName(StrEnum):
+    """The named PromQL views. A request picks one; it never supplies a query (FR-011)."""
+
+    WORKFLOW_DURATION = "workflow-duration"
+    GNMI_DURATION = "gnmi-duration"
+    GNMI_ERRORS = "gnmi-errors"
+    WORKER_LAG = "worker-lag"
+    WORKER_UP = "worker-up"
+    SOURCE_HEALTH = "source-health"
+
+
+MetricUnit = Literal["ms", "per_second", "up"]
+
+
+class MetricPoint(_Model):
+    t: UtcDatetime
+    # None for NaN or +/-Inf: JSON has no such numbers, and the page shows a gap.
+    value: float | None
+
+
+class MetricSeries(_Model):
+    # Only the view's series labels: __name__, job and instance are dropped.
+    labels: dict[str, str]
+    points: list[MetricPoint]
+
+
+class MetricsData(_Model):
+    view: MetricsViewName
+    unit: MetricUnit
+    start: UtcDatetime
+    end: UtcDatetime
+    # Seconds, as used. It may be coarser than requested (FR-013).
+    step: int = Field(gt=0)
+    # Empty when there is no data: a note, not an error.
+    series: list[MetricSeries] = Field(default_factory=list)
+    note: str | None = None
+
+
+class MetricsResponse(Envelope):
+    metrics: View[MetricsData]

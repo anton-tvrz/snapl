@@ -31,6 +31,8 @@ if TYPE_CHECKING:
     from snapl_orchestrator.audit.abc import AuditLog
     from snapl_orchestrator.models import AuditEvent, DriftScheduleView
     from snapl_orchestrator.worker.client import RunningWorkflowInfo
+    from snapl_presentation.dashboard.models import MetricsData, MetricsViewName
+    from snapl_presentation.dashboard.prometheus import RangePlan
     from snapl_presentation.settings import CliSettings
 
     Clock = Callable[[], datetime]
@@ -66,6 +68,12 @@ class NamedViewSource(ViewSource, Protocol):
     names: dict[UUID, str]
 
 
+class MetricsSource(ViewSource, Protocol):
+    """``refresh`` feeds /sources; ``query`` the metrics routes (spec 012)."""
+
+    async def query(self, view: MetricsViewName, plan: RangePlan) -> MetricsData: ...
+
+
 @dataclass(frozen=True)
 class Sources:
     """The sources one app serves from, one per ``SourceName``."""
@@ -75,6 +83,7 @@ class Sources:
     temporal: ViewSource
     ci: ViewSource
     lab_runs: ViewSource
+    prometheus: MetricsSource
 
 
 def _failure(exc: Exception, remedy: str) -> SourceUnavailable:
