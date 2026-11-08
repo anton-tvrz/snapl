@@ -277,6 +277,12 @@ snapl schedule trigger --yes
 snapl audit --device spine-01         # decision undesired_only — no DeployIntent started
 ```
 
+The scan reports two items: the description, and `enabled: True`. Creating an interface entry also enables the port. snapl won't remove either one (#65), so delete the whole entry by hand when you're done:
+
+```bash
+docker exec clab-dcfabric-spine-01 sr_cli -ec 'delete / interface ethernet-1/7'
+```
+
 Pause before planned hand work, and switch back afterwards:
 
 ```bash
