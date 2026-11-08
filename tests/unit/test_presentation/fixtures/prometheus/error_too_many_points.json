@@ -1,0 +1,8 @@
+{
+  "http_status": 400,
+  "body": {
+    "status": "error",
+    "errorType": "bad_data",
+    "error": "exceeded maximum resolution of 11,000 points per timeseries. Try decreasing the query resolution (?step=XX)"
+  }
+}

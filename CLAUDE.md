@@ -45,6 +45,7 @@ Each package under `packages/` maps to one NAF block:
 - `presentation` — CLI interface
 
 ## Recent Changes
+- 012-measured-metrics (planned): Prometheus v3.10.0 in Compose, worker metrics via temporalio's runtime (no new Python deps), dashboard `/api/v1/metrics/*`, `invoke history.archive`/`history.purge`; see ADR-0005 Decision 3
 - 010-dashboard-read-api: `snapl dashboard`, a local read-only page and JSON API (`/api/v1/*`); fastapi>=0.115, uvicorn>=0.32, httpx>=0.28 in snapl-presentation; see ADR-0005
 - 004-observability-drift: Added Python 3.12+ + pydantic>=2.5, snapl-intent (workspace dep), snapl-collector (workspace dep)
 - 003-collector-gnmi: Added Python 3.12+ + pygnmi>=0.8, grpcio>=1.60, pydantic>=2.5, snapl-intent (workspace dep)
