@@ -32,10 +32,18 @@ The dashboard is a second Presentation surface next to the CLI, so the dependenc
 
 ### 2. A Node build toolchain for the UI only (spec 011)
 
-The UI uses React, Vite, TypeScript, Tailwind with shadcn/ui, Recharts and React Flow.
+The UI uses React, Vite, TypeScript, Tailwind with shadcn/ui, and Recharts.
 - **Build-time only**: Node is needed to *build* it, never to run snapl. The built files are not committed. `invoke dashboard.build` produces them, and `build-artifacts.yml` builds them before `uv build`, so the wheel ships them.
 - **CI**: gets one path-filtered front-end job.
-- **Bounded**: the toolchain lives in one directory and touches no Python package's dependencies.
+- **Bounded**: the toolchain lives in one directory, `packages/presentation/ui/`, and touches no Python package's dependencies.
+
+**Revised 2026-11-09** (#146, spec 011 research):
+- **React Flow is dropped.** The first version of this decision named it for the topology. A fixed, tiered drawing of six devices uses none of what it brings (pan, zoom, drag, a minimap). The topology is a hand-written SVG component whose layout is a pure, tested function (R7). Revisit if a use case brings a fabric too large for one screen.
+- **Versions** are the latest on npm on 2026-11-09, pinned exactly, with a committed lockfile (R1).
+- **No fallback to "no UI"**: a checkout without Node still serves 010's plain page at `/`, and the plain page stays at `/plain` (R2).
+- **Served through explicit GET routes**, not a static mount, so 010's read-only route test still sees every route and method (R3).
+- **A Content-Security-Policy on every response** replaces 010's `textContent` rule as the guard against external requests and injected markup (R4).
+- **The UI's types are generated from the OpenAPI snapshot** the Python tests already pin, and CI fails when they are stale (R5).
 
 ### 3. Prometheus, without Grafana (spec 012)
 
