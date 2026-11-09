@@ -190,7 +190,7 @@ Each PR says `Closes` a task issue under #147 and carries `changelog/147.added.m
 
 - [x] T030 [US4] tasks/history.py: `archive` (R9). Register it in tasks/__init__.py as the `history` collection.
 - [x] T031 [US2] tasks/history.py: `purge` (R10).
-- [ ] T032 [US4] **Needs the lab.** Quickstart item 6: archive with everything up, check all five parts with standard tools, then archive with the dashboard stopped.
+- [x] T032 [US4] **Needs the lab.** Quickstart item 6: archive with everything up, check all five parts with standard tools, then archive with the dashboard stopped.
 
 ---
 
@@ -219,9 +219,9 @@ Each PR says `Closes` a task issue under #147 and carries `changelog/147.added.m
 
 - [x] T040 **Needs the lab.** Quickstart item 1 (SC-001, SC-006).
 - [x] T041 **Needs the lab.** Quickstart item 2 (SC-004).
-- [ ] T042 **Needs the lab.** Quickstart items 3–5 (SC-002, SC-003). Then mark ADR-0005 Decision 3 Accepted.
+- [x] T042 **Needs the lab.** Quickstart items 3–5 (SC-002, SC-003). Then mark ADR-0005 Decision 3 Accepted.
 - [x] T043 **Needs the lab.** Quickstart item 7: re-capture the fixtures from the real stack with T036's script, and update the tests if the shapes changed.
-- [ ] T044 **Needs the lab.** After T042 (live evidence in, ADR-0005 Decision 3 Accepted): bump the constitution to 2.1.0 (minor), listing FastAPI/uvicorn (010) and Prometheus (012) under Technology Stack (FR-021). Node waits for 011.
+- [x] T044 **Needs the lab.** After T042 (live evidence in, ADR-0005 Decision 3 Accepted): bump the constitution to 2.1.0 (minor), listing FastAPI/uvicorn (010) and Prometheus (012) under Technology Stack (FR-021). Node waits for 011.
 
 ---
 
