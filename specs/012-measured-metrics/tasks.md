@@ -217,7 +217,7 @@ Each PR says `Closes` a task issue under #147 and carries `changelog/147.added.m
 
 ### Lab evidence (deferred in unattended runs)
 
-- [x] T040 **Needs the lab.** Quickstart item 1 (SC-001, SC-006).
+- [x] T040 **Needs the lab.** Quickstart item 1 (SC-001, SC-006). Done in #195. SC-001 is met in the letter only: after a series' first call its points are all `null` until a second call (#191).
 - [x] T041 **Needs the lab.** Quickstart item 2 (SC-004).
 - [x] T042 **Needs the lab.** Quickstart items 3–5 (SC-002, SC-003). Then mark ADR-0005 Decision 3 Accepted.
 - [x] T043 **Needs the lab.** Quickstart item 7: re-capture the fixtures from the real stack with T036's script, and update the tests if the shapes changed.

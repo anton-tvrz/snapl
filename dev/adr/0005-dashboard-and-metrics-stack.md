@@ -4,7 +4,7 @@
 
 - **Decision 1** (FastAPI and uvicorn, spec 010): Accepted on 2026-11-08, once spec 010's implementation PRs (#154, #160, #162, #164, #166, #168) had merged.
 - **Decision 2** (spec 011): Proposed.
-- **Decision 3** (spec 012): Accepted on 2026-11-09. Implemented by #180, #182, #184, #186 and #188; spec 012's quickstart items 1–7 were run against the live lab in #195. That run found four defects, none of which changes the decision: #191 (a series' first observation is invisible to `rate()`), #192 (the default buckets make the gNMI p95 a constant 480 ms), #194 and #196.
+- **Decision 3** (spec 012): Accepted on 2026-11-09. Implemented by #180, #182, #184, #186 and #188; spec 012's quickstart items 1–7 were run against the live lab in #195. Two defects it found are in this decision's metrics, and neither changes the decision: #191 (a series' first observation is invisible to `rate()`) and #192 (the default buckets make the gNMI p95 a constant 480 ms).
 
 ## Date
 
