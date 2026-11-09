@@ -165,7 +165,7 @@ Each PR says `Closes` a task issue under #147 and carries `changelog/147.added.m
 
 - [x] T025 [US2] development/docker-compose.yml: the `prometheus` service (contracts/history-tasks.md, "Compose"). development/prometheus/prometheus.yml.
 - [x] T026 [US2] tasks/dev.py: `deps` creates the directory. dev/knowledge/host-resource-registry.md: move 18090 and 18091 from reserved to in use.
-- [ ] T027 [US2] **Needs the lab.** Run `invoke dev.deps`, then confirm Prometheus is ready on 18090, both targets are listed, and `.snapl/prometheus/` holds data. Paste `curl localhost:18090/api/v1/targets | jq '.data.activeTargets[] | {job: .labels.job, health}'` into the PR.
+- [x] T027 [US2] **Needs the lab.** Run `invoke dev.deps`, then confirm Prometheus is ready on 18090, both targets are listed, and `.snapl/prometheus/` holds data. Paste `curl localhost:18090/api/v1/targets | jq '.data.activeTargets[] | {job: .labels.job, health}'` into the PR.
 
 ---
 
@@ -217,10 +217,10 @@ Each PR says `Closes` a task issue under #147 and carries `changelog/147.added.m
 
 ### Lab evidence (deferred in unattended runs)
 
-- [ ] T040 **Needs the lab.** Quickstart item 1 (SC-001, SC-006).
-- [ ] T041 **Needs the lab.** Quickstart item 2 (SC-004).
+- [x] T040 **Needs the lab.** Quickstart item 1 (SC-001, SC-006).
+- [x] T041 **Needs the lab.** Quickstart item 2 (SC-004).
 - [ ] T042 **Needs the lab.** Quickstart items 3–5 (SC-002, SC-003). Then mark ADR-0005 Decision 3 Accepted.
-- [ ] T043 **Needs the lab.** Quickstart item 7: re-capture the fixtures from the real stack with T036's script, and update the tests if the shapes changed.
+- [x] T043 **Needs the lab.** Quickstart item 7: re-capture the fixtures from the real stack with T036's script, and update the tests if the shapes changed.
 - [ ] T044 **Needs the lab.** After T042 (live evidence in, ADR-0005 Decision 3 Accepted): bump the constitution to 2.1.0 (minor), listing FastAPI/uvicorn (010) and Prometheus (012) under Technology Stack (FR-021). Node waits for 011.
 
 ---
