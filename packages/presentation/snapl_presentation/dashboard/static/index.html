@@ -1,0 +1,668 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>snapl dashboard</title>
+<!--
+  The spec 010 MVP page. It proves the API's data and nothing more: spec 011
+  replaces it, and the API does not change. One file, no framework, no build
+  step, and no request to any other origin (FR-008). Every value is rendered
+  with textContent, because audit payloads hold device-supplied strings.
+-->
+<style>
+  :root { color-scheme: light dark; --muted: #6b7280; --bad: #b91c1c; --warn: #b45309; --ok: #15803d; }
+  body { font: 14px/1.45 system-ui, sans-serif; margin: 0 auto; max-width: 72rem; padding: 1rem; }
+  h1 { font-size: 1.25rem; margin: 0 0 .25rem; }
+  .meta { color: var(--muted); margin-bottom: 1rem; }
+  .problem { border-left: 4px solid var(--bad); padding: .5rem .75rem; margin: .5rem 0 1rem; }
+  .problem.stale { border-color: var(--warn); }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { text-align: left; padding: .4rem .5rem; border-bottom: 1px solid rgba(127,127,127,.25); vertical-align: top; }
+  th { font-weight: 600; }
+  code { font: 12px/1.4 ui-monospace, monospace; user-select: all; }
+  .state-in_sync { color: var(--ok); }
+  .state-missing, .state-missing_and_undesired, .state-drifted, .state-error { color: var(--bad); }
+  .state-undesired { color: var(--warn); }
+  .state-never_scanned { color: var(--muted); }
+  .paths { color: var(--muted); font-size: 12px; }
+  .sources { list-style: none; display: flex; flex-wrap: wrap; gap: .5rem 1rem; padding: 0; margin: 0 0 1rem; }
+  .sources li { font-size: 12px; }
+  .source-up::before { content: "● "; color: var(--ok); }
+  .source-down::before { content: "● "; color: var(--bad); }
+  .links { display: flex; flex-wrap: wrap; gap: .25rem 1.25rem; font-size: 12px; margin: 0 0 .5rem; }
+  .links .group { color: var(--muted); margin-right: .35rem; }
+  .links a { margin-right: .6rem; }
+  .metrics-head { display: flex; align-items: baseline; gap: 1rem; }
+  .metric-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr)); gap: 1rem; }
+  .metric h3 { font-size: 13px; margin: 0 0 .25rem; }
+  .chart { display: block; width: 100%; height: 90px; border-bottom: 1px solid rgba(127,127,127,.25); }
+  .line { fill: none; stroke: var(--c); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+  .dot { fill: var(--c); }
+  .swatch { display: inline-block; width: .6rem; height: .6rem; margin-right: .3rem; background: var(--c); }
+  .c0 { --c: #2563eb; } .c1 { --c: #d97706; } .c2 { --c: #059669; }
+  .c3 { --c: #db2777; } .c4 { --c: #7c3aed; } .c5 { --c: #0891b2; }
+  .strip-row { display: flex; align-items: center; gap: .5rem; font-size: 12px; margin: .15rem 0; }
+  .strip-label { flex: 0 0 5.5rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+  .strip { flex: 1; height: 10px; }
+  .strip .up { fill: var(--ok); } .strip .down { fill: var(--bad); } .strip .gap { fill: rgba(127,127,127,.25); }
+  @media (max-width: 40rem) { .wide { display: none; } }
+</style>
+</head>
+<body>
+<h1>snapl dashboard</h1>
+<nav class="links" id="links" aria-label="Links"></nav>
+<div class="meta" id="meta">Loading…</div>
+<ul class="sources" id="sources"></ul>
+<section>
+  <h2>Devices</h2>
+  <div id="devices-problem" hidden></div>
+  <div class="meta" id="devices-age"></div>
+  <table>
+    <thead>
+      <tr>
+        <th>Device</th><th>Role</th><th>State</th><th class="wide">Last scan</th>
+        <th class="wide">Last deploy</th><th>Next step</th>
+      </tr>
+    </thead>
+    <tbody id="devices"></tbody>
+  </table>
+</section>
+<section>
+  <h2>Schedule</h2>
+  <div id="schedule-problem" hidden></div>
+  <div id="schedule"></div>
+  <div id="failures"></div>
+  <div class="meta" id="worker"></div>
+</section>
+<section>
+  <h2>Running now</h2>
+  <div id="running-problem" hidden></div>
+  <ul id="running"></ul>
+</section>
+<section>
+  <h2>Live lab evidence</h2>
+  <div id="lab-problem" hidden></div>
+  <div id="lab"></div>
+  <ul id="lab-runs"></ul>
+</section>
+<section>
+  <h2>CI</h2>
+  <div id="ci-problem" hidden></div>
+  <table>
+    <thead>
+      <tr><th>Target</th><th>Gate</th><th>Failed jobs</th><th class="wide">Coverage</th></tr>
+    </thead>
+    <tbody id="ci"></tbody>
+  </table>
+  <div class="meta" id="ci-meta"></div>
+</section>
+<section>
+  <h2>Last 24 hours</h2>
+  <div class="meta" id="history-meta"></div>
+  <table>
+    <thead>
+      <tr>
+        <th>Hour (UTC)</th><th>Scans</th><th>Most drifted devices</th><th class="wide">Most undesired paths</th>
+        <th>Deploys ok / failed</th><th class="wide">Repairs ok / failed</th>
+      </tr>
+    </thead>
+    <tbody id="history"></tbody>
+  </table>
+  <ul id="markers"></ul>
+</section>
+<section>
+  <h2>Recent runs</h2>
+  <div id="runs-problem" hidden></div>
+  <table>
+    <thead>
+      <tr>
+        <th>Started</th><th>Workflow</th><th>Target</th><th>State</th>
+        <th class="wide">Trigger</th><th class="wide">Took</th>
+      </tr>
+    </thead>
+    <tbody id="runs"></tbody>
+  </table>
+</section>
+<section>
+  <div class="metrics-head">
+    <h2>Metrics</h2>
+    <label>Range
+      <select id="metrics-range">
+        <option value="1h">1 h</option>
+        <option value="24h">24 h</option>
+        <option value="7d">7 d</option>
+      </select>
+    </label>
+  </div>
+  <div class="meta">From Prometheus, refreshed every 30 s. Durations are the 95th percentile.</div>
+  <div class="metric-grid" id="metrics"></div>
+  <!-- Parsed into the SVG namespace by the HTML parser; the charts read the
+       namespace from it, so the page itself names no URL (FR-008). -->
+  <svg id="svg-ns" style="display: none" aria-hidden="true"></svg>
+</section>
+<script>
+"use strict";
+
+const REFRESH_MS = 5000;
+
+function el(tag, text, className) {
+  const node = document.createElement(tag);
+  if (text !== undefined && text !== null) node.textContent = String(text);
+  if (className) node.className = className;
+  return node;
+}
+
+function age(iso) {
+  if (!iso) return "never";
+  const seconds = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000));
+  if (seconds < 60) return seconds + " s ago";
+  if (seconds < 3600) return Math.round(seconds / 60) + " min ago";
+  if (seconds < 86400) return Math.round(seconds / 3600) + " h ago";
+  return Math.round(seconds / 86400) + " d ago";
+}
+
+// A view that is down, or stale, says why and what to run.
+function showProblem(box, view) {
+  box.replaceChildren();
+  if (view.available) { box.hidden = true; return; }
+  box.hidden = false;
+  box.className = view.stale ? "problem stale" : "problem";
+  const what = view.stale ? "Showing data from " + age(view.fetched_at) + ". " : "";
+  box.append(el("div", what + view.source + " unavailable: " + view.reason));
+  if (view.remedy) {
+    const fix = el("div", "Try: ");
+    fix.append(el("code", view.remedy));
+    box.append(fix);
+  }
+}
+
+function deviceRow(device) {
+  const row = document.createElement("tr");
+  row.append(el("td", device.name + (device.in_intent ? "" : " (not in intent)")));
+  row.append(el("td", device.role || "unknown"));
+
+  const state = el("td", device.drift_state.replaceAll("_", " "), "state-" + device.drift_state);
+  const paths = [].concat(device.missing_paths, device.undesired_paths, device.unclassified_paths);
+  for (const path of paths) state.append(el("div", path, "paths"));
+  if (device.error) state.append(el("div", device.error, "paths"));
+  row.append(state);
+
+  row.append(el("td", age(device.last_scanned_at), "wide"));
+  const deploy = device.last_deploy;
+  row.append(el("td", deploy ? (deploy.success ? "succeeded " : "failed ") + age(deploy.ended_at) : "none", "wide"));
+
+  const next = el("td");
+  if (device.suggested_command) next.append(el("code", device.suggested_command));
+  if (device.note) next.append(el("div", device.note, "paths"));
+  row.append(next);
+  return row;
+}
+
+function seconds(total) {
+  if (total === null || total === undefined) return "";
+  if (total < 120) return total + " s";
+  return Math.round(total / 60) + " min";
+}
+
+// A link into the Temporal Web UI. The address comes from the API, so the
+// page's own source names no other origin.
+function runLink(run) {
+  const link = el("a", run.workflow_type);
+  link.href = run.web_ui_url;
+  link.rel = "noopener noreferrer";
+  link.target = "_blank";
+  link.title = run.workflow_id;
+  return link;
+}
+
+function runRow(run) {
+  const row = document.createElement("tr");
+  row.append(el("td", age(run.started_at)));
+  const name = el("td");
+  name.append(runLink(run));
+  row.append(name);
+  row.append(el("td", run.target || ""));
+  const state = el("td", run.state);
+  if (run.reason) state.append(el("div", run.reason, "paths"));
+  row.append(state);
+  row.append(el("td", run.trigger + (run.actor ? " (" + run.actor + ")" : ""), "wide"));
+  row.append(el("td", seconds(run.duration_s), "wide"));
+  return row;
+}
+
+function runningItem(run) {
+  const item = el("li");
+  item.append(runLink(run));
+  item.append(el("span", " " + (run.target || "") + " · " + seconds(run.duration_s) + " so far · " + run.trigger));
+  return item;
+}
+
+function renderSchedule(view, worker) {
+  showProblem(document.getElementById("schedule-problem"), view);
+  const box = document.getElementById("schedule");
+  box.replaceChildren();
+  const status = view.data;
+  // Only a current answer from Temporal can say whether a schedule exists.
+  if (status && view.available) {
+    if (!status.exists) {
+      box.append(el("div", "No drift schedule. Create one with:"));
+      box.append(el("code", status.suggested_command));
+    } else {
+      const s = status.schedule;
+      box.append(el("div", "Mode " + s.mode + " · every " + seconds(s.interval) +
+        (s.paused ? " · paused" : " · active")));
+      if (s.paused) {
+        const who = status.paused_by ? " by " + status.paused_by + " " + age(status.paused_at) : "";
+        box.append(el("div", "Paused" + who + (s.note ? ": " + s.note : ""), "paths"));
+      }
+      if (s.next_runs.length) box.append(el("div", "Next run " + s.next_runs[0], "paths"));
+      const last = s.recent_runs[s.recent_runs.length - 1];
+      if (last) box.append(el("div", "Last run " + age(last.started_at) + ": " + last.status, "paths"));
+    }
+  }
+  const failures = document.getElementById("failures");
+  failures.replaceChildren();
+  for (const failure of (status && status.repeated_failures) || []) {
+    const warning = el("div", failure.name + ": " + failure.consecutive_failures +
+      " scheduled repairs failed in a row. Stop repairing with ", "problem");
+    warning.append(el("code", failure.suggested_command));
+    failures.append(warning);
+  }
+  const workerLine = document.getElementById("worker");
+  if (worker.data) {
+    workerLine.textContent = worker.data.pollers + " worker(s) polling " + worker.data.task_queue;
+  } else {
+    workerLine.textContent = "Worker state unknown";
+  }
+}
+
+async function getJson(path) {
+  const response = await fetch(path, { cache: "no-store" });
+  if (!response.ok) throw new Error(path + ": HTTP " + response.status);
+  return response.json();
+}
+
+function renderDevices(body) {
+  const view = body.devices;
+  document.getElementById("meta").textContent = "Use case " + body.use_case + " · read-only · refreshed every 5 s";
+  showProblem(document.getElementById("devices-problem"), view);
+  document.getElementById("devices-age").textContent = "Data read " + age(view.fetched_at);
+  document.getElementById("devices").replaceChildren(...(view.data || []).map(deviceRow));
+}
+
+function renderRuns(body) {
+  showProblem(document.getElementById("running-problem"), body.running);
+  document.getElementById("running").replaceChildren(...(body.running.data || []).map(runningItem));
+  showProblem(document.getElementById("runs-problem"), body.runs);
+  document.getElementById("runs").replaceChildren(...(body.runs.data || []).map(runRow));
+}
+
+function link(text, href) {
+  const anchor = el("a", text);
+  anchor.href = href;
+  anchor.rel = "noopener noreferrer";
+  anchor.target = "_blank";
+  return anchor;
+}
+
+function labRunText(run) {
+  const counts = run.passed === null ? "" : " (" + run.passed + " passed, " + run.failed + " failed)";
+  const where = run.commit ? " at " + run.commit.slice(0, 8) + (run.dirty ? " (dirty)" : "") : "";
+  return run.suite + ": " + run.status + counts + where + " · " + (run.started_at ? age(run.started_at) : run.id);
+}
+
+function renderLab(body) {
+  const view = body.lab;
+  showProblem(document.getElementById("lab-problem"), view);
+  const box = document.getElementById("lab");
+  box.replaceChildren();
+  const evidence = view.data;
+  if (!evidence || !evidence.runs.length) {
+    box.append(el("div", "No live lab runs recorded yet. Record one with:"));
+    if (view.remedy) box.append(el("code", view.remedy));
+  } else {
+    for (const [suite, run] of Object.entries(evidence.latest)) {
+      const line = el("div", "Latest " + labRunText(run));
+      const since = evidence.commits_on_main_since[suite];
+      const note = since === null || since === undefined
+        ? "commits on main since: unknown (" + (evidence.commits_unknown_reason[suite] || "") + ")"
+        : since + " commits on main since the last live run (matched by " + evidence.matched_by[suite] + ")";
+      line.append(el("div", note, "paths"));
+      box.append(line);
+    }
+  }
+  const odd = ((evidence && evidence.runs) || []).filter((run) => run.status === "incomplete" || run.status === "unreadable");
+  document.getElementById("lab-runs").replaceChildren(...odd.map((run) =>
+    el("li", run.id + ": " + run.status + (run.problem ? " (" + run.problem + ")" : ""), "paths")));
+}
+
+function renderCi(body) {
+  const view = body.ci;
+  showProblem(document.getElementById("ci-problem"), view);
+  const rows = ((view.data && view.data.targets) || []).map((target) => {
+    const row = document.createElement("tr");
+    const name = el("td");
+    const label = target.kind === "main" ? "main" : "#" + target.number + " " + (target.title || "");
+    name.append(target.run_url ? link(label, target.run_url) : el("span", label));
+    row.append(name);
+    row.append(el("td", target.gate, target.gate === "success" ? "state-in_sync" : "state-missing"));
+    const failed = el("td");
+    for (const job of target.jobs.filter((j) => j.result === "failure")) {
+      failed.append(link(job.name, job.url));
+      failed.append(el("br"));
+    }
+    row.append(failed);
+    row.append(el("td", target.coverage_pct === null ? "" : target.coverage_pct.toFixed(1) + "%", "wide"));
+    return row;
+  });
+  document.getElementById("ci").replaceChildren(...rows);
+  const meta = document.getElementById("ci-meta");
+  if (view.data) {
+    const omitted = view.data.omitted_prs ? " · " + view.data.omitted_prs + " more PRs not checked without a token" : "";
+    meta.textContent = view.data.repo + " · read " + age(view.fetched_at) + omitted;
+  } else {
+    meta.textContent = "";
+  }
+}
+
+// The sources strip: each source's state, the age of its last good read, and
+// what to run when it is down.
+function renderSources(body) {
+  const items = body.sources.map((source) => {
+    const item = el("li", source.source + " · " + (source.fetched_at ? age(source.fetched_at) : "never read"),
+      source.available ? "source-up" : "source-down");
+    if (!source.available && source.remedy) {
+      item.append(el("span", " · "));
+      item.append(el("code", source.remedy));
+    }
+    return item;
+  });
+  document.getElementById("sources").replaceChildren(...items);
+}
+
+// One overview request feeds every panel. Each panel renders on its own, so a
+// view with an unexpected shape never blanks the others.
+function renderOverview(body) {
+  const panels = [
+    () => renderDevices({ use_case: body.use_case, devices: body.devices }),
+    () => renderRuns({ runs: body.runs, running: body.running }),
+    () => renderSchedule(body.schedule, body.worker),
+    () => renderLab({ lab: body.lab }),
+    () => renderCi({ ci: body.ci }),
+  ];
+  for (const render of panels) {
+    try {
+      render();
+    } catch (error) {
+      console.warn("dashboard panel failed:", error);
+    }
+  }
+}
+
+const HISTORY_MS = 60000;
+
+function counts(byOutcome) {
+  if (!byOutcome || byOutcome.succeeded === null) return "";
+  return byOutcome.succeeded + " / " + byOutcome.failed;
+}
+
+// One row per hour. Per-scan series are folded into their hour (the most
+// drifted any scan saw); an hour with no scan and no deploy says so rather
+// than showing zeros.
+function renderHistory(body) {
+  const byName = {};
+  for (const series of body.series) byName[series.name] = series;
+  const hours = byName.deploys.points;
+  const scans = byName.drifted_devices.points;
+  const undesired = byName.undesired_paths.points;
+  const repairs = byName.repairs.points;
+  const rows = [];
+  hours.forEach((hour, index) => {
+    const from = Date.parse(hour.t);
+    const to = from + 3600 * 1000;
+    const inHour = (point) => Date.parse(point.t) >= from && Date.parse(point.t) < to;
+    const hourScans = scans.filter(inHour);
+    const hourUndesired = undesired.filter(inHour).map((point) => point.value);
+    const row = document.createElement("tr");
+    row.append(el("td", hour.t.slice(0, 13).replace("T", " ") + ":00"));
+    if (!hourScans.length && hour.by_outcome.succeeded === null) {
+      const gap = el("td", "no scans", "state-never_scanned");
+      gap.colSpan = 5;
+      row.append(gap);
+    } else {
+      row.append(el("td", hourScans.length));
+      row.append(el("td", hourScans.length ? Math.max(...hourScans.map((point) => point.value)) : ""));
+      const known = hourUndesired.filter((value) => value !== null);
+      row.append(el("td", known.length ? Math.max(...known) : (hourUndesired.length ? "unknown" : ""), "wide"));
+      row.append(el("td", counts(hour.by_outcome)));
+      row.append(el("td", counts(repairs[index] && repairs[index].by_outcome), "wide"));
+    }
+    rows.push(row);
+  });
+  document.getElementById("history").replaceChildren(...rows.reverse());
+  const first = byName.deploys.first_event_at;
+  document.getElementById("history-meta").textContent =
+    first ? "The audit trail starts " + age(first) + "." : "No audit events read.";
+  const markers = byName.deploys.markers.map((marker) =>
+    el("li", age(marker.t) + ": " + marker.kind + " " + marker.workflow_id + " (" + marker.trigger + ")"));
+  document.getElementById("markers").replaceChildren(...markers);
+}
+
+async function refreshHistory() {
+  try {
+    renderHistory(await getJson("/api/v1/history"));
+  } catch (error) {
+    document.getElementById("history-meta").textContent = "History unavailable: " + error.message;
+  }
+}
+
+async function refresh() {
+  const [overview, sources] = await Promise.allSettled([getJson("/api/v1/overview"), getJson("/api/v1/sources")]);
+  if (sources.status === "fulfilled") renderSources(sources.value);
+  if (overview.status === "fulfilled") {
+    renderOverview(overview.value);
+  } else {
+    document.getElementById("meta").textContent =
+      "The dashboard server did not answer (" + overview.reason.message + "). Is snapl dashboard running?";
+  }
+}
+
+const LINK_GROUPS = { stack: "Stack", github: "GitHub", api: "API", docs: "Docs" };
+
+function renderLinks(body) {
+  const groups = new Map();
+  for (const item of body.links) {
+    if (!groups.has(item.group)) groups.set(item.group, []);
+    groups.get(item.group).push(link(item.label, item.url));
+  }
+  const spans = [...groups].map(([group, anchors]) => {
+    const span = el("span");
+    span.append(el("span", LINK_GROUPS[group] || group, "group"), ...anchors);
+    return span;
+  });
+  if (body.reason) spans.push(el("span", body.reason + " (" + body.remedy + ")"));
+  document.getElementById("links").replaceChildren(...spans);
+}
+
+// --- Metrics (spec 012) --------------------------------------------------------
+
+const METRICS_MS = 30000;
+const METRIC_VIEWS = [
+  { name: "workflow-duration", title: "Workflow duration" },
+  { name: "gnmi-duration", title: "gNMI call duration" },
+  { name: "gnmi-errors", title: "gNMI errors" },
+  { name: "worker-lag", title: "Activity wait before a worker picks it up" },
+  { name: "worker-up", title: "Worker up" },
+  { name: "source-health", title: "Dashboard sources up" },
+];
+const RANGES = { "1h": 3600, "24h": 86400, "7d": 604800 };
+const RANGE_KEY = "snapl.metrics.range";
+const SVG_NS = document.getElementById("svg-ns").namespaceURI;
+const CHART_W = 320;
+const CHART_H = 90;
+
+// The chosen range is a convenience: blocked storage only means the default.
+function loadRange() {
+  try {
+    const saved = localStorage.getItem(RANGE_KEY);
+    if (Object.hasOwn(RANGES, saved)) return saved;
+  } catch (error) {
+    console.warn("range not restored:", error);
+  }
+  return "1h";
+}
+
+function saveRange(value) {
+  try {
+    localStorage.setItem(RANGE_KEY, value);
+  } catch (error) {
+    console.warn("range not saved:", error);
+  }
+}
+
+function svg(tag, attributes) {
+  const node = document.createElementNS(SVG_NS, tag);
+  for (const [name, value] of Object.entries(attributes)) node.setAttribute(name, String(value));
+  return node;
+}
+
+function formatValue(value, unit) {
+  if (value === null || value === undefined) return "no data";
+  if (unit === "ms") return value >= 1000 ? (value / 1000).toFixed(2) + " s" : Math.round(value) + " ms";
+  if (unit === "per_second") return value.toFixed(3) + "/s";
+  return value >= 1 ? "up" : "down";
+}
+
+function seriesLabel(labels) {
+  const parts = Object.values(labels);
+  return parts.length ? parts.join(" ") : "all";
+}
+
+function latest(series) {
+  for (let i = series.points.length - 1; i >= 0; i--) {
+    if (series.points[i].value !== null) return series.points[i].value;
+  }
+  return null;
+}
+
+// One polyline per unbroken run of points: a null value is a gap, not a zero.
+function lineChart(data) {
+  const start = Date.parse(data.start);
+  const span = Math.max(1, Date.parse(data.end) - start);
+  const values = data.series.flatMap((series) => series.points.map((point) => point.value)).filter((v) => v !== null);
+  const top = values.length && Math.max(...values) > 0 ? Math.max(...values) * 1.1 : 1;
+  const chart = svg("svg", { viewBox: "0 0 " + CHART_W + " " + CHART_H, preserveAspectRatio: "none", class: "chart" });
+  data.series.forEach((series, index) => {
+    const colour = "c" + (index % 6);
+    let run = [];
+    const flush = () => {
+      if (run.length === 1) {
+        const [x, y] = run[0].split(",");
+        chart.append(svg("circle", { cx: x, cy: y, r: 1.5, class: "dot " + colour }));
+      } else if (run.length > 1) {
+        chart.append(svg("polyline", { points: run.join(" "), class: "line " + colour }));
+      }
+      run = [];
+    };
+    for (const point of series.points) {
+      if (point.value === null) { flush(); continue; }
+      const x = ((Date.parse(point.t) - start) / span) * CHART_W;
+      const y = CHART_H - (point.value / top) * CHART_H;
+      run.push(x.toFixed(1) + "," + y.toFixed(1));
+    }
+    flush();
+  });
+  return chart;
+}
+
+// Up/down over time, one row per series: green up, red down, grey no data.
+function upStrips(data) {
+  const start = Date.parse(data.start);
+  const span = Math.max(1, Date.parse(data.end) - start);
+  const width = Math.max(0.5, (data.step * 1000 / span) * CHART_W);
+  const box = el("div");
+  for (const series of data.series) {
+    const row = el("div", null, "strip-row");
+    row.append(el("span", seriesLabel(series.labels), "strip-label"));
+    const bar = svg("svg", { viewBox: "0 0 " + CHART_W + " 10", preserveAspectRatio: "none", class: "strip" });
+    for (const point of series.points) {
+      const state = point.value === null ? "gap" : point.value >= 1 ? "up" : "down";
+      const x = ((Date.parse(point.t) - start) / span) * CHART_W;
+      bar.append(svg("rect", { x: x.toFixed(2), y: 0, width: width.toFixed(2), height: 10, class: state }));
+    }
+    row.append(bar);
+    box.append(row);
+  }
+  return box;
+}
+
+function buildMetricPanels() {
+  const panels = METRIC_VIEWS.map((view) => {
+    const panel = el("div", null, "metric");
+    panel.id = "metric-" + view.name;
+    const problem = el("div");
+    problem.hidden = true;
+    panel.append(el("h3", view.title), problem, el("div"), el("div", null, "paths"));
+    return panel;
+  });
+  document.getElementById("metrics").replaceChildren(...panels);
+}
+
+function renderMetric(view, metrics) {
+  const [, problem, chart, legend] = document.getElementById("metric-" + view.name).children;
+  showProblem(problem, metrics);
+  const data = metrics.data;
+  if (!data) {
+    chart.replaceChildren();
+    legend.replaceChildren();
+    return;
+  }
+  chart.replaceChildren(data.unit === "up" ? upStrips(data) : lineChart(data));
+  const items = data.unit === "up" ? [] : data.series.map((series, index) => {
+    const item = el("div", seriesLabel(series.labels) + ": " + formatValue(latest(series), data.unit));
+    item.prepend(el("span", null, "swatch c" + (index % 6)));
+    return item;
+  });
+  if (data.note) items.push(el("div", data.note));
+  legend.replaceChildren(...items);
+}
+
+async function refreshMetrics() {
+  const range = document.getElementById("metrics-range").value;
+  const start = new Date(Date.now() - RANGES[range] * 1000).toISOString();
+  await Promise.allSettled(METRIC_VIEWS.map(async (view) => {
+    try {
+      const body = await getJson("/api/v1/metrics/" + view.name + "?start=" + encodeURIComponent(start));
+      renderMetric(view, body.metrics);
+    } catch (error) {
+      const [, problem] = document.getElementById("metric-" + view.name).children;
+      problem.hidden = false;
+      problem.className = "problem";
+      problem.replaceChildren(el("div", "The dashboard server did not answer: " + error.message));
+    }
+  }));
+}
+
+function startMetrics() {
+  buildMetricPanels();
+  const select = document.getElementById("metrics-range");
+  select.value = loadRange();
+  select.addEventListener("change", () => {
+    saveRange(select.value);
+    refreshMetrics();
+  });
+  refreshMetrics();
+  setInterval(refreshMetrics, METRICS_MS);
+}
+
+// The links follow the server's settings, which do not change while it runs.
+getJson("/api/v1/links").then(renderLinks, () => {});
+refresh();
+setInterval(refresh, REFRESH_MS);
+refreshHistory();
+setInterval(refreshHistory, HISTORY_MS);
+startMetrics();
+</script>
+</body>
+</html>

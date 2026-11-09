@@ -513,3 +513,39 @@ async def test_ensure_schedule_writes_report_mode_to_the_worker_audit_db(tmp_pat
 async def test_ensure_schedule_refuses_an_unreachable_temporal(monkeypatch) -> None:
     with patch.object(demo, "_probe_tcp", return_value=False), pytest.raises(demo.DemoConfigError, match=r"dev\.deps"):
         await demo.ensure_schedule(demo.DemoSettings.from_env(), use_case="dcfabric")
+
+
+# ---------------------------------------------------------------------------
+# reset keeps lab-run records (spec 010 T041, FR-029)
+# ---------------------------------------------------------------------------
+
+
+def test_reset_leaves_lab_run_records_alone(tmp_path, monkeypatch):
+    """`.snapl/` holds the recorded live runs. A reset tears down the stack and
+    the lab, and must leave that evidence where it is."""
+    from tasks import dev
+
+    monkeypatch.chdir(tmp_path)
+    sentinel = tmp_path / ".snapl" / "test-runs" / "20261107T101500Z-e2e" / "run.json"
+    sentinel.parent.mkdir(parents=True)
+    sentinel.write_text('{"format": 1}')
+
+    with patch.object(dev, "lab_destroy") as lab_destroy, patch.object(dev, "down") as down:
+        demo.reset(_ctx())
+
+    lab_destroy.assert_called_once()
+    down.assert_called_once()
+    assert sentinel.read_text() == '{"format": 1}'
+
+
+def test_reset_runs_no_command_that_names_snapl():
+    """FR-009: everything a reset runs (lab destroy, down --volumes) leaves .snapl alone,
+    which now holds the metrics store as well as the lab runs (spec 012 T024)."""
+    ctx = _ctx()
+
+    demo.reset(ctx)
+
+    commands = [call.args[0] for call in ctx.run.call_args_list]
+    assert commands, "reset ran nothing"
+    assert any("down --volumes" in command for command in commands)
+    assert not any(".snapl" in command for command in commands)

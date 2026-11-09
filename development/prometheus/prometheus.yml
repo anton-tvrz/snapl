@@ -1,0 +1,24 @@
+# Prometheus scrape config for snapl's dev stack (spec 012, research R6).
+#
+# Both targets run on the host, not in Compose: the worker (`invoke
+# orchestrator.start`) and the dashboard (`snapl dashboard`). They are reached
+# through host.docker.internal, on the ports in
+# dev/knowledge/host-resource-registry.md. A target that isn't running shows as
+# `up == 0`; that is data, not an error. The dashboard's views and its 15 s
+# cache assume this interval.
+#
+# Linux Docker reaches host.docker.internal on the bridge address, not
+# loopback: there, start the worker with WORKER_METRICS_BIND=0.0.0.0 (or the
+# bridge IP). macOS with OrbStack reaches a loopback bind directly.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: snapl-worker
+    static_configs:
+      - targets: ["host.docker.internal:18091"]
+  - job_name: snapl-dashboard
+    static_configs:
+      - targets: ["host.docker.internal:18030"]

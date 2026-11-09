@@ -305,3 +305,25 @@ async def test_child_id_collision_with_a_running_deploy_is_skipped(make_desired)
     assert result.failed == 0
     assert busy not in result.device_results
     assert free in result.device_results
+
+
+@pytest.mark.asyncio
+async def test_child_deploys_record_the_reconcile_as_their_parent(make_desired) -> None:
+    """FR-016a (spec 010, research R5): a deploy's trigger is read from the audit
+    trail, not guessed from timing, so each child names the run that started it."""
+    from snapl_orchestrator.models import AuditEventType
+
+    states = [make_desired(f"spine-0{i}") for i in range(1, 3)]
+    ids = [s.device.id for s in states]
+    deps = _build_activities(states)
+
+    async with await WorkflowEnvironment.start_time_skipping(data_converter=pydantic_data_converter) as env:
+        await _run(env, deps, ids)
+
+    for device_id in ids:
+        started = [
+            e
+            for e in await deps.audit_log.query_by_workflow(f"deploy-intent-{device_id}")
+            if e.event_type is AuditEventType.WORKFLOW_STARTED
+        ]
+        assert [e.payload for e in started] == [{"parent_workflow_id": f"reconcile-{ids[0]}"}]

@@ -16,7 +16,7 @@ from .shared import load_env_file
 # demo.seed, demo.check, orchestrator.start and test-e2e.
 load_env_file()
 
-from . import demo, dev, main, orchestrator  # noqa: E402 — must follow load_env_file
+from . import demo, dev, history, main, orchestrator  # noqa: E402 — must follow load_env_file
 
 ns = Collection()
 
@@ -26,6 +26,7 @@ ns.add_task(main.lint, name="lint")
 ns.add_task(main.scan, name="scan")
 ns.add_task(main.test_unit, name="test-unit")
 ns.add_task(main.test_e2e, name="test-e2e")
+ns.add_task(main.test_integration, name="test-integration")
 ns.add_task(main.check_all, name="check-all")
 
 # Dev environment namespace (deps, stop, down)
@@ -36,3 +37,6 @@ ns.add_collection(Collection.from_module(orchestrator, name="orchestrator"))
 
 # Demo namespace (up, seed, check, reset) — see docs/demo-scenarios.md
 ns.add_collection(Collection.from_module(demo, name="demo"))
+
+# History namespace (archive, purge) — spec 012, contracts/history-tasks.md
+ns.add_collection(Collection.from_module(history, name="history"))

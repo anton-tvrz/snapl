@@ -1,0 +1,3015 @@
+{
+  "components": {
+    "schemas": {
+      "Bucket": {
+        "enum": [
+          "5m",
+          "1h",
+          "1d",
+          "1w"
+        ],
+        "title": "Bucket",
+        "type": "string"
+      },
+      "CiJob": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "result": {
+            "$ref": "#/components/schemas/JobResult"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "result",
+          "url"
+        ],
+        "title": "CiJob",
+        "type": "object"
+      },
+      "CiResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "ci": {
+            "$ref": "#/components/schemas/View_CiStatus_"
+          },
+          "contract_version": {
+            "const": "1",
+            "default": "1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "use_case": {
+            "title": "Use Case",
+            "type": "string"
+          }
+        },
+        "required": [
+          "use_case",
+          "generated_at",
+          "ci"
+        ],
+        "title": "CiResponse",
+        "type": "object"
+      },
+      "CiStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "authenticated": {
+            "title": "Authenticated",
+            "type": "boolean"
+          },
+          "omitted_prs": {
+            "default": 0,
+            "title": "Omitted Prs",
+            "type": "integer"
+          },
+          "rate_limit_remaining": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Limit Remaining"
+          },
+          "repo": {
+            "title": "Repo",
+            "type": "string"
+          },
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/CiTarget"
+            },
+            "title": "Targets",
+            "type": "array"
+          }
+        },
+        "required": [
+          "repo",
+          "authenticated",
+          "targets"
+        ],
+        "title": "CiStatus",
+        "type": "object"
+      },
+      "CiTarget": {
+        "additionalProperties": false,
+        "properties": {
+          "coverage_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverage Pct"
+          },
+          "gate": {
+            "$ref": "#/components/schemas/JobResult"
+          },
+          "head_sha": {
+            "title": "Head Sha",
+            "type": "string"
+          },
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/CiJob"
+            },
+            "title": "Jobs",
+            "type": "array"
+          },
+          "kind": {
+            "enum": [
+              "main",
+              "pull_request"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Number"
+          },
+          "run_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Url"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "kind",
+          "head_sha",
+          "gate",
+          "jobs"
+        ],
+        "title": "CiTarget",
+        "type": "object"
+      },
+      "DeployOutcome": {
+        "additionalProperties": false,
+        "properties": {
+          "ended_at": {
+            "format": "date-time",
+            "title": "Ended At",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkflowReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          },
+          "workflow_id": {
+            "title": "Workflow Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workflow_id",
+          "success",
+          "ended_at"
+        ],
+        "title": "DeployOutcome",
+        "type": "object"
+      },
+      "DeviceView": {
+        "additionalProperties": false,
+        "properties": {
+          "device_id": {
+            "format": "uuid",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "drift_state": {
+            "$ref": "#/components/schemas/DriftState"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "in_intent": {
+            "title": "In Intent",
+            "type": "boolean"
+          },
+          "last_deploy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DeployOutcome"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "last_scan_workflow_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Scan Workflow Id"
+          },
+          "last_scanned_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Scanned At"
+          },
+          "missing_paths": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Paths",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
+          "suggested_command": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggested Command"
+          },
+          "unclassified_paths": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unclassified Paths",
+            "type": "array"
+          },
+          "undesired_paths": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Undesired Paths",
+            "type": "array"
+          }
+        },
+        "required": [
+          "device_id",
+          "name",
+          "role",
+          "in_intent",
+          "drift_state"
+        ],
+        "title": "DeviceView",
+        "type": "object"
+      },
+      "DevicesResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "contract_version": {
+            "const": "1",
+            "default": "1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "devices": {
+            "$ref": "#/components/schemas/View_list_DeviceView__"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "use_case": {
+            "title": "Use Case",
+            "type": "string"
+          }
+        },
+        "required": [
+          "use_case",
+          "generated_at",
+          "devices"
+        ],
+        "title": "DevicesResponse",
+        "type": "object"
+      },
+      "DriftResponseMode": {
+        "description": "What a scheduled run does with what its scan found (constitution VIII.2).\n\nThe third response, ``suppress``, is a paused schedule: nothing runs, so\nnothing carries a mode.",
+        "enum": [
+          "report",
+          "remediate"
+        ],
+        "title": "DriftResponseMode",
+        "type": "string"
+      },
+      "DriftScheduleView": {
+        "additionalProperties": false,
+        "description": "A drift schedule projected out of Temporal, so Presentation never sees client types.",
+        "properties": {
+          "interval": {
+            "title": "Interval",
+            "type": "integer"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/DriftResponseMode"
+          },
+          "next_runs": {
+            "items": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "title": "Next Runs",
+            "type": "array"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "paused": {
+            "title": "Paused",
+            "type": "boolean"
+          },
+          "recent_runs": {
+            "items": {
+              "$ref": "#/components/schemas/ScheduledRunInfo"
+            },
+            "title": "Recent Runs",
+            "type": "array"
+          },
+          "running": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Running",
+            "type": "array"
+          },
+          "schedule_id": {
+            "title": "Schedule Id",
+            "type": "string"
+          },
+          "skipped_overlap": {
+            "default": 0,
+            "title": "Skipped Overlap",
+            "type": "integer"
+          },
+          "use_case_id": {
+            "title": "Use Case Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schedule_id",
+          "use_case_id",
+          "interval",
+          "mode",
+          "paused"
+        ],
+        "title": "DriftScheduleView",
+        "type": "object"
+      },
+      "DriftState": {
+        "enum": [
+          "in_sync",
+          "missing",
+          "undesired",
+          "missing_and_undesired",
+          "drifted",
+          "error",
+          "never_scanned"
+        ],
+        "title": "DriftState",
+        "type": "string"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HistoryResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "contract_version": {
+            "const": "1",
+            "default": "1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "series": {
+            "items": {
+              "$ref": "#/components/schemas/Series"
+            },
+            "title": "Series",
+            "type": "array"
+          },
+          "use_case": {
+            "title": "Use Case",
+            "type": "string"
+          }
+        },
+        "required": [
+          "use_case",
+          "generated_at",
+          "series"
+        ],
+        "title": "HistoryResponse",
+        "type": "object"
+      },
+      "JobResult": {
+        "enum": [
+          "success",
+          "failure",
+          "cancelled",
+          "skipped",
+          "in_progress",
+          "queued",
+          "neutral"
+        ],
+        "title": "JobResult",
+        "type": "string"
+      },
+      "LabEvidence": {
+        "additionalProperties": false,
+        "properties": {
+          "commits_on_main_since": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "propertyNames": {
+              "enum": [
+                "e2e",
+                "integration"
+              ]
+            },
+            "title": "Commits On Main Since",
+            "type": "object"
+          },
+          "commits_unknown_reason": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "enum": [
+                "e2e",
+                "integration"
+              ]
+            },
+            "title": "Commits Unknown Reason",
+            "type": "object"
+          },
+          "latest": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/LabRun"
+            },
+            "propertyNames": {
+              "enum": [
+                "e2e",
+                "integration"
+              ]
+            },
+            "title": "Latest",
+            "type": "object"
+          },
+          "matched_by": {
+            "additionalProperties": {
+              "enum": [
+                "ancestor",
+                "tree"
+              ],
+              "type": "string"
+            },
+            "propertyNames": {
+              "enum": [
+                "e2e",
+                "integration"
+              ]
+            },
+            "title": "Matched By",
+            "type": "object"
+          },
+          "runs": {
+            "items": {
+              "$ref": "#/components/schemas/LabRun"
+            },
+            "maxItems": 20,
+            "title": "Runs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "latest",
+          "commits_on_main_since",
+          "runs"
+        ],
+        "title": "LabEvidence",
+        "type": "object"
+      },
+      "LabRun": {
+        "additionalProperties": false,
+        "properties": {
+          "branch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch"
+          },
+          "commit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Commit"
+          },
+          "device_image": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Image"
+          },
+          "dirty": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dirty"
+          },
+          "ended_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended At"
+          },
+          "errors": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Errors"
+          },
+          "failed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failed"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "passed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Passed"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Problem"
+          },
+          "skipped": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skipped"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/LabRunStatus"
+          },
+          "suite": {
+            "enum": [
+              "e2e",
+              "integration"
+            ],
+            "title": "Suite",
+            "type": "string"
+          },
+          "tree": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tree"
+          }
+        },
+        "required": [
+          "id",
+          "suite",
+          "status"
+        ],
+        "title": "LabRun",
+        "type": "object"
+      },
+      "LabRunStatus": {
+        "enum": [
+          "running",
+          "passed",
+          "failed",
+          "interrupted",
+          "incomplete",
+          "unreadable"
+        ],
+        "title": "LabRunStatus",
+        "type": "string"
+      },
+      "LabRunsResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "contract_version": {
+            "const": "1",
+            "default": "1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "lab": {
+            "$ref": "#/components/schemas/View_LabEvidence_"
+          },
+          "use_case": {
+            "title": "Use Case",
+            "type": "string"
+          }
+        },
+        "required": [
+          "use_case",
+          "generated_at",
+          "lab"
+        ],
+        "title": "LabRunsResponse",
+        "type": "object"
+      },
+      "Link": {
+        "additionalProperties": false,
+        "properties": {
+          "group": {
+            "$ref": "#/components/schemas/LinkGroup"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "group",
+          "label",
+          "url"
+        ],
+        "title": "Link",
+        "type": "object"
+      },
+      "LinkGroup": {
+        "enum": [
+          "stack",
+          "github",
+          "api",
+          "docs"
+        ],
+        "title": "LinkGroup",
+        "type": "string"
+      },
+      "LinksResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "contract_version": {
+            "const": "1",
+            "default": "1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "links": {
+            "items": {
+              "$ref": "#/components/schemas/Link"
+            },
+            "title": "Links",
+            "type": "array"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "remedy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remedy"
+          },
+          "use_case": {
+            "title": "Use Case",
+            "type": "string"
+          }
+        },
+        "required": [
+          "use_case",
+          "generated_at",
+          "links"
+        ],
+        "title": "LinksResponse",
+        "type": "object"
+      },
+      "Marker": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": [
+              "reconcile",
+              "remediation"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "t": {
+            "format": "date-time",
+            "title": "T",
+            "type": "string"
+          },
+          "trigger": {
+            "$ref": "#/components/schemas/Trigger"
+          },
+          "workflow_id": {
+            "title": "Workflow Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "t",
+          "kind",
+          "workflow_id",
+          "trigger"
+        ],
+        "title": "Marker",
+        "type": "object"
+      },
+      "MetricPoint": {
+        "additionalProperties": false,
+        "properties": {
+          "t": {
+            "format": "date-time",
+            "title": "T",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "t",
+          "value"
+        ],
+        "title": "MetricPoint",
+        "type": "object"
+      },
+      "MetricSeries": {
+        "additionalProperties": false,
+        "properties": {
+          "labels": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Labels",
+            "type": "object"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/MetricPoint"
+            },
+            "title": "Points",
+            "type": "array"
+          }
+        },
+        "required": [
+          "labels",
+          "points"
+        ],
+        "title": "MetricSeries",
+        "type": "object"
+      },
+      "MetricsData": {
+        "additionalProperties": false,
+        "properties": {
+          "end": {
+            "format": "date-time",
+            "title": "End",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "series": {
+            "items": {
+              "$ref": "#/components/schemas/MetricSeries"
+            },
+            "title": "Series",
+            "type": "array"
+          },
+          "start": {
+            "format": "date-time",
+            "title": "Start",
+            "type": "string"
+          },
+          "step": {
+            "exclusiveMinimum": 0.0,
+            "title": "Step",
+            "type": "integer"
+          },
+          "unit": {
+            "enum": [
+              "ms",
+              "per_second",
+              "up"
+            ],
+            "title": "Unit",
+            "type": "string"
+          },
+          "view": {
+            "$ref": "#/components/schemas/MetricsViewName"
+          }
+        },
+        "required": [
+          "view",
+          "unit",
+          "start",
+          "end",
+          "step"
+        ],
+        "title": "MetricsData",
+        "type": "object"
+      },
+      "MetricsResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "contract_version": {
+            "const": "1",
+            "default": "1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "metrics": {
+            "$ref": "#/components/schemas/View_MetricsData_"
+          },
+          "use_case": {
+            "title": "Use Case",
+            "type": "string"
+          }
+        },
+        "required": [
+          "use_case",
+          "generated_at",
+          "metrics"
+        ],
+        "title": "MetricsResponse",
+        "type": "object"
+      },
+      "MetricsViewName": {
+        "description": "The named PromQL views. A request picks one; it never supplies a query (FR-011).",
+        "enum": [
+          "workflow-duration",
+          "gnmi-duration",
+          "gnmi-errors",
+          "worker-lag",
+          "worker-up",
+          "source-health"
+        ],
+        "title": "MetricsViewName",
+        "type": "string"
+      },
+      "Overview": {
+        "additionalProperties": false,
+        "properties": {
+          "ci": {
+            "$ref": "#/components/schemas/View_CiStatus_"
+          },
+          "contract_version": {
+            "const": "1",
+            "default": "1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "devices": {
+            "$ref": "#/components/schemas/View_list_DeviceView__"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "lab": {
+            "$ref": "#/components/schemas/View_LabEvidence_"
+          },
+          "running": {
+            "$ref": "#/components/schemas/View_list_RunView__"
+          },
+          "runs": {
+            "$ref": "#/components/schemas/View_list_RunView__"
+          },
+          "schedule": {
+            "$ref": "#/components/schemas/View_ScheduleStatus_"
+          },
+          "use_case": {
+            "title": "Use Case",
+            "type": "string"
+          },
+          "worker": {
+            "$ref": "#/components/schemas/View_WorkerStatus_"
+          }
+        },
+        "required": [
+          "use_case",
+          "generated_at",
+          "devices",
+          "runs",
+          "running",
+          "schedule",
+          "worker",
+          "ci",
+          "lab"
+        ],
+        "title": "Overview",
+        "type": "object"
+      },
+      "Point": {
+        "additionalProperties": false,
+        "properties": {
+          "by_outcome": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "By Outcome"
+          },
+          "t": {
+            "format": "date-time",
+            "title": "T",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "t"
+        ],
+        "title": "Point",
+        "type": "object"
+      },
+      "RepeatedRepairFailure": {
+        "additionalProperties": false,
+        "properties": {
+          "consecutive_failures": {
+            "minimum": 3.0,
+            "title": "Consecutive Failures",
+            "type": "integer"
+          },
+          "device_id": {
+            "format": "uuid",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "last_failed_at": {
+            "format": "date-time",
+            "title": "Last Failed At",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "suggested_command": {
+            "title": "Suggested Command",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_id",
+          "name",
+          "consecutive_failures",
+          "last_failed_at",
+          "suggested_command"
+        ],
+        "title": "RepeatedRepairFailure",
+        "type": "object"
+      },
+      "RunState": {
+        "enum": [
+          "running",
+          "succeeded",
+          "failed",
+          "cancelled",
+          "unfinished"
+        ],
+        "title": "RunState",
+        "type": "string"
+      },
+      "RunSummary": {
+        "additionalProperties": false,
+        "description": "One completed scheduled run, as the schedule view summarises it.",
+        "properties": {
+          "clean": {
+            "title": "Clean",
+            "type": "integer"
+          },
+          "drifted": {
+            "title": "Drifted",
+            "type": "integer"
+          },
+          "errored": {
+            "title": "Errored",
+            "type": "integer"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "remediated": {
+            "title": "Remediated",
+            "type": "integer"
+          },
+          "succeeded": {
+            "title": "Succeeded",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "wrote": {
+            "title": "Wrote",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "total",
+          "clean",
+          "drifted",
+          "errored",
+          "remediated",
+          "succeeded",
+          "failed",
+          "wrote"
+        ],
+        "title": "RunSummary",
+        "type": "object"
+      },
+      "RunView": {
+        "additionalProperties": false,
+        "description": "One workflow run. Its identity is (workflow_id, started_at), because\n`deploy-intent-{device}` is reused across runs (research R5).",
+        "properties": {
+          "actor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor"
+          },
+          "duration_s": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration S"
+          },
+          "ended_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended At"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/RunState"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          },
+          "trigger": {
+            "$ref": "#/components/schemas/Trigger"
+          },
+          "web_ui_url": {
+            "title": "Web Ui Url",
+            "type": "string"
+          },
+          "workflow_id": {
+            "title": "Workflow Id",
+            "type": "string"
+          },
+          "workflow_type": {
+            "title": "Workflow Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workflow_id",
+          "workflow_type",
+          "target",
+          "started_at",
+          "state",
+          "trigger",
+          "web_ui_url"
+        ],
+        "title": "RunView",
+        "type": "object"
+      },
+      "RunsResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "contract_version": {
+            "const": "1",
+            "default": "1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "running": {
+            "$ref": "#/components/schemas/View_list_RunView__"
+          },
+          "runs": {
+            "$ref": "#/components/schemas/View_list_RunView__"
+          },
+          "use_case": {
+            "title": "Use Case",
+            "type": "string"
+          }
+        },
+        "required": [
+          "use_case",
+          "generated_at",
+          "runs",
+          "running"
+        ],
+        "title": "RunsResponse",
+        "type": "object"
+      },
+      "ScheduleResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "contract_version": {
+            "const": "1",
+            "default": "1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "schedule": {
+            "$ref": "#/components/schemas/View_ScheduleStatus_"
+          },
+          "use_case": {
+            "title": "Use Case",
+            "type": "string"
+          },
+          "worker": {
+            "$ref": "#/components/schemas/View_WorkerStatus_"
+          }
+        },
+        "required": [
+          "use_case",
+          "generated_at",
+          "schedule",
+          "worker"
+        ],
+        "title": "ScheduleResponse",
+        "type": "object"
+      },
+      "ScheduleStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "exists": {
+            "title": "Exists",
+            "type": "boolean"
+          },
+          "paused_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paused At"
+          },
+          "paused_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paused By"
+          },
+          "repeated_failures": {
+            "items": {
+              "$ref": "#/components/schemas/RepeatedRepairFailure"
+            },
+            "title": "Repeated Failures",
+            "type": "array"
+          },
+          "schedule": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DriftScheduleView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "suggested_command": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggested Command"
+          }
+        },
+        "required": [
+          "exists"
+        ],
+        "title": "ScheduleStatus",
+        "type": "object"
+      },
+      "ScheduledRunInfo": {
+        "additionalProperties": false,
+        "description": "One recent firing of a drift schedule.",
+        "properties": {
+          "scheduled_at": {
+            "format": "date-time",
+            "title": "Scheduled At",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "workflow_id": {
+            "title": "Workflow Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workflow_id",
+          "scheduled_at",
+          "started_at",
+          "status"
+        ],
+        "title": "ScheduledRunInfo",
+        "type": "object"
+      },
+      "Series": {
+        "additionalProperties": false,
+        "properties": {
+          "bucket": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Bucket"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "end": {
+            "format": "date-time",
+            "title": "End",
+            "type": "string"
+          },
+          "first_event_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Event At"
+          },
+          "markers": {
+            "items": {
+              "$ref": "#/components/schemas/Marker"
+            },
+            "title": "Markers",
+            "type": "array"
+          },
+          "name": {
+            "$ref": "#/components/schemas/SeriesName"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/Point"
+            },
+            "title": "Points",
+            "type": "array"
+          },
+          "start": {
+            "format": "date-time",
+            "title": "Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "start",
+          "end",
+          "bucket",
+          "points",
+          "markers"
+        ],
+        "title": "Series",
+        "type": "object"
+      },
+      "SeriesName": {
+        "enum": [
+          "drifted_devices",
+          "undesired_paths",
+          "deploys",
+          "repairs"
+        ],
+        "title": "SeriesName",
+        "type": "string"
+      },
+      "SourceName": {
+        "enum": [
+          "audit",
+          "temporal",
+          "sot",
+          "ci",
+          "lab_runs",
+          "prometheus"
+        ],
+        "title": "SourceName",
+        "type": "string"
+      },
+      "SourcesResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "contract_version": {
+            "const": "1",
+            "default": "1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/View_NoneType_"
+            },
+            "title": "Sources",
+            "type": "array"
+          },
+          "use_case": {
+            "title": "Use Case",
+            "type": "string"
+          }
+        },
+        "required": [
+          "use_case",
+          "generated_at",
+          "sources"
+        ],
+        "title": "SourcesResponse",
+        "type": "object"
+      },
+      "Trigger": {
+        "enum": [
+          "schedule",
+          "operator",
+          "unknown"
+        ],
+        "title": "Trigger",
+        "type": "string"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "View_CiStatus_": {
+        "additionalProperties": false,
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CiStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fetched_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fetched At"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "remedy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remedy"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SourceName"
+          },
+          "stale": {
+            "default": false,
+            "title": "Stale",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "source",
+          "available"
+        ],
+        "title": "View[CiStatus]",
+        "type": "object"
+      },
+      "View_LabEvidence_": {
+        "additionalProperties": false,
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LabEvidence"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fetched_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fetched At"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "remedy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remedy"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SourceName"
+          },
+          "stale": {
+            "default": false,
+            "title": "Stale",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "source",
+          "available"
+        ],
+        "title": "View[LabEvidence]",
+        "type": "object"
+      },
+      "View_MetricsData_": {
+        "additionalProperties": false,
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MetricsData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fetched_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fetched At"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "remedy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remedy"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SourceName"
+          },
+          "stale": {
+            "default": false,
+            "title": "Stale",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "source",
+          "available"
+        ],
+        "title": "View[MetricsData]",
+        "type": "object"
+      },
+      "View_NoneType_": {
+        "additionalProperties": false,
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "data": {
+            "title": "Data",
+            "type": "null"
+          },
+          "fetched_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fetched At"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "remedy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remedy"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SourceName"
+          },
+          "stale": {
+            "default": false,
+            "title": "Stale",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "source",
+          "available"
+        ],
+        "title": "View[NoneType]",
+        "type": "object"
+      },
+      "View_ScheduleStatus_": {
+        "additionalProperties": false,
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScheduleStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fetched_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fetched At"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "remedy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remedy"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SourceName"
+          },
+          "stale": {
+            "default": false,
+            "title": "Stale",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "source",
+          "available"
+        ],
+        "title": "View[ScheduleStatus]",
+        "type": "object"
+      },
+      "View_WorkerStatus_": {
+        "additionalProperties": false,
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkerStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fetched_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fetched At"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "remedy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remedy"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SourceName"
+          },
+          "stale": {
+            "default": false,
+            "title": "Stale",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "source",
+          "available"
+        ],
+        "title": "View[WorkerStatus]",
+        "type": "object"
+      },
+      "View_list_DeviceView__": {
+        "additionalProperties": false,
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/DeviceView"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "fetched_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fetched At"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "remedy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remedy"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SourceName"
+          },
+          "stale": {
+            "default": false,
+            "title": "Stale",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "source",
+          "available"
+        ],
+        "title": "View[list[DeviceView]]",
+        "type": "object"
+      },
+      "View_list_RunView__": {
+        "additionalProperties": false,
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/RunView"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "fetched_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fetched At"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "remedy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remedy"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SourceName"
+          },
+          "stale": {
+            "default": false,
+            "title": "Stale",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "source",
+          "available"
+        ],
+        "title": "View[list[RunView]]",
+        "type": "object"
+      },
+      "WorkerStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "pollers": {
+            "title": "Pollers",
+            "type": "integer"
+          },
+          "task_queue": {
+            "title": "Task Queue",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pollers",
+          "task_queue"
+        ],
+        "title": "WorkerStatus",
+        "type": "object"
+      },
+      "WorkflowReason": {
+        "description": "Terminal reason codes for any WorkflowResult.",
+        "enum": [
+          "succeeded",
+          "intent_unavailable",
+          "apply_failed",
+          "collect_failed",
+          "verification_failed",
+          "audit_failed",
+          "cancelled",
+          "device_not_found",
+          "remediation_failed"
+        ],
+        "title": "WorkflowReason",
+        "type": "string"
+      }
+    }
+  },
+  "info": {
+    "title": "snapl dashboard",
+    "version": "1"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/ci": {
+      "get": {
+        "description": "`main` and the open PRs: quality gate, jobs and coverage (research R9).",
+        "operationId": "ci_api_v1_ci_get",
+        "parameters": [
+          {
+            "description": "Defaults to the server's --use-case.",
+            "in": "query",
+            "name": "use_case",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to the server's --use-case.",
+              "title": "Use Case"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CiResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ci"
+      }
+    },
+    "/api/v1/devices": {
+      "get": {
+        "operationId": "devices_api_v1_devices_get",
+        "parameters": [
+          {
+            "description": "Defaults to the server's --use-case.",
+            "in": "query",
+            "name": "use_case",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to the server's --use-case.",
+              "title": "Use Case"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DevicesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Devices"
+      }
+    },
+    "/api/v1/history": {
+      "get": {
+        "description": "Audit-derived history over any range. Gaps are no data, not zero (research R8).\n\nThe series come from the audit trail alone. If it cannot be read, they\nare computed from the last read, or are empty; `/api/v1/devices` and\nthe sources view say why.",
+        "operationId": "history_api_v1_history_get",
+        "parameters": [
+          {
+            "description": "Defaults to the server's --use-case.",
+            "in": "query",
+            "name": "use_case",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to the server's --use-case.",
+              "title": "Use Case"
+            }
+          },
+          {
+            "description": "Repeatable. Defaults to all four.",
+            "in": "query",
+            "name": "series",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "$ref": "#/components/schemas/SeriesName"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Repeatable. Defaults to all four.",
+              "title": "Series"
+            }
+          },
+          {
+            "description": "Defaults to end - 24h.",
+            "in": "query",
+            "name": "start",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to end - 24h.",
+              "title": "Start"
+            }
+          },
+          {
+            "description": "Defaults to now.",
+            "in": "query",
+            "name": "end",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to now.",
+              "title": "End"
+            }
+          },
+          {
+            "description": "Ignored for per-scan series.",
+            "in": "query",
+            "name": "bucket",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/Bucket",
+              "default": "1h",
+              "description": "Ignored for per-scan series."
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "History"
+      }
+    },
+    "/api/v1/lab-runs": {
+      "get": {
+        "description": "The recorded live lab runs and how current they are (research R10).",
+        "operationId": "lab_runs_api_v1_lab_runs_get",
+        "parameters": [
+          {
+            "description": "Defaults to the server's --use-case.",
+            "in": "query",
+            "name": "use_case",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to the server's --use-case.",
+              "title": "Use Case"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabRunsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Lab Runs"
+      }
+    },
+    "/api/v1/links": {
+      "get": {
+        "description": "Where to look next: the stack's own UIs, GitHub, this API and the docs.",
+        "operationId": "links_api_v1_links_get",
+        "parameters": [
+          {
+            "description": "Defaults to the server's --use-case.",
+            "in": "query",
+            "name": "use_case",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to the server's --use-case.",
+              "title": "Use Case"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LinksResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Links"
+      }
+    },
+    "/api/v1/metrics/{view}": {
+      "get": {
+        "description": "One named metrics view from Prometheus (spec 012, contracts/metrics-api.md).\n\nThe request picks the view and the range; the query is the server's\n(FR-011). Prometheus being down or refusing the query is a view with\n`available: false`, never an HTTP error (FR-012).",
+        "operationId": "metrics_api_v1_metrics__view__get",
+        "parameters": [
+          {
+            "description": "A named view. Any other name is 404.",
+            "in": "path",
+            "name": "view",
+            "required": true,
+            "schema": {
+              "description": "A named view. Any other name is 404.",
+              "enum": [
+                "workflow-duration",
+                "gnmi-duration",
+                "gnmi-errors",
+                "worker-lag",
+                "worker-up",
+                "source-health"
+              ],
+              "title": "View",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Defaults to the server's --use-case.",
+            "in": "query",
+            "name": "use_case",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to the server's --use-case.",
+              "title": "Use Case"
+            }
+          },
+          {
+            "description": "Defaults to end - 1h.",
+            "in": "query",
+            "name": "start",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to end - 1h.",
+              "title": "Start"
+            }
+          },
+          {
+            "description": "Defaults to now.",
+            "in": "query",
+            "name": "end",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to now.",
+              "title": "End"
+            }
+          },
+          {
+            "description": "Seconds. Defaults to max(15, range / 240); raised when needed.",
+            "in": "query",
+            "name": "step",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Seconds. Defaults to max(15, range / 240); raised when needed.",
+              "title": "Step"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetricsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Metrics"
+      }
+    },
+    "/api/v1/overview": {
+      "get": {
+        "description": "Everything the page needs, in one request (US5).\n\nEvery source is read at once, each within its timeout, so the slowest\nsource bounds the request and a failing one only marks its own views.",
+        "operationId": "overview_api_v1_overview_get",
+        "parameters": [
+          {
+            "description": "Defaults to the server's --use-case.",
+            "in": "query",
+            "name": "use_case",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to the server's --use-case.",
+              "title": "Use Case"
+            }
+          },
+          {
+            "in": "query",
+            "name": "runs_limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Runs Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Overview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Overview"
+      }
+    },
+    "/api/v1/runs": {
+      "get": {
+        "operationId": "runs_api_v1_runs_get",
+        "parameters": [
+          {
+            "description": "Defaults to the server's --use-case.",
+            "in": "query",
+            "name": "use_case",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to the server's --use-case.",
+              "title": "Use Case"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Repeatable.",
+            "in": "query",
+            "name": "workflow_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Repeatable.",
+              "title": "Workflow Type"
+            }
+          },
+          {
+            "description": "A device name.",
+            "in": "query",
+            "name": "device",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A device name.",
+              "title": "Device"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Runs"
+      }
+    },
+    "/api/v1/schedule": {
+      "get": {
+        "operationId": "schedule_api_v1_schedule_get",
+        "parameters": [
+          {
+            "description": "Defaults to the server's --use-case.",
+            "in": "query",
+            "name": "use_case",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to the server's --use-case.",
+              "title": "Use Case"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Schedule"
+      }
+    },
+    "/api/v1/sources": {
+      "get": {
+        "description": "Each source's state and the age of its last good read, without the data.\n\n``stale`` is always false here: the model ties it to the data, which this\nview leaves out. ``fetched_at`` carries the age instead.",
+        "operationId": "sources_status_api_v1_sources_get",
+        "parameters": [
+          {
+            "description": "Defaults to the server's --use-case.",
+            "in": "query",
+            "name": "use_case",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to the server's --use-case.",
+              "title": "Use Case"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourcesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sources Status"
+      }
+    }
+  }
+}

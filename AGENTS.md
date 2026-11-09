@@ -10,6 +10,7 @@
 - **Infrahub** (OpsMill) — Graph-based Source of Truth (SoT) for network inventory and intended state
 - **Temporal** — Durable workflow orchestration engine for auditable automation workflows
 - **Containerlab** — Nokia SR Linux virtual network labs running locally via Docker/OrbStack
+- **Prometheus** — metrics store in the dev stack. It scrapes the worker (Temporal SDK metrics, gNMI call timing) and the dashboard (source health). Data under `.snapl/prometheus/` survives `demo.reset`.
 - **GitHub Spec Kit** — Spec-Driven Development methodology governing all implementation
 
 **NAF Loop:** Intent (desired state) -> Executor (deploy) -> Collector (verify) -> Observability (detect drift) -> Orchestrator (coordinate) -> back to Executor
@@ -50,7 +51,7 @@ snapl/
 │   └── e2e/                    # End-to-end tests
 │
 ├── containerlab/               # Lab topologies per use case
-├── development/                # Docker Compose dev stack (Infrahub, Temporal)
+├── development/                # Docker Compose dev stack (Infrahub, Temporal, Prometheus)
 ├── changelog/                  # Towncrier changelog fragments
 ├── tasks/                      # Invoke task runner modules
 │
@@ -78,9 +79,9 @@ This is a **uv workspace monorepo** with six packages mapped to NAF building blo
 | `snapl-intent`       | `snapl_intent`         | Intent         | SoT interaction, desired state models, schemas    |
 | `snapl-executor`     | `snapl_executor`       | Executor       | Config deployment via gNMI, Jinja2 templates      |
 | `snapl-collector`    | `snapl_collector`      | Collector      | Live network data retrieval                       |
-| `snapl-observability`| `snapl_observability`  | Observability  | Drift detection, audit logging (metrics: #147)    |
-| `snapl-orchestrator` | `snapl_orchestrator`   | Orchestrator   | Temporal workflows + activities                   |
-| `snapl-presentation` | `snapl_presentation`   | Presentation   | CLI / API user interface                          |
+| `snapl-observability`| `snapl_observability`  | Observability  | Drift detection, audit logging                    |
+| `snapl-orchestrator` | `snapl_orchestrator`   | Orchestrator   | Temporal workflows + activities, gNMI call timing |
+| `snapl-presentation` | `snapl_presentation`   | Presentation   | `snapl` CLI and the read-only `snapl dashboard`   |
 
 **Dependency direction** (no circular deps):
 ```
@@ -106,6 +107,14 @@ uv run invoke scan                      # Security scan (bandit)
 # Testing
 uv run invoke test-unit                 # Run unit tests
 uv run pytest tests/unit/ -m unit -v    # Direct pytest
+uv run invoke test-e2e                  # Demo arc against the live stack (records the run)
+uv run invoke test-integration          # Integration tests against the live stack (records the run)
+
+# Operating
+uv run invoke orchestrator.start        # Worker; serves metrics on 127.0.0.1:18091 (WORKER_METRICS_PORT=off disables)
+uv run snapl dashboard                  # Local read-only dashboard + JSON API (spec 010), metrics charts (012)
+uv run invoke history.archive           # One tarball: audit DB, metrics snapshot, lab runs, dashboard export
+uv run invoke history.purge             # Delete the stored metrics only; refuses while Prometheus runs
 
 # Spec-Driven Development
 /speckit-constitution                   # View/update constitution

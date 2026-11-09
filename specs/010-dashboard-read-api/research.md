@@ -93,10 +93,14 @@ So a read of "timestamp at or after the newest one seen" would skip any row that
 
 **Decision**:
 - **Splitting runs**: a run is the events of one `workflow_id` from a `WORKFLOW_STARTED` up to the next terminal event (`WORKFLOW_TERMINATED` or `WORKFLOW_CANCELLED`). A `WORKFLOW_STARTED` with no terminal event yet is open. It is shown as running only if Temporal lists that id as running (R6). Otherwise it is shown as `unfinished`, for example when the worker died mid-run.
+  - *Amended in PR C*: a new `WORKFLOW_STARTED` under an id whose previous run is still open closes that run as `unfinished`. Only the latest open run of an id can be `running`, because Temporal runs one execution per id at a time. An event whose `WORKFLOW_STARTED` row has not arrived yet is left out until it does (rows land late, R3), rather than inventing a start time.
+  - *Amended in PR C*: when Temporal cannot be asked, an open run is shown as `unfinished`, since nothing confirms it is still going. The running panel carries Temporal's reason and remedy.
 - **New payload field (FR-016a)**: `DeployIntent`'s `WORKFLOW_STARTED` event gains `"parent_workflow_id"`. It holds `workflow.info().parent.workflow_id` when the run is a child, and `null` when an operator started it. This is an additive payload change, like FR-012a. The signature and existing fields are unchanged. Replay is unaffected, because Temporal does not compare activity inputs, and `workflow.info()` is deterministic.
 - **Trigger**:
   - `schedule` if the run is a `DriftResponse` (its events carry `actor="schedule:…"`), or is named in one of that run's payloads (`scan_workflow_id`, `reconcile_workflow_id`).
+    - *Amended in PR C*: a `DriftResponse` names its children in its payload only when it ends, and never when it fails. Its children's ids are fixed by `drift_response.py` (`{wf}-scan`, `{wf}-reconcile`), so a child is also `schedule` when its id is one of those for a `DriftResponse` in the trail.
   - A `DeployIntent` run takes its parent's trigger: `schedule` when `parent_workflow_id` is a scheduled reconcile, `operator` when it is an operator-started reconcile. With `parent_workflow_id: null` it is `operator`.
+    - *Amended in PR C*: a parent id of the scheduled form (`…-reconcile`) whose `DriftResponse` is not in the trail gives `unknown`. Its form suggests the schedule, but the run that would confirm it is not there.
   - A `DeployIntent` run recorded before FR-016a has no `parent_workflow_id` key. Its trigger is `unknown`.
   - Everything else is `operator`.
 - **Why not infer it from timing**: a first draft called a `DeployIntent` `schedule` when it started inside a scheduled reconcile's window for the same device. That mislabels a real case. A reconcile skips a device whose deploy is already in flight (`reconcile_devices.py:151`). An operator who runs `snapl deploy leaf-01` just after a scheduled reconcile starts, and before it reaches `leaf-01`, would have the run credited to the schedule. ADR-0004 rules that out. Only the parent id is evidence.
@@ -135,6 +139,11 @@ So a read of "timestamp at or after the newest one seen" would skip any row that
   2. `GET /repos/{repo}/pulls?state=open`
   3. For `main`'s head and each open PR's head: `GET /repos/{repo}/commits/{sha}/check-runs`. The check runs named under the quality gate give the per-job results.
 - **Coverage**: from Codecov's public API for the repository (`api.codecov.io/api/v2/github/{owner}/repos/{repo}`, totals for the branch), so no artifact download and no token are needed.
+- *Amended in PR E, from the API capture of 2026-11-07* (`tests/unit/test_presentation/fixtures/github/README.md`):
+  - **`main` runs no CI.** The quality workflow is called from `pr-validation.yml` on pull requests only. A push to `main` runs issue automation and nothing else, so call 1 returns no runs and `main`'s head has no quality gate. Call 1 is replaced by `GET /repos/{repo}/commits/main/pulls`, which returns the PR that produced `main`'s head. `main`'s gate and jobs are that PR head's check runs. This holds for the same reason as R10's tree match: a PR must be up to date to merge, so the squash commit has the PR head's tree. The budget is unchanged at 3 + N.
+  - **Coverage is per commit, and Codecov has none yet.** Codecov returned no branches and 404 for every commit tried, because uploads come from PR runs only, if at all. Coverage is read from `GET api.codecov.io/api/v2/github/{owner}/repos/{repo}/commits/{sha}/` for the PR head behind `main`, and is `null` whenever Codecov has nothing.
+  - **Check runs repeat.** A workflow re-run, from the `labeled` trigger, leaves several check runs with the same name on one commit. The latest per name, by id, is the job's result.
+  - **No gate yet.** A PR whose head has no quality-gate check run is shown with gate `queued`.
 - **Token**: `GITHUB_TOKEN` is used when set (FR-025).
 - **Cache**:
   - Responses are cached with their `ETag` and re-asked with `If-None-Match`. GitHub does not count a `304` against the primary rate limit, but **only when the request carries an `Authorization` header**. That is from GitHub's REST best-practices page, checked 2026-11-07. Without a token, every request counts, `304` or not, so ETags save bandwidth there but not budget.

@@ -14,6 +14,7 @@ no gNMI and no drift computation — a bug in the loop is never fixed here.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import functools
 import getpass
 import re
@@ -27,6 +28,8 @@ from rich.console import Console
 from snapl_observability.models import DriftStatus
 from snapl_presentation.exceptions import CliError, ConnectionCliError, first_line
 from snapl_presentation.exit_codes import ExitCode
+from snapl_presentation.probes import connect as _connect
+from snapl_presentation.probes import count_pollers, identify_sot
 from snapl_presentation.render import build_renderer
 from snapl_presentation.resolve import build_store, load_states, resolve_device, resolve_devices
 from snapl_presentation.settings import CliSettings
@@ -82,84 +85,6 @@ def command(fn: Callable) -> Callable:
         raise typer.Exit(int(code or ExitCode.OK))
 
     return wrapper
-
-
-async def _probe(host_port: str, timeout: float) -> str | None:
-    """TCP-reachability probe. Returns a failure reason, or None if reachable."""
-    host, _, port = host_port.rpartition(":")
-    try:
-        _, writer = await asyncio.wait_for(
-            asyncio.open_connection(host or "localhost", int(port or 18033)),
-            timeout=timeout,
-        )
-    except TimeoutError:
-        return f"no response within {timeout:g}s"
-    except (OSError, ValueError) as exc:
-        return str(exc)
-    writer.close()
-    return None
-
-
-async def _connect(settings: CliSettings):
-    """Temporal client with the pydantic converter wired in (FR-008).
-
-    Probes TCP first. ``Client.connect`` retries its initial handshake forever
-    and takes no connect_timeout, and wrapping it in ``asyncio.wait_for`` does
-    not help: the Rust core blocks the event loop, so the timer never fires and
-    the CLI hangs with no output — the exact opposite of FR-014. A plain
-    asyncio socket probe is cancellable, costs milliseconds, and turns "nothing
-    is listening" into an immediate, specific message. The wait_for below still
-    guards the case where the port accepts but the handshake stalls.
-    """
-    from snapl_orchestrator.worker.client import build_client  # noqa: PLC0415
-
-    failure = await _probe(settings.temporal_host, settings.connect_timeout)
-    if failure is not None:
-        raise ConnectionCliError(
-            subsystem="Temporal",
-            address=settings.temporal_host,
-            env_var="TEMPORAL_HOST",
-            cause=failure,
-        )
-
-    try:
-        return await asyncio.wait_for(
-            build_client(target=settings.temporal_host, namespace=settings.temporal_namespace),
-            timeout=settings.connect_timeout,
-        )
-    except (TimeoutError, Exception) as exc:
-        cause = f"no response within {settings.connect_timeout:g}s" if isinstance(exc, TimeoutError) else str(exc)
-        raise ConnectionCliError(
-            subsystem="Temporal",
-            address=settings.temporal_host,
-            env_var="TEMPORAL_HOST",
-            cause=cause,
-        ) from exc
-
-
-async def identify_sot(store, *, address: str):
-    """Classify the Infrahub a store points at (#107)."""
-    from snapl_intent.infrahub.identity import identify  # noqa: PLC0415
-
-    return await identify(store.client, address=address)
-
-
-async def count_pollers(client: Any, settings: CliSettings) -> int:
-    """How many workers are polling our task queue."""
-    from temporalio.api.enums.v1 import TaskQueueType  # noqa: PLC0415
-    from temporalio.api.taskqueue.v1 import TaskQueue  # noqa: PLC0415
-    from temporalio.api.workflowservice.v1 import DescribeTaskQueueRequest  # noqa: PLC0415
-
-    request = DescribeTaskQueueRequest(
-        namespace=settings.temporal_namespace,
-        task_queue=TaskQueue(name=settings.task_queue),
-        task_queue_type=TaskQueueType.TASK_QUEUE_TYPE_WORKFLOW,
-    )
-    response = await asyncio.wait_for(
-        client.service_client.workflow_service.describe_task_queue(request),
-        timeout=settings.connect_timeout,
-    )
-    return len(response.pollers)
 
 
 async def _require_worker(client: Any, settings: CliSettings) -> None:
@@ -720,6 +645,113 @@ def _schedule_status_row(view: Any, use_case: str) -> tuple[str, bool, str]:
         return ("drift schedule", True, "none — snapl schedule create")
     state = f'paused — "{view.note}"' if view.paused and view.note else ("paused" if view.paused else "active")
     return ("drift schedule", True, f"{use_case}: every {format_interval(view.interval)}, {view.mode.value}, {state}")
+
+
+# ---------------------------------------------------------------------------
+# snapl dashboard (spec 010, contracts/cli-dashboard.md)
+# ---------------------------------------------------------------------------
+
+
+def _is_loopback(host: str) -> bool:
+    import ipaddress  # noqa: PLC0415
+
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _port_in_use(host: str, port: int) -> bool:
+    """Whether ``host:port`` is taken, checked the way uvicorn will bind it.
+
+    Checked before serving so a taken port is one clear line, never a uvicorn
+    traceback, and never a silent move to another port (#107).
+    """
+    import socket  # noqa: PLC0415
+
+    with socket.socket(socket.AF_INET6 if ":" in host else socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            sock.bind((host, port))
+        except OSError:
+            return True
+    return False
+
+
+def _serve_dashboard(settings: CliSettings, use_case: str, host: str, port: int) -> None:
+    """Build the sources and serve until interrupted.
+
+    No source is required at start-up (FR-007): each one reports its own
+    failure in the views, and a missing audit file is never created.
+    """
+    from pathlib import Path  # noqa: PLC0415
+
+    import uvicorn  # noqa: PLC0415
+
+    from snapl_presentation.dashboard.app import create_app  # noqa: PLC0415
+    from snapl_presentation.dashboard.ci import CiSource, resolve_repo  # noqa: PLC0415
+    from snapl_presentation.dashboard.lab_runs import LabRunSource  # noqa: PLC0415
+    from snapl_presentation.dashboard.prometheus import PrometheusSource  # noqa: PLC0415
+    from snapl_presentation.dashboard.sources import (  # noqa: PLC0415
+        AuditSource,
+        SotSource,
+        Sources,
+        TemporalSource,
+    )
+
+    # The checkout the dashboard runs from: its git history and its lab-run
+    # records are the ones to describe.
+    checkout = Path.cwd()
+    repo = resolve_repo(settings.github_repo, checkout)
+    sources = Sources(
+        audit=AuditSource(settings.audit_db),
+        sot=SotSource(settings, use_case),
+        temporal=TemporalSource(settings, use_case),
+        ci=CiSource(repo, settings.github_token),
+        lab_runs=LabRunSource(Path(settings.test_runs_dir), checkout),
+        prometheus=PrometheusSource(
+            settings.prometheus_address, settings.temporal_namespace, use_case, timeout=settings.connect_timeout
+        ),
+    )
+    app_ = create_app(sources, settings, use_case, repo=repo)
+    server = uvicorn.Server(uvicorn.Config(app_, host=host, port=port, log_level="warning", access_log=False))
+    asyncio.run(server.serve())
+
+
+@app.command()
+def dashboard(
+    use_case: UseCaseOpt = DEFAULT_USE_CASE,
+    port: Annotated[int | None, typer.Option("--port", help="Port to serve on [env: DASHBOARD_PORT].")] = None,
+    host: Annotated[str | None, typer.Option("--host", help="Address to bind [env: DASHBOARD_HOST].")] = None,
+) -> None:
+    """Serve a local, read-only dashboard of the fabric and the loop."""
+    settings = CliSettings.from_env()
+    host = host or settings.dashboard_host
+    port = port if port is not None else settings.dashboard_port
+
+    if not _is_loopback(host):
+        _stderr.print(
+            f"[yellow]warning:[/] the dashboard has no authentication; anyone who can reach {host}:{port} can read it.",
+            highlight=False,
+            soft_wrap=True,
+        )
+    if _port_in_use(host, port):
+        _stderr.print(
+            f"[red]error:[/] port {port} is in use. Set DASHBOARD_PORT or pass --port.",
+            highlight=False,
+            soft_wrap=True,
+        )
+        raise typer.Exit(int(ExitCode.ERROR))
+
+    url_host = f"[{host}]" if ":" in host else host
+    typer.echo(f"Dashboard for {use_case} at http://{url_host}:{port} (read-only, Ctrl-C to stop)")
+    # Nothing runs server-side on the dashboard's behalf: stopping it is the
+    # whole of what Ctrl-C means here, so it is a clean exit.
+    with contextlib.suppress(KeyboardInterrupt):
+        _serve_dashboard(settings, use_case, host, port)
+    raise typer.Exit(int(ExitCode.OK))
 
 
 def main() -> None:

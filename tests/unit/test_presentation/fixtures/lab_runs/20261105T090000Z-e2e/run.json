@@ -1,0 +1,15 @@
+{
+  "format": 1,
+  "suite": "e2e",
+  "status": "passed",
+  "started_at": "2026-11-05T09:00:00Z",
+  "ended_at": "2026-11-05T09:06:42Z",
+  "exit_code": 0,
+  "commit": "COMMIT_PLACEHOLDER",
+  "tree": "TREE_PLACEHOLDER",
+  "branch": "main",
+  "dirty": false,
+  "device_image": "ghcr.io/nokia/srlinux:26.3.1",
+  "pid": 41733,
+  "counts": {"passed": 14, "failed": 0, "skipped": 1, "errors": 0}
+}

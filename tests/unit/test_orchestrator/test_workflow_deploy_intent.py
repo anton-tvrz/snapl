@@ -186,6 +186,38 @@ async def test_happy_path_returns_succeeded(dcfabric_desired_state) -> None:
 
 
 @pytest.mark.asyncio
+async def test_operator_started_run_records_no_parent(dcfabric_desired_state) -> None:
+    """FR-016a (spec 010, research R5): `parent_workflow_id` is present and null
+    when no workflow started this one, so the dashboard can say "operator"
+    without guessing. Only the start event changes."""
+    device = dcfabric_desired_state.device
+    audit = InMemoryAuditLog()
+    intent_store = MagicMock()
+    intent_store.get_desired_state = AsyncMock(return_value=[dcfabric_desired_state])
+    executor = MagicMock()
+    executor.apply = AsyncMock(return_value=_apply(device))
+    collector = MagicMock()
+    collector.collect = AsyncMock(return_value=_collect(device))
+    observer = MagicMock()
+    observer.detect_drift = AsyncMock(return_value=_clean_report(device))
+    observer.emit_event = AsyncMock()
+
+    async with await WorkflowEnvironment.start_time_skipping(data_converter=pydantic_data_converter) as env:
+        result = await _run_with(
+            env,
+            _build_activities(
+                intent_store=intent_store, executor=executor, collector=collector, observer=observer, audit_log=audit
+            ),
+            device.id,
+        )
+
+    events = await audit.query_by_workflow(result.workflow_id)
+    started = [e for e in events if e.event_type is AuditEventType.WORKFLOW_STARTED]
+    assert [e.payload for e in started] == [{"parent_workflow_id": None}]
+    assert all("parent_workflow_id" not in e.payload for e in events if e not in started)
+
+
+@pytest.mark.asyncio
 async def test_intent_not_found_terminates_before_apply(dcfabric_desired_state) -> None:
     device = dcfabric_desired_state.device
     audit = InMemoryAuditLog()

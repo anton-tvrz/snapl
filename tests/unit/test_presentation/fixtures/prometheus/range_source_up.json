@@ -1,0 +1,161 @@
+{
+  "http_status": 200,
+  "body": {
+    "status": "success",
+    "data": {
+      "resultType": "matrix",
+      "result": [
+        {
+          "metric": {
+            "__name__": "snapl_dashboard_source_up",
+            "instance": "host.docker.internal:18095",
+            "job": "snapl-dashboard",
+            "source": "audit"
+          },
+          "values": [
+            [
+              1794169800.231,
+              "1"
+            ],
+            [
+              1794169815.231,
+              "1"
+            ],
+            [
+              1794169830.231,
+              "1"
+            ],
+            [
+              1794169845.231,
+              "1"
+            ],
+            [
+              1794169860.231,
+              "1"
+            ]
+          ]
+        },
+        {
+          "metric": {
+            "__name__": "snapl_dashboard_source_up",
+            "instance": "host.docker.internal:18095",
+            "job": "snapl-dashboard",
+            "source": "ci"
+          },
+          "values": [
+            [
+              1794169800.231,
+              "1"
+            ],
+            [
+              1794169815.231,
+              "1"
+            ],
+            [
+              1794169830.231,
+              "1"
+            ],
+            [
+              1794169845.231,
+              "1"
+            ],
+            [
+              1794169860.231,
+              "1"
+            ]
+          ]
+        },
+        {
+          "metric": {
+            "__name__": "snapl_dashboard_source_up",
+            "instance": "host.docker.internal:18095",
+            "job": "snapl-dashboard",
+            "source": "lab_runs"
+          },
+          "values": [
+            [
+              1794169800.231,
+              "1"
+            ],
+            [
+              1794169815.231,
+              "1"
+            ],
+            [
+              1794169830.231,
+              "1"
+            ],
+            [
+              1794169845.231,
+              "1"
+            ],
+            [
+              1794169860.231,
+              "1"
+            ]
+          ]
+        },
+        {
+          "metric": {
+            "__name__": "snapl_dashboard_source_up",
+            "instance": "host.docker.internal:18095",
+            "job": "snapl-dashboard",
+            "source": "sot"
+          },
+          "values": [
+            [
+              1794169800.231,
+              "1"
+            ],
+            [
+              1794169815.231,
+              "1"
+            ],
+            [
+              1794169830.231,
+              "1"
+            ],
+            [
+              1794169845.231,
+              "1"
+            ],
+            [
+              1794169860.231,
+              "1"
+            ]
+          ]
+        },
+        {
+          "metric": {
+            "__name__": "snapl_dashboard_source_up",
+            "instance": "host.docker.internal:18095",
+            "job": "snapl-dashboard",
+            "source": "temporal"
+          },
+          "values": [
+            [
+              1794169800.231,
+              "1"
+            ],
+            [
+              1794169815.231,
+              "0"
+            ],
+            [
+              1794169830.231,
+              "1"
+            ],
+            [
+              1794169845.231,
+              "1"
+            ],
+            [
+              1794169860.231,
+              "1"
+            ]
+          ]
+        }
+      ]
+    }
+  }
+}

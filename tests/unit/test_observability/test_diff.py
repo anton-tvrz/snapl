@@ -239,7 +239,11 @@ class TestUndesiredEntities:
         assert any("ethernet-1/7" in path for path in paths), f"undesired interface not reported: {paths}"
         reported = [item for item in items if "ethernet-1/7" in item.path]
         assert all(item.desired is None for item in reported), "an undesired entity has no desired value"
-        assert {item.actual for item in reported} == {"192.0.2.1", 30}
+        assert [(item.path, item.actual) for item in reported] == [
+            ("/interface[name=ethernet-1/7]/ip_address", "192.0.2.1"),
+            ("/interface[name=ethernet-1/7]/prefix_length", 30),
+            ("/interface[name=ethernet-1/7]/enabled", True),
+        ]
 
     # SR Linux v26.3.1 reports its default mtu (9232) on any port carrying config,
     # though nobody set one (#122). A default carries no operator intent.
@@ -268,7 +272,8 @@ class TestUndesiredEntities:
         items = diff_desired_vs_actual(desired, actual)
 
         assert [(item.path, item.actual) for item in items] == [
-            ("/interface[name=ethernet-1/7]/description", "hand-added-by-operator")
+            ("/interface[name=ethernet-1/7]/description", "hand-added-by-operator"),
+            ("/interface[name=ethernet-1/7]/enabled", True),
         ]
 
     def test_a_non_default_mtu_on_an_undesired_port_is_reported(self):
@@ -280,7 +285,40 @@ class TestUndesiredEntities:
 
         items = diff_desired_vs_actual(desired, actual)
 
-        assert [(item.path, item.actual) for item in items] == [("/interface[name=ethernet-1/7]/mtu", 1500)]
+        assert [(item.path, item.actual) for item in items] == [
+            ("/interface[name=ethernet-1/7]/mtu", 1500),
+            ("/interface[name=ethernet-1/7]/enabled", True),
+        ]
+
+    # An interface entry in SR Linux config defaults to admin-state enable the
+    # moment it exists, while a port with no entry reports disable (#175). So an
+    # enabled port is one somebody created, and it is reported like any other
+    # value the port does not carry by default (spec 007 FR-003, amended).
+
+    def test_an_enabled_port_outside_intent_is_reported_on_its_own(self):
+        from snapl_observability.structural.diff import diff_desired_vs_actual
+
+        desired = _build_desired_state()
+        actual = _matching_actual_data(desired)
+        actual["/interface[name=ethernet-1/7]"] = {**_bare_interface(), "enabled": True}
+
+        items = diff_desired_vs_actual(desired, actual)
+
+        assert [(item.path, item.desired, item.actual, item.undesired) for item in items] == [
+            ("/interface[name=ethernet-1/7]/enabled", None, True, True)
+        ]
+
+    def test_an_enabled_port_carrying_only_the_default_mtu_reports_enabled_only(self):
+        """What SR Linux reports for an empty interface entry: enabled, mtu 9232."""
+        from snapl_observability.structural.diff import diff_desired_vs_actual
+
+        desired = _build_desired_state()
+        actual = _matching_actual_data(desired)
+        actual["/interface[name=ethernet-1/7]"] = {**_bare_interface(), "enabled": True, "mtu": 9232}
+
+        items = diff_desired_vs_actual(desired, actual)
+
+        assert [(item.path, item.actual) for item in items] == [("/interface[name=ethernet-1/7]/enabled", True)]
 
     def test_the_management_interface_is_never_reported(self):
         """SC-003: mgmt0 is shape-identical to real config, and deleting it
@@ -307,16 +345,6 @@ class TestUndesiredEntities:
         assert not [i for i in items if "mgmt0" in i.path or "system0" in i.path], (
             f"a protected interface was reported: {[i.path for i in items]}"
         )
-
-    def test_enabled_alone_does_not_make_an_interface_configured(self):
-        """FR-003: a port that is merely up is not evidence of intent."""
-        from snapl_observability.structural.diff import diff_desired_vs_actual
-
-        desired = _build_desired_state()
-        actual = _matching_actual_data(desired)
-        actual["/interface[name=ethernet-1/9]"] = {**_bare_interface(), "enabled": True}
-
-        assert diff_desired_vs_actual(desired, actual) == []
 
     def test_a_bgp_neighbor_outside_intent_is_reported(self):
         """US1 scenario 3 — the same rule applies to the other entity kind."""

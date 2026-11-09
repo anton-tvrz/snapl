@@ -11,6 +11,7 @@ The server listens on `127.0.0.1:${DASHBOARD_PORT:-18030}`. Every route is `GET`
 - **`use_case`**: query parameter, default the server's `--use-case`. A use case the server was not started for returns `422`. One server serves one use case in 010.
 - **Times**: query times are ISO 8601 and must carry an offset. A naive time returns `422`.
 - **Caching**: each source has its own refresh time, so requests never wait on a slow source longer than its timeout (`SNAPL_CONNECT_TIMEOUT`, default 10 s):
+  - *Amended in PR F*: a request waits at most 1.5 s for any one source, or `SNAPL_CONNECT_TIMEOUT` if that is shorter. A source still fetching after that is shown as unavailable ("still waiting"), or with its last answer marked stale. Its fetch keeps running, shared by every request, and the next request picks up the answer. Restarting it on every poll would never let a slow source finish, and would spend GitHub's rate limit. Each fetch is bounded by `SNAPL_CONNECT_TIMEOUT`, except CI's, which is bounded at 60 s: a cold CI refresh is several GitHub calls in a row, each with its own 10 s timeout.
 
   | source | refresh | notes |
   | --- | --- | --- |
@@ -56,6 +57,8 @@ Known limitation: `web_ui_url` opens the workflow id's page, not one run's. The 
 
 Source: `temporal` for current state and the worker, plus `audit` for the pause actor and repeated failures. If Temporal is down, `schedule.available` is false, and `remedy` is `uv run invoke dev.deps`. `repeated_failures` is still computed from the audit trail and returned in `data`, marked `stale: true`.
 
+*Amended in PR F*: if the audit trail is down instead, `schedule.available` is also false, with the audit trail's reason and remedy. `data` still holds Temporal's schedule, but its `repeated_failures` and `paused_by` could not be read, and an empty list must not read as "repairs are fine". `worker` is unaffected.
+
 ### `GET /api/v1/history`
 `Envelope + { series: list[Series] }`.
 
@@ -83,8 +86,23 @@ When `.snapl/test-runs/` does not exist, the view is available with no runs, and
 ### `GET /api/v1/sources`
 `Envelope + { sources: list[View[None]] }`. One entry per `SourceName`, giving availability, reason, remedy and `fetched_at` without the data. The page uses it for its status strip, and SC-003 tests use it.
 
+### `GET /api/v1/links`
+`Envelope + { links: list[Link], reason: str | null, remedy: str | null }`, where `Link` is `{ group: "stack" | "github" | "api" | "docs", label, url }`. Added after 010's PRs at the maintainer's request (#173). It is a compatible change under the versioning rules below.
+
+- **Settings:** every URL is built from the settings the server already reads, so the links point at the stack and repo the views describe:
+  - Infrahub: `INFRAHUB_ADDRESS`.
+  - The Temporal Web UI's workflows page and the use case's drift schedule: `TEMPORAL_UI_ADDRESS` and the namespace.
+  - The repository, its pull requests and Actions: the resolved GitHub repo.
+  - The project board: `SNAPL_PROJECT_BOARD_URL`.
+  - The quickstart and the demo scenarios, on `main`.
+- **API links:** these are paths on this dashboard.
+- **No repo:** when no GitHub repo resolves, the repository and docs links are left out, and `reason` and `remedy` say so.
+- **Page:** fetches this route once at load. The settings don't change while the server runs.
+
 ## Versioning
 
-A change is **compatible** when it only adds an optional field, a route, a query parameter, or an enum value that consumers are documented to tolerate. `DriftState`, `RunState`, `Trigger` and `JobResult` consumers must render an unknown value as its raw string.
+A change is **compatible** when it only adds an optional field, a route, a query parameter, or an enum value that consumers are documented to tolerate. `DriftState`, `RunState`, `Trigger`, `JobResult` and `SourceName` consumers must render an unknown value as its raw string.
+
+**Amended 2026-11-08 (spec 012):** `SourceName` joined the list above, and gained `prometheus`. The routes `GET /api/v1/metrics/{view}` and `GET /metrics` were added. See [012's contracts/metrics-api.md](../../012-measured-metrics/contracts/metrics-api.md). This page already rendered the source name as a raw string, so no consumer broke.
 
 Any other change is **breaking**. It moves to `/api/v2/`, keeps `/api/v1/` until spec 011's UI has moved, and bumps `contract_version`.

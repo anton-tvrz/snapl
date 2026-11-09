@@ -3,6 +3,10 @@
 WAL journal mode is enabled at connection open so reads do not block writes.
 The append path serialises writes through an asyncio.Lock — one writer per
 worker process; reads use short-lived connections.
+
+``read_only=True`` is for readers that must never write, such as the dashboard
+(spec 010 FR-003). It opens the file in SQLite's own read-only mode, so the
+guarantee does not depend on every caller behaving.
 """
 
 from __future__ import annotations
@@ -39,10 +43,16 @@ class SqliteAuditLog(AuditLog):
 
     Args:
         database_url: SQLite path. Use ":memory:" for in-process testing.
+        read_only: open the file with ``mode=ro``. ``initialize()`` then runs no
+            DDL and no WAL pragma, a missing file is an error rather than created,
+            and ``append()`` raises.
     """
 
-    def __init__(self, *, database_url: str) -> None:
+    def __init__(self, *, database_url: str, read_only: bool = False) -> None:
+        if read_only and database_url == ":memory:":
+            raise ValueError('a read-only ":memory:" audit log could never hold an event')
         self._database_url = database_url
+        self._read_only = read_only
         self._write_lock = asyncio.Lock()
         # ":memory:" needs one persistent connection — every new connection to
         # ":memory:" opens a brand-new empty database, so per-operation
@@ -54,7 +64,15 @@ class SqliteAuditLog(AuditLog):
         return self._database_url
 
     async def initialize(self) -> None:
-        """Apply the schema and set WAL journal mode. Call once at boot."""
+        """Apply the schema and set WAL journal mode. Call once at boot.
+
+        Read-only: only check that the file is there. Both the DDL and the WAL
+        pragma are writes.
+        """
+        if self._read_only:
+            if not Path(self._database_url).is_file():
+                raise AuditLogError(f"no audit log at {self._database_url}")
+            return
         ddl = _SCHEMA_PATH.read_text()
         try:
             if self._is_memory:
@@ -82,6 +100,10 @@ class SqliteAuditLog(AuditLog):
                 raise AuditLogError('":memory:" audit log used before initialize()')
             yield self._memory_conn
             return
+        if self._read_only:
+            async with aiosqlite.connect(f"{Path(self._database_url).resolve().as_uri()}?mode=ro", uri=True) as conn:
+                yield conn
+            return
         async with aiosqlite.connect(self._database_url) as conn:
             yield conn
 
@@ -92,6 +114,8 @@ class SqliteAuditLog(AuditLog):
             self._memory_conn = None
 
     async def append(self, event: AuditEvent) -> None:
+        if self._read_only:
+            raise AuditLogError("audit log opened read-only")
         try:
             async with self._write_lock, self._connect() as conn:
                 # A Temporal activity retry re-sends an event whose first attempt

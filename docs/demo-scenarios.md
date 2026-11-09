@@ -277,6 +277,12 @@ snapl schedule trigger --yes
 snapl audit --device spine-01         # decision undesired_only — no DeployIntent started
 ```
 
+The scan reports two items: the description, and `enabled: True`. Creating an interface entry also enables the port. snapl won't remove either one (#65), so delete the whole entry by hand when you're done:
+
+```bash
+docker exec clab-dcfabric-spine-01 sr_cli -ec 'delete / interface ethernet-1/7'
+```
+
 Pause before planned hand work, and switch back afterwards:
 
 ```bash
@@ -285,6 +291,52 @@ snapl schedule resume
 snapl schedule mode report
 snapl audit --workflow drift-response-dcfabric   # every policy change, with who made it
 ```
+
+---
+
+## Scenario 10 — Watch the loop (the dashboard)
+
+**Story:** "Everything the CLI shows, on one page that keeps itself current."
+
+```bash
+uv run snapl dashboard            # http://127.0.0.1:18030, in its own terminal
+```
+
+Open the page, then run beats 1 to 3 of the demo arc in another terminal.
+
+**Point at:**
+- Devices: each device's drift state and its direction. A few seconds after `snapl scan`, the device you changed by hand shows `undesired` or `missing`, with the exact paths and the command that fixes it. Undesired-only drift gets a note and no command, because removal isn't automatic (#65).
+- Recent runs: the deploy, scan and reconcile appear as each finishes, with its trigger (`operator` or `schedule`) and a link to the Temporal Web UI.
+- Schedule: the report-only schedule that `demo.up` created, its next run, and who paused it, if anyone did.
+- Last 24 hours: the number of drifted devices at each scan, with the reconcile marked. An hour with no scans reads "no scans".
+- The source strip: stop the worker or Temporal, and the strip names what is down and what to run. Only the views that depend on that source change.
+
+**Expect:** the page keeps loading whatever is down. `curl -s localhost:18030/api/v1/overview | jq` returns the data the page shows.
+
+The dashboard is local and read-only, and has no authentication, so keep it on 127.0.0.1.
+
+---
+
+## Scenario 11 — How long did it take? (measured metrics)
+
+**Story:** "Every deploy and scan leaves a timing behind, and the dashboard charts it."
+
+Prometheus starts with the stack (`demo.up`). Keep the worker and `snapl dashboard` running, and open the dashboard's Metrics section with the range at 1 h.
+
+```bash
+uv run snapl deploy spine-01
+uv run snapl scan
+```
+
+**Point at:**
+- gNMI call duration: one line per device and operation. The deploy adds `configure` for spine-01, and the scan adds `collect` for every device. Prometheus scrapes every 15 s and each line is a 95th percentile over at least a minute, so give it a minute to settle.
+- Workflow duration: `DeployIntent` and `ScanDrift` end to end, gNMI calls included.
+- Worker up: stop the worker and its strip turns red within a minute. Start it again and it turns green.
+- Dashboard sources up: the strip records when each source stopped answering, so an outage stays visible after it ends. It only moves while the page is open, because the page's polling is what reads the sources.
+
+**Expect:** `curl -s localhost:18091/metrics | grep snapl_gnmi_call_duration_count` prints the counters the gNMI panels are built from, one per device, operation and outcome.
+
+The numbers come from a six-node lab on one machine. Quote them as that.
 
 ---
 
@@ -297,6 +349,8 @@ snapl audit --workflow drift-response-dcfabric   # every policy change, with who
 | 3 | **Reconcile, rescan clean** — closed loop | `snapl reconcile --drifted --yes`, then `snapl scan` | 2 |
 | 4 | **Kill the worker mid-deploy** — durability is the differentiator | `snapl deploy leaf-01`, Ctrl-C the worker | 2 |
 | 5 | **Audit log** — everything you just did, from SQLite | `snapl audit --device spine-01` | 2 |
+
+Keep the dashboard (Scenario 10) open on a second screen through the arc: each beat shows up on it within seconds.
 
 Scenarios 4–6 are the Q&A reserve: "what if the SoT is stale / someone cancels / a device is down?"
 
@@ -317,7 +371,7 @@ snapl scan; echo $?   # 0 clean, 2 drifted, 1 something broke
 
 ```bash
 uv run invoke demo.check     # is it still ready? (safe anytime, changes nothing)
-uv run invoke demo.reset     # destroy lab + stack + volumes
+uv run invoke demo.reset     # destroy lab + stack + volumes (.snapl/ stays: metrics, lab runs, archives)
 uv run invoke demo.up        # rebuild from scratch
 ```
 
@@ -327,6 +381,10 @@ One thing resets on its own and will surprise you otherwise:
   SQLite on the `temporal_data` volume, so the Web UI keeps every workflow you
   ran. `demo.reset` does wipe it, along with every other volume, so a rehearsal
   that starts from `reset` starts with an empty UI.
+- **Metrics survive `demo.reset`.** Prometheus keeps its data in
+  `.snapl/prometheus/`, a host directory rather than a volume, so the charts
+  still show earlier rehearsals. `uv run invoke history.purge` deletes them when
+  you want an empty chart.
 - **SR Linux nodes keep their pushed config** across a container restart, but
   not across `lab-destroy`. After a redeploy the fabric is unconfigured, so
   Scenario 1's deploy is doing real work again — which is what you want.
