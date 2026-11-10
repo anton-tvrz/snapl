@@ -7,6 +7,8 @@ import { LoopStrip } from "./components/LoopStrip";
 import { Ci } from "./components/panels/Ci";
 import { LabEvidence } from "./components/panels/LabEvidence";
 import { Links } from "./components/panels/Links";
+import { MetricView } from "./components/panels/Metrics";
+import { RangePicker } from "./components/panels/RangePicker";
 import { Running, Runs } from "./components/panels/Runs";
 import { Schedule } from "./components/panels/Schedule";
 import { Undesired } from "./components/panels/Undesired";
@@ -21,7 +23,8 @@ import { ViewFrame } from "./components/ViewFrame";
 import type { DataProvider, RunId } from "./data/provider";
 import { usePolling } from "./data/usePolling";
 import { activityFor } from "./lib/activity";
-import { domainOf, scanStops } from "./lib/lanes";
+import { domainOf, type Range, scanStops } from "./lib/lanes";
+import { METRIC_VIEWS } from "./lib/metrics";
 import { linkNotes } from "./lib/linkNotes";
 import { markedLinks } from "./lib/paths";
 import { localText, utcText } from "./lib/time";
@@ -54,7 +57,10 @@ export function App({ provider }: Props) {
   const [selected, setSelected] = useState<string | undefined>(initial.device);
   const [at, setAt] = useState<Date | undefined>(initial.at);
   const [chosenRun, setChosenRun] = useState<RunId | undefined>(initial.run);
-  const range = initial.from && initial.to ? { start: initial.from, end: initial.to } : undefined;
+  // One range for the lanes and the metrics. Unset follows now (each view's own default).
+  const [range, setRange] = useState<Range | undefined>(() =>
+    initial.from && initial.to ? { start: initial.from, end: initial.to } : undefined,
+  );
 
   const mode = usePolling(provider.mode, null);
   const overview = usePolling(provider.overview, OVERVIEW_MS);
@@ -82,8 +88,15 @@ export function App({ provider }: Props) {
   );
 
   useEffect(() => {
-    writeUrlState({ ...parseUrlState(location.search), device: selected, at, run: chosenRun });
-  }, [selected, at, chosenRun]);
+    writeUrlState({
+      ...parseUrlState(location.search),
+      device: selected,
+      at,
+      run: chosenRun,
+      from: range?.start,
+      to: range?.end,
+    });
+  }, [selected, at, chosenRun, range]);
 
   const onSelect = useCallback((name: string) => setSelected((current) => (current === name ? undefined : name)), []);
   const onClose = useCallback(() => setSelected(undefined), []);
@@ -259,6 +272,10 @@ export function App({ provider }: Props) {
       )}
 
       <div className="mt-4">
+        <RangePicker key={range ? `${range.start.getTime()}` : "now"} value={range} now={now} onChange={setRange} />
+      </div>
+
+      <div className="mt-4">
         <ViewFrame title="Drift over time" view={lanes} now={now} error={timeline.error}>
           {told && <Headline timeline={told} asOf={shown} />}
           {lanesData && domain && (
@@ -297,6 +314,22 @@ export function App({ provider }: Props) {
         <LabEvidence lab={overview.data?.lab} now={now} presentOnly={!!at} />
       </div>
 
+      <section aria-label="Metrics" className="mt-6">
+        <h2 className="mb-3 text-sm font-semibold">Metrics</h2>
+        <div className="grid gap-4 lg:grid-cols-2">
+          {METRIC_VIEWS.map((view) => (
+            <MetricView
+              key={view.name}
+              provider={provider}
+              name={view.name}
+              title={view.title}
+              range={range}
+              now={now}
+            />
+          ))}
+        </div>
+      </section>
+
       <section aria-label="Sources">
         <h2 className="mt-6 mb-3 text-sm font-semibold">Sources</h2>
         {at && <p className="mb-3 text-xs text-muted">Shows only the present: these are the sources' states now.</p>}
@@ -305,13 +338,6 @@ export function App({ provider }: Props) {
       <div className="mt-6">
         <Links links={linkList.data} />
       </div>
-      <p className="mt-6 text-sm text-muted">
-        Metrics are on the{" "}
-        <a href="/plain" className="underline underline-offset-2">
-          plain page
-        </a>{" "}
-        until their designed panels arrive.
-      </p>
     </Shell>
   );
 }

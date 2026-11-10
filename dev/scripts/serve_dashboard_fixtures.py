@@ -7,7 +7,7 @@ The real app, with:
 - every other source unavailable, each with a reason and a remedy, or with
   `--sources up` the other sources answering with canned data (an active
   schedule, one worker, a scan running, CI on main and two PRs, lab runs of
-  both suites), for the panels that read them;
+  both suites, and synthetic metrics over any range), for the panels that read them;
 - the clock fixed just after the arc's last scan, so ages and default ranges are stable.
 
 Nothing here reaches a lab, the stack or the network.
@@ -45,9 +45,14 @@ from snapl_presentation.dashboard.models import (  # noqa: E402
     LabEvidence,
     LabRun,
     LabRunStatus,
+    MetricPoint,
+    MetricsData,
+    MetricSeries,
+    MetricsViewName,
     SourceName,
     View,
 )
+from snapl_presentation.dashboard.prometheus import VIEWS, RangePlan  # noqa: E402
 from snapl_presentation.dashboard.sources import AuditSource, Sources, TemporalSnapshot  # noqa: E402
 from snapl_presentation.settings import CliSettings  # noqa: E402
 from tests.unit.test_presentation.dashboard_fakes import ARC_FIXTURE, SCAN_3_END, arc_states  # noqa: E402
@@ -220,6 +225,59 @@ def _lab_up() -> LabEvidence:
     )
 
 
+# Synthetic values for each view, by point index: deterministic, with a gap
+# (None) or a down stretch somewhere, so the page shows both.
+_SERIES: dict[MetricsViewName, list[tuple[dict[str, str], Any]]] = {
+    MetricsViewName.WORKFLOW_DURATION: [
+        ({"workflow_type": "DeployIntent"}, lambda i: 900.0 + 150 * (i * 7 % 11)),
+        ({"workflow_type": "ScanDrift"}, lambda i: None if 100 <= i < 110 else 1100.0 + 120 * (i * 5 % 13)),
+    ],
+    MetricsViewName.GNMI_DURATION: [
+        ({"device": "spine-01", "operation": "collect"}, lambda i: 40.0 + 6 * (i * 3 % 7)),
+        ({"device": "leaf-01", "operation": "configure"}, lambda i: 120.0 + 15 * (i * 5 % 9)),
+    ],
+    MetricsViewName.GNMI_ERRORS: [({"device": "leaf-01"}, lambda i: 0.05 if 60 <= i < 80 else 0.0)],
+    MetricsViewName.WORKER_LAG: [({}, lambda i: 20.0 + i * 3 % 17)],
+    MetricsViewName.WORKER_UP: [({}, lambda i: 0.0 if 150 <= i < 165 else 1.0)],
+    MetricsViewName.SOURCE_HEALTH: [
+        ({"source": source}, lambda i, source=source: _source_up(source, i))
+        for source in ("audit", "sot", "temporal", "ci", "lab_runs")
+    ],
+}
+
+
+def _source_up(source: str, i: int) -> float | None:
+    if source == "temporal" and 30 <= i < 45:
+        return 0.0
+    if source == "ci" and 200 <= i < 210:
+        return None
+    return 1.0
+
+
+class _PrometheusUp:
+    """Prometheus answering every named view over any range with synthetic series."""
+
+    async def refresh(self) -> View[Any]:
+        return View(source=SourceName.PROMETHEUS, available=True, fetched_at=NOW)
+
+    async def query(self, view: MetricsViewName, plan: RangePlan) -> MetricsData:
+        count = int((plan.end - plan.start).total_seconds()) // plan.step + 1
+        times = [plan.start + timedelta(seconds=plan.step * i) for i in range(count)]
+        series = [
+            MetricSeries(labels=labels, points=[MetricPoint(t=t, value=value(i)) for i, t in enumerate(times)])
+            for labels, value in _SERIES[view]
+        ]
+        return MetricsData(
+            view=view,
+            unit=VIEWS[view].unit,
+            start=plan.start,
+            end=plan.end,
+            step=plan.step,
+            series=series,
+            note=plan.note,
+        )
+
+
 def build_app(ui_dir: Path | None = None, *, up: bool = False):
     sources = Sources(
         audit=AuditSource(str(ARC_FIXTURE), clock=lambda: NOW),
@@ -227,7 +285,7 @@ def build_app(ui_dir: Path | None = None, *, up: bool = False):
         temporal=_Up(SourceName.TEMPORAL, _temporal_up()) if up else _Down(SourceName.TEMPORAL),
         ci=_Up(SourceName.CI, _ci_up()) if up else _Down(SourceName.CI),
         lab_runs=_Up(SourceName.LAB_RUNS, _lab_up()) if up else _Down(SourceName.LAB_RUNS),
-        prometheus=_Down(SourceName.PROMETHEUS),
+        prometheus=_PrometheusUp() if up else _Down(SourceName.PROMETHEUS),
     )
     extra = {"ui_dir": ui_dir} if ui_dir is not None else {}
     return create_app(sources, CliSettings(), "dcfabric", clock=lambda: NOW, repo="anton-tvrz/snapl", **extra)

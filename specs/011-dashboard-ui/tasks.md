@@ -276,7 +276,7 @@ Each PR says `Closes` a task issue under #146 and carries `changelog/146.added.m
   - CI: `main` first, each PR's gate and jobs with links, the failed job named, coverage or "none reported", `omitted_prs` with the token remedy.
   - Lab evidence: latest run per suite with result and age, "N commits on main since", how it was matched, "unknown" with its reason, incomplete and unreadable runs.
   - Links: grouped, with the reason shown when some are left out.
-- [ ] T060 [P] [US4] packages/presentation/ui/src/components/panels/Metrics.test.tsx and RangePicker.test.tsx, on 012's fixtures:
+- [x] T060 [P] [US4] packages/presentation/ui/src/components/panels/Metrics.test.tsx and RangePicker.test.tsx, on 012's fixtures:
   - One panel per view, with its unit, the latest value as text, and the step the server used.
   - `worker-up` and `source-health` as up/down strips, the others as lines, with gaps where a value is null.
   - An unavailable view shows its reason and remedy in place of the chart.
@@ -291,7 +291,7 @@ Each PR says `Closes` a task issue under #146 and carries `changelog/146.added.m
 - [x] T063 [P] [US4] packages/presentation/ui/src/components/panels/Schedule.tsx and Runs.tsx.
 - [x] T064 [P] [US4] packages/presentation/ui/src/components/panels/Undesired.tsx, Ci.tsx, LabEvidence.tsx, Links.tsx.
   - *PR F1*: Undesired.tsx. *PR F2*: Ci.tsx, LabEvidence.tsx, Links.tsx.
-- [ ] T065 [US4] packages/presentation/ui/src/components/panels/Metrics.tsx and RangePicker.tsx, with Recharts, polled every 30 s.
+- [x] T065 [US4] packages/presentation/ui/src/components/panels/Metrics.tsx and RangePicker.tsx, with Recharts, polled every 30 s.
 - [ ] T066 [US4] App.tsx and Shell.tsx: the page layout for 1280 pixels and wider, stacking down to 1024 with no page-level horizontal scroll (a Playwright viewport assertion at both widths).
 - [ ] T067 [US4] Extend tests/unit/test_presentation/test_dashboard_app.py: for the same fixtures, the designed page's sources (`/overview`, `/devices`) and `snapl status --json` agree on every device's state and the schedule (SC-011, extending 010's SC-002 test).
 - [ ] T068 [US4] **Needs the maintainer**: quickstart item 11 (the three questions, SC-014).
