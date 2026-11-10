@@ -1,9 +1,15 @@
-import { type ReactNode, useId } from "react";
+import { createContext, type ReactNode, useContext, useId } from "react";
 
 import { sourceLabel } from "../api/open";
 import type { View } from "../api/types";
 import { ageText } from "../lib/time";
 import { Command } from "./Command";
+
+/** True when the page shows a history archive: what it does not hold is not a failure (FR-037). */
+export const ArchiveMode = createContext(false);
+
+// The server's words for a view an archive does not hold (archive.py NOT_IN_ARCHIVE).
+export const NOT_IN_ARCHIVE = "not in this archive";
 
 interface Props {
   title: string;
@@ -27,6 +33,8 @@ export function ViewFrame({ title, view, now, presentOnly = false, error, childr
   const showContent = view !== undefined && (view.available || (view.stale === true && view.data != null));
   const age = ageText(view?.fetched_at, now);
   const heading = useId();
+  const archived = useContext(ArchiveMode) && !!view && !view.available && !!view.reason?.startsWith(NOT_IN_ARCHIVE);
+  const detail = archived ? view.reason?.slice(NOT_IN_ARCHIVE.length).replace(/^:\s*/, "") : undefined;
 
   return (
     <section aria-labelledby={heading} className="rounded-lg border border-line bg-surface p-4">
@@ -50,7 +58,21 @@ export function ViewFrame({ title, view, now, presentOnly = false, error, childr
           <p className="text-sm text-muted">Loading…</p>
         ))}
 
-      {view !== undefined && !view.available && (
+      {archived && (
+        <div className="mb-3 text-sm text-muted">
+          <p role="status" className="font-medium">
+            Not in this archive
+          </p>
+          {detail && <p className="mt-1">{detail}</p>}
+          {view.remedy && (
+            <p className="mt-1 text-xs">
+              To see it live: <code className="font-mono">{view.remedy}</code>
+            </p>
+          )}
+        </div>
+      )}
+
+      {view !== undefined && !view.available && !archived && (
         <div className="mb-3 rounded border border-warn-line bg-warn-surface p-3 text-sm">
           <p role="status" className="font-medium">
             {view.stale ? `Stale: last read ${age}` : "Unavailable"}

@@ -10,6 +10,8 @@ interface Props {
   /** The server's clock: presets end here. */
   now: Date;
   onChange: (range?: Range) => void;
+  /** In an archive, the one range its metrics were exported over. */
+  archived?: Range;
 }
 
 const inputValue = (t: Date) => t.toISOString().slice(0, 16);
@@ -19,7 +21,7 @@ const inputValue = (t: Date) => t.toISOString().slice(0, 16);
  * presets ending at the server's now, or a custom start and end in UTC. An end
  * before its start is refused here, before any request.
  */
-export function RangePicker({ value, now, onChange }: Props) {
+export function RangePicker({ value, now, onChange, archived }: Props) {
   const [from, setFrom] = useState(() => inputValue(value?.start ?? new Date(now.getTime() - 3_600_000)));
   const [to, setTo] = useState(() => inputValue(value?.end ?? now));
   const [problem, setProblem] = useState<string | null>(null);
@@ -64,8 +66,16 @@ export function RangePicker({ value, now, onChange }: Props) {
       <p className="mt-2 text-xs text-muted">
         {value
           ? `${utcText(value.start)} to ${utcText(value.end)}`
-          : "Following now: the lanes show the last 24 h, the metrics the last hour."}
+          : archived
+            ? "Up to the archive's time: the lanes show its last 24 h."
+            : "Following now: the lanes show the last 24 h, the metrics the last hour."}
       </p>
+      {archived && (
+        <p className="mt-1 text-xs text-muted">
+          The metrics show the exported range, {utcText(archived.start)} to {utcText(archived.end)}: an archive
+          holds no other. The range here applies to the lanes and the history.
+        </p>
+      )}
       <form onSubmit={apply} className="mt-3 flex flex-wrap items-end gap-3">
         <label className="flex flex-col gap-1 text-xs">
           From (UTC)

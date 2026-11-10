@@ -198,11 +198,13 @@ interface ViewProps {
   /** The chosen range, or undefined for the server's default (the last hour). */
   range?: Range;
   now: Date;
+  /** False in an archive: the answer never changes, so it is asked once. */
+  live?: boolean;
 }
 
 /** One metrics view, asked for every 30 s and again when the range changes. */
-export function MetricView({ provider, name, title, range, now }: ViewProps) {
+export function MetricView({ provider, name, title, range, now, live = true }: ViewProps) {
   const key = range ? `${range.start.toISOString()}/${range.end.toISOString()}` : "default";
-  const answer = usePolling(() => provider.metrics(name, range), METRICS_MS, key);
+  const answer = usePolling(() => provider.metrics(name, range), live ? METRICS_MS : null, key);
   return <MetricPanel title={title} view={answer.data?.metrics} now={now} error={answer.error} />;
 }

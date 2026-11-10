@@ -1,0 +1,575 @@
+{
+  "ci": {
+    "available": true,
+    "data": {
+      "authenticated": false,
+      "omitted_prs": 3,
+      "rate_limit_remaining": null,
+      "repo": "anton-tvrz/snapl",
+      "targets": [
+        {
+          "coverage_pct": 91.4,
+          "gate": "success",
+          "head_sha": "e534978000000000000000000000000000000000",
+          "jobs": [
+            {
+              "name": "Unit Tests",
+              "result": "success",
+              "url": "https://github.com/anton-tvrz/snapl/actions/runs/100/job/101"
+            },
+            {
+              "name": "Dashboard UI",
+              "result": "success",
+              "url": "https://github.com/anton-tvrz/snapl/actions/runs/100/job/101"
+            }
+          ],
+          "kind": "main",
+          "number": null,
+          "run_url": "https://github.com/anton-tvrz/snapl/actions/runs/100",
+          "title": null
+        },
+        {
+          "coverage_pct": null,
+          "gate": "failure",
+          "head_sha": "884d9b1000000000000000000000000000000000",
+          "jobs": [
+            {
+              "name": "Unit Tests",
+              "result": "failure",
+              "url": "https://github.com/anton-tvrz/snapl/actions/runs/200/job/201"
+            },
+            {
+              "name": "Dashboard UI",
+              "result": "success",
+              "url": "https://github.com/anton-tvrz/snapl/actions/runs/200/job/201"
+            }
+          ],
+          "kind": "pull_request",
+          "number": 212,
+          "run_url": "https://github.com/anton-tvrz/snapl/actions/runs/200",
+          "title": "feat(presentation): dashboard panels"
+        },
+        {
+          "coverage_pct": null,
+          "gate": "success",
+          "head_sha": "9d24992000000000000000000000000000000000",
+          "jobs": [
+            {
+              "name": "Unit Tests",
+              "result": "success",
+              "url": "https://github.com/anton-tvrz/snapl/actions/runs/300/job/301"
+            }
+          ],
+          "kind": "pull_request",
+          "number": 210,
+          "run_url": "https://github.com/anton-tvrz/snapl/actions/runs/300",
+          "title": "docs: dashboard guide"
+        }
+      ]
+    },
+    "fetched_at": "2026-11-07T21:20:48.919877Z",
+    "reason": null,
+    "remedy": null,
+    "source": "ci",
+    "stale": false
+  },
+  "contract_version": "1",
+  "devices": {
+    "available": true,
+    "data": [
+      {
+        "device_id": "18e29d6d-e0c5-0ba7-32d1-c510fc3ef077",
+        "drift_state": "in_sync",
+        "error": null,
+        "in_intent": true,
+        "last_deploy": {
+          "ended_at": "2026-11-07T21:20:17.240047Z",
+          "reason": "succeeded",
+          "success": true,
+          "workflow_id": "deploy-intent-18e29d6d-e0c5-0ba7-32d1-c510fc3ef077"
+        },
+        "last_scan_workflow_id": "scan-drift-dcfabric-68101896-6a9c-4c65-8a84-24af2b98b12a",
+        "last_scanned_at": "2026-11-07T21:20:18.852982Z",
+        "missing_paths": [],
+        "name": "spine-01",
+        "note": null,
+        "role": "spine",
+        "suggested_command": null,
+        "unclassified_paths": [],
+        "undesired_paths": []
+      },
+      {
+        "device_id": "18e29d6e-1959-3451-32dc-c51d9065aa58",
+        "drift_state": "in_sync",
+        "error": null,
+        "in_intent": true,
+        "last_deploy": {
+          "ended_at": "2026-11-07T21:18:59.218795Z",
+          "reason": "succeeded",
+          "success": true,
+          "workflow_id": "deploy-intent-18e29d6e-1959-3451-32dc-c51d9065aa58"
+        },
+        "last_scan_workflow_id": "scan-drift-dcfabric-68101896-6a9c-4c65-8a84-24af2b98b12a",
+        "last_scanned_at": "2026-11-07T21:20:18.852982Z",
+        "missing_paths": [],
+        "name": "spine-02",
+        "note": null,
+        "role": "spine",
+        "suggested_command": null,
+        "unclassified_paths": [],
+        "undesired_paths": []
+      },
+      {
+        "device_id": "18e29d6e-246e-5cd1-32d2-c51d13d4de9e",
+        "drift_state": "undesired",
+        "error": null,
+        "in_intent": true,
+        "last_deploy": {
+          "ended_at": "2026-11-07T21:20:16.788287Z",
+          "reason": "succeeded",
+          "success": true,
+          "workflow_id": "deploy-intent-18e29d6e-246e-5cd1-32d2-c51d13d4de9e"
+        },
+        "last_scan_workflow_id": "scan-drift-dcfabric-68101896-6a9c-4c65-8a84-24af2b98b12a",
+        "last_scanned_at": "2026-11-07T21:20:18.744666Z",
+        "missing_paths": [],
+        "name": "leaf-01",
+        "note": "Config on the device but not in intent is not removed automatically (#65).",
+        "role": "leaf",
+        "suggested_command": null,
+        "unclassified_paths": [],
+        "undesired_paths": [
+          "/interface[name=ethernet-1/7]/description"
+        ]
+      },
+      {
+        "device_id": "18e29d6e-2e5b-c496-32da-c510ade043a0",
+        "drift_state": "in_sync",
+        "error": null,
+        "in_intent": true,
+        "last_deploy": {
+          "ended_at": "2026-11-07T21:19:02.592607Z",
+          "reason": "succeeded",
+          "success": true,
+          "workflow_id": "deploy-intent-18e29d6e-2e5b-c496-32da-c510ade043a0"
+        },
+        "last_scan_workflow_id": "scan-drift-dcfabric-68101896-6a9c-4c65-8a84-24af2b98b12a",
+        "last_scanned_at": "2026-11-07T21:20:18.744666Z",
+        "missing_paths": [],
+        "name": "leaf-02",
+        "note": null,
+        "role": "leaf",
+        "suggested_command": null,
+        "unclassified_paths": [],
+        "undesired_paths": []
+      },
+      {
+        "device_id": "18e29d6e-3794-c788-32d5-c519c5f18e3a",
+        "drift_state": "in_sync",
+        "error": null,
+        "in_intent": true,
+        "last_deploy": {
+          "ended_at": "2026-11-07T21:19:04.444006Z",
+          "reason": "succeeded",
+          "success": true,
+          "workflow_id": "deploy-intent-18e29d6e-3794-c788-32d5-c519c5f18e3a"
+        },
+        "last_scan_workflow_id": "scan-drift-dcfabric-68101896-6a9c-4c65-8a84-24af2b98b12a",
+        "last_scanned_at": "2026-11-07T21:20:18.852982Z",
+        "missing_paths": [],
+        "name": "leaf-03",
+        "note": null,
+        "role": "leaf",
+        "suggested_command": null,
+        "unclassified_paths": [],
+        "undesired_paths": []
+      },
+      {
+        "device_id": "18e29d6e-422b-a401-32d9-c5162961ffbe",
+        "drift_state": "in_sync",
+        "error": null,
+        "in_intent": true,
+        "last_deploy": {
+          "ended_at": "2026-11-07T21:19:06.107470Z",
+          "reason": "succeeded",
+          "success": true,
+          "workflow_id": "deploy-intent-18e29d6e-422b-a401-32d9-c5162961ffbe"
+        },
+        "last_scan_workflow_id": "scan-drift-dcfabric-68101896-6a9c-4c65-8a84-24af2b98b12a",
+        "last_scanned_at": "2026-11-07T21:20:18.608354Z",
+        "missing_paths": [],
+        "name": "leaf-04",
+        "note": null,
+        "role": "leaf",
+        "suggested_command": null,
+        "unclassified_paths": [],
+        "undesired_paths": []
+      }
+    ],
+    "fetched_at": "2026-11-07T21:20:48.919877Z",
+    "reason": null,
+    "remedy": null,
+    "source": "sot",
+    "stale": false
+  },
+  "generated_at": "2026-11-07T21:20:48Z",
+  "lab": {
+    "available": true,
+    "data": {
+      "commits_on_main_since": {
+        "e2e": null,
+        "integration": null
+      },
+      "commits_unknown_reason": {
+        "e2e": "an archive has no git history",
+        "integration": "an archive has no git history"
+      },
+      "latest": {
+        "e2e": {
+          "branch": "main",
+          "commit": "COMMIT_PLACEHOLDER",
+          "device_image": "ghcr.io/nokia/srlinux:26.3.1",
+          "dirty": false,
+          "ended_at": null,
+          "errors": null,
+          "failed": null,
+          "id": "20261106T100000Z-e2e",
+          "passed": null,
+          "problem": null,
+          "skipped": null,
+          "started_at": "2026-11-06T10:00:00Z",
+          "status": "incomplete",
+          "suite": "e2e",
+          "tree": "TREE_PLACEHOLDER"
+        },
+        "integration": {
+          "branch": "010-e-lab",
+          "commit": "COMMIT_PLACEHOLDER",
+          "device_image": "ghcr.io/nokia/srlinux:26.3.1",
+          "dirty": true,
+          "ended_at": "2026-11-06T09:02:10Z",
+          "errors": 1,
+          "failed": 2,
+          "id": "20261106T090000Z-integration",
+          "passed": 20,
+          "problem": null,
+          "skipped": 0,
+          "started_at": "2026-11-06T09:00:00Z",
+          "status": "failed",
+          "suite": "integration",
+          "tree": "TREE_PLACEHOLDER"
+        }
+      },
+      "matched_by": {},
+      "runs": [
+        {
+          "branch": null,
+          "commit": null,
+          "device_image": null,
+          "dirty": null,
+          "ended_at": null,
+          "errors": null,
+          "failed": null,
+          "id": "20261106T120000Z-integration",
+          "passed": null,
+          "problem": "run.json is format 2; this dashboard reads format 1",
+          "skipped": null,
+          "started_at": null,
+          "status": "unreadable",
+          "suite": "integration",
+          "tree": null
+        },
+        {
+          "branch": "main",
+          "commit": "COMMIT_PLACEHOLDER",
+          "device_image": "ghcr.io/nokia/srlinux:26.3.1",
+          "dirty": false,
+          "ended_at": null,
+          "errors": null,
+          "failed": null,
+          "id": "20261106T100000Z-e2e",
+          "passed": null,
+          "problem": null,
+          "skipped": null,
+          "started_at": "2026-11-06T10:00:00Z",
+          "status": "incomplete",
+          "suite": "e2e",
+          "tree": "TREE_PLACEHOLDER"
+        },
+        {
+          "branch": "010-e-lab",
+          "commit": "COMMIT_PLACEHOLDER",
+          "device_image": "ghcr.io/nokia/srlinux:26.3.1",
+          "dirty": true,
+          "ended_at": "2026-11-06T09:02:10Z",
+          "errors": 1,
+          "failed": 2,
+          "id": "20261106T090000Z-integration",
+          "passed": 20,
+          "problem": null,
+          "skipped": 0,
+          "started_at": "2026-11-06T09:00:00Z",
+          "status": "failed",
+          "suite": "integration",
+          "tree": "TREE_PLACEHOLDER"
+        },
+        {
+          "branch": "main",
+          "commit": "COMMIT_PLACEHOLDER",
+          "device_image": "ghcr.io/nokia/srlinux:26.3.1",
+          "dirty": false,
+          "ended_at": "2026-11-05T09:06:42Z",
+          "errors": 0,
+          "failed": 0,
+          "id": "20261105T090000Z-e2e",
+          "passed": 14,
+          "problem": null,
+          "skipped": 1,
+          "started_at": "2026-11-05T09:00:00Z",
+          "status": "passed",
+          "suite": "e2e",
+          "tree": "TREE_PLACEHOLDER"
+        }
+      ]
+    },
+    "fetched_at": "2026-11-07T21:20:48Z",
+    "reason": null,
+    "remedy": null,
+    "source": "lab_runs",
+    "stale": false
+  },
+  "running": {
+    "available": false,
+    "data": null,
+    "fetched_at": null,
+    "reason": "not in this archive",
+    "remedy": "uv run snapl dashboard",
+    "source": "temporal",
+    "stale": false
+  },
+  "runs": {
+    "available": true,
+    "data": [
+      {
+        "actor": null,
+        "duration_s": 1,
+        "ended_at": "2026-11-07T21:20:18.919877Z",
+        "reason": null,
+        "started_at": "2026-11-07T21:20:17.860408Z",
+        "state": "succeeded",
+        "target": "dcfabric",
+        "trigger": "operator",
+        "web_ui_url": "http://localhost:18034/namespaces/default/workflows/scan-drift-dcfabric-68101896-6a9c-4c65-8a84-24af2b98b12a",
+        "workflow_id": "scan-drift-dcfabric-68101896-6a9c-4c65-8a84-24af2b98b12a",
+        "workflow_type": "ScanDrift"
+      },
+      {
+        "actor": null,
+        "duration_s": 1,
+        "ended_at": "2026-11-07T21:20:16.788287Z",
+        "reason": null,
+        "started_at": "2026-11-07T21:20:15.697131Z",
+        "state": "succeeded",
+        "target": "leaf-01",
+        "trigger": "operator",
+        "web_ui_url": "http://localhost:18034/namespaces/default/workflows/deploy-intent-18e29d6e-246e-5cd1-32d2-c51d13d4de9e",
+        "workflow_id": "deploy-intent-18e29d6e-246e-5cd1-32d2-c51d13d4de9e",
+        "workflow_type": "DeployIntent"
+      },
+      {
+        "actor": null,
+        "duration_s": 1,
+        "ended_at": "2026-11-07T21:20:17.240047Z",
+        "reason": null,
+        "started_at": "2026-11-07T21:20:15.648265Z",
+        "state": "succeeded",
+        "target": "spine-01",
+        "trigger": "operator",
+        "web_ui_url": "http://localhost:18034/namespaces/default/workflows/deploy-intent-18e29d6d-e0c5-0ba7-32d1-c510fc3ef077",
+        "workflow_id": "deploy-intent-18e29d6d-e0c5-0ba7-32d1-c510fc3ef077",
+        "workflow_type": "DeployIntent"
+      },
+      {
+        "actor": null,
+        "duration_s": 1,
+        "ended_at": "2026-11-07T21:20:17.439721Z",
+        "reason": null,
+        "started_at": "2026-11-07T21:20:15.472996Z",
+        "state": "succeeded",
+        "target": null,
+        "trigger": "operator",
+        "web_ui_url": "http://localhost:18034/namespaces/default/workflows/reconcile-217b6000-0e6c-4919-81d9-9f6a1075cd1d",
+        "workflow_id": "reconcile-217b6000-0e6c-4919-81d9-9f6a1075cd1d",
+        "workflow_type": "ReconcileDevices"
+      },
+      {
+        "actor": null,
+        "duration_s": 1,
+        "ended_at": "2026-11-07T21:20:15.389714Z",
+        "reason": null,
+        "started_at": "2026-11-07T21:20:14.123851Z",
+        "state": "succeeded",
+        "target": "dcfabric",
+        "trigger": "operator",
+        "web_ui_url": "http://localhost:18034/namespaces/default/workflows/scan-drift-dcfabric-e9ad72a3-6448-4f39-8374-39c499b730a7",
+        "workflow_id": "scan-drift-dcfabric-e9ad72a3-6448-4f39-8374-39c499b730a7",
+        "workflow_type": "ScanDrift"
+      },
+      {
+        "actor": null,
+        "duration_s": 1,
+        "ended_at": "2026-11-07T21:20:13.770294Z",
+        "reason": null,
+        "started_at": "2026-11-07T21:20:12.623946Z",
+        "state": "succeeded",
+        "target": "dcfabric",
+        "trigger": "operator",
+        "web_ui_url": "http://localhost:18034/namespaces/default/workflows/scan-drift-dcfabric-12cfb1cd-59a3-4058-bdcf-128b3791d2e7",
+        "workflow_id": "scan-drift-dcfabric-12cfb1cd-59a3-4058-bdcf-128b3791d2e7",
+        "workflow_type": "ScanDrift"
+      },
+      {
+        "actor": null,
+        "duration_s": 0,
+        "ended_at": "2026-11-07T21:19:06.107470Z",
+        "reason": null,
+        "started_at": "2026-11-07T21:19:05.164383Z",
+        "state": "succeeded",
+        "target": "leaf-04",
+        "trigger": "operator",
+        "web_ui_url": "http://localhost:18034/namespaces/default/workflows/deploy-intent-18e29d6e-422b-a401-32d9-c5162961ffbe",
+        "workflow_id": "deploy-intent-18e29d6e-422b-a401-32d9-c5162961ffbe",
+        "workflow_type": "DeployIntent"
+      },
+      {
+        "actor": null,
+        "duration_s": 0,
+        "ended_at": "2026-11-07T21:19:04.444006Z",
+        "reason": null,
+        "started_at": "2026-11-07T21:19:03.517771Z",
+        "state": "succeeded",
+        "target": "leaf-03",
+        "trigger": "operator",
+        "web_ui_url": "http://localhost:18034/namespaces/default/workflows/deploy-intent-18e29d6e-3794-c788-32d5-c519c5f18e3a",
+        "workflow_id": "deploy-intent-18e29d6e-3794-c788-32d5-c519c5f18e3a",
+        "workflow_type": "DeployIntent"
+      },
+      {
+        "actor": null,
+        "duration_s": 0,
+        "ended_at": "2026-11-07T21:19:02.592607Z",
+        "reason": null,
+        "started_at": "2026-11-07T21:19:01.694875Z",
+        "state": "succeeded",
+        "target": "leaf-02",
+        "trigger": "operator",
+        "web_ui_url": "http://localhost:18034/namespaces/default/workflows/deploy-intent-18e29d6e-2e5b-c496-32da-c510ade043a0",
+        "workflow_id": "deploy-intent-18e29d6e-2e5b-c496-32da-c510ade043a0",
+        "workflow_type": "DeployIntent"
+      },
+      {
+        "actor": null,
+        "duration_s": 0,
+        "ended_at": "2026-11-07T21:19:00.859406Z",
+        "reason": null,
+        "started_at": "2026-11-07T21:18:59.944785Z",
+        "state": "succeeded",
+        "target": "leaf-01",
+        "trigger": "operator",
+        "web_ui_url": "http://localhost:18034/namespaces/default/workflows/deploy-intent-18e29d6e-246e-5cd1-32d2-c51d13d4de9e",
+        "workflow_id": "deploy-intent-18e29d6e-246e-5cd1-32d2-c51d13d4de9e",
+        "workflow_type": "DeployIntent"
+      },
+      {
+        "actor": null,
+        "duration_s": 1,
+        "ended_at": "2026-11-07T21:18:59.218795Z",
+        "reason": null,
+        "started_at": "2026-11-07T21:18:58.184022Z",
+        "state": "succeeded",
+        "target": "spine-02",
+        "trigger": "operator",
+        "web_ui_url": "http://localhost:18034/namespaces/default/workflows/deploy-intent-18e29d6e-1959-3451-32dc-c51d9065aa58",
+        "workflow_id": "deploy-intent-18e29d6e-1959-3451-32dc-c51d9065aa58",
+        "workflow_type": "DeployIntent"
+      },
+      {
+        "actor": null,
+        "duration_s": 1,
+        "ended_at": "2026-11-07T21:18:57.426209Z",
+        "reason": null,
+        "started_at": "2026-11-07T21:18:56.168004Z",
+        "state": "succeeded",
+        "target": "spine-01",
+        "trigger": "operator",
+        "web_ui_url": "http://localhost:18034/namespaces/default/workflows/deploy-intent-18e29d6d-e0c5-0ba7-32d1-c510fc3ef077",
+        "workflow_id": "deploy-intent-18e29d6d-e0c5-0ba7-32d1-c510fc3ef077",
+        "workflow_type": "DeployIntent"
+      }
+    ],
+    "fetched_at": "2026-11-07T21:20:48Z",
+    "reason": null,
+    "remedy": null,
+    "source": "audit",
+    "stale": false
+  },
+  "schedule": {
+    "available": true,
+    "data": {
+      "exists": true,
+      "paused_at": null,
+      "paused_by": null,
+      "repeated_failures": [],
+      "schedule": {
+        "interval": 300,
+        "mode": "remediate",
+        "next_runs": [
+          "2026-11-07T21:24:48.919877Z"
+        ],
+        "note": null,
+        "paused": false,
+        "recent_runs": [
+          {
+            "scheduled_at": "2026-11-07T21:15:48.919877Z",
+            "started_at": "2026-11-07T21:15:49.919877Z",
+            "status": "COMPLETED",
+            "summary": {
+              "clean": 5,
+              "drifted": 1,
+              "errored": 0,
+              "failed": 0,
+              "remediated": 0,
+              "succeeded": 0,
+              "total": 6,
+              "wrote": false
+            },
+            "workflow_id": "drift-response-dcfabric-2026-11-07T21:15:48Z"
+          }
+        ],
+        "running": [],
+        "schedule_id": "drift-response-dcfabric",
+        "skipped_overlap": 0,
+        "use_case_id": "dcfabric"
+      },
+      "suggested_command": null
+    },
+    "fetched_at": "2026-11-07T21:20:48.919877Z",
+    "reason": null,
+    "remedy": null,
+    "source": "temporal",
+    "stale": false
+  },
+  "use_case": "dcfabric",
+  "worker": {
+    "available": true,
+    "data": {
+      "pollers": 1,
+      "task_queue": "snapl-orchestrator"
+    },
+    "fetched_at": "2026-11-07T21:20:48.919877Z",
+    "reason": null,
+    "remedy": null,
+    "source": "temporal",
+    "stale": false
+  }
+}

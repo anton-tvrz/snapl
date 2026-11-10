@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import type { View } from "../api/types";
 import { SourceStrip } from "./SourceStrip";
+import { ArchiveMode } from "./ViewFrame";
 
 const NOW = new Date("2026-11-07T21:00:30Z");
 const SOURCES: View<null>[] = [
@@ -46,5 +47,22 @@ describe("SourceStrip", () => {
     render(<SourceStrip sources={undefined} now={NOW} />);
 
     expect(screen.getByText("Loading sources…")).toBeInTheDocument();
+  });
+
+  it("in an archive, says a source is not in it rather than down, with no command to copy", () => {
+    const archived: View<null>[] = [
+      { source: "temporal", available: false, reason: "not in this archive", remedy: "uv run snapl dashboard" },
+    ];
+    render(
+      <ArchiveMode.Provider value={true}>
+        <SourceStrip sources={archived} now={NOW} />
+      </ArchiveMode.Provider>,
+    );
+
+    const item = within(screen.getByRole("list", { name: "Sources" })).getByRole("listitem");
+    expect(item).toHaveTextContent("not in this archive");
+    expect(item).not.toHaveTextContent("down");
+    expect(item).toHaveTextContent("To see it live: uv run snapl dashboard");
+    expect(within(item).queryByRole("button", { name: /^Copy/ })).not.toBeInTheDocument();
   });
 });
