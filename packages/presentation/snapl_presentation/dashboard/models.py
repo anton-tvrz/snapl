@@ -595,6 +595,9 @@ class ArchiveInfo(_Model):
     created_at: UtcDatetime
     snapl_commit: str | None = None
     parts: list[ArchivePart]
+    # The range the metrics were exported over: the only range an archive can show.
+    metrics_start: UtcDatetime | None = None
+    metrics_end: UtcDatetime | None = None
 
 
 class ModeResponse(Envelope):

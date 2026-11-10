@@ -317,13 +317,13 @@ Each PR says `Closes` a task issue under #146 and carries `changelog/146.added.m
   - `Archived` returns the schedule, worker and CI views from `export/overview.json` with their original `fetched_at`. With the file missing, each is unavailable with "not in this archive" and the remedy `uv run snapl dashboard`.
   - `ArchivedMetrics` answers the exported range and refuses another with the exported range in its reason.
   - Lab runs come from the archived `test-runs/`, with commits-since null and the reason.
-- [ ] T070 [P] [US5] Extend tests/unit/test_presentation/test_dashboard_archive.py for the app in archive mode:
+- [x] T070 [P] [US5] Extend tests/unit/test_presentation/test_dashboard_archive.py for the app in archive mode:
   - `/mode` is `archive` with the manifest's fields, and `now` is the manifest's `created_at`.
   - `/devices`, `/drift-timeline`, `/runs` and `/runs/steps` answer from the archived trail, and default ranges end at the archive's time.
   - With Temporal, SoT, GitHub, Codecov and Prometheus clients each replaced by one that fails on use, every route still answers (contracts/cli-and-build.md "Network").
   - An archive with a missing part opens, and the views that need it say so.
   - An archive of 100,000 events is ready within 10 s (SC-008), marked `slow`.
-- [ ] T071 [P] [US5] Extend tests/unit/test_presentation/test_cli.py (or the file that holds the dashboard command's tests):
+- [x] T071 [P] [US5] Extend tests/unit/test_presentation/test_cli.py (or the file that holds the dashboard command's tests):
   - `--archive` prints the contract's start line and missing-part lines, takes the use case from the manifest, and errors on a conflicting `--use-case`.
   - Each refusal exits `ExitCode.ERROR` before the port check.
   - Connection settings and tokens in the environment are not read.
@@ -338,7 +338,7 @@ Each PR says `Closes` a task issue under #146 and carries `changelog/146.added.m
 ### Implementation
 
 - [x] T074 [US5] packages/presentation/snapl_presentation/dashboard/archive.py: `open_archive`, `ArchivedIntent`, `Archived`, `ArchivedMetrics`.
-- [ ] T075 [US5] packages/presentation/snapl_presentation/cli.py: `--archive`, building `Sources` from the archive, the fixed clock, and the start lines. No settings are read from the environment in this mode.
+- [x] T075 [US5] packages/presentation/snapl_presentation/cli.py: `--archive`, building `Sources` from the archive, the fixed clock, and the start lines. No settings are read from the environment in this mode.
 - [x] T076 [US5] tasks/history.py: `_EXPORTS` gains the four routes. Amend specs/012-measured-metrics/contracts/history-tasks.md "Contents" to list them, with a link to this spec.
 - [ ] T077 [US5] packages/presentation/ui/src/components/ModeBanner.tsx, and the mode read once at load and passed to `ViewFrame`, the range picker and `usePolling`.
 - [ ] T078 [US5] **Needs the lab**: quickstart item 6 (a real archive, the stack stopped, Wi-Fi off, the checksum).

@@ -24,6 +24,7 @@ from pydantic import AwareDatetime
 
 from snapl_orchestrator.models import AuditEventType, drift_schedule_id
 from snapl_presentation.dashboard import pages
+from snapl_presentation.dashboard.archive import ARCHIVE_REMEDY, NOT_IN_ARCHIVE
 from snapl_presentation.dashboard.ci import REPO_REMEDY
 from snapl_presentation.dashboard.exposition import CONTENT_TYPE, SourceOutcome, render_exposition
 from snapl_presentation.dashboard.models import (
@@ -78,6 +79,7 @@ from snapl_presentation.exceptions import first_line
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Hashable
 
+    from snapl_presentation.dashboard.archive import ArchiveExports
     from snapl_presentation.settings import CliSettings
 
 
@@ -559,13 +561,16 @@ def create_app(
     clock: Callable[[], datetime] = utcnow,
     repo: str | None = None,
     archive: ArchiveInfo | None = None,
+    exported: ArchiveExports | None = None,
     ui_dir: pathlib.Path | None = pages.BUILT_UI,
 ) -> FastAPI:
     """The dashboard for one use case, served from ``sources``.
 
     ``repo`` is the GitHub ``owner/name`` the CI view reads, for the links.
     ``archive`` describes the history archive the sources read, when the
-    server is showing one and not the live stack (spec 011).
+    server is showing one and not the live stack (spec 011), and ``exported``
+    what that archive exported: the schedule, worker, topology, links and
+    metrics are shown as exported instead of being composed (research R13).
     ``ui_dir`` is where the built UI is looked for. With none there, the root
     serves the plain page (spec 011 research R2).
     """
@@ -606,6 +611,8 @@ def create_app(
     async def topology(requested: UseCaseQuery = None) -> TopologyResponse:
         """The use case's devices and the links intent declares (spec 011)."""
         served = _check_use_case(requested)
+        if exported is not None:
+            return TopologyResponse(use_case=served, generated_at=clock(), topology=exported.topology)
         sot = await reader.read(SourceName.SOT)
         return TopologyResponse(use_case=served, generated_at=clock(), topology=compose_topology(sot))
 
@@ -737,8 +744,12 @@ def create_app(
     async def schedule(requested: UseCaseQuery = None) -> ScheduleResponse:
         served = _check_use_case(requested)
         audit, temporal, sot = await reader.read_all(SourceName.AUDIT, SourceName.TEMPORAL, SourceName.SOT)
-        schedule_view, worker_view = compose_schedule(
-            temporal, audit, _device_names(sot, sources.sot.names), use_case=served, task_queue=settings.task_queue
+        schedule_view, worker_view = (
+            (exported.schedule, exported.worker)
+            if exported is not None
+            else compose_schedule(
+                temporal, audit, _device_names(sot, sources.sot.names), use_case=served, task_queue=settings.task_queue
+            )
         )
         return ScheduleResponse(use_case=served, generated_at=clock(), schedule=schedule_view, worker=worker_view)
 
@@ -796,8 +807,10 @@ def create_app(
         names = _device_names(sot, sources.sot.names)
         now = clock()
         runs_view, running_view = compose_runs(audit, temporal, names, settings, now, limit=runs_limit)
-        schedule_view, worker_view = compose_schedule(
-            temporal, audit, names, use_case=served, task_queue=settings.task_queue
+        schedule_view, worker_view = (
+            (exported.schedule, exported.worker)
+            if exported is not None
+            else compose_schedule(temporal, audit, names, use_case=served, task_queue=settings.task_queue)
         )
         return Overview(
             use_case=served,
@@ -862,6 +875,10 @@ def create_app(
             name = MetricsViewName(view)
         except ValueError:
             raise HTTPException(status_code=404, detail=f"no metrics view named {view!r}") from None
+        exported_range = exported.metrics.exported_range(name) if exported is not None else None
+        if start is None and end is None and exported_range is not None:
+            # An archive's default is the one range it holds.
+            start, end = exported_range
         range_end = end or clock()
         range_start = start or range_end - _METRICS_DEFAULT_RANGE
         if range_start >= range_end:
@@ -883,6 +900,12 @@ def create_app(
     async def links(requested: UseCaseQuery = None) -> LinksResponse:
         """Where to look next: the stack's own UIs, GitHub, this API and the docs."""
         served = _check_use_case(requested)
+        if exported is not None:
+            if exported.links is None:
+                return LinksResponse(
+                    use_case=served, generated_at=clock(), links=[], reason=NOT_IN_ARCHIVE, remedy=ARCHIVE_REMEDY
+                )
+            return exported.links.model_copy(update={"use_case": served, "generated_at": clock()})
         return compose_links(settings, served, repo, generated_at=clock())
 
     app.include_router(router)

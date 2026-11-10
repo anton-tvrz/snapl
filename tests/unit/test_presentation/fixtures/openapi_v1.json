@@ -9,6 +9,30 @@
             "title": "Created At",
             "type": "string"
           },
+          "metrics_end": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metrics End"
+          },
+          "metrics_start": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metrics Start"
+          },
           "name": {
             "title": "Name",
             "type": "string"

@@ -29,6 +29,7 @@ from snapl_presentation.dashboard.archive import (
     ArchiveError,
     archived_lab_runs,
     archived_view,
+    create_archive_app,
     open_archive,
 )
 from snapl_presentation.dashboard.models import CiStatus, MetricsViewName, ScheduleStatus, WorkerStatus
@@ -251,6 +252,13 @@ async def test_intent_and_topology_come_from_the_exported_topology(tmp_path: Pat
     assert len(topology.data.links) == 8
 
 
+async def test_without_the_topology_export_names_still_come_from_the_exported_devices(tmp_path: Path):
+    with open_archive(build_archive(tmp_path, omit=("topology", "devices"))) as opened:
+        intent = ArchivedIntent(opened.root, opened.created_at)
+
+    assert sorted(intent.names.values()) == ["leaf-01", "leaf-02", "leaf-03", "leaf-04", "spine-01", "spine-02"]
+
+
 async def test_an_archive_without_the_topology_export_predates_it(tmp_path: Path):
     with open_archive(build_archive(tmp_path, omit=("topology",))) as opened:
         intent = ArchivedIntent(opened.root, opened.created_at)
@@ -329,3 +337,179 @@ async def test_lab_runs_come_from_the_archive_with_no_git_history(tmp_path: Path
     assert view.data.latest
     assert set(view.data.commits_on_main_since.values()) == {None}
     assert set(view.data.commits_unknown_reason.values()) == {"an archive has no git history"}
+
+
+# --- the app in archive mode (T070) ------------------------------------------------
+
+
+@pytest.fixture
+def served(tmp_path: Path):
+    """The app on a complete archive, as `snapl dashboard --archive` builds it."""
+    with open_archive(build_archive(tmp_path)) as opened:
+        yield TestClient(create_archive_app(opened, ui_dir=None)), opened
+
+
+def _overview_export() -> dict[str, Any]:
+    return json.loads(EXPORTED["overview.json"])
+
+
+def test_mode_is_archive_with_the_manifest_and_its_time(served):
+    client, opened = served
+    body = client.get("/api/v1/mode").json()
+
+    assert body["mode"] == "archive"
+    assert body["now"] == "2026-11-07T21:20:48Z"
+    archive = body["archive"]
+    assert (archive["name"], archive["snapl_commit"]) == (opened.path.name, "6baff39")
+    assert archive["created_at"] == "2026-11-07T21:20:48Z"
+    exported = json.loads(EXPORTED["metrics/worker-up.json"])["metrics"]["data"]
+    assert (archive["metrics_start"], archive["metrics_end"]) == (exported["start"], exported["end"])
+
+
+def test_devices_runs_timeline_and_steps_come_from_the_archived_trail(served):
+    client, _ = served
+
+    devices = client.get("/api/v1/devices").json()["devices"]
+    assert {d["name"]: d["drift_state"] for d in devices["data"]}["leaf-01"] == "undesired"
+    assert len(client.get("/api/v1/runs").json()["runs"]["data"]) == 12
+    timeline = client.get("/api/v1/drift-timeline").json()
+    assert timeline["timeline"]["data"]["end"] == "2026-11-07T21:20:48Z"
+    assert timeline["timeline"]["data"]["latest_closed"]["name"] == "spine-01"
+    steps = client.get(
+        "/api/v1/runs/steps",
+        params={
+            "workflow_id": "deploy-intent-18e29d6d-e0c5-0ba7-32d1-c510fc3ef077",
+            "started_at": "2026-11-07T21:20:15.648265Z",
+        },
+    ).json()
+    assert steps["steps"]["data"]["recorded"] is True
+
+
+def test_schedule_worker_and_ci_are_exactly_as_exported(served):
+    client, _ = served
+    overview = client.get("/api/v1/overview").json()
+    exported = _overview_export()
+
+    for key in ("schedule", "worker", "ci"):
+        assert overview[key] == exported[key], key
+    schedule = client.get("/api/v1/schedule").json()
+    assert (schedule["schedule"], schedule["worker"]) == (exported["schedule"], exported["worker"])
+
+
+def test_running_is_not_in_this_archive(served):
+    client, _ = served
+    running = client.get("/api/v1/overview").json()["running"]
+
+    assert (running["available"], running["reason"], running["remedy"]) == (False, NOT_IN_ARCHIVE, ARCHIVE_REMEDY)
+
+
+def test_topology_and_links_are_the_exported_ones(served):
+    client, _ = served
+
+    assert client.get("/api/v1/topology").json()["topology"] == json.loads(EXPORTED["topology.json"])["topology"]
+    assert client.get("/api/v1/links").json()["links"] == json.loads(EXPORTED["links.json"])["links"]
+
+
+def test_metrics_default_to_the_exported_range_and_refuse_another(served):
+    client, _ = served
+    exported = json.loads(EXPORTED["metrics/gnmi-errors.json"])["metrics"]
+
+    answer = client.get("/api/v1/metrics/gnmi-errors").json()["metrics"]
+    assert (answer["available"], answer["data"]) == (True, exported["data"])
+    other = client.get("/api/v1/metrics/gnmi-errors", params={"start": "2026-11-07T20:00:00Z"}).json()["metrics"]
+    assert other["available"] is False
+    assert other["reason"].startswith("an archive holds only the exported range")
+
+
+def test_every_route_answers_with_no_network(served, monkeypatch: pytest.MonkeyPatch):
+    import socket
+
+    def refuse(*_args: Any, **_kwargs: Any) -> None:
+        raise AssertionError("archive mode opened a connection")
+
+    monkeypatch.setattr(socket.socket, "connect", refuse)
+    monkeypatch.setattr(socket, "create_connection", refuse)
+    client, _ = served
+    paths = ["mode", "overview", "devices", "runs", "topology", "links", "sources", "schedule", "history"]
+    paths += ["drift-timeline", "ci", "lab-runs", *(f"metrics/{view.value}" for view in MetricsViewName)]
+
+    for path in paths:
+        assert client.get(f"/api/v1/{path}").status_code == 200, path
+
+
+def test_an_archive_missing_parts_opens_and_the_views_that_need_them_say_so(tmp_path: Path):
+    with open_archive(build_archive(tmp_path, omit=("topology", "overview", "links"))) as opened:
+        client = TestClient(create_archive_app(opened, ui_dir=None))
+        topology = client.get("/api/v1/topology").json()["topology"]
+        overview = client.get("/api/v1/overview").json()
+        links = client.get("/api/v1/links").json()
+
+    assert topology["available"] is False
+    assert "predates" in topology["reason"]
+    assert sorted(d["name"] for d in overview["devices"]["data"])[0] == "leaf-01"
+    assert (overview["schedule"]["available"], overview["schedule"]["reason"]) == (False, NOT_IN_ARCHIVE)
+    assert overview["ci"]["reason"] == NOT_IN_ARCHIVE
+    assert links["reason"] == NOT_IN_ARCHIVE
+    assert links["remedy"] == ARCHIVE_REMEDY
+
+
+@pytest.mark.slow
+def test_an_archive_of_100k_events_is_ready_within_10_s(tmp_path: Path):
+    """SC-008: opened and answering the page's first requests in under 10 s."""
+    import asyncio
+    import sqlite3
+    import time
+
+    from snapl_orchestrator.audit.sqlite import SqliteAuditLog, _serialize_target, _utc_text
+    from tests.unit.test_presentation.test_dashboard_performance import _trail
+
+    archive = build_archive(tmp_path)
+    staging = tmp_path / "big"
+    (staging / "audit").mkdir(parents=True)
+    database = staging / "audit" / "snapl-audit.sqlite"
+    asyncio.run(SqliteAuditLog(database_url=str(database)).initialize())
+    rows = [
+        (
+            str(e.event_id),
+            e.workflow_id,
+            e.workflow_type,
+            _serialize_target(e.target_id),
+            e.event_type.value,
+            e.activity_name,
+            e.outcome,
+            e.reason.value if e.reason else None,
+            json.dumps(e.payload, default=str),
+            _utc_text(e.timestamp),
+            e.actor,
+        )
+        for e in _trail(100_000)
+    ]
+    with sqlite3.connect(database) as conn:
+        conn.executemany(
+            "INSERT INTO audit_events (event_id, workflow_id, workflow_type, target_id, event_type,"
+            " activity_name, outcome, reason, payload_json, timestamp, actor)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            rows,
+        )
+    with open_archive(archive) as small:
+        shutil.copy(small.root / "manifest.json", staging / "manifest.json")
+        shutil.copytree(small.root / "export", staging / "export")
+    big = tmp_path / "snapl-history-big.tar.gz"
+    history._write(
+        big,
+        [
+            (staging / "manifest.json", "manifest.json"),
+            (database, "audit/snapl-audit.sqlite"),
+            (staging / "export", "export"),
+        ],
+    )
+
+    started = time.perf_counter()
+    with open_archive(big) as opened:
+        client = TestClient(create_archive_app(opened, ui_dir=None))
+        for path in ("mode", "overview", "topology", "drift-timeline"):
+            assert client.get(f"/api/v1/{path}").status_code == 200
+        elapsed = time.perf_counter() - started
+        assert len(client.get("/api/v1/runs", params={"limit": 500}).json()["runs"]["data"]) == 500
+
+    assert elapsed < 10, f"ready in {elapsed:.1f} s"

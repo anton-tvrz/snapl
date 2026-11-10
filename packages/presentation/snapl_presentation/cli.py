@@ -19,6 +19,7 @@ import functools
 import getpass
 import re
 from datetime import timedelta
+from pathlib import Path  # noqa: TC003 — typer reads the annotation at runtime
 from typing import TYPE_CHECKING, Annotated, Any
 from uuid import uuid4
 
@@ -727,17 +728,8 @@ def _serve_dashboard(settings: CliSettings, use_case: str, host: str, port: int)
     asyncio.run(server.serve())
 
 
-@app.command()
-def dashboard(
-    use_case: UseCaseOpt = DEFAULT_USE_CASE,
-    port: Annotated[int | None, typer.Option("--port", help="Port to serve on [env: DASHBOARD_PORT].")] = None,
-    host: Annotated[str | None, typer.Option("--host", help="Address to bind [env: DASHBOARD_HOST].")] = None,
-) -> None:
-    """Serve a local, read-only dashboard of the fabric and the loop."""
-    settings = CliSettings.from_env()
-    host = host or settings.dashboard_host
-    port = port if port is not None else settings.dashboard_port
-
+def _check_address(host: str, port: int) -> None:
+    """Warn about a non-loopback address, and refuse a port in use (010's rules)."""
     if not _is_loopback(host):
         _stderr.print(
             f"[yellow]warning:[/] the dashboard has no authentication; anyone who can reach {host}:{port} can read it.",
@@ -752,6 +744,69 @@ def dashboard(
         )
         raise typer.Exit(int(ExitCode.ERROR))
 
+
+def _dashboard_archive(path: Path, use_case: str | None, host: str, port: int) -> None:
+    """Serve one history archive until interrupted. Refusals exit before the port is checked."""
+    from snapl_presentation.dashboard.archive import ArchiveError, create_archive_app, open_archive  # noqa: PLC0415
+
+    try:
+        with open_archive(path) as opened:
+            if use_case is not None and use_case != opened.use_case:
+                _stderr.print(
+                    f"[red]error:[/] {path} is for use case {opened.use_case!r}, not {use_case!r}.",
+                    highlight=False,
+                    soft_wrap=True,
+                )
+                raise typer.Exit(int(ExitCode.ERROR))
+            _check_address(host, port)
+            url_host = f"[{host}]" if ":" in host else host
+            commit = (opened.info.snapl_commit or "unknown")[:7]
+            made = opened.created_at.strftime("%Y-%m-%d %H:%M UTC")
+            typer.echo(
+                f"Archive {opened.info.name} (made {made}, commit {commit}) for {opened.use_case} "
+                f"at http://{url_host}:{port} (read-only, Ctrl-C to stop)"
+            )
+            for part in opened.info.parts:
+                if not part.present:
+                    typer.echo(f"  missing: {part.name} ({part.reason or 'no reason recorded'})")
+            with contextlib.suppress(KeyboardInterrupt):
+                _serve_app(create_archive_app(opened), host, port)
+    except ArchiveError as exc:
+        _stderr.print(f"[red]error:[/] {exc}", highlight=False, soft_wrap=True)
+        raise typer.Exit(int(ExitCode.ERROR)) from exc
+    raise typer.Exit(int(ExitCode.OK))
+
+
+def _serve_app(app: Any, host: str, port: int) -> None:
+    import uvicorn  # noqa: PLC0415
+
+    uvicorn.run(app, host=host, port=port, log_level="warning", access_log=False)
+
+
+@app.command()
+def dashboard(
+    use_case: Annotated[
+        str | None,
+        typer.Option("--use-case", help="Use case to operate on [default: dcfabric; with --archive, the archive's]."),
+    ] = None,
+    port: Annotated[int | None, typer.Option("--port", help="Port to serve on [env: DASHBOARD_PORT].")] = None,
+    host: Annotated[str | None, typer.Option("--host", help="Address to bind [env: DASHBOARD_HOST].")] = None,
+    archive: Annotated[
+        Path | None,
+        typer.Option("--archive", help="Serve from a history.archive tarball, read-only, with no stack."),
+    ] = None,
+) -> None:
+    """Serve a local, read-only dashboard of the fabric and the loop."""
+    # Only the dashboard's own address comes from the environment in archive
+    # mode: it reads no connection settings or tokens (spec 011).
+    settings = CliSettings.from_env()
+    host = host or settings.dashboard_host
+    port = port if port is not None else settings.dashboard_port
+    if archive is not None:
+        _dashboard_archive(archive, use_case, host, port)
+    use_case = use_case or DEFAULT_USE_CASE
+
+    _check_address(host, port)
     url_host = f"[{host}]" if ":" in host else host
     typer.echo(f"Dashboard for {use_case} at http://{url_host}:{port} (read-only, Ctrl-C to stop)")
     if _built_ui() is None:

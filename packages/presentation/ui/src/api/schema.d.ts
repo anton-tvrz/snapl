@@ -300,6 +300,10 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Metrics End */
+            metrics_end?: string | null;
+            /** Metrics Start */
+            metrics_start?: string | null;
             /** Name */
             name: string;
             /** Parts */
