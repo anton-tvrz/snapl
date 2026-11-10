@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import type { DevicesResponse, RunsResponse } from "../api/types";
 import { SNAPSHOT_BUNDLE, TIMELINE_AT_SCAN_2 } from "../test/fixtures";
@@ -97,6 +97,10 @@ describe("InlineProvider at the bundle's time", () => {
 });
 
 describe("readBundle", () => {
+  afterEach(() => {
+    document.body.replaceChildren();
+  });
+
   it("reads the bundle from its element", () => {
     document.body.replaceChildren();
     const element = document.createElement("script");
@@ -114,6 +118,7 @@ describe("readBundle", () => {
 
     const element = document.createElement("script");
     element.id = "snapl-bundle";
+    element.type = "application/json";
     document.body.append(element);
     expect(readBundle(document)).toBeNull();
   });
@@ -128,8 +133,10 @@ describe("readBundle", () => {
     document.body.replaceChildren();
     expect(providerFor(document)).toBeInstanceOf(HttpProvider);
 
+    // Typed as data, as in the template: an untyped script would be run as code.
     const element = document.createElement("script");
     element.id = "snapl-bundle";
+    element.type = "application/json";
     element.textContent = JSON.stringify(bundle);
     document.body.append(element);
     expect(providerFor(document)).toBeInstanceOf(InlineProvider);

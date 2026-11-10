@@ -62,6 +62,7 @@ describe("App in a snapshot", () => {
     render(<App provider={provider().p} />);
 
     const ci = await screen.findByRole("region", { name: "CI" });
+    expect(await within(ci).findByText("export GITHUB_TOKEN=…")).toBeInTheDocument();
     expect(ci).toHaveTextContent("The operator could run: export GITHUB_TOKEN=…");
     expect(screen.queryByRole("button", { name: /^Copy/ })).not.toBeInTheDocument();
   });
