@@ -12,8 +12,10 @@ inserted well after its timestamp (research R3).
 from __future__ import annotations
 
 import re
+from bisect import bisect_left
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from operator import attrgetter
 from typing import TYPE_CHECKING, Literal
 from urllib.parse import quote
 from uuid import UUID
@@ -321,7 +323,7 @@ class _Run:
     superseded: bool = False
 
 
-def _split_runs(events: Sequence[AuditEvent]) -> list[_Run]:
+def _split_runs(events: Sequence[AuditEvent], *, ordered: bool = False) -> list[_Run]:
     """One run per WORKFLOW_STARTED, closed by the next terminal event of its id.
 
     ``deploy-intent-{device}`` holds many runs. A run whose worker died never
@@ -332,7 +334,7 @@ def _split_runs(events: Sequence[AuditEvent]) -> list[_Run]:
     """
     runs: list[_Run] = []
     open_runs: dict[str, _Run] = {}
-    for event in sorted(events, key=lambda e: e.timestamp):
+    for event in events if ordered else sorted(events, key=lambda e: e.timestamp):
         if event.event_type is AuditEventType.SCHEDULE_CHANGED:
             continue
         current = open_runs.get(event.workflow_id)
@@ -689,7 +691,10 @@ def _counted_points(
 def _markers(events: Sequence[AuditEvent], start: datetime, end: datetime) -> list[Marker]:
     """One per reconcile, and one per scheduled run that remediated."""
     runs = _split_runs(events)
-    scheduled = _scheduled_ids(runs, events)
+    return _markers_of(runs, _scheduled_ids(runs, events), start, end)
+
+
+def _markers_of(runs: Sequence[_Run], scheduled: set[str], start: datetime, end: datetime) -> list[Marker]:
     markers = []
     for run in runs:
         at = run.start.timestamp
@@ -769,9 +774,22 @@ def _close_kind(run: _Run, trigger: Trigger) -> Literal["remediation", "reconcil
     return "reconcile" if run.start.payload.get("parent_workflow_id") else "deploy"
 
 
-# One scan of one device, kept light: the whole trail is folded into these, and
-# only what the answer returns is built into models (SC-013).
-_Scan = tuple[datetime, DriftState, "AuditEvent"]
+# The whole trail is folded here on every request, so this section is written
+# for few steps per event (SC-013): events are filtered and sorted in bulk, a
+# device's scans are reduced to one character each, and a regular expression
+# finds the episodes. Models are built only for what the answer returns.
+_BY_TIME = attrgetter("timestamp")
+_SCAN_RECORDS = {AuditEventType.ACTIVITY_COMPLETED, AuditEventType.ACTIVITY_FAILED}
+# From the first drifted scan to the first clean scan after it, both included.
+# An error scan in between stays inside; an episode still open has no clean scan.
+_EPISODE = re.compile("d[de]*c?")
+
+
+def _scan_code(event: AuditEvent) -> str:
+    """One character per scan: e(rror), c(lean) or d(rifted), as `_scan_fields` decides them."""
+    if event.event_type is AuditEventType.ACTIVITY_FAILED:
+        return "e"
+    return "d" if event.payload.get("paths") else "c"
 
 
 def _scan_state(event: AuditEvent) -> DriftState:
@@ -779,37 +797,20 @@ def _scan_state(event: AuditEvent) -> DriftState:
     return state
 
 
-def _spans(scans: Sequence[_Scan]) -> list[list[_Scan]]:
-    """One device's episodes as runs of scans: from the first drifted scan to
-    the first in-sync scan after it, both included. The last may be open."""
-    spans: list[list[_Scan]] = []
-    opened: list[_Scan] = []
-    for scan in scans:
-        if not opened:
-            if scan[1] in _DRIFTED:
-                opened = [scan]
-            continue
-        opened.append(scan)
-        if scan[1] is DriftState.IN_SYNC:
-            spans.append(opened)
-            opened = []
-    if opened:
-        spans.append(opened)
-    return spans
-
-
 def _episode(
     device_id: UUID,
     name: str,
-    span: Sequence[_Scan],
+    scans: Sequence[AuditEvent],
     deploys: Sequence[tuple[datetime, _Run]],
     scheduled: set[str],
 ) -> DriftEpisode:
-    opened_at = span[0][0]
-    closed = span[-1][0] if span[-1][1] is DriftState.IN_SYNC else None
+    """One episode from its scans: the opening one through the closing one, or the latest if open."""
+    states = [_scan_state(scan) for scan in scans]
+    opened_at = scans[0].timestamp
+    closed = scans[-1].timestamp if states[-1] is DriftState.IN_SYNC else None
     closed_by = None
     if closed is not None:
-        last_drifted = max(t for t, state, _ in span if state in _DRIFTED)
+        last_drifted = max(scan.timestamp for scan, state in zip(scans, states, strict=True) if state in _DRIFTED)
         closers = [(ended, run) for ended, run in deploys if last_drifted < ended < closed]
         if closers:
             ended, run = max(closers, key=lambda closer: closer[0])
@@ -824,8 +825,8 @@ def _episode(
         closed_at=closed,
         duration_s=int((closed - opened_at).total_seconds()) if closed else None,
         # The closing scan's `in_sync` is how it ended, not a state it was in.
-        states=list(dict.fromkeys(state for _, state, _ in span if state is not DriftState.IN_SYNC)),
-        scans=len(span),
+        states=list(dict.fromkeys(state for state in states if state is not DriftState.IN_SYNC)),
+        scans=len(scans),
         closed_by=closed_by,
     )
 
@@ -859,30 +860,34 @@ def project_timeline(
     """
     if start >= end:
         raise ValueError("start must be before end")
-    known = events_until(events, end)
-    by_device: dict[UUID, list[_Scan]] = {}
-    for event in sorted(known, key=lambda e: e.timestamp):
-        device_id = _device_id(event)
-        if device_id is not None and _is_scan_record(event):
-            by_device.setdefault(device_id, []).append((event.timestamp, _scan_state(event), event))
+    known = sorted(events_until(events, end), key=_BY_TIME)
+    # The same test as `_is_scan_record`, on one line: it runs for every event.
+    scans = [e for e in known if e.activity_name == "detect_drift" and e.workflow_type == "ScanDrift"]
+    by_device: dict[UUID, list[AuditEvent]] = {}
+    for scan in scans:
+        if scan.event_type in _SCAN_RECORDS and isinstance(scan.target_id, UUID):
+            by_device.setdefault(scan.target_id, []).append(scan)
 
-    in_range = sum(1 for scans in by_device.values() for scan in scans if scan[0] >= start)
+    # Each device's scans are in time order, so the range's points are a tail.
+    first_in_range = {d: bisect_left(of_device, start, key=_BY_TIME) for d, of_device in by_device.items()}
+    in_range = sum(len(of_device) - first_in_range[d] for d, of_device in by_device.items())
     if in_range > max_points:
         raise TimelineTooLongError(
             f"the range holds {in_range} scan points; one answer carries at most {max_points}. Ask for a shorter range."
         )
 
-    runs = _split_runs(known)
-    scheduled = _scheduled_ids(runs, known)
+    # Runs are split from workflow-level events only: step records neither
+    # start nor end a run, and they are most of the trail.
+    flow = [e for e in known if e.activity_name is None]
+    runs = _split_runs(flow, ordered=True)
+    scheduled = _scheduled_ids(runs, flow)
     deploys: dict[UUID, list[tuple[datetime, _Run]]] = {}
     for run in runs:
+        if run.workflow_type != "DeployIntent" or run.end is None:
+            continue
         target = run.start.target_id
-        succeeded = (
-            run.end is not None
-            and run.end.event_type is AuditEventType.WORKFLOW_TERMINATED
-            and run.end.outcome == "success"
-        )
-        if run.workflow_type == "DeployIntent" and isinstance(target, UUID) and run.end is not None and succeeded:
+        succeeded = run.end.event_type is AuditEventType.WORKFLOW_TERMINATED and run.end.outcome == "success"
+        if succeeded and isinstance(target, UUID):
             deploys.setdefault(target, []).append((run.end.timestamp, run))
 
     devices: list[tuple[UUID, str, bool]]
@@ -897,40 +902,41 @@ def project_timeline(
         devices = [(device_id, name, device_id in names) for name, device_id in seen]
 
     lanes = []
-    # (device id, name, span) for every episode in the trail up to `end`.
-    spans: list[tuple[UUID, str, list[_Scan]]] = []
+    # (opened at, closed at or None, device id, name, the episode's scans), for
+    # every episode in the trail up to `end`.
+    spans: list[tuple[datetime, datetime | None, UUID, str, list[AuditEvent]]] = []
     for device_id, name, known_in_intent in devices:
-        scans = by_device.get(device_id, [])
+        of_device = by_device.get(device_id, [])
         lanes.append(
             DeviceLane(
                 device_id=device_id,
                 name=name,
                 in_intent=known_in_intent,
-                points=[_scan_point(event) for t, _, event in scans if t >= start],
+                points=[_scan_point(scan) for scan in of_device[first_in_range.get(device_id, 0) :]],
             )
         )
-        spans += [(device_id, name, span) for span in _spans(scans)]
+        codes = "".join([_scan_code(scan) for scan in of_device])
+        for match in _EPISODE.finditer(codes):
+            span = of_device[match.start() : match.end()]
+            closed = span[-1].timestamp if codes[match.end() - 1] == "c" else None
+            spans.append((span[0].timestamp, closed, device_id, name, span))
 
-    def closed_at(span: Sequence[_Scan]) -> datetime | None:
-        return span[-1][0] if span[-1][1] is DriftState.IN_SYNC else None
+    def build(span: tuple[datetime, datetime | None, UUID, str, list[AuditEvent]]) -> DriftEpisode:
+        _, _, device_id, name, of_episode = span
+        return _episode(device_id, name, of_episode, deploys.get(device_id, []), scheduled)
 
-    def build(item: tuple[UUID, str, list[_Scan]]) -> DriftEpisode:
-        device_id, name, span = item
-        return _episode(device_id, name, span, deploys.get(device_id, []), scheduled)
-
-    spans.sort(key=lambda item: item[2][0][0])
-    closed = [item for item in spans if closed_at(item[2]) is not None]
-    latest = max(closed, key=lambda item: closed_at(item[2]) or start, default=None)
-    overlapping = [item for item in spans if (closed_at(item[2]) or end) >= start]
+    spans.sort(key=lambda span: span[0])
+    closed_spans = [span for span in spans if span[1] is not None]
+    latest = max(closed_spans, key=lambda span: span[1] or start, default=None)
     return DriftTimeline(
         start=start,
         end=end,
         lanes=lanes,
-        episodes=[build(item) for item in overlapping],
-        markers=_markers(known, start, end),
+        episodes=[build(span) for span in spans if span[1] is None or span[1] >= start],
+        markers=_markers_of(runs, scheduled, start, end),
         latest_closed=build(latest) if latest is not None else None,
-        open_count=len(spans) - len(closed),
-        first_event_at=min((event.timestamp for event in events), default=None),
+        open_count=len(spans) - len(closed_spans),
+        first_event_at=min(map(_BY_TIME, events), default=None),
     )
 
 
