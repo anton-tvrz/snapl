@@ -4,6 +4,7 @@
 import type {
   DevicesResponse,
   DriftTimelineResponse,
+  HistoryResponse,
   LinksResponse,
   MetricsResponse,
   MetricsViewName,
@@ -40,6 +41,8 @@ export interface DataProvider {
   topology(): Promise<TopologyResponse>;
   devices(at?: Date): Promise<DevicesResponse>;
   runs(query: RunsQuery): Promise<RunsResponse>;
+  /** 010's history series. Without a range, the server's default: the last 24 hours, hourly. */
+  history(range?: Range, bucket?: string): Promise<HistoryResponse>;
   /** Without a range, the server's default: the last 24 hours by its own clock. */
   timeline(range?: Range): Promise<DriftTimelineResponse>;
   steps(run: RunId): Promise<RunStepsResponse>;

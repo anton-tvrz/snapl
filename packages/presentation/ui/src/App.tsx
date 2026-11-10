@@ -5,6 +5,7 @@ import { Command } from "./components/Command";
 import { DeviceDrawer } from "./components/DeviceDrawer";
 import { LoopStrip } from "./components/LoopStrip";
 import { Ci } from "./components/panels/Ci";
+import { History } from "./components/panels/History";
 import { LabEvidence } from "./components/panels/LabEvidence";
 import { Links } from "./components/panels/Links";
 import { MetricView } from "./components/panels/Metrics";
@@ -23,6 +24,7 @@ import { ViewFrame } from "./components/ViewFrame";
 import type { DataProvider, RunId } from "./data/provider";
 import { usePolling } from "./data/usePolling";
 import { activityFor } from "./lib/activity";
+import { bucketFor } from "./lib/history";
 import { domainOf, type Range, scanStops } from "./lib/lanes";
 import { METRIC_VIEWS } from "./lib/metrics";
 import { linkNotes } from "./lib/linkNotes";
@@ -69,6 +71,12 @@ export function App({ provider }: Props) {
   const linkList = usePolling(provider.links, null);
   const timeline = usePolling(
     () => provider.timeline(range),
+    HISTORY_MS,
+    range ? `${range.start.toISOString()}/${range.end.toISOString()}` : "default",
+  );
+
+  const historyAnswer = usePolling(
+    () => provider.history(range, range ? bucketFor(range.end.getTime() - range.start.getTime()) : undefined),
     HISTORY_MS,
     range ? `${range.start.toISOString()}/${range.end.toISOString()}` : "default",
   );
@@ -292,6 +300,10 @@ export function App({ provider }: Props) {
             </>
           )}
         </ViewFrame>
+      </div>
+
+      <div className="mt-4">
+        <History history={historyAnswer.data} now={now} error={historyAnswer.error} />
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">

@@ -196,3 +196,35 @@ test("the reconcile's deploy shows the loop with four blocks done", async ({ pag
   await expect(blocks.filter({ hasText: "Presentation" })).toContainText("You are here");
   await expect(page).toHaveURL(/[?&]run=deploy-intent-18e29d6d-e0c5-0ba7-32d1-c510fc3ef077%4020/);
 });
+
+test("the runs panel lists the fixture's 12 runs, and each unavailable source's panel gives a reason and a remedy", async ({ page }) => {
+  await page.goto("/");
+
+  const runs = page.getByRole("region", { name: "Runs" });
+  await expect(runs.getByRole("table", { name: "Runs" }).getByRole("row")).toHaveCount(13);
+
+  const down = {
+    "Schedule and worker": ["temporal is not part of the fixture server", "uv run invoke dev.deps"],
+    "Running now": ["temporal is not part of the fixture server", "uv run invoke dev.deps"],
+    CI: ["ci is not part of the fixture server", "export GITHUB_TOKEN=…"],
+    "Live lab evidence": ["lab_runs is not part of the fixture server", "uv run invoke test-e2e"],
+    "Worker up": ["prometheus is not part of the fixture server", "uv run invoke dev.deps"],
+  };
+  for (const [panel, [reason, remedy]] of Object.entries(down)) {
+    const region = page.getByRole("region", { name: panel });
+    await expect(region, panel).toContainText(reason!);
+    await expect(region, panel).toContainText(remedy!);
+  }
+});
+
+for (const width of [1280, 1024]) {
+  test(`the page fits ${width} pixels with no sideways scroll`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/?device=leaf-01");
+    await expect(page.getByRole("group", { name: "Fabric topology" })).toBeVisible();
+    await expect(page.getByRole("list", { name: "Drift lanes" })).toBeVisible();
+
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow).toBeLessThanOrEqual(0);
+  });
+}
