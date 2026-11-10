@@ -44,7 +44,10 @@ DEFAULT_ARCHIVE_DIR = PROJECT_ROOT / ".snapl" / "archives"
 # delete files owned by its `nobody` user.
 PROMETHEUS_IMAGE = "prom/prometheus:v3.10.0"
 EXPORT_DAYS = 7
-_EXPORTS = ("overview", "history", "links", "sources")
+# Spec 011 adds the views archive mode reads (its research R13); older archives
+# lack them and still open.
+_EXPORTS = ("overview", "history", "links", "sources", "topology", "devices", "runs", "drift-timeline")
+_RANGED = ("history", "drift-timeline")
 
 
 @dataclass
@@ -152,7 +155,7 @@ def _dashboard_export(dashboard: str, staging: Path, now: datetime) -> Part:
     part = Part("dashboard_export", "export", False, dashboard)
     start = (now - timedelta(days=EXPORT_DAYS)).isoformat()
     wanted: list[tuple[str, str, dict[str, str]]] = [
-        (f"{name}.json", f"/api/v1/{name}", {"start": start} if name == "history" else {}) for name in _EXPORTS
+        (f"{name}.json", f"/api/v1/{name}", {"start": start} if name in _RANGED else {}) for name in _EXPORTS
     ]
     wanted += [(f"metrics/{v.value}.json", f"/api/v1/metrics/{v.value}", {"start": start}) for v in MetricsViewName]
     out = staging / "export"
