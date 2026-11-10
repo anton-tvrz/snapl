@@ -23,11 +23,14 @@ import stepsDeploy from "./fixtures/steps-deploy.json";
 import stepsReconcile from "./fixtures/steps-reconcile.json";
 import timelineAtScan2 from "./fixtures/timeline-at-scan-2.json";
 import timeline from "./fixtures/timeline.json";
+import overviewUp from "./fixtures/up/overview.json";
 import topology from "./fixtures/topology.json";
 
 export const MODE = mode as unknown as ModeResponse;
 export const SOURCES = sources as unknown as SourcesResponse;
 export const OVERVIEW = overview as unknown as Overview;
+/** The same arc with the other sources up: an active schedule, one worker, a scan running. */
+export const OVERVIEW_UP = overviewUp as unknown as Overview;
 export const TOPOLOGY = topology as unknown as TopologyResponse;
 export const DEVICES = devices as unknown as DevicesResponse;
 export const DEVICES_AT_SCAN_1 = devicesAtScan1 as unknown as DevicesResponse;

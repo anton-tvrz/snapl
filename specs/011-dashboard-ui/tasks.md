@@ -13,7 +13,7 @@
 - **PR C**: Phase 3 (UI foundation: toolchain, serving, CI)
 - **PR D**: Phase 4 (topology)
 - **PR E**: Phase 5 (the story: lanes, "as of", headline, loop strip). Split in two at US3 to keep each under the size limit: **E1** is US2 (T047 to T049, T051's replay steps, T052 to T054), **E2** is the loop strip (T050, T055, T051's deploy step).
-- **PR F**: Phase 6 (panels)
+- **PR F**: Phase 6 (panels). Split by data source: **F1** Temporal and audit panels (T058, T059 undesired, T063, T064 undesired), **F2** CI, lab evidence and links, **F3** metrics and the range picker, **F4** parity, layout, T062 and T067. F4 also adds a history panel: 010's per-hour history table is on the plain page and FR-029 needs every plain-page fact on the designed page, but no task named it.
 - **PR G**: Phase 7 (archive mode)
 - **PR H**: Phase 8 (snapshot)
 - **PR I**: Phase 9 (docs and governance)
@@ -267,12 +267,12 @@ Each PR says `Closes` a task issue under #146 and carries `changelog/146.added.m
 
 ### Tests (write first, verify they fail)
 
-- [ ] T058 [P] [US4] packages/presentation/ui/src/components/panels/Schedule.test.tsx and Runs.test.tsx, on 010's fixtures:
+- [x] T058 [P] [US4] packages/presentation/ui/src/components/panels/Schedule.test.tsx and Runs.test.tsx, on 010's fixtures:
   - Schedule: mode, interval, last and next run; paused with reason and actor and no next run; no schedule with the create command; repeated failed repairs with the device, the count and the report-mode command; worker pollers, and "no worker" when zero.
   - Runs: type, target, start, duration, outcome, reason, trigger, actor when recorded, and the Temporal link opening in a new tab with `rel="noreferrer"`. Running runs first with elapsed time. A device filter from the URL. An unknown run state by raw text.
   - *Moved from T049 (PR E1)*: with `at` set, the schedule, worker, CI and running panels say they show only the present (`ViewFrame presentOnly`), and the runs panel shows `runs({at})`.
 - [ ] T059 [P] [US4] packages/presentation/ui/src/components/panels/Undesired.test.tsx, Ci.test.tsx, LabEvidence.test.tsx and Links.test.tsx:
-  - Undesired: every undesired path across the fabric grouped by device, the note that removal is not automatic (#65), and no command. Empty state when there is none.
+  - Undesired: every undesired path across the fabric grouped by device, the note that removal is not automatic (#65), and no command. Empty state when there is none. *Done in PR F1.*
   - CI: `main` first, each PR's gate and jobs with links, the failed job named, coverage or "none reported", `omitted_prs` with the token remedy.
   - Lab evidence: latest run per suite with result and age, "N commits on main since", how it was matched, "unknown" with its reason, incomplete and unreadable runs.
   - Links: grouped, with the reason shown when some are left out.
@@ -288,8 +288,9 @@ Each PR says `Closes` a task issue under #146 and carries `changelog/146.added.m
 
 ### Implementation
 
-- [ ] T063 [P] [US4] packages/presentation/ui/src/components/panels/Schedule.tsx and Runs.tsx.
+- [x] T063 [P] [US4] packages/presentation/ui/src/components/panels/Schedule.tsx and Runs.tsx.
 - [ ] T064 [P] [US4] packages/presentation/ui/src/components/panels/Undesired.tsx, Ci.tsx, LabEvidence.tsx, Links.tsx.
+  - *PR F1*: Undesired.tsx. The rest in PR F2.
 - [ ] T065 [US4] packages/presentation/ui/src/components/panels/Metrics.tsx and RangePicker.tsx, with Recharts, polled every 30 s.
 - [ ] T066 [US4] App.tsx and Shell.tsx: the page layout for 1280 pixels and wider, stacking down to 1024 with no page-level horizontal scroll (a Playwright viewport assertion at both widths).
 - [ ] T067 [US4] Extend tests/unit/test_presentation/test_dashboard_app.py: for the same fixtures, the designed page's sources (`/overview`, `/devices`) and `snapl status --json` agree on every device's state and the schedule (SC-011, extending 010's SC-002 test).

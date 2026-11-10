@@ -4,6 +4,9 @@ import type { DeviceView, TopologyNode } from "./api/types";
 import { Command } from "./components/Command";
 import { DeviceDrawer } from "./components/DeviceDrawer";
 import { LoopStrip } from "./components/LoopStrip";
+import { Running, Runs } from "./components/panels/Runs";
+import { Schedule } from "./components/panels/Schedule";
+import { Undesired } from "./components/panels/Undesired";
 import { Shell } from "./components/Shell";
 import { SourceStrip } from "./components/SourceStrip";
 import { Headline } from "./components/timeline/Headline";
@@ -129,7 +132,8 @@ export function App({ provider }: Props) {
   );
   const steps = usePolling(
     () => provider.steps(loopRun ?? { workflow_id: "", started_at: "" }),
-    loopRunning ? OVERVIEW_MS : null,
+    // At a past time the steps are as recorded now, so asking again adds nothing.
+    !at && loopRunning ? OVERVIEW_MS : null,
     loopRun ? `${loopRun.workflow_id}@${loopRun.started_at}|${loopRunning}` : null,
   );
   const loop = steps.data?.steps;
@@ -236,6 +240,11 @@ export function App({ provider }: Props) {
                 </button>
               )}
             </div>
+            {at && (
+              <p className="mb-3 text-xs text-muted">
+                Its steps are shown as the audit trail records them now, which may be after the time shown.
+              </p>
+            )}
             {loop?.data ? (
               <LoopStrip steps={loop.data} />
             ) : (
@@ -264,13 +273,29 @@ export function App({ provider }: Props) {
         </ViewFrame>
       </div>
 
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <Schedule schedule={overview.data?.schedule} worker={overview.data?.worker} now={now} presentOnly={!!at} />
+        <Running running={overview.data?.running} now={now} presentOnly={!!at} />
+      </div>
+      <div className="mt-4">
+        <Runs
+          key={selected ?? ""}
+          runs={at ? pastRuns.data?.runs : overview.data?.runs}
+          now={shown}
+          device={selected}
+        />
+      </div>
+      <div className="mt-4">
+        <Undesired devices={devicesView} now={now} />
+      </div>
+
       <section aria-label="Sources">
         <h2 className="mt-6 mb-3 text-sm font-semibold">Sources</h2>
         {at && <p className="mb-3 text-xs text-muted">Shows only the present: these are the sources' states now.</p>}
         <SourceStrip sources={sources.data?.sources} now={now} />
       </section>
       <p className="mt-6 text-sm text-muted">
-        Runs, the schedule, CI, lab evidence and metrics are on the{" "}
+        CI, lab evidence, links and metrics are on the{" "}
         <a href="/plain" className="underline underline-offset-2">
           plain page
         </a>{" "}

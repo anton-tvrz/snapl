@@ -45,3 +45,6 @@ export type Marker = Schemas["Marker"];
 export type RunSteps = Schemas["RunSteps"];
 export type RunStep = Schemas["RunStep"];
 export type BlockState = Schemas["BlockState"];
+export type ScheduleStatus = Schemas["ScheduleStatus"];
+export type WorkerStatus = Schemas["WorkerStatus"];
+export type RepeatedRepairFailure = Schemas["RepeatedRepairFailure"];

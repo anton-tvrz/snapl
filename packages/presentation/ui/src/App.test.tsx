@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { ApiError } from "./data/http";
 import type { DataProvider } from "./data/provider";
-import { MODE, OVERVIEW, SOURCES, STEPS_DEPLOY, TIMELINE, TOPOLOGY } from "./test/fixtures";
+import { MODE, OVERVIEW, OVERVIEW_UP, SOURCES, STEPS_DEPLOY, TIMELINE, TOPOLOGY } from "./test/fixtures";
 
 function provider(overrides: Partial<DataProvider> = {}): DataProvider {
   const unused = async () => {
@@ -182,8 +182,8 @@ describe("App", () => {
       workflow_id: "scan-drift-dcfabric-68101896-6a9c-4c65-8a84-24af2b98b12a",
       started_at: "2026-11-07T21:20:17.860408Z",
     });
+    expect(await within(loop).findByRole("list", { name: "The loop, block by block" })).toBeInTheDocument();
     expect(loop).toHaveTextContent("Latest run");
-    expect(within(loop).getByRole("list", { name: "The loop, block by block" })).toBeInTheDocument();
   });
 
   it("shows the loop of a run chosen in the drawer, keeps it in the address, and goes back to the latest", async () => {
@@ -237,5 +237,21 @@ describe("App", () => {
 
     const loop = await screen.findByRole("region", { name: "The loop" });
     expect(await within(loop).findByText("the audit trail could not be read")).toBeInTheDocument();
+  });
+
+  it("has a panel for the schedule and worker, what is running, the runs and undesired config", async () => {
+    render(<App provider={provider({ overview: async () => OVERVIEW_UP })} />);
+
+    expect(await screen.findByRole("region", { name: "Schedule and worker" })).toHaveTextContent("Remediate every 5 min");
+    expect(screen.getByRole("region", { name: "Running now" })).toHaveTextContent("ScanDrift");
+    expect(within(screen.getByRole("region", { name: "Runs" })).getAllByRole("row")).toHaveLength(13);
+    expect(screen.getByRole("region", { name: "Undesired config" })).toHaveTextContent("leaf-01");
+  });
+
+  it("shows only the selected device's runs", async () => {
+    render(<App provider={provider()} />);
+    await userEvent.click(await screen.findByRole("button", { name: /^spine-01,/ }));
+
+    expect(screen.getByRole("region", { name: "Runs" })).toHaveTextContent("Only spine-01's runs.");
   });
 });
