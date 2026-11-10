@@ -9,7 +9,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && vite build && vite build -c vite.snapshot.config.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
@@ -45,6 +45,7 @@
     "typescript": "5.9.3",
     "typescript-eslint": "8.72.2",
     "vite": "8.3.7",
+    "vite-plugin-singlefile": "2.3.4",
     "vitest": "5.1.0"
   }
 }

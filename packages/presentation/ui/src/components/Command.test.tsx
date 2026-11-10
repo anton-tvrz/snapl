@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { Command } from "./Command";
+import { Command, Recording } from "./Command";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -57,5 +57,17 @@ describe("Command", () => {
 
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
     expect(screen.getByText("snapl reconcile leaf-01")).toBeInTheDocument();
+  });
+
+  it("in a recording, says it is what the operator could run, with nothing to copy", () => {
+    render(
+      <Recording.Provider value={true}>
+        <Command text="snapl reconcile spine-01" />
+      </Recording.Provider>,
+    );
+
+    expect(screen.getByText("The operator could run:")).toBeInTheDocument();
+    expect(screen.getByText("snapl reconcile spine-01")).toBeInTheDocument();
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
 });

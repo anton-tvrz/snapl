@@ -36,9 +36,11 @@ export function Shell({ useCase, mode, children }: Props) {
         )}
         <p className="rounded-full border border-line px-2 py-0.5 text-xs text-muted">Read-only</p>
         <nav className="ml-auto flex items-center gap-4 text-sm">
-          <a href="/plain" className="text-muted underline-offset-2 hover:text-ink hover:underline">
-            Plain page
-          </a>
+          {mode !== "snapshot" && (
+            <a href="/plain" className="text-muted underline-offset-2 hover:text-ink hover:underline">
+              Plain page
+            </a>
+          )}
           <label className="flex items-center gap-2 text-muted">
             <span>Theme</span>
             <select

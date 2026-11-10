@@ -31,6 +31,7 @@ import timelineAtScan2 from "./fixtures/timeline-at-scan-2.json";
 import timeline from "./fixtures/timeline.json";
 import modeArchive from "./fixtures/archive/mode.json";
 import overviewArchive from "./fixtures/archive/overview.json";
+import snapshotBundle from "./fixtures/snapshot/bundle.json";
 import overviewUp from "./fixtures/up/overview.json";
 import metricsWorkflowDuration from "./fixtures/up/metrics-workflow-duration.json";
 import metricsGnmiDuration from "./fixtures/up/metrics-gnmi-duration.json";
@@ -50,6 +51,8 @@ export const OVERVIEW = overview as unknown as Overview;
 export const OVERVIEW_UP = overviewUp as unknown as Overview;
 /** The arc as a history archive opened by `snapl dashboard --archive`, its Prometheus snapshot missing. */
 export const MODE_ARCHIVE = modeArchive as unknown as ModeResponse;
+/** A day of the arc with every source up, as `snapl dashboard --snapshot --days 1` bundles it. */
+export const SNAPSHOT_BUNDLE = snapshotBundle as unknown;
 export const OVERVIEW_ARCHIVE = overviewArchive as unknown as Overview;
 /** Each metrics view over the hour before NOW, from the server with Prometheus up. */
 export const METRICS: Record<MetricsViewName, MetricsResponse> = {
