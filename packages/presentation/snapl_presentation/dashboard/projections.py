@@ -20,16 +20,26 @@ from uuid import UUID
 
 from snapl_orchestrator.models import AuditEventType, ScheduleChange, WorkflowReason
 from snapl_presentation.dashboard.models import (
+    BlockState,
+    BlockStatus,
     Bucket,
     DeployOutcome,
+    DeviceLane,
     DeviceView,
+    DriftEpisode,
     DriftState,
+    DriftTimeline,
+    EpisodeClose,
     LinkEnd,
     Marker,
+    NafBlock,
     Point,
     RepeatedRepairFailure,
     RunState,
+    RunStep,
+    RunSteps,
     RunView,
+    ScanPoint,
     Series,
     SeriesName,
     Topology,
@@ -728,3 +738,280 @@ def project_series(
         markers=_markers(events, start, end),
         first_event_at=min((event.timestamp for event in events), default=None),
     )
+
+
+# --- drift timeline (spec 011 research R10) ---------------------------------------
+
+MAX_SCAN_POINTS = 20_000
+_DRIFTED = {DriftState.MISSING, DriftState.UNDESIRED, DriftState.MISSING_AND_UNDESIRED, DriftState.DRIFTED}
+
+
+class TimelineTooLongError(ValueError):
+    """The range holds more scan points than one answer carries."""
+
+
+def _scan_point(event: AuditEvent) -> ScanPoint:
+    fields = _scan_fields(event, "")
+    return ScanPoint(
+        t=event.timestamp,
+        state=fields["drift_state"],
+        missing_paths=fields.get("missing_paths", []),
+        undesired_paths=fields.get("undesired_paths", []),
+        unclassified_paths=fields.get("unclassified_paths", []),
+        error=fields.get("error"),
+        scan_workflow_id=event.workflow_id,
+    )
+
+
+def _close_kind(run: _Run, trigger: Trigger) -> Literal["remediation", "reconcile", "deploy"]:
+    if trigger is Trigger.SCHEDULE:
+        return "remediation"
+    return "reconcile" if run.start.payload.get("parent_workflow_id") else "deploy"
+
+
+def _episodes(
+    device_id: UUID,
+    name: str,
+    points: Sequence[ScanPoint],
+    deploys: Sequence[tuple[datetime, _Run]],
+    scheduled: set[str],
+) -> list[DriftEpisode]:
+    """One device's episodes from its scan points, oldest first."""
+    episodes: list[DriftEpisode] = []
+    opened: list[ScanPoint] = []
+    for point in points:
+        if not opened:
+            if point.state in _DRIFTED:
+                opened = [point]
+            continue
+        opened.append(point)
+        if point.state is not DriftState.IN_SYNC:
+            continue
+        last_drifted = max(p.t for p in opened if p.state in _DRIFTED)
+        closers = [(ended, run) for ended, run in deploys if last_drifted < ended < point.t]
+        closed_by = None
+        if closers:
+            ended, run = max(closers, key=lambda closer: closer[0])
+            trigger = _trigger(run, scheduled)
+            closed_by = EpisodeClose(
+                kind=_close_kind(run, trigger), workflow_id=run.workflow_id, trigger=trigger, ended_at=ended
+            )
+        episodes.append(_episode(device_id, name, opened, closed_by))
+        opened = []
+    if opened:
+        episodes.append(_episode(device_id, name, opened, None))
+    return episodes
+
+
+def _episode(device_id: UUID, name: str, points: Sequence[ScanPoint], closed_by: EpisodeClose | None) -> DriftEpisode:
+    closed = points[-1].t if points[-1].state is DriftState.IN_SYNC else None
+    return DriftEpisode(
+        device_id=device_id,
+        name=name,
+        opened_at=points[0].t,
+        closed_at=closed,
+        duration_s=int((closed - points[0].t).total_seconds()) if closed else None,
+        # The closing scan's `in_sync` is how it ended, not a state it was in.
+        states=list(dict.fromkeys(point.state for point in points if point.state is not DriftState.IN_SYNC)),
+        scans=len(points),
+        closed_by=closed_by,
+    )
+
+
+def project_timeline(
+    events: Sequence[AuditEvent],
+    states: Sequence[DesiredState | IntentDevice] | None,
+    names: Mapping[UUID, str],
+    start: datetime,
+    end: datetime,
+    *,
+    max_points: int = MAX_SCAN_POINTS,
+) -> DriftTimeline:
+    """One lane of scan points per device over ``[start, end]``, and its drift episodes.
+
+    Nothing recorded after ``end`` is used, so the answer is the timeline as of
+    ``end``. An episode opens at the first scan that finds a device drifted and
+    closes at the first later scan that finds it in sync. A scan that could not
+    collect the device does neither. What closed an episode is the latest
+    successful deploy of that device between its last drifted scan and its
+    closing scan: only a deploy that targeted the device is evidence.
+
+    Args:
+        states: the devices in intent, or None when the Source of Truth could
+            not be read. Then lanes are the devices the trail mentions.
+        names: device names from the last successful SoT read.
+
+    Raises:
+        ValueError: ``start >= end``.
+        TimelineTooLongError: more than ``max_points`` scan points in the range.
+    """
+    if start >= end:
+        raise ValueError("start must be before end")
+    known = events_until(events, end)
+    by_device: dict[UUID, list[ScanPoint]] = {}
+    for event in sorted(known, key=lambda e: e.timestamp):
+        device_id = _device_id(event)
+        if device_id is not None and _is_scan_record(event):
+            by_device.setdefault(device_id, []).append(_scan_point(event))
+
+    in_range = sum(1 for points in by_device.values() for point in points if point.t >= start)
+    if in_range > max_points:
+        raise TimelineTooLongError(
+            f"the range holds {in_range} scan points; one answer carries at most {max_points}. Ask for a shorter range."
+        )
+
+    runs = _split_runs(known)
+    scheduled = _scheduled_ids(runs, known)
+    deploys: dict[UUID, list[tuple[datetime, _Run]]] = {}
+    for run in runs:
+        target = run.start.target_id
+        succeeded = (
+            run.end is not None
+            and run.end.event_type is AuditEventType.WORKFLOW_TERMINATED
+            and run.end.outcome == "success"
+        )
+        if run.workflow_type == "DeployIntent" and isinstance(target, UUID) and run.end is not None and succeeded:
+            deploys.setdefault(target, []).append((run.end.timestamp, run))
+
+    devices: list[tuple[UUID, str, bool]]
+    if states is not None:
+        intent = sorted(intent_devices(states), key=lambda device: tier_key(device.role, device.name))
+        devices = [(device.id, device.name, True) for device in intent]
+        in_intent = {device.id for device in intent}
+        gone = sorted((names.get(d, str(d)), d) for d in by_device if d not in in_intent)
+        devices += [(device_id, name, False) for name, device_id in gone]
+    else:
+        seen = sorted((names.get(d, str(d)), d) for d in by_device)
+        devices = [(device_id, name, device_id in names) for name, device_id in seen]
+
+    lanes = []
+    episodes: list[DriftEpisode] = []
+    for device_id, name, known_in_intent in devices:
+        points = by_device.get(device_id, [])
+        lanes.append(
+            DeviceLane(
+                device_id=device_id,
+                name=name,
+                in_intent=known_in_intent,
+                points=[point for point in points if point.t >= start],
+            )
+        )
+        episodes += _episodes(device_id, name, points, deploys.get(device_id, []), scheduled)
+
+    episodes.sort(key=lambda episode: episode.opened_at)
+    closed = [episode for episode in episodes if episode.closed_at is not None]
+    return DriftTimeline(
+        start=start,
+        end=end,
+        lanes=lanes,
+        episodes=[e for e in episodes if e.closed_at is None or e.closed_at >= start],
+        markers=_markers(known, start, end),
+        latest_closed=max(closed, key=lambda e: e.closed_at or start, default=None),
+        open_count=sum(1 for episode in episodes if episode.closed_at is None),
+        first_event_at=min((event.timestamp for event in events), default=None),
+    )
+
+
+# --- run steps (spec 011 research R15) --------------------------------------------
+
+# The one place a recorded step is given its NAF block (FR-026).
+STEP_BLOCKS: dict[str, NafBlock] = {
+    "fetch_desired_state": NafBlock.INTENT,
+    "apply_config": NafBlock.EXECUTOR,
+    "collect_drift_state": NafBlock.COLLECTOR,
+    "detect_drift": NafBlock.OBSERVABILITY,
+}
+_LOOP_STEPS = [NafBlock.INTENT, NafBlock.EXECUTOR, NafBlock.COLLECTOR, NafBlock.OBSERVABILITY]
+# Run types whose steps are recorded one by one, in loop order.
+_STEPWISE = {"DeployIntent"}
+# Reasons that mean a step failed. `collect_failed` covers a failed collect and
+# a failed drift check alike, so the reason does not name the block: the block
+# that failed is the first one with no record.
+_STEP_FAILURES = {
+    WorkflowReason.INTENT_UNAVAILABLE,
+    WorkflowReason.DEVICE_NOT_FOUND,
+    WorkflowReason.APPLY_FAILED,
+    WorkflowReason.COLLECT_FAILED,
+}
+
+
+def run_events(events: Sequence[AuditEvent], workflow_id: str, started_at: datetime) -> list[AuditEvent]:
+    """The events of the one run of ``workflow_id`` that started at ``started_at``.
+
+    A workflow id can hold many runs (``deploy-intent-{device}``), so a run is
+    the events from its start up to the next start under the same id.
+    """
+    of_id = sorted((e for e in events if e.workflow_id == workflow_id), key=lambda e: e.timestamp)
+    collected: list[AuditEvent] = []
+    for event in of_id:
+        if event.event_type is AuditEventType.WORKFLOW_STARTED:
+            if collected:
+                break
+            if event.timestamp == started_at:
+                collected.append(event)
+        elif collected:
+            collected.append(event)
+            if event.event_type in _RUN_END:
+                break
+    return collected
+
+
+def _failure_text(end: AuditEvent) -> str | None:
+    paths = end.payload.get("drift_paths")
+    if paths:
+        return f"{end.reason.value if end.reason else 'failed'}: {len(paths)} path(s) still differ"
+    return _end_reason(end)
+
+
+def project_steps(run: RunView, events: Sequence[AuditEvent]) -> RunSteps:
+    """What each NAF block did in one run, as far as the audit trail records it.
+
+    Only a recorded step marks a block done. Nothing records a step starting,
+    so no block is ever "in progress". A failed deploy records its end with a
+    reason and no failed step: the block that failed is the first with no
+    record, or Observability when its check ran and found drift.
+
+    Args:
+        events: the run's own events (``run_events``).
+    """
+    ordered = sorted(events, key=lambda e: e.timestamp)
+    steps = [
+        RunStep(
+            name=event.activity_name,
+            block=STEP_BLOCKS.get(event.activity_name),
+            outcome="failed" if event.event_type is AuditEventType.ACTIVITY_FAILED else "done",
+            reason=(first_line(str(event.payload.get("error") or "")) or None)
+            if event.event_type is AuditEventType.ACTIVITY_FAILED
+            else None,
+            t=event.timestamp,
+        )
+        for event in ordered
+        if event.activity_name
+        and event.event_type in {AuditEventType.ACTIVITY_COMPLETED, AuditEventType.ACTIVITY_FAILED}
+    ]
+    start = next((e for e in ordered if e.event_type is AuditEventType.WORKFLOW_STARTED), None)
+    tail = [
+        BlockState(block=NafBlock.ORCHESTRATOR, status=BlockStatus.DONE, t=start.timestamp if start else None),
+        BlockState(block=NafBlock.PRESENTATION, status=BlockStatus.SURFACE),
+    ]
+    if run.workflow_type not in _STEPWISE:
+        loop = [BlockState(block=block, status=BlockStatus.NOT_RECORDED) for block in _LOOP_STEPS]
+        return RunSteps(run=run, recorded=False, steps=steps, blocks=[*loop, *tail])
+
+    done = {step.block: step.t for step in steps if step.block is not None and step.outcome == "done"}
+    end = next((e for e in ordered if e.event_type is AuditEventType.WORKFLOW_TERMINATED), None)
+    failed: NafBlock | None = None
+    if end is not None and end.outcome != "success":
+        if end.reason is WorkflowReason.VERIFICATION_FAILED:
+            failed = NafBlock.OBSERVABILITY
+        elif end.reason in _STEP_FAILURES:
+            failed = next((block for block in _LOOP_STEPS if block not in done), None)
+    loop = []
+    for block in _LOOP_STEPS:
+        if block is failed and end is not None:
+            loop.append(BlockState(block=block, status=BlockStatus.FAILED, reason=_failure_text(end), t=end.timestamp))
+        elif block in done:
+            loop.append(BlockState(block=block, status=BlockStatus.DONE, t=done[block]))
+        else:
+            loop.append(BlockState(block=block, status=BlockStatus.NOT_REACHED))
+    return RunSteps(run=run, recorded=True, steps=steps, blocks=[*loop, *tail])

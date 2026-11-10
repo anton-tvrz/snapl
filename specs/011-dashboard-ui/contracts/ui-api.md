@@ -45,6 +45,9 @@ Every addition below is **compatible** under 010's versioning rules: new routes,
 | `use_case` | the server's | |
 
 - `422` when `start >= end`, or when the range holds more than 20,000 scan points. The message says how many it holds and asks for a shorter range.
+- Nothing recorded after `end` is used: the answer is the timeline as of `end`.
+- Audit trail unavailable: `timeline.available` is false with its reason and remedy, and `data` is the last read's timeline or null.
+- Source of Truth unavailable: lanes are the devices the audit trail mentions, by name, and the view stays available. Roles are not needed to draw lanes.
 - Device names come from the Source of Truth's last good answer. A device no longer in intent keeps its lane, with `in_intent: false` and its id as its name when no name is known.
 
 ## `GET /api/v1/runs/steps`

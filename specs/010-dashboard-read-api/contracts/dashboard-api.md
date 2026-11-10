@@ -105,4 +105,6 @@ A change is **compatible** when it only adds an optional field, a route, a query
 
 **Amended 2026-11-08 (spec 012):** `SourceName` joined the list above, and gained `prometheus`. The routes `GET /api/v1/metrics/{view}` and `GET /metrics` were added. See [012's contracts/metrics-api.md](../../012-measured-metrics/contracts/metrics-api.md). This page already rendered the source name as a raw string, so no consumer broke.
 
+**Amended 2026-11-10 (spec 011):** the routes `GET /api/v1/topology`, `GET /api/v1/drift-timeline`, `GET /api/v1/runs/steps` and `GET /api/v1/mode` were added, and `/api/v1/devices` and `/api/v1/runs` gained the optional `at` parameter. See [011's contracts/ui-api.md](../../011-dashboard-ui/contracts/ui-api.md). `NafBlock` and `BlockStatus` are new enums whose unknown values consumers must render as raw strings. Nothing that existed changed shape.
+
 Any other change is **breaking**. It moves to `/api/v2/`, keeps `/api/v1/` until spec 011's UI has moved, and bumps `contract_version`.

@@ -76,8 +76,8 @@ class DriftEpisode(_Model):
     opened_at: UtcDatetime             # first scan that found it not in sync
     closed_at: UtcDatetime | None      # first later scan that found it in sync
     duration_s: int | None             # closed_at - opened_at; None while open
-    states: list[DriftState]           # distinct states seen, in order of first appearance
-    scans: int                         # scan points inside the episode, errors included
+    states: list[DriftState]           # distinct states seen, in order of first appearance; `error` included, the closing `in_sync` not
+    scans: int                         # scans from the opening one to the closing one, both included
     closed_by: EpisodeClose | None     # None while open, or when no deploy targeted the device
 
 class DriftTimeline(_Model):
@@ -101,6 +101,7 @@ Rules (each is a unit test):
 - `duration_s` is set exactly when `closed_at` is.
 - `closed_by` is None whenever `closed_at` is None.
 - More than 20,000 scan points in the range is a `422`, not a truncated answer.
+- The range is `[start, end]`, and nothing recorded after `end` is used. The answer is the timeline as of `end`: an episode that closed later is returned open. *Added in PR B*, so the "as of" control can ask for a past `end`.
 
 ## Run steps (research R15)
 
@@ -140,7 +141,7 @@ class RunSteps(_Model):
     blocks: list[BlockState]        # always six, in loop order
 
 class RunStepsResponse(Envelope):
-    steps: View[RunSteps | None]    # source: audit; data None when no such run
+    steps: View[RunSteps]           # source: audit; data None when no such run
 ```
 
 `NafBlock` and `BlockStatus` join the open enums: a consumer renders an unknown value as its raw text.
