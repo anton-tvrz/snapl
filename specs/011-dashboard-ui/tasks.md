@@ -238,22 +238,22 @@ Each PR says `Closes` a task issue under #146 and carries `changelog/146.added.m
   - The schedule, worker, CI and running views show "shows only the present", and the topology says its devices and links are today's.
   - *PR E1*: the schedule, worker, CI and running panels arrive in Phase 6, so E1 checks the sources strip and the topology note. Phase 6's panel tests carry the rest (T058 below).
   - The past views are not polled every 5 s. They refetch when `at` changes and once a minute.
-- [ ] T050 [P] [US3] packages/presentation/ui/src/components/LoopStrip.test.tsx:
+- [x] T050 [P] [US3] packages/presentation/ui/src/components/LoopStrip.test.tsx:
   - Six blocks in loop order. For a successful fixture deploy, four `done` with times, Orchestrator `done`, Presentation as "you are here".
   - For a failed apply: Executor `failed` with its reason as text, Collector and Observability `not reached`.
   - For `recorded: false`: the strip says this run type's steps are not recorded one by one, and shows the outcome.
   - No block is ever rendered as in progress.
   - An unknown block or status from the server is shown by its raw text.
   - Each status differs by icon as well as colour.
-- [ ] T051 [US2] Extend packages/presentation/ui/e2e/smoke.spec.ts: move the scrubber to between scans 1 and 3 and check spine-01 is drawn as missing with the past-time banner; return to now and check it is in sync; select the reconcile's deploy and check four blocks done.
-  - *PR E1*: the replay and return steps are in. The deploy step lands with the loop strip in PR E2.
+- [x] T051 [US2] Extend packages/presentation/ui/e2e/smoke.spec.ts: move the scrubber to between scans 1 and 3 and check spine-01 is drawn as missing with the past-time banner; return to now and check it is in sync; select the reconcile's deploy and check four blocks done.
+  - *PR E1*: the replay and return steps. *PR E2*: the deploy step, chosen from spine-01's drawer.
 
 ### Implementation
 
 - [x] T052 [US2] packages/presentation/ui/src/lib/lanes.ts, time.ts, episodes.ts (headline wording from an episode).
 - [x] T053 [US2] packages/presentation/ui/src/components/timeline/Lanes.tsx, Scrubber.tsx, Headline.tsx.
 - [x] T054 [US2] App.tsx: the "as of" state, the past-time banner, present-only labels through `ViewFrame`, and the refetch rules of research R11.
-- [ ] T055 [US3] packages/presentation/ui/src/components/LoopStrip.tsx, shown for the latest run and for a run selected in the drawer or the lanes' markers.
+- [x] T055 [US3] packages/presentation/ui/src/components/LoopStrip.tsx, shown for the latest run and for a run selected in the drawer or the lanes' markers.
 - [ ] T056 [US2] **Needs the lab**: quickstart items 2 and 3 (replay and the headline against `snapl audit`).
 - [ ] T057 [US3] **Needs the lab**: quickstart item 4. Capture a failed deploy, replace the hand-built failed-deploy events in tests/unit/test_presentation/test_dashboard_steps.py with the captured rows, and update tests/unit/test_presentation/fixtures/README.md.
 

@@ -6,6 +6,7 @@ import type {
   DriftTimelineResponse,
   ModeResponse,
   Overview,
+  RunStepsResponse,
   RunsResponse,
   SourcesResponse,
   TopologyResponse,
@@ -18,6 +19,8 @@ import mode from "./fixtures/mode.json";
 import overview from "./fixtures/overview.json";
 import runsAtScan2 from "./fixtures/runs-at-scan-2.json";
 import sources from "./fixtures/sources.json";
+import stepsDeploy from "./fixtures/steps-deploy.json";
+import stepsReconcile from "./fixtures/steps-reconcile.json";
 import timelineAtScan2 from "./fixtures/timeline-at-scan-2.json";
 import timeline from "./fixtures/timeline.json";
 import topology from "./fixtures/topology.json";
@@ -32,6 +35,10 @@ export const DEVICES_AT_SCAN_2 = devicesAtScan2 as unknown as DevicesResponse;
 export const DEVICES_AT_SCAN_3 = devicesAtScan3 as unknown as DevicesResponse;
 export const RUNS_AT_SCAN_2 = runsAtScan2 as unknown as RunsResponse;
 export const TIMELINE = timeline as unknown as DriftTimelineResponse;
+/** The reconcile's deploy of spine-01, every step recorded. */
+export const STEPS_DEPLOY = stepsDeploy as unknown as RunStepsResponse;
+/** The reconcile itself: its steps are not recorded one by one. */
+export const STEPS_RECONCILE = stepsReconcile as unknown as RunStepsResponse;
 export const TIMELINE_AT_SCAN_2 = timelineAtScan2 as unknown as DriftTimelineResponse;
 
 /** The "as of" stops of the arc's three scans, as the fixtures above were asked for. */

@@ -11,6 +11,7 @@ import {
   RUNS_AT_SCAN_2,
   SCAN_STOPS,
   SOURCES,
+  STEPS_DEPLOY,
   TIMELINE,
   TIMELINE_AT_SCAN_2,
   TOPOLOGY,
@@ -39,9 +40,7 @@ function provider() {
     links: async () => {
       throw new Error("not asked");
     },
-    steps: async () => {
-      throw new Error("not asked");
-    },
+    steps: async () => STEPS_DEPLOY,
     metrics: async () => {
       throw new Error("not asked");
     },

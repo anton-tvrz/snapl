@@ -9,6 +9,8 @@ const views = {
   now: "?device=leaf-01",
   // Between scans 2 and 3 of the demo arc: spine-01 still drifted.
   past: "?device=spine-01&at=2026-11-07T21:20:15.330Z",
+  // The reconcile's deploy of spine-01 as the loop.
+  loop: "?device=spine-01&run=deploy-intent-18e29d6d-e0c5-0ba7-32d1-c510fc3ef077%402026-11-07T21%3A20%3A15.648265Z",
 };
 for (const scheme of ["light", "dark"]) {
   for (const [name, search] of Object.entries(views)) {

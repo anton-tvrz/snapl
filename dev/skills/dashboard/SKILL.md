@@ -57,6 +57,12 @@ A state a newer server sends is shown by its raw text, never hidden (010 contrac
 - At a past time, the banner says so, and every view whose source keeps no history says it shows only the present. Running workflows and the schedule's repeated failures are left off the drawing then.
 - The headline's duration is scan to scan. Never call it time to detect.
 
+## The loop strip
+
+- Six blocks in loop order. A block is done, failed (with its reason), not reached, or not recorded. Presentation is "you are here" and is never a step.
+- Nothing is drawn as in progress: the audit trail records steps that ended, not ones that started.
+- Each status has its own glyph and word. A block or status the page does not know is shown by its raw text.
+
 ## Motion
 
 - Nothing moves when the viewer asks for reduced motion (`prefers-reduced-motion`). The same ring is drawn still.

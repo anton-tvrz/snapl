@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import { contrast } from "./color";
 import {
+  BLOCK_ENCODING,
+  blockEncoding,
+  blockName,
   DRIFT_ENCODING,
   driftEncoding,
   INK,
@@ -100,6 +103,29 @@ describe("run state encoding", () => {
   it("shows an unknown run state by its raw text", () => {
     expect(runEncoding("paused").label).toBe("paused");
     expect(runEncoding("failed")).toBe(RUN_ENCODING.failed);
+  });
+});
+
+const BLOCK_STATUSES = ["done", "failed", "not_reached", "not_recorded", "surface"] as const;
+
+describe("loop block encoding", () => {
+  it("covers every block status with its own glyph and label", () => {
+    expect(Object.keys(BLOCK_ENCODING).sort()).toEqual([...BLOCK_STATUSES].sort());
+    expect(new Set(BLOCK_STATUSES.map((status) => BLOCK_ENCODING[status].glyph)).size).toBe(BLOCK_STATUSES.length);
+    expect(new Set(BLOCK_STATUSES.map((status) => BLOCK_ENCODING[status].label)).size).toBe(BLOCK_STATUSES.length);
+  });
+
+  it("has no status that reads as in progress", () => {
+    for (const status of BLOCK_STATUSES) {
+      expect(BLOCK_ENCODING[status].label).not.toMatch(/progress|running|working/i);
+    }
+  });
+
+  it("shows an unknown status and an unknown block by their raw text", () => {
+    expect(blockEncoding("skipped").label).toBe("skipped");
+    expect(blockEncoding("done")).toBe(BLOCK_ENCODING.done);
+    expect(blockName("executor")).toBe("Executor");
+    expect(blockName("verifier")).toBe("verifier");
   });
 });
 

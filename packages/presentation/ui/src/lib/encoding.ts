@@ -84,3 +84,33 @@ export function shapePoints(shape: Shape, r: number): [number, number][] {
     return [r * Math.cos(angle), r * Math.sin(angle)];
   });
 }
+
+/**
+ * What a NAF block did in one run (spec 011 FR-026). The audit trail records
+ * steps that ended, never one that started, so no status reads as in progress.
+ */
+export const BLOCK_ENCODING = {
+  done: { label: "Done", glyph: "✓", tone: "ok" },
+  failed: { label: "Failed", glyph: "✕", tone: "fail" },
+  not_reached: { label: "Not reached", glyph: "○", tone: "unknown" },
+  not_recorded: { label: "Not recorded", glyph: "–", tone: "unknown" },
+  surface: { label: "You are here", glyph: "◉", tone: "unknown" },
+} as const satisfies Record<string, RunEncoding>;
+
+export function blockEncoding(status: string): RunEncoding {
+  return lookup<RunEncoding>(BLOCK_ENCODING, status, (raw) => ({ label: raw, glyph: "?", tone: "unknown" }));
+}
+
+const BLOCK_NAMES: Record<string, string> = {
+  intent: "Intent",
+  executor: "Executor",
+  collector: "Collector",
+  observability: "Observability",
+  orchestrator: "Orchestrator",
+  presentation: "Presentation",
+};
+
+/** A NAF block's name. One a newer server sent keeps its raw text. */
+export function blockName(block: string): string {
+  return lookup<string>(BLOCK_NAMES, block, (raw) => raw);
+}

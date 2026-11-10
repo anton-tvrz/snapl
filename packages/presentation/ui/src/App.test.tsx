@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { ApiError } from "./data/http";
 import type { DataProvider } from "./data/provider";
-import { MODE, OVERVIEW, SOURCES, TIMELINE, TOPOLOGY } from "./test/fixtures";
+import { MODE, OVERVIEW, SOURCES, STEPS_DEPLOY, TIMELINE, TOPOLOGY } from "./test/fixtures";
 
 function provider(overrides: Partial<DataProvider> = {}): DataProvider {
   const unused = async () => {
@@ -20,7 +20,7 @@ function provider(overrides: Partial<DataProvider> = {}): DataProvider {
     devices: unused,
     runs: unused,
     timeline: async () => TIMELINE,
-    steps: unused,
+    steps: async () => STEPS_DEPLOY,
     metrics: unused,
     ...overrides,
   } as DataProvider;
@@ -171,5 +171,71 @@ describe("App", () => {
     expect(calls.mode).toHaveBeenCalledTimes(1);
     expect(calls.overview).toHaveBeenCalledTimes(7);
     expect(calls.topology).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows the loop for the latest run", async () => {
+    const steps = vi.fn(async () => STEPS_DEPLOY);
+    render(<App provider={provider({ steps })} />);
+
+    const loop = await screen.findByRole("region", { name: "The loop" });
+    expect(steps).toHaveBeenCalledWith({
+      workflow_id: "scan-drift-dcfabric-68101896-6a9c-4c65-8a84-24af2b98b12a",
+      started_at: "2026-11-07T21:20:17.860408Z",
+    });
+    expect(loop).toHaveTextContent("Latest run");
+    expect(within(loop).getByRole("list", { name: "The loop, block by block" })).toBeInTheDocument();
+  });
+
+  it("shows the loop of a run chosen in the drawer, keeps it in the address, and goes back to the latest", async () => {
+    const steps = vi.fn(async () => STEPS_DEPLOY);
+    render(<App provider={provider({ steps })} />);
+    await userEvent.click(await screen.findByRole("button", { name: /^spine-01,/ }));
+
+    await userEvent.click(screen.getByRole("button", { name: "Show the loop for DeployIntent started 2026-11-07 21:20:15 UTC" }));
+
+    expect(steps).toHaveBeenLastCalledWith({
+      workflow_id: "deploy-intent-18e29d6d-e0c5-0ba7-32d1-c510fc3ef077",
+      started_at: "2026-11-07T21:20:15.648265Z",
+    });
+    expect(new URLSearchParams(location.search).get("run")).toBe(
+      "deploy-intent-18e29d6d-e0c5-0ba7-32d1-c510fc3ef077@2026-11-07T21:20:15.648265Z",
+    );
+    const loop = screen.getByRole("region", { name: "The loop" });
+    expect(loop).toHaveTextContent("Chosen run");
+
+    await userEvent.click(within(loop).getByRole("button", { name: "Show the latest run" }));
+
+    expect(new URLSearchParams(location.search).has("run")).toBe(false);
+    expect(loop).toHaveTextContent("Latest run");
+  });
+
+  it("opens the run named in the address", async () => {
+    history.replaceState(null, "", "/?run=reconcile-217b6000-0e6c-4919-81d9-9f6a1075cd1d@2026-11-07T21:20:15.472996Z");
+    const steps = vi.fn(async () => STEPS_DEPLOY);
+
+    render(<App provider={provider({ steps })} />);
+    await screen.findByRole("region", { name: "The loop" });
+
+    expect(steps).toHaveBeenCalledWith({
+      workflow_id: "reconcile-217b6000-0e6c-4919-81d9-9f6a1075cd1d",
+      started_at: "2026-11-07T21:20:15.472996Z",
+    });
+  });
+
+  it("says when the audit trail holds no such run", async () => {
+    const none = { ...STEPS_DEPLOY, steps: { ...STEPS_DEPLOY.steps, data: null } };
+    render(<App provider={provider({ steps: async () => none })} />);
+
+    expect(await screen.findByText("The audit trail holds no record of this run.")).toBeInTheDocument();
+  });
+
+  it("says why the loop could not be read", async () => {
+    const steps = async () => {
+      throw new ApiError(503, "the audit trail could not be read");
+    };
+    render(<App provider={provider({ steps })} />);
+
+    const loop = await screen.findByRole("region", { name: "The loop" });
+    expect(await within(loop).findByText("the audit trail could not be read")).toBeInTheDocument();
   });
 });

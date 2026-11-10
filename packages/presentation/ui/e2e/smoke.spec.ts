@@ -180,3 +180,19 @@ test("the drift can be replayed scan by scan, and the page returns to now", asyn
   expect(seen.offOrigin).toEqual([]);
   expect(seen.blocked).toEqual([]);
 });
+
+test("the reconcile's deploy shows the loop with four blocks done", async ({ page }) => {
+  await page.goto("/?device=spine-01");
+
+  await page.getByRole("button", { name: "Show the loop for DeployIntent started 2026-11-07 21:20:15 UTC" }).click();
+
+  const loop = page.getByRole("region", { name: "The loop" });
+  await expect(loop).toContainText("Chosen run");
+  const blocks = loop.getByRole("list", { name: "The loop, block by block" }).getByRole("listitem");
+  await expect(blocks).toHaveCount(6);
+  for (const name of ["Intent", "Executor", "Collector", "Observability"]) {
+    await expect(blocks.filter({ hasText: name })).toContainText("Done");
+  }
+  await expect(blocks.filter({ hasText: "Presentation" })).toContainText("You are here");
+  await expect(page).toHaveURL(/[?&]run=deploy-intent-18e29d6d-e0c5-0ba7-32d1-c510fc3ef077%4020/);
+});
