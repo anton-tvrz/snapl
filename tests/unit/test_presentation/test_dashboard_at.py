@@ -218,3 +218,81 @@ def test_a_naive_future_or_malformed_at_is_422(path: str, at: str):
 @pytest.mark.parametrize("path", ["/api/v1/devices", "/api/v1/runs"])
 def test_at_equal_to_now_is_accepted(path: str):
     assert _client([]).get(path, params={"at": NOW.isoformat()}).status_code == 200
+
+
+# --- devices_at.json: the server's past state for the UI's snapshot (T080) ------------
+
+DEVICES_AT = __import__("pathlib").Path(__file__).parent / "fixtures" / "devices_at.json"
+
+
+def _fixture_server_client() -> TestClient:
+    import importlib.util
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[3]
+    spec = importlib.util.spec_from_file_location(
+        "serve_dashboard_fixtures", root / "dev" / "scripts" / "serve_dashboard_fixtures.py"
+    )
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return TestClient(module.build_app(ui_dir=root / "no-built-ui"))
+
+
+def _ms(moment: datetime) -> str:
+    return moment.isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def _devices_at() -> dict[str, Any]:
+    """Just before and just after every scan of the arc: the timeline, and the server's answers there.
+
+    "Before" is a millisecond before the scan's first device was recorded; "after"
+    is its last device's time rounded up to the millisecond (the UI's scan stop).
+    """
+    client = _fixture_server_client()
+    timeline = client.get("/api/v1/drift-timeline").json()
+    scans: dict[str, list[datetime]] = {}
+    for lane in timeline["timeline"]["data"]["lanes"]:
+        for point in lane["points"]:
+            scans.setdefault(point["scan_workflow_id"], []).append(datetime.fromisoformat(point["t"]))
+    times: list[str] = []
+    for recorded in sorted(scans.values(), key=min):
+        first, last = min(recorded), max(recorded)
+        before = first.replace(microsecond=first.microsecond // 1000 * 1000) - timedelta(milliseconds=1)
+        after = last + timedelta(microseconds=(1000 - last.microsecond % 1000) % 1000)
+        times += [_ms(before), _ms(after)]
+    return {
+        "timeline": timeline,
+        "at": [
+            {
+                "at": at,
+                "devices": client.get("/api/v1/devices", params={"at": at}).json(),
+                "runs": client.get("/api/v1/runs", params={"at": at, "limit": 500}).json(),
+            }
+            for at in times
+        ],
+    }
+
+
+def test_devices_at_fixture_is_what_the_server_answers():
+    """To rewrite after an intended change: SNAPL_WRITE_UI_FIXTURES=1 uv run pytest -k devices_at_fixture."""
+    import json
+    import os
+
+    expected = json.dumps(_devices_at(), indent=2, sort_keys=True) + "\n"
+    if os.environ.get("SNAPL_WRITE_UI_FIXTURES"):
+        DEVICES_AT.write_text(expected)
+    assert DEVICES_AT.is_file(), "devices_at.json is missing: see this test's docstring"
+    assert DEVICES_AT.read_text() == expected, "devices_at.json is out of date: see this test's docstring"
+
+
+def test_devices_at_covers_both_sides_of_every_scan():
+    import json
+
+    entries = json.loads(DEVICES_AT.read_text())["at"]
+    assert len(entries) == 6
+    spine = [
+        {d["name"]: d["drift_state"] for d in entry["devices"]["devices"]["data"]}["spine-01"] for entry in entries
+    ]
+    assert spine == ["never_scanned", "missing", "missing", "missing", "missing", "in_sync"]
