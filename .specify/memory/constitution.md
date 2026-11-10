@@ -64,6 +64,8 @@ Coverage is a regression net, not a measure of correctness. Mocks encode assumpt
 
 Test markers: `unit`, `integration`, `live`, `e2e`, `slow`. Unit tests require no external infrastructure.
 
+The dashboard's TypeScript UI (`packages/presentation/ui/`) follows these rules with Vitest in place of pytest: the test comes first, each unit with logic has a `*.test.ts` or `*.test.tsx` beside it, and new code keeps 80% line coverage (spec 011 FR-046).
+
 ### IV. Modularity and Composability
 
 Each NAF block is an independent Python package in a uv workspace monorepo:
@@ -141,6 +143,9 @@ SD-WAN (hub/spoke overlay) and WAN backbone (IS-IS/MPLS-style underlay, traffic 
 - pygnmi for gNMI operations
 - Pydantic v2 for all data models
 - Jinja2 for config template rendering
+- FastAPI and uvicorn for the local, read-only dashboard server (ADR-0005 Decision 1)
+- Prometheus in the dev stack for measured metrics, without Grafana (ADR-0005 Decision 3)
+- For the dashboard's UI only: Node 22.12 or later, needed to build it and never to run snapl, with React, Vite, TypeScript, Tailwind and Recharts, tested with Vitest and Playwright (ADR-0005 Decision 2)
 
 ### Development Tooling
 - Pre-commit hooks: ruff, detect-secrets, gitleaks
@@ -159,7 +164,7 @@ SD-WAN (hub/spoke overlay) and WAN backbone (IS-IS/MPLS-style underlay, traffic 
 - All public functions require type hints
 - Line length: 120 characters
 - Pre-commit hooks must pass before every commit
-- CI quality gates (lint and format, mypy, bandit, secrets detection, YAML lint, lock check, unit tests with coverage) run as parallel jobs behind a single quality gate, and all must pass
+- CI quality gates (lint and format, mypy, bandit, secrets detection, YAML lint, lock check, unit tests with coverage, and the dashboard UI job when the UI changes) run as parallel jobs behind a single quality gate, and all must pass
 - Each PR links its issue (`Closes #N`) and includes a changelog fragment, or the `skip-changelog` label for docs-, CI- or test-only changes
 - Boundary-touching PRs include live evidence (Principle III)
 - Branch from `main`, PR to `main`
@@ -188,4 +193,4 @@ Amendments require:
 2. A version bump here (major for removed or redefined principles, minor for added ones, patch for wording)
 3. A PR the maintainer merges
 
-**Version**: 2.0.0 | **Ratified**: 2026-04-14 | **Last Amended**: 2026-10-25 (ADR-0004: claim only what is true)
+**Version**: 2.1.0 | **Ratified**: 2026-04-14 | **Last Amended**: 2026-11-10 (ADR-0005: the dashboard and metrics stack; Principle III covers UI code)
