@@ -14,7 +14,7 @@
 - **PR D**: Phase 4 (topology)
 - **PR E**: Phase 5 (the story: lanes, "as of", headline, loop strip). Split in two at US3 to keep each under the size limit: **E1** is US2 (T047 to T049, T051's replay steps, T052 to T054), **E2** is the loop strip (T050, T055, T051's deploy step).
 - **PR F**: Phase 6 (panels). Split by data source: **F1** Temporal and audit panels (T058, T059 undesired, T063, T064 undesired), **F2** CI, lab evidence and links, **F3** metrics and the range picker, **F4** parity, layout, T062 and T067. F4 also adds a history panel: 010's per-hour history table is on the plain page and FR-029 needs every plain-page fact on the designed page, but no task named it.
-- **PR G**: Phase 7 (archive mode)
+- **PR G**: Phase 7 (archive mode). Split in three: **G1a** opening an archive and its sources (T069, T072, T074, T076), **G1b** the app and `snapl dashboard --archive` (T070, T071, T075), **G2** the UI (T073, T077).
 - **PR H**: Phase 8 (snapshot)
 - **PR I**: Phase 9 (docs and governance)
 
@@ -308,7 +308,7 @@ Each PR says `Closes` a task issue under #146 and carries `changelog/146.added.m
 
 ### Tests (write first, verify they fail)
 
-- [ ] T069 [P] [US5] tests/unit/test_presentation/test_dashboard_archive.py, on an archive built in a temp directory by tasks/history.py's own packing functions from the fixtures:
+- [x] T069 [P] [US5] tests/unit/test_presentation/test_dashboard_archive.py, on an archive built in a temp directory by tasks/history.py's own packing functions from the fixtures:
   - `open_archive(path)` returns the manifest and an extraction directory, and removes the directory on close, also when the body raises.
   - Refusals, each with the contract's message: a missing file, a file that is not a tarball, a tarball with no manifest, and a manifest with another format.
   - A member with `..` or an absolute name is not written outside the directory.
@@ -327,7 +327,7 @@ Each PR says `Closes` a task issue under #146 and carries `changelog/146.added.m
   - `--archive` prints the contract's start line and missing-part lines, takes the use case from the manifest, and errors on a conflicting `--use-case`.
   - Each refusal exits `ExitCode.ERROR` before the port check.
   - Connection settings and tokens in the environment are not read.
-- [ ] T072 [P] [US5] Extend tests/unit/test_tasks/test_history.py: the export holds `topology.json`, `devices.json`, `runs.json` and `drift-timeline.json`, the manifest format is unchanged, and a dashboard that answers `404` for one of them (an older server) is reported as a failed part, as today.
+- [x] T072 [P] [US5] Extend tests/unit/test_tasks/test_history.py: the export holds `topology.json`, `devices.json`, `runs.json` and `drift-timeline.json`, the manifest format is unchanged, and a dashboard that answers `404` for one of them (an older server) is reported as a failed part, as today.
 - [ ] T073 [P] [US5] packages/presentation/ui/src/components/ModeBanner.test.tsx and an archive case in ViewFrame.test.tsx:
   - In archive mode the banner names the archive, its creation time and its commit, and lists missing parts.
   - Ages are relative to the mode's `now`.
@@ -337,9 +337,9 @@ Each PR says `Closes` a task issue under #146 and carries `changelog/146.added.m
 
 ### Implementation
 
-- [ ] T074 [US5] packages/presentation/snapl_presentation/dashboard/archive.py: `open_archive`, `ArchivedIntent`, `Archived`, `ArchivedMetrics`.
+- [x] T074 [US5] packages/presentation/snapl_presentation/dashboard/archive.py: `open_archive`, `ArchivedIntent`, `Archived`, `ArchivedMetrics`.
 - [ ] T075 [US5] packages/presentation/snapl_presentation/cli.py: `--archive`, building `Sources` from the archive, the fixed clock, and the start lines. No settings are read from the environment in this mode.
-- [ ] T076 [US5] tasks/history.py: `_EXPORTS` gains the four routes. Amend specs/012-measured-metrics/contracts/history-tasks.md "Contents" to list them, with a link to this spec.
+- [x] T076 [US5] tasks/history.py: `_EXPORTS` gains the four routes. Amend specs/012-measured-metrics/contracts/history-tasks.md "Contents" to list them, with a link to this spec.
 - [ ] T077 [US5] packages/presentation/ui/src/components/ModeBanner.tsx, and the mode read once at load and passed to `ViewFrame`, the range picker and `usePolling`.
 - [ ] T078 [US5] **Needs the lab**: quickstart item 6 (a real archive, the stack stopped, Wi-Fi off, the checksum).
 
