@@ -392,7 +392,8 @@ Each PR says `Closes` a task issue under #146 and carries `changelog/146.added.m
 - [x] T091 [P] docs/demo-scenarios.md: a scenario that runs the arc with the dashboard open, replays it, and writes a snapshot. Plain claims only (ADR-0004).
 - [x] T092 [P] dev/adr/0005-dashboard-and-metrics-stack.md: Decision 2 to Accepted, with the PR numbers, and its diagram's browser node updated. `dev/guides/running-tests.md`: the UI tests and the browser check.
 - [x] T093 Run the humanizer skill over the UI's visible strings (empty states, reasons the UI words itself, banners) and the README section, and apply what it finds. Device- and server-supplied text is not touched.
-- [ ] T094 Open a **draft** PR, from a branch that is not `overnight/` (`docs/146-constitution-ui-stack`), amending `.specify/memory/constitution.md` (research R18): the Technology Stack gains FastAPI and uvicorn, Prometheus and the UI toolchain; Principle III says it applies to UI code; minor version bump. Tick this task when the draft is open. Merging it is the maintainer's decision, and an unattended run never merges it.
+- [x] T094 Open a **draft** PR, from a branch that is not `overnight/` (`docs/146-constitution-ui-stack`), amending `.specify/memory/constitution.md` (research R18): the Technology Stack gains FastAPI and uvicorn, Prometheus and the UI toolchain; Principle III says it applies to UI code; minor version bump. Tick this task when the draft is open. Merging it is the maintainer's decision, and an unattended run never merges it.
+  - Draft opened: #232 (issue #231). Not merged by the run.
 - [ ] T095 **Needs the maintainer**: quickstart item 13 (try the design skill locally), and decide whether a snapshot is published for the demo post.
 - [ ] T096 **Needs the lab**: quickstart item 8 (a fresh clone with no Node serves the plain page).
 
