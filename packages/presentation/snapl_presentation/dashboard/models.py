@@ -388,6 +388,60 @@ class LinksResponse(Envelope):
     remedy: str | None = None
 
 
+# --- Topology (spec 011) ----------------------------------------------------------
+
+
+class TopologyNode(_Model):
+    device_id: UUID
+    name: str
+    role: str
+
+
+class LinkEnd(_Model):
+    # A device name.
+    device: str
+    interface: str
+
+
+class TopologyLink(_Model):
+    """One link, as intent declares it. Its ends are ordered by (device,
+    interface), so a link declared from both ends has one identity."""
+
+    a: LinkEnd
+    b: LinkEnd
+    declared_by: Literal["both", "a", "b"]
+    # True only when both ends name each other's device and interface.
+    agreed: bool
+
+    @model_validator(mode="after")
+    def _check(self) -> TopologyLink:
+        if self.a.device == self.b.device:
+            raise ValueError("a link joins two different devices")
+        if self.agreed and self.declared_by != "both":
+            raise ValueError("a link is agreed only when both ends declare it")
+        return self
+
+
+class UnlinkedInterface(_Model):
+    device: str
+    interface: str
+    # The peer as intent declares it: not a device of this use case, the device
+    # itself, or a device named without its interface.
+    peer_device: str
+    peer_interface: str | None = None
+
+
+class Topology(_Model):
+    # By role tier, then name.
+    nodes: list[TopologyNode]
+    links: list[TopologyLink]
+    unlinked: list[UnlinkedInterface]
+
+
+class TopologyResponse(Envelope):
+    topology: View[Topology]
+
+
 # --- Metrics (spec 012) ----------------------------------------------------------
 
 

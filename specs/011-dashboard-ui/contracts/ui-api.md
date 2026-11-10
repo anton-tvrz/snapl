@@ -31,7 +31,7 @@ Every addition below is **compatible** under 010's versioning rules: new routes,
 | --- | --- | --- |
 | `use_case` | the server's | `422` if it isn't the server's |
 
-- Source of Truth unavailable or foreign: `topology.available` is false with the reason and remedy, and `data` is null. There is no degraded topology. The device view still has its degraded list.
+- Source of Truth unavailable or foreign: `topology.available` is false with the reason and remedy. `data` is null, or the last good answer marked `stale` with its `fetched_at` (010 FR-031). *Amended in PR A*: the first wording said only null. There is no topology derived from the audit trail. The device view still has its degraded list.
 - In archive mode: from the archive's `export/topology.json`, or unavailable with the reason "this archive predates the topology export".
 
 ## `GET /api/v1/drift-timeline`

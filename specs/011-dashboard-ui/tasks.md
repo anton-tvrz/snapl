@@ -40,7 +40,7 @@ Each PR says `Closes` a task issue under #146 and carries `changelog/146.added.m
 
 ### Tests (write first, verify they fail)
 
-- [ ] T001 [P] [US1] tests/unit/test_presentation/test_dashboard_topology.py, for `project_topology(states)`:
+- [x] T001 [P] [US1] tests/unit/test_presentation/test_dashboard_topology.py, for `project_topology(states)`:
   - dcfabric's seed (`packages/intent/snapl_intent/seed/dcfabric/topology.yml`, loaded into `DesiredState`s by a fixture) gives 6 nodes and 8 links, every link `declared_by: both` and `agreed: true`, and no `unlinked`.
   - Nodes sort spines first, then leaves, then other roles alphabetically, and by name with numbers compared as numbers.
   - A link's ends are ordered by (device, interface), and a link declared from both ends appears once.
@@ -48,27 +48,27 @@ Each PR says `Closes` a task issue under #146 and carries `changelog/146.added.m
   - Two ends that name different interfaces of each other give `agreed: false`.
   - A peer that is not a device of the use case, and an interface naming its own device, go in `unlinked`.
   - Use `test_edge`'s seed for a second, two-device case.
-- [ ] T002 [P] [US1] Extend tests/unit/test_presentation/test_dashboard_app.py:
+- [x] T002 [P] [US1] Extend tests/unit/test_presentation/test_dashboard_app.py:
   - `GET /api/v1/topology` returns `TopologyResponse` from a fake SoT source.
   - With the SoT unavailable or foreign it returns `available: false` with the reason and remedy and `data: null`.
   - A wrong `use_case` is `422`.
   - The read-only route walk finds the new route, and the OpenAPI snapshot includes it.
-- [ ] T003 [P] [US2] tests/unit/test_presentation/test_dashboard_at.py:
-  - `events_until(events, at)` returns the events with `timestamp <= at`, for a list ordered by timestamp, including when several share a timestamp.
+- [x] T003 [P] [US2] tests/unit/test_presentation/test_dashboard_at.py:
+  - `events_until(events, at)` returns the events with `timestamp <= at`, including when several share a timestamp. *As built*: it is a filter, not a bisect, because rows arrive out of time order (010 research R3).
   - Against `audit_demo_arc.sqlite`: for an `at` just after each of the three scans, `/api/v1/devices?at=` gives the states the fixtures README records (spine-01 `missing`, `missing`, `in_sync`; leaf-01 `undesired` all three). Before the first scan, every device is `never_scanned`.
   - `/api/v1/runs?at=`: a run that started before `at` and ended after it is `running`. One with no end in the trail is `unfinished`. The `running` view is unavailable with the reason in contracts/ui-api.md.
   - A naive `at` and an `at` after the server's clock are `422`.
   - Without `at`, both routes answer exactly as before (compare with the existing tests' expectations).
-- [ ] T004 [P] [US5] Extend the existing device and run projection tests: `compose_devices` and the name lookup give the same answers when fed `IntentDevice` records as they did with `DesiredState` (research R6).
+- [x] T004 [P] [US5] Extend the existing device and run projection tests: `compose_devices` and the name lookup give the same answers when fed `IntentDevice` records as they did with `DesiredState` (research R6).
 
 ### Implementation
 
-- [ ] T005 [US1] packages/presentation/snapl_presentation/dashboard/models.py: `TopologyNode`, `LinkEnd`, `TopologyLink`, `UnlinkedInterface`, `Topology`, `TopologyResponse` (data-model.md), with the two validators under "Rules".
-- [ ] T006 [US1] packages/presentation/snapl_presentation/dashboard/projections.py: `project_topology`, and the role-tier and natural-name sort as one helper the timeline reuses.
-- [ ] T007 [US5] packages/presentation/snapl_presentation/dashboard/sources.py and app.py: an internal `IntentDevice` record, with `compose_devices` and `_device_names` reading it. The live path maps `DesiredState` to it. No behaviour change.
-- [ ] T008 [US1] packages/presentation/snapl_presentation/dashboard/app.py: `GET /api/v1/topology`.
-- [ ] T009 [US2] packages/presentation/snapl_presentation/dashboard/projections.py and app.py: `events_until`, and `at` on `/devices` and `/runs` (contracts/ui-api.md).
-- [ ] T010 [US1] Update tests/unit/test_presentation/fixtures/openapi_v1.json through the snapshot test's own update path, and add `changelog/146.added.md`.
+- [x] T005 [US1] packages/presentation/snapl_presentation/dashboard/models.py: `TopologyNode`, `LinkEnd`, `TopologyLink`, `UnlinkedInterface`, `Topology`, `TopologyResponse` (data-model.md), with the two validators under "Rules".
+- [x] T006 [US1] packages/presentation/snapl_presentation/dashboard/projections.py: `project_topology`, and the role-tier and natural-name sort as one helper the timeline reuses.
+- [x] T007 [US5] packages/presentation/snapl_presentation/dashboard/sources.py and app.py: an internal `IntentDevice` record, with `compose_devices` and `_device_names` reading it. The live path maps `DesiredState` to it. No behaviour change. *As built*: `IntentDevice` and `intent_devices()` live in projections.py, and `project_devices` takes either kind of record, so sources.py did not change.
+- [x] T008 [US1] packages/presentation/snapl_presentation/dashboard/app.py: `GET /api/v1/topology`.
+- [x] T009 [US2] packages/presentation/snapl_presentation/dashboard/projections.py and app.py: `events_until`, and `at` on `/devices` and `/runs` (contracts/ui-api.md).
+- [x] T010 [US1] Update tests/unit/test_presentation/fixtures/openapi_v1.json through the snapshot test's own update path, and add `changelog/146.added.md`.
 
 **Checkpoint**: `curl 'localhost:18030/api/v1/topology'` and `…/devices?at=…` answer on fixtures. No UI yet.
 

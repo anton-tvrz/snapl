@@ -42,6 +42,7 @@ from snapl_presentation.dashboard.models import (
 )
 from snapl_presentation.dashboard.sources import Sources, TemporalSnapshot
 from snapl_presentation.settings import CliSettings
+from tests.unit.test_presentation.dashboard_fakes import seed_states
 
 pytestmark = pytest.mark.unit
 
@@ -61,6 +62,8 @@ CONTRACT_ROUTES = {
     ("/api/v1/runs", "GET"),
     ("/api/v1/schedule", "GET"),
     ("/api/v1/sources", "GET"),
+    # Spec 011 (contracts/ui-api.md).
+    ("/api/v1/topology", "GET"),
     ("/api/v1/openapi.json", "GET"),
     ("/api/v1/openapi.json", "HEAD"),
     # Prometheus text format for scrapers, outside /api/v1 (spec 012 R8).
@@ -291,6 +294,7 @@ def test_every_route_only_reads_and_matches_the_contract():
         "/api/v1/overview",
         "/api/v1/sources",
         "/api/v1/metrics/gnmi-duration",
+        "/api/v1/topology",
     ],
 )
 @pytest.mark.parametrize("method", ["HEAD", "POST", "PUT", "PATCH", "DELETE"])
@@ -1230,3 +1234,64 @@ def test_page_remembers_the_range_only_inside_try_catch():
     for at in uses:
         before = page[:at]
         assert before.rfind("try {") > before.rfind("}"), "every localStorage use sits directly in a try block"
+
+
+# --- /api/v1/topology (spec 011) -------------------------------------------------
+
+
+def test_topology_returns_the_devices_and_their_links():
+    seeded = View(source=SourceName.SOT, available=True, fetched_at=T0, data=seed_states("dcfabric"))
+
+    response = _client(sot=seeded).get("/api/v1/topology")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["contract_version"] == "1"
+    assert body["use_case"] == "dcfabric"
+    view = body["topology"]
+    assert (view["source"], view["available"], view["fetched_at"]) == ("sot", True, "2026-11-07T21:00:00Z")
+    assert [node["name"] for node in view["data"]["nodes"]][:2] == ["spine-01", "spine-02"]
+    assert len(view["data"]["links"]) == 8
+    assert view["data"]["links"][0] == {
+        "a": {"device": "leaf-01", "interface": "ethernet-1/49"},
+        "b": {"device": "spine-01", "interface": "ethernet-1/1"},
+        "declared_by": "both",
+        "agreed": True,
+    }
+    # Intent data the drawing does not need never leaves through this route.
+    assert "10.0.0.1" not in response.text
+
+
+def test_topology_with_the_sot_down_is_unavailable_with_no_guess():
+    down = View(
+        source=SourceName.SOT, available=False, reason="Infrahub is unreachable", remedy="uv run invoke dev.deps"
+    )
+
+    view = _client(sot=down).get("/api/v1/topology").json()["topology"]
+
+    assert view["available"] is False
+    assert (view["reason"], view["remedy"]) == ("Infrahub is unreachable", "uv run invoke dev.deps")
+    # Links exist only in intent: there is no audit-derived topology to fall back to.
+    assert view["data"] is None
+
+
+def test_topology_shows_the_last_good_answer_as_stale():
+    stale = View(
+        source=SourceName.SOT,
+        available=False,
+        stale=True,
+        fetched_at=T0,
+        reason="Infrahub is unreachable",
+        remedy="uv run invoke dev.deps",
+        data=[LEAF, SPINE],
+    )
+
+    view = _client(sot=stale).get("/api/v1/topology").json()["topology"]
+
+    # The last good answer is shown, labelled stale with its age (010 FR-031).
+    assert (view["available"], view["stale"], view["fetched_at"]) == (False, True, "2026-11-07T21:00:00Z")
+    assert [node["name"] for node in view["data"]["nodes"]] == ["spine-01", "leaf-01"]
+
+
+def test_topology_rejects_a_use_case_the_server_was_not_started_for():
+    assert _client().get("/api/v1/topology", params={"use_case": "site_edge"}).status_code == 422
