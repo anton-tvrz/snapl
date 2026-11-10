@@ -1,0 +1,64 @@
+{
+  "contract_version": "1",
+  "generated_at": "2026-11-07T21:20:48.919877Z",
+  "links": [
+    {
+      "group": "stack",
+      "label": "Infrahub",
+      "url": "http://localhost:18000"
+    },
+    {
+      "group": "stack",
+      "label": "Temporal",
+      "url": "http://localhost:18034/namespaces/default/workflows"
+    },
+    {
+      "group": "stack",
+      "label": "Drift schedule",
+      "url": "http://localhost:18034/namespaces/default/schedules/drift-response-dcfabric"
+    },
+    {
+      "group": "github",
+      "label": "Repository",
+      "url": "https://github.com/anton-tvrz/snapl"
+    },
+    {
+      "group": "github",
+      "label": "Pull requests",
+      "url": "https://github.com/anton-tvrz/snapl/pulls"
+    },
+    {
+      "group": "github",
+      "label": "Actions",
+      "url": "https://github.com/anton-tvrz/snapl/actions"
+    },
+    {
+      "group": "github",
+      "label": "Project board",
+      "url": "https://github.com/users/anton-tvrz/projects/4"
+    },
+    {
+      "group": "api",
+      "label": "OpenAPI",
+      "url": "/api/v1/openapi.json"
+    },
+    {
+      "group": "api",
+      "label": "Overview JSON",
+      "url": "/api/v1/overview"
+    },
+    {
+      "group": "docs",
+      "label": "Quickstart",
+      "url": "https://github.com/anton-tvrz/snapl/blob/main/specs/010-dashboard-read-api/quickstart.md"
+    },
+    {
+      "group": "docs",
+      "label": "Demo scenarios",
+      "url": "https://github.com/anton-tvrz/snapl/blob/main/docs/demo-scenarios.md"
+    }
+  ],
+  "reason": null,
+  "remedy": null,
+  "use_case": "dcfabric"
+}

@@ -114,3 +114,32 @@ const BLOCK_NAMES: Record<string, string> = {
 export function blockName(block: string): string {
   return lookup<string>(BLOCK_NAMES, block, (raw) => raw);
 }
+
+/** A CI job's or quality gate's result. */
+export const JOB_ENCODING = {
+  success: { label: "Passed", glyph: "✓", tone: "ok" },
+  failure: { label: "Failed", glyph: "✕", tone: "fail" },
+  cancelled: { label: "Cancelled", glyph: "⊘", tone: "unknown" },
+  skipped: { label: "Skipped", glyph: "↷", tone: "unknown" },
+  in_progress: { label: "Running", glyph: "▶", tone: "unknown" },
+  queued: { label: "Queued", glyph: "…", tone: "unknown" },
+  neutral: { label: "Neutral", glyph: "○", tone: "unknown" },
+} as const satisfies Record<string, RunEncoding>;
+
+export function jobEncoding(result: string): RunEncoding {
+  return lookup<RunEncoding>(JOB_ENCODING, result, (raw) => ({ label: raw, glyph: "?", tone: "unknown" }));
+}
+
+/** A recorded live lab run's status. */
+export const LAB_ENCODING = {
+  running: { label: "Running", glyph: "▶", tone: "unknown" },
+  passed: { label: "Passed", glyph: "✓", tone: "ok" },
+  failed: { label: "Failed", glyph: "✕", tone: "fail" },
+  interrupted: { label: "Interrupted", glyph: "⊘", tone: "drift" },
+  incomplete: { label: "Incomplete", glyph: "…", tone: "drift" },
+  unreadable: { label: "Unreadable", glyph: "!", tone: "fail" },
+} as const satisfies Record<string, RunEncoding>;
+
+export function labEncoding(status: string): RunEncoding {
+  return lookup<RunEncoding>(LAB_ENCODING, status, (raw) => ({ label: raw, glyph: "?", tone: "unknown" }));
+}

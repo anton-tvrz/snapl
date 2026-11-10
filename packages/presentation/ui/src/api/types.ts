@@ -48,3 +48,7 @@ export type BlockState = Schemas["BlockState"];
 export type ScheduleStatus = Schemas["ScheduleStatus"];
 export type WorkerStatus = Schemas["WorkerStatus"];
 export type RepeatedRepairFailure = Schemas["RepeatedRepairFailure"];
+export type CiStatus = Schemas["CiStatus"];
+export type CiTarget = Schemas["CiTarget"];
+export type LabEvidence = Schemas["LabEvidence"];
+export type LabRun = Schemas["LabRun"];

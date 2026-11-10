@@ -3,14 +3,15 @@ import { useState } from "react";
 import type { RunView, View } from "../../api/types";
 import { runEncoding } from "../../lib/encoding";
 import { ageText, durationText } from "../../lib/time";
+import { ExternalLink } from "../ExternalLink";
 import { ViewFrame } from "../ViewFrame";
 
 /** The run's name, linked to its page in the Temporal Web UI in a new tab. */
 function RunLink({ run }: { run: RunView }) {
   return (
-    <a href={run.web_ui_url} target="_blank" rel="noreferrer" title={run.workflow_id} className="underline underline-offset-2">
+    <ExternalLink href={run.web_ui_url} title={run.workflow_id}>
       {run.workflow_type}
-    </a>
+    </ExternalLink>
   );
 }
 

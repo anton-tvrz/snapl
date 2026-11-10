@@ -271,7 +271,7 @@ Each PR says `Closes` a task issue under #146 and carries `changelog/146.added.m
   - Schedule: mode, interval, last and next run; paused with reason and actor and no next run; no schedule with the create command; repeated failed repairs with the device, the count and the report-mode command; worker pollers, and "no worker" when zero.
   - Runs: type, target, start, duration, outcome, reason, trigger, actor when recorded, and the Temporal link opening in a new tab with `rel="noreferrer"`. Running runs first with elapsed time. A device filter from the URL. An unknown run state by raw text.
   - *Moved from T049 (PR E1)*: with `at` set, the schedule, worker, CI and running panels say they show only the present (`ViewFrame presentOnly`), and the runs panel shows `runs({at})`.
-- [ ] T059 [P] [US4] packages/presentation/ui/src/components/panels/Undesired.test.tsx, Ci.test.tsx, LabEvidence.test.tsx and Links.test.tsx:
+- [x] T059 [P] [US4] packages/presentation/ui/src/components/panels/Undesired.test.tsx, Ci.test.tsx, LabEvidence.test.tsx and Links.test.tsx:
   - Undesired: every undesired path across the fabric grouped by device, the note that removal is not automatic (#65), and no command. Empty state when there is none. *Done in PR F1.*
   - CI: `main` first, each PR's gate and jobs with links, the failed job named, coverage or "none reported", `omitted_prs` with the token remedy.
   - Lab evidence: latest run per suite with result and age, "N commits on main since", how it was matched, "unknown" with its reason, incomplete and unreadable runs.
@@ -289,8 +289,8 @@ Each PR says `Closes` a task issue under #146 and carries `changelog/146.added.m
 ### Implementation
 
 - [x] T063 [P] [US4] packages/presentation/ui/src/components/panels/Schedule.tsx and Runs.tsx.
-- [ ] T064 [P] [US4] packages/presentation/ui/src/components/panels/Undesired.tsx, Ci.tsx, LabEvidence.tsx, Links.tsx.
-  - *PR F1*: Undesired.tsx. The rest in PR F2.
+- [x] T064 [P] [US4] packages/presentation/ui/src/components/panels/Undesired.tsx, Ci.tsx, LabEvidence.tsx, Links.tsx.
+  - *PR F1*: Undesired.tsx. *PR F2*: Ci.tsx, LabEvidence.tsx, Links.tsx.
 - [ ] T065 [US4] packages/presentation/ui/src/components/panels/Metrics.tsx and RangePicker.tsx, with Recharts, polled every 30 s.
 - [ ] T066 [US4] App.tsx and Shell.tsx: the page layout for 1280 pixels and wider, stacking down to 1024 with no page-level horizontal scroll (a Playwright viewport assertion at both widths).
 - [ ] T067 [US4] Extend tests/unit/test_presentation/test_dashboard_app.py: for the same fixtures, the designed page's sources (`/overview`, `/devices`) and `snapl status --json` agree on every device's state and the schedule (SC-011, extending 010's SC-002 test).

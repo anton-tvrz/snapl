@@ -4,6 +4,9 @@ import type { DeviceView, TopologyNode } from "./api/types";
 import { Command } from "./components/Command";
 import { DeviceDrawer } from "./components/DeviceDrawer";
 import { LoopStrip } from "./components/LoopStrip";
+import { Ci } from "./components/panels/Ci";
+import { LabEvidence } from "./components/panels/LabEvidence";
+import { Links } from "./components/panels/Links";
 import { Running, Runs } from "./components/panels/Runs";
 import { Schedule } from "./components/panels/Schedule";
 import { Undesired } from "./components/panels/Undesired";
@@ -57,6 +60,7 @@ export function App({ provider }: Props) {
   const overview = usePolling(provider.overview, OVERVIEW_MS);
   const topology = usePolling(provider.topology, TOPOLOGY_MS);
   const sources = usePolling(provider.sources, OVERVIEW_MS);
+  const linkList = usePolling(provider.links, null);
   const timeline = usePolling(
     () => provider.timeline(range),
     HISTORY_MS,
@@ -288,14 +292,21 @@ export function App({ provider }: Props) {
       <div className="mt-4">
         <Undesired devices={devicesView} now={now} />
       </div>
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <Ci ci={overview.data?.ci} now={now} presentOnly={!!at} />
+        <LabEvidence lab={overview.data?.lab} now={now} presentOnly={!!at} />
+      </div>
 
       <section aria-label="Sources">
         <h2 className="mt-6 mb-3 text-sm font-semibold">Sources</h2>
         {at && <p className="mb-3 text-xs text-muted">Shows only the present: these are the sources' states now.</p>}
         <SourceStrip sources={sources.data?.sources} now={now} />
       </section>
+      <div className="mt-6">
+        <Links links={linkList.data} />
+      </div>
       <p className="mt-6 text-sm text-muted">
-        CI, lab evidence, links and metrics are on the{" "}
+        Metrics are on the{" "}
         <a href="/plain" className="underline underline-offset-2">
           plain page
         </a>{" "}

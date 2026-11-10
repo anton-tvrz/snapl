@@ -3,6 +3,10 @@ import { describe, expect, it } from "vitest";
 import { contrast } from "./color";
 import {
   BLOCK_ENCODING,
+  JOB_ENCODING,
+  jobEncoding,
+  LAB_ENCODING,
+  labEncoding,
   blockEncoding,
   blockName,
   DRIFT_ENCODING,
@@ -126,6 +130,28 @@ describe("loop block encoding", () => {
     expect(blockEncoding("done")).toBe(BLOCK_ENCODING.done);
     expect(blockName("executor")).toBe("Executor");
     expect(blockName("verifier")).toBe("verifier");
+  });
+});
+
+describe("CI job and lab run encodings", () => {
+  const JOB_RESULTS = ["success", "failure", "cancelled", "skipped", "in_progress", "queued", "neutral"] as const;
+  const LAB_STATUSES = ["running", "passed", "failed", "interrupted", "incomplete", "unreadable"] as const;
+
+  it.each([
+    ["CI job results", JOB_ENCODING, JOB_RESULTS],
+    ["lab run statuses", LAB_ENCODING, LAB_STATUSES],
+  ] as const)("covers every one of the %s with its own glyph and label", (_, table, keys) => {
+    const entries = keys.map((key) => (table as Record<string, { glyph: string; label: string }>)[key]!);
+    expect(Object.keys(table).sort()).toEqual([...keys].sort());
+    expect(new Set(entries.map((e) => e.glyph)).size).toBe(keys.length);
+    expect(new Set(entries.map((e) => e.label)).size).toBe(keys.length);
+  });
+
+  it("shows an unknown result or status by its raw text", () => {
+    expect(jobEncoding("stale").label).toBe("stale");
+    expect(labEncoding("archived").label).toBe("archived");
+    expect(jobEncoding("failure").tone).toBe("fail");
+    expect(labEncoding("passed").tone).toBe("ok");
   });
 });
 

@@ -6,6 +6,7 @@ import { App } from "./App";
 import type { DataProvider, Range, RunsQuery } from "./data/provider";
 import {
   DEVICES_AT_SCAN_2,
+  LINKS,
   MODE,
   OVERVIEW,
   RUNS_AT_SCAN_2,
@@ -37,9 +38,7 @@ function provider() {
     devices: async (at) => (calls.devices(at), DEVICES_AT_SCAN_2),
     runs: async (query) => (calls.runs(query), RUNS_AT_SCAN_2),
     timeline: async (range) => (calls.timeline(range), range ? TIMELINE_AT_SCAN_2 : TIMELINE),
-    links: async () => {
-      throw new Error("not asked");
-    },
+    links: async () => LINKS,
     steps: async () => STEPS_DEPLOY,
     metrics: async () => {
       throw new Error("not asked");
@@ -179,7 +178,7 @@ describe("App at a past time", () => {
     expect(await screen.findByText(/History starts at 2026-11-07 21:18:56 UTC/)).toBeInTheDocument();
   });
 
-  it("says the schedule, worker and running panels show only the present, and lists the runs as of then", async () => {
+  it("says the schedule, worker, running, CI and lab panels show only the present, and lists the runs as of then", async () => {
     history.replaceState(null, "", `/?at=${STOP_2}`);
     render(<App provider={provider().p} />);
     await settle();
@@ -188,6 +187,8 @@ describe("App at a past time", () => {
       "Shows only the present",
     );
     expect(screen.getByRole("region", { name: "Running now" })).toHaveTextContent("Shows only the present");
+    expect(screen.getByRole("region", { name: "CI" })).toHaveTextContent("Shows only the present");
+    expect(screen.getByRole("region", { name: "Live lab evidence" })).toHaveTextContent("Shows only the present");
     const runs = screen.getByRole("region", { name: "Runs" });
     expect(within(runs).getAllByRole("row")).toHaveLength(RUNS_AT_SCAN_2.runs.data!.length + 1);
     expect(runs).not.toHaveTextContent("Shows only the present");
