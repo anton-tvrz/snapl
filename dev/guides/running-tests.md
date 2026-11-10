@@ -119,6 +119,20 @@ uv run pytest tests/unit/ --cov=packages --cov-report=html
 # Open htmlcov/index.html in browser
 ```
 
+## The dashboard's UI (spec 011)
+
+The UI in `packages/presentation/ui/` has its own tests, in TypeScript. They need Node 22.12 or later; nothing else in snapl does.
+
+```bash
+uv run invoke dashboard.test    # tsc, ESLint, the generated-types check, Vitest with coverage
+uv run invoke dashboard.e2e     # builds, then runs Playwright against the fixture server
+```
+
+- **Vitest** tests sit next to the code (`lanes.ts`, `lanes.test.ts`). The rule is the same as for Python: the test first, 80% line coverage.
+- **Fixtures** under `src/test/fixtures/` are what the real server answers. `tests/unit/test_presentation/test_ui_fixtures.py` fails when one is out of date; rewrite them with `SNAPL_WRITE_UI_FIXTURES=1 uv run pytest tests/unit/test_presentation/test_ui_fixtures.py`.
+- **The browser check** starts `dev/scripts/serve_dashboard_fixtures.py` (the captured demo arc, other sources down) and checks the page loads under its policy, reaches no other origin, replays the drift, and fits 1280 and 1024 pixels. It also writes a snapshot and opens it from disk offline, expecting zero requests.
+- To look at the page by hand: `uv run python dev/scripts/serve_dashboard_fixtures.py --sources up`, then http://127.0.0.1:18931.
+
 ## Troubleshooting
 
 | Problem | Solution |

@@ -45,6 +45,7 @@ Each package under `packages/` maps to one NAF block:
 - `presentation` — CLI interface
 
 ## Recent Changes
+- 011-dashboard-ui: the designed dashboard UI in `packages/presentation/ui/` (React 19, Vite 8, TypeScript 5.9, Tailwind 4, Recharts; Vitest and Playwright), built by `invoke dashboard.build` into the package, served at `/` with the plain page at `/plain`; `snapl dashboard --archive` and `--snapshot`; see ADR-0005 Decision 2 and `dev/skills/dashboard/`
 - 012-measured-metrics: Prometheus v3.10.0 in Compose (data in `.snapl/prometheus`, kept by `demo.reset`), worker metrics via temporalio's runtime on 18091 (no new Python deps), dashboard `/api/v1/metrics/*` and `/metrics`, `invoke history.archive`/`history.purge`; see ADR-0005 Decision 3
 - 010-dashboard-read-api: `snapl dashboard`, a local read-only page and JSON API (`/api/v1/*`); fastapi>=0.115, uvicorn>=0.32, httpx>=0.28 in snapl-presentation; see ADR-0005
 - 004-observability-drift: Added Python 3.12+ + pydantic>=2.5, snapl-intent (workspace dep), snapl-collector (workspace dep)

@@ -42,7 +42,8 @@ snapl/
 │   ├── orchestrator/           # snapl-orchestrator: Temporal workflows
 │   │   └── snapl_orchestrator/
 │   └── presentation/           # snapl-presentation: CLI / API
-│       └── snapl_presentation/
+│       ├── snapl_presentation/
+│       └── ui/                 # the dashboard's designed UI (spec 011): React, Vite, TypeScript; Node to build only
 │
 ├── tests/                      # Centralized test suite
 │   ├── conftest.py             # Shared fixtures
@@ -112,9 +113,17 @@ uv run invoke test-integration          # Integration tests against the live sta
 
 # Operating
 uv run invoke orchestrator.start        # Worker; serves metrics on 127.0.0.1:18091 (WORKER_METRICS_PORT=off disables)
-uv run snapl dashboard                  # Local read-only dashboard + JSON API (spec 010), metrics charts (012)
+uv run snapl dashboard                  # Local read-only dashboard + JSON API (spec 010), metrics charts (012), designed UI (011)
+uv run snapl dashboard --archive <file> # The dashboard on a history.archive tarball, nothing running (011)
+uv run snapl dashboard --snapshot <out> # One HTML file that opens offline (011)
 uv run invoke history.archive           # One tarball: audit DB, metrics snapshot, lab runs, dashboard export
 uv run invoke history.purge             # Delete the stored metrics only; refuses while Prometheus runs
+
+# The dashboard's UI (packages/presentation/ui/, Node 22.12+ to build only)
+uv run invoke dashboard.build           # npm ci, then build into snapl_presentation/dashboard/static/ui/
+uv run invoke dashboard.test            # tsc, ESLint, the generated-types check, Vitest with coverage
+uv run invoke dashboard.e2e             # the Playwright check against the fixture server
+uv run invoke dashboard.types           # regenerate src/api/schema.d.ts from the OpenAPI snapshot
 
 # Spec-Driven Development
 /speckit-constitution                   # View/update constitution
@@ -132,7 +141,7 @@ A spec (Specify -> Plan -> Tasks -> Implement) is required for a new block, a ne
 Constitution is at `.specify/memory/constitution.md`.
 
 ### Test-Driven Development (TDD)
-Tests are written FIRST, then implementation. Red-Green-Refactor. 80% coverage minimum, as a regression net. PRs that touch a system boundary (Infrahub shapes, gNMI payloads, templates, drift diff, collect adapter) state what was run against the live lab and what was observed. Bugs found live add a captured real payload as a fixture.
+Tests are written FIRST, then implementation. Red-Green-Refactor. 80% coverage minimum, as a regression net. The same holds for the dashboard's TypeScript (spec 011 FR-046): a unit with logic gets its Vitest test first, `foo.ts` next to `foo.test.ts`, and the UI's encoding rules are in `dev/skills/dashboard/SKILL.md`. PRs that touch a system boundary (Infrahub shapes, gNMI payloads, templates, drift diff, collect adapter) state what was run against the live lab and what was observed. Bugs found live add a captured real payload as a fixture.
 
 ### NAF Contract-First
 Each NAF block exposes an abstract base class + Pydantic models as its public interface. The contract lives in each package's `abc.py`. Read it rather than relying on a summary. The Orchestrator composes blocks through these ABCs in Temporal workflows.
