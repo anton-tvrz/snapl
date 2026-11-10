@@ -15,7 +15,7 @@
 - **PR E**: Phase 5 (the story: lanes, "as of", headline, loop strip). Split in two at US3 to keep each under the size limit: **E1** is US2 (T047 to T049, T051's replay steps, T052 to T054), **E2** is the loop strip (T050, T055, T051's deploy step).
 - **PR F**: Phase 6 (panels). Split by data source: **F1** Temporal and audit panels (T058, T059 undesired, T063, T064 undesired), **F2** CI, lab evidence and links, **F3** metrics and the range picker, **F4** parity, layout, T062 and T067. F4 also adds a history panel: 010's per-hour history table is on the plain page and FR-029 needs every plain-page fact on the designed page, but no task named it.
 - **PR G**: Phase 7 (archive mode). Split in three: **G1a** opening an archive and its sources (T069, T072, T074, T076), **G1b** the app and `snapl dashboard --archive` (T070, T071, T075), **G2** the UI (T073, T077).
-- **PR H**: Phase 8 (snapshot)
+- **PR H**: Phase 8 (snapshot). Split in two: **H1** the bundle, the file and the command (T079, T080, T086), **H2** the template, `InlineProvider` and the browser check (T081 to T085).
 - **PR I**: Phase 9 (docs and governance)
 
 The Python slices (A, B, G) keep to the usual size (< 400 lines of non-test code). The UI slices are larger, because a component and its test land together. When one passes about 800 lines of non-test, non-generated code, split it at a component boundary and say so in the PR.
@@ -353,14 +353,14 @@ Each PR says `Closes` a task issue under #146 and carries `changelog/146.added.m
 
 ### Tests (write first, verify they fail)
 
-- [ ] T079 [P] [US6] tests/unit/test_presentation/test_dashboard_snapshot.py, with a stub template in a temp directory:
+- [x] T079 [P] [US6] tests/unit/test_presentation/test_dashboard_snapshot.py, with a stub template in a temp directory:
   - `collect_bundle(app, days)` calls the routes in-process and returns `SnapshotBundle` (data-model.md), with one `steps` entry per deploy run and the manifest's range ending at the app's clock.
   - `render(template, bundle)` puts the JSON in the `snapl-bundle` element. A payload containing `</script>`, `<!--`, `&` and U+2028 leaves exactly one script element of that id, and it parses back to the same bundle.
   - With fake `GITHUB_TOKEN` and `INFRAHUB_API_TOKEN` set, neither value is in the output.
   - A source that did not answer is in the bundle as its unavailable view, and is named in the printed summary.
   - Writing goes through a `.partial` file; an existing target is refused without `--force`.
   - No template: the contract's error and exit code.
-- [ ] T080 [P] [US6] Extend tests/unit/test_presentation/test_dashboard_at.py with a generator, run by a pytest that also asserts the file is current: tests/unit/test_presentation/fixtures/devices_at.json holds the timeline response and the `/devices?at=` and `/runs?at=` answers for a time just before and just after every scan boundary in `audit_demo_arc.sqlite`.
+- [x] T080 [P] [US6] Extend tests/unit/test_presentation/test_dashboard_at.py with a generator, run by a pytest that also asserts the file is current: tests/unit/test_presentation/fixtures/devices_at.json holds the timeline response and the `/devices?at=` and `/runs?at=` answers for a time just before and just after every scan boundary in `audit_demo_arc.sqlite`.
 - [ ] T081 [P] [US6] packages/presentation/ui/src/data/inline.test.ts:
   - For every entry in `devices_at.json`, `InlineProvider.devices(at)` equals the server's answer for drift state, paths, error, last scan time and last deploy (SC-004). The same for `runs({at})` states.
   - Without `at`, each method returns the bundled response.
@@ -377,7 +377,7 @@ Each PR says `Closes` a task issue under #146 and carries `changelog/146.added.m
 
 - [ ] T084 [US6] packages/presentation/ui/snapshot.html and vite.snapshot.config.ts (`vite-plugin-singlefile`, the `<meta>` policy of research R4, the empty bundle element), built by the same `npm run build` into `static/ui/snapshot.html`.
 - [ ] T085 [US6] packages/presentation/ui/src/data/inline.ts, and `main.tsx` choosing `InlineProvider` when the bundle element is present and not empty.
-- [ ] T086 [US6] packages/presentation/snapl_presentation/dashboard/snapshot.py: `collect_bundle`, `render`, `write`. cli.py: `--snapshot`, `--days`, `--force`, alone or with `--archive`, printing the contract's summary.
+- [x] T086 [US6] packages/presentation/snapl_presentation/dashboard/snapshot.py: `collect_bundle`, `render`, `write`. cli.py: `--snapshot`, `--days`, `--force`, alone or with `--archive`, printing the contract's summary.
 - [ ] T087 [US6] **Needs the lab**: quickstart item 7 in Chromium, Firefox and Safari, with the file's size recorded in the PR.
 - [ ] T088 [US6] **Needs the maintainer**: quickstart items 10 (a first-time viewer, SC-003) and 12 (read a snapshot before publishing one).
 
