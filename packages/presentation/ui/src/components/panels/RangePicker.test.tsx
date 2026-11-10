@@ -60,4 +60,17 @@ describe("RangePicker", () => {
     expect(screen.getByText("Following now: the lanes show the last 24 h, the metrics the last hour.")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Follow now" })).not.toBeInTheDocument();
   });
+
+  it("in an archive, says the metrics show only the exported range and nothing follows now", () => {
+    const exported = { start: new Date("2026-10-31T21:18:00Z"), end: new Date("2026-11-07T21:18:00Z") };
+    render(<RangePicker now={NOW} onChange={vi.fn()} archived={exported} />);
+
+    expect(
+      screen.getByText(
+        "The metrics show the exported range, 2026-10-31 21:18:00 UTC to 2026-11-07 21:18:00 UTC: an archive holds no other. The range here applies to the lanes and the history.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Up to the archive's time: the lanes show its last 24 h.")).toBeInTheDocument();
+    expect(screen.queryByText(/Following now/)).not.toBeInTheDocument();
+  });
 });

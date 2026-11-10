@@ -328,7 +328,7 @@ Each PR says `Closes` a task issue under #146 and carries `changelog/146.added.m
   - Each refusal exits `ExitCode.ERROR` before the port check.
   - Connection settings and tokens in the environment are not read.
 - [x] T072 [P] [US5] Extend tests/unit/test_tasks/test_history.py: the export holds `topology.json`, `devices.json`, `runs.json` and `drift-timeline.json`, the manifest format is unchanged, and a dashboard that answers `404` for one of them (an older server) is reported as a failed part, as today.
-- [ ] T073 [P] [US5] packages/presentation/ui/src/components/ModeBanner.test.tsx and an archive case in ViewFrame.test.tsx:
+- [x] T073 [P] [US5] packages/presentation/ui/src/components/ModeBanner.test.tsx and an archive case in ViewFrame.test.tsx:
   - In archive mode the banner names the archive, its creation time and its commit, and lists missing parts.
   - Ages are relative to the mode's `now`.
   - A view unavailable with "not in this archive" is shown neutrally, with no remedy styled as an error.
@@ -340,7 +340,7 @@ Each PR says `Closes` a task issue under #146 and carries `changelog/146.added.m
 - [x] T074 [US5] packages/presentation/snapl_presentation/dashboard/archive.py: `open_archive`, `ArchivedIntent`, `Archived`, `ArchivedMetrics`.
 - [x] T075 [US5] packages/presentation/snapl_presentation/cli.py: `--archive`, building `Sources` from the archive, the fixed clock, and the start lines. No settings are read from the environment in this mode.
 - [x] T076 [US5] tasks/history.py: `_EXPORTS` gains the four routes. Amend specs/012-measured-metrics/contracts/history-tasks.md "Contents" to list them, with a link to this spec.
-- [ ] T077 [US5] packages/presentation/ui/src/components/ModeBanner.tsx, and the mode read once at load and passed to `ViewFrame`, the range picker and `usePolling`.
+- [x] T077 [US5] packages/presentation/ui/src/components/ModeBanner.tsx, and the mode read once at load and passed to `ViewFrame`, the range picker and `usePolling`.
 - [ ] T078 [US5] **Needs the lab**: quickstart item 6 (a real archive, the stack stopped, Wi-Fi off, the checksum).
 
 **Checkpoint**: history can be read months later on a machine with nothing running.

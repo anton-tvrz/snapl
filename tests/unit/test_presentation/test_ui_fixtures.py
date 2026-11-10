@@ -84,6 +84,25 @@ def client() -> TestClient:
     return TestClient(_server().build_app(ui_dir=ROOT / "no-built-ui"))
 
 
+# The same arc as a history archive opened by `snapl dashboard --archive`
+# (test_dashboard_archive.build_archive), for the UI's archive mode.
+ARCHIVE_REQUESTS = {
+    "archive/mode.json": "/api/v1/mode",
+    "archive/overview.json": "/api/v1/overview",
+}
+
+
+@pytest.fixture(scope="module")
+def client_archive(tmp_path_factory: pytest.TempPathFactory):
+    from snapl_presentation.dashboard.archive import create_archive_app, open_archive
+    from tests.unit.test_presentation.test_dashboard_archive import build_archive
+
+    parts = [{"name": "metrics_snapshot", "path": "prometheus", "present": False, "source": "x", "reason": "down"}]
+    path = build_archive(tmp_path_factory.mktemp("archive"), manifest={"parts": parts}, prometheus=False)
+    with open_archive(path) as opened:
+        yield TestClient(create_archive_app(opened, ui_dir=ROOT / "no-built-ui"))
+
+
 @pytest.fixture(scope="module")
 def client_up() -> TestClient:
     return TestClient(_server().build_app(ui_dir=ROOT / "no-built-ui", up=True))
@@ -117,6 +136,11 @@ def test_ui_fixture_with_every_source_up_is_what_the_server_answers(client_up: T
     _check(_body(client_up, UP_REQUESTS[name]), name)
 
 
+@pytest.mark.parametrize("name", sorted(ARCHIVE_REQUESTS))
+def test_ui_fixture_in_archive_mode_is_what_the_server_answers(client_archive: TestClient, name: str):
+    _check(_body(client_archive, ARCHIVE_REQUESTS[name]), name)
+
+
 def test_the_up_server_has_temporal_up_and_the_default_server_does_not(client: TestClient, client_up: TestClient):
     assert client.get("/api/v1/overview").json()["schedule"]["available"] is False
     up = client_up.get("/api/v1/overview").json()
@@ -139,4 +163,4 @@ def test_fixture_answers_are_the_same_on_every_run(client: TestClient):
 
 def test_there_is_no_fixture_file_without_a_request():
     found = {str(path.relative_to(FIXTURES)) for path in FIXTURES.rglob("*.json")}
-    assert found == set(REQUESTS) | set(UP_REQUESTS)
+    assert found == set(REQUESTS) | set(UP_REQUESTS) | set(ARCHIVE_REQUESTS)

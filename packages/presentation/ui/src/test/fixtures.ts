@@ -29,6 +29,8 @@ import stepsDeploy from "./fixtures/steps-deploy.json";
 import stepsReconcile from "./fixtures/steps-reconcile.json";
 import timelineAtScan2 from "./fixtures/timeline-at-scan-2.json";
 import timeline from "./fixtures/timeline.json";
+import modeArchive from "./fixtures/archive/mode.json";
+import overviewArchive from "./fixtures/archive/overview.json";
 import overviewUp from "./fixtures/up/overview.json";
 import metricsWorkflowDuration from "./fixtures/up/metrics-workflow-duration.json";
 import metricsGnmiDuration from "./fixtures/up/metrics-gnmi-duration.json";
@@ -46,6 +48,9 @@ export const HISTORY = history as unknown as HistoryResponse;
 export const OVERVIEW = overview as unknown as Overview;
 /** The same arc with the other sources up: an active schedule, one worker, a scan running. */
 export const OVERVIEW_UP = overviewUp as unknown as Overview;
+/** The arc as a history archive opened by `snapl dashboard --archive`, its Prometheus snapshot missing. */
+export const MODE_ARCHIVE = modeArchive as unknown as ModeResponse;
+export const OVERVIEW_ARCHIVE = overviewArchive as unknown as Overview;
 /** Each metrics view over the hour before NOW, from the server with Prometheus up. */
 export const METRICS: Record<MetricsViewName, MetricsResponse> = {
   "workflow-duration": metricsWorkflowDuration as unknown as MetricsResponse,

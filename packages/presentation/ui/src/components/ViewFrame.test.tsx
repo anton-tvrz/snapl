@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import type { View } from "../api/types";
-import { ViewFrame } from "./ViewFrame";
+import { ArchiveMode, ViewFrame } from "./ViewFrame";
 
 const NOW = new Date("2026-11-07T21:00:30Z");
 const base = { source: "temporal", fetched_at: "2026-11-07T21:00:00Z" } as const;
@@ -96,5 +96,53 @@ describe("ViewFrame", () => {
     );
 
     expect(screen.getByText("Shows only the present: this source keeps no history.")).toBeInTheDocument();
+  });
+
+  it("shows a view an archive does not hold neutrally, with how to see it live", () => {
+    render(
+      <ArchiveMode.Provider value={true}>
+        <ViewFrame
+          title="Running now"
+          view={{ source: "temporal", available: false, reason: "not in this archive", remedy: "uv run snapl dashboard" }}
+          now={NOW}
+        >
+          <p>running</p>
+        </ViewFrame>
+      </ArchiveMode.Provider>,
+    );
+
+    expect(screen.getByRole("status")).toHaveTextContent("Not in this archive");
+    expect(screen.queryByText("Unavailable")).not.toBeInTheDocument();
+    expect(screen.getByText(/To see it live/)).toBeInTheDocument();
+    expect(screen.getByText("uv run snapl dashboard")).toBeInTheDocument();
+    expect(screen.getByRole("status").closest(".bg-warn-surface")).toBeNull();
+  });
+
+  it("keeps the reason after 'not in this archive'", () => {
+    render(
+      <ArchiveMode.Provider value={true}>
+        <ViewFrame
+          title="CI"
+          view={{ source: "ci", available: false, reason: "not in this archive: rate limited when it was made", remedy: "uv run snapl dashboard" }}
+          now={NOW}
+        >
+          <p>ci</p>
+        </ViewFrame>
+      </ArchiveMode.Provider>,
+    );
+
+    expect(screen.getByText("rate limited when it was made")).toBeInTheDocument();
+  });
+
+  it("still shows other failures as failures in an archive", () => {
+    render(
+      <ArchiveMode.Provider value={true}>
+        <ViewFrame title="Devices" view={{ source: "audit", available: false, reason: "the audit trail could not be read" }} now={NOW}>
+          <p>devices</p>
+        </ViewFrame>
+      </ArchiveMode.Provider>,
+    );
+
+    expect(screen.getByText("Unavailable")).toBeInTheDocument();
   });
 });
