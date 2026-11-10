@@ -1,0 +1,81 @@
+"""The UI's test fixtures are what the server really answers (spec 011).
+
+The UI's component tests render API responses saved under
+``packages/presentation/ui/src/test/fixtures``. They are written from the real
+app on the captured demo arc (dev/scripts/serve_dashboard_fixtures.py), and this
+test fails when a file no longer matches what the app answers, so a UI test can
+never pass against a response shape the server has stopped sending.
+
+To rewrite them after an intended change:
+
+    SNAPL_WRITE_UI_FIXTURES=1 uv run pytest tests/unit/test_presentation/test_ui_fixtures.py
+"""
+
+from __future__ import annotations
+
+import importlib.util
+import json
+import os
+from pathlib import Path
+
+import pytest
+from fastapi.testclient import TestClient
+
+pytestmark = pytest.mark.unit
+
+ROOT = Path(__file__).resolve().parents[3]
+FIXTURES = ROOT / "packages" / "presentation" / "ui" / "src" / "test" / "fixtures"
+SERVER = ROOT / "dev" / "scripts" / "serve_dashboard_fixtures.py"
+
+# file name -> the request that produces it.
+REQUESTS = {
+    "mode.json": "/api/v1/mode",
+    "sources.json": "/api/v1/sources",
+    "overview.json": "/api/v1/overview",
+    "topology.json": "/api/v1/topology",
+    "devices.json": "/api/v1/devices",
+    "timeline.json": "/api/v1/drift-timeline",
+    # Between the second and third scans of the arc: spine-01 still drifted.
+    "devices-at-scan-2.json": "/api/v1/devices?at=2026-11-07T21:20:16Z",
+}
+
+
+@pytest.fixture(scope="module")
+def client() -> TestClient:
+    spec = importlib.util.spec_from_file_location("serve_dashboard_fixtures", SERVER)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    # No UI directory: only the API is asked.
+    return TestClient(module.build_app(ui_dir=ROOT / "no-built-ui"))
+
+
+def _body(client: TestClient, path: str) -> str:
+    response = client.get(path)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    return json.dumps(body, indent=2, sort_keys=True) + "\n"
+
+
+@pytest.mark.parametrize("name", sorted(REQUESTS))
+def test_ui_fixture_is_what_the_server_answers(client: TestClient, name: str):
+    expected = _body(client, REQUESTS[name])
+    path = FIXTURES / name
+
+    if os.environ.get("SNAPL_WRITE_UI_FIXTURES"):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(expected)
+
+    assert path.is_file(), f"{name} is missing: see this module's docstring"
+    assert path.read_text() == expected, f"{name} is out of date: see this module's docstring"
+
+
+def test_fixture_answers_are_the_same_on_every_run(client: TestClient):
+    """Nothing in them depends on when the test runs."""
+    assert _body(client, "/api/v1/overview") == _body(client, "/api/v1/overview")
+    assert "2026-11-07" in _body(client, "/api/v1/sources")
+
+
+def test_there_is_no_fixture_file_without_a_request():
+    assert {path.name for path in FIXTURES.glob("*.json")} == set(REQUESTS)

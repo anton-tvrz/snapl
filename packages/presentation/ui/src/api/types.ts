@@ -31,3 +31,9 @@ export type DriftTimelineResponse = Schemas["DriftTimelineResponse"];
 export type RunStepsResponse = Schemas["RunStepsResponse"];
 export type MetricsResponse = Schemas["MetricsResponse"];
 export type MetricsViewName = Schemas["MetricsViewName"];
+
+export type DeviceView = Schemas["DeviceView"];
+export type RunView = Schemas["RunView"];
+export type Topology = Schemas["Topology"];
+export type TopologyNode = Schemas["TopologyNode"];
+export type TopologyLink = Schemas["TopologyLink"];

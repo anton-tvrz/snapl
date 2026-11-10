@@ -13,6 +13,7 @@
   --ink: #1b1c1e;
   --muted: #5b5f66;
   --line: #d9dad6;
+  --line-strong: #8a8d93;
   --ok: #1a7f4b;
   --warn: #9a5b00;
   --bad: #b3261e;
@@ -28,6 +29,8 @@
     --ink: #eceef0;
     --muted: #a3a9b1;
     --line: #333940;
+  --line-strong: #6f757d;
+    --line-strong: #6f757d;
     --ok: #4cc38a;
     --warn: #e2a13c;
     --bad: #f2867f;
@@ -44,6 +47,7 @@
   --ink: #eceef0;
   --muted: #a3a9b1;
   --line: #333940;
+  --line-strong: #6f757d;
   --ok: #4cc38a;
   --warn: #e2a13c;
   --bad: #f2867f;
@@ -75,6 +79,33 @@ body {
   color: var(--ink);
   font-family: var(--font-sans);
   font-feature-settings: "tnum";
+}
+
+/* Topology. Activity pulses unless the viewer asked for less motion, in which
+   case the same ring is drawn still (spec 011 FR-043). */
+.device:focus-visible {
+  outline: none;
+}
+.device:focus-visible > circle:first-of-type {
+  stroke: var(--ink);
+  stroke-width: 3;
+  stroke-dasharray: 1 4;
+  stroke-linecap: round;
+}
+@keyframes activity-pulse {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+.activity-pulse {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: activity-pulse 1.4s ease-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {

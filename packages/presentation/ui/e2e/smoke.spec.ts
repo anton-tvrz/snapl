@@ -102,3 +102,52 @@ test("a policy violation would be caught by this check", async ({ page }) => {
   expect(await page.evaluate(() => (window as unknown as { __injected?: boolean }).__injected)).toBeUndefined();
   expect(seen.blocked.length).toBeGreaterThan(0);
 });
+
+test("the fabric is drawn: six devices in two tiers, eight links, leaf-01 undesired", async ({ page, baseURL }) => {
+  const seen = watch(page, baseURL ?? "");
+  await page.goto("/");
+
+  const fabric = page.getByRole("group", { name: "Fabric topology" });
+  await expect(fabric).toBeVisible();
+  const devices = fabric.getByRole("button");
+  await expect(devices).toHaveCount(6);
+  await expect(fabric.locator("[data-link]")).toHaveCount(8);
+  await expect(page.getByRole("button", { name: "leaf-01, leaf, Undesired config" })).toBeVisible();
+
+  const spineY = Number(await page.getByRole("button", { name: /^spine-01,/ }).getAttribute("data-y"));
+  const leafY = Number(await page.getByRole("button", { name: /^leaf-01,/ }).getAttribute("data-y"));
+  expect(spineY).toBeLessThan(leafY);
+
+  expect(seen.offOrigin).toEqual([]);
+  expect(seen.blocked).toEqual([]);
+});
+
+test("selecting a device opens its detail, and the address reopens it", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByRole("button", { name: /^leaf-01,/ }).click();
+
+  const drawer = page.getByRole("dialog", { name: "leaf-01" });
+  await expect(drawer).toContainText("/interface[name=ethernet-1/7]/description");
+  await expect(drawer).toContainText("not removed automatically");
+  await expect(page).toHaveURL(/\?device=leaf-01$/);
+
+  await page.reload();
+  await expect(page.getByRole("dialog", { name: "leaf-01" })).toBeVisible();
+
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page).toHaveURL(/\/$/);
+});
+
+test("the devices can be reached and opened from the keyboard", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("group", { name: "Fabric topology" })).toBeVisible();
+
+  await page.getByRole("button", { name: /^spine-01,/ }).focus();
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Enter");
+
+  await expect(page.getByRole("dialog", { name: "leaf-01" })).toBeVisible();
+});
