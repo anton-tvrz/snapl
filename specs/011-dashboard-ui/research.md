@@ -29,6 +29,12 @@ Latest versions on npm on 2026-11-09, looked up, not assumed:
 | eslint | 10.14.0 | the markup ban (R4) |
 | @fontsource-variable/inter | 5.3.0 | bundled font, no CDN |
 
+- **Amended in PR C, what installed and what did not**:
+  - **TypeScript is 5.9.3, not 7.0.2.** `openapi-typescript` 7.13.0 needs `typescript@^5` and `typescript-eslint` 8.72.2 needs `<6.1.0`. Move to 7 when both accept it.
+  - **No `eslint-plugin-react`.** Its latest release supports ESLint up to 9, and the pinned ESLint is 10. The one rule wanted from it, `react/no-danger`, is replaced by ESLint's own `no-restricted-syntax` with four selectors (`dangerouslySetInnerHTML` as an attribute or a property, `innerHTML`/`outerHTML`, `insertAdjacentHTML`). `reportUnusedDisableDirectives` is an error, and a unit test fails on any disable comment for the rule.
+  - **`@playwright/test` 1.65.0 came forward from Phase 4.** The policy header can only be proved in a real browser, and shipping it unproved would risk a blank page at `/`.
+  - **No shadcn/ui components yet.** The shell needs none. They are copied in by the slice that first uses one (the device drawer).
+  - Vite 8, Vitest 5, Tailwind 4 and ESLint 10 worked with the configuration in this PR, checked by running each.
 - **Pinning**: `package.json` pins exact versions, and `package-lock.json` is committed. `npm ci` is the only install command in CI and in `invoke dashboard.build`.
 - **Node**: 22 LTS, named in `packages/presentation/ui/.nvmrc`. The maintainer's machine has Node 26.8.1, which Vite's range also accepts.
 - **Several of these are new major versions.** The first implementation slice reads each tool's current documentation before configuring it, and does not rely on remembered configuration from older majors.
@@ -73,7 +79,7 @@ The UI keeps its state in the query string (R12), so there is no client-side pat
   - For `/plain` (and `/` when it falls back): the same, with `script-src 'unsafe-inline'` and `style-src 'unsafe-inline'`, because 010's page is one file with inline script and style. `connect-src 'self'` still holds, so it cannot reach another origin either.
 - **Snapshot file**: it has no server to send a header, so it carries `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:">`. The browser then refuses every request the page could make (SC-007, SC-009).
 - **Fonts**: bundled through `@fontsource-variable/inter`. Nothing loads from a CDN.
-- **Device text**: React renders strings as text. The one way around that is `dangerouslySetInnerHTML`, so ESLint's `react/no-danger` is an error, with no disable comments allowed in `src/` (a unit test greps for them). This replaces 010 R11's `textContent` rule.
+- **Device text**: React renders strings as text. The ways around that (`dangerouslySetInnerHTML`, `innerHTML`, `outerHTML`, `insertAdjacentHTML`) are an ESLint error (R1, amended), with no disable comments allowed in `src/` (a unit test greps for them). This replaces 010 R11's `textContent` rule.
 - **Tests**: a Python test asserts the header on `/`, `/plain`, an asset and an API route. The Playwright check records every request and fails on any whose origin is not the server's.
 
 **Rejected**: a nonce or hashes for the plain page's inline blocks. They add moving parts to protect a page whose `connect-src` already confines it.

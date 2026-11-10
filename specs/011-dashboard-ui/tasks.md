@@ -121,41 +121,41 @@ Each PR says `Closes` a task issue under #146 and carries `changelog/146.added.m
 
 ### Tests (write first, verify they fail)
 
-- [ ] T020 [P] [US1] tests/unit/test_presentation/test_dashboard_pages.py (Python), with the UI directory injected so no build is needed:
+- [x] T020 [P] [US1] tests/unit/test_presentation/test_dashboard_pages.py (Python), with the UI directory injected so no build is needed:
   - With a stub `ui/index.html` and `ui/assets/app-abc123.js` in a temp directory: `/` serves the stub, `/plain` serves 010's page, and the asset is served with the immutable cache header.
   - With no UI directory: `/` serves the plain page containing the notice and `uv run invoke dashboard.build`.
   - `/assets/../index.html`, an encoded traversal, an absolute path and a missing file are each `404`.
   - `HEAD` on `/`, `/plain` and an asset is `405`.
   - Every response carries the policy of contracts/ui-api.md: the strict one on `/` (built), an asset and an API route, and the plain variant on `/plain` and on `/` when it falls back.
   - The read-only walk finds `/plain` and `/assets/{path}` and no route that answers anything but `GET`.
-- [ ] T021 [P] [US1] tests/unit/test_infrastructure/test_packaging.py:
+- [x] T021 [P] [US1] tests/unit/test_infrastructure/test_packaging.py:
   - `packages/presentation/pyproject.toml` lists `snapl_presentation/dashboard/static/ui/**` as artifacts for the wheel and the sdist.
   - `.gitignore` ignores the built directory and `node_modules`.
   - `.pre-commit-config.yaml`'s detect-secrets hook excludes `package-lock.json`.
   - `.github/file-filters.yml` has a `ui` filter with the four paths in contracts/cli-and-build.md, and `quality.yml`'s gate lists the `ui` job.
-- [ ] T022 [P] [US1] tests/unit/test_tasks/test_dashboard_tasks.py, with a fake `ctx`:
+- [x] T022 [P] [US1] tests/unit/test_tasks/test_dashboard_tasks.py, with a fake `ctx`:
   - `build` runs `npm ci` then the build in the UI directory, and fails with the contract's message when `node` is missing or older than 22.
   - `test`, `types`, `e2e` and `dev` run the commands in contracts/cli-and-build.md.
-- [ ] T023 [P] [US1] packages/presentation/ui/src/api/open.test.ts: the lookup helper returns the known entry for each known value, and a neutral entry labelled with the raw text for an unknown value, for each of the open enums (spec FR-008).
-- [ ] T024 [P] [US1] packages/presentation/ui/src/data/http.test.ts and usePolling.test.ts:
+- [x] T023 [P] [US1] packages/presentation/ui/src/api/open.test.ts: the lookup helper returns the known entry for each known value, and a neutral entry labelled with the raw text for an unknown value, for each of the open enums (spec FR-008).
+- [x] T024 [P] [US1] packages/presentation/ui/src/data/http.test.ts and usePolling.test.ts:
   - `HttpProvider` requests the paths and query strings of the contract for each method (a stubbed `fetch`), sends times with an offset, and turns a non-200 into a rejected promise carrying the status and detail.
   - `usePolling` calls at its interval, stops while `document.hidden`, and calls at once on `visibilitychange` back to visible (fake timers).
-- [ ] T025 [P] [US1] packages/presentation/ui/src/components/ViewFrame.test.tsx, SourceStrip.test.tsx and Command.test.tsx:
+- [x] T025 [P] [US1] packages/presentation/ui/src/components/ViewFrame.test.tsx, SourceStrip.test.tsx and Command.test.tsx: *As built*: also `Shell.test.tsx`, `App.test.tsx`, `src/lib/time.test.ts` and `src/lib/theme.test.ts`. `ageText` came forward from T047 because `ViewFrame` needs it.
   - `ViewFrame` shows its children for an available view with its source and age. For an unavailable one it shows the reason and remedy. For a stale one it shows the data labelled with its age.
   - `SourceStrip` shows one entry per source, by raw name for one it does not know.
   - `Command` shows the full command as text and copies it on activation (a stubbed clipboard). It has no other effect.
-- [ ] T026 [P] [US1] packages/presentation/ui/src/noDanger.test.ts: no file under `src/` contains `dangerouslySetInnerHTML` or an ESLint disable comment for `react/no-danger`.
+- [x] T026 [P] [US1] packages/presentation/ui/src/noDanger.test.ts: no file under `src/` contains `dangerouslySetInnerHTML` or an ESLint disable comment for `react/no-danger`.
 
 ### Implementation
 
-- [ ] T027 [US1] packages/presentation/ui/: `package.json` with the pinned versions of research R1, `package-lock.json`, `.nvmrc`, `tsconfig.json`, `vite.config.ts` (output to `../snapl_presentation/dashboard/static/ui`, dev proxy for `/api`), `vitest.config.ts` (jsdom, coverage threshold 80% lines, excluding `src/api/schema.d.ts` and `src/components/ui/`), `eslint.config.js` (`react/no-danger` as an error), `index.html`, `src/main.tsx`, `src/index.css` with the Tailwind entry and the bundled font.
-- [ ] T028 [US1] packages/presentation/ui/src/api/schema.d.ts, generated from tests/unit/test_presentation/fixtures/openapi_v1.json, with `types` and `types:check` scripts in `package.json`. `src/api/open.ts`.
-- [ ] T029 [US1] packages/presentation/ui/src/data/provider.ts (`DataProvider`, data-model.md), `http.ts`, `usePolling.ts`.
-- [ ] T030 [US1] packages/presentation/ui/src/components/ui/ (the copied shadcn components in research R1), `ViewFrame.tsx`, `SourceStrip.tsx`, `Command.tsx`, `Shell.tsx`, `App.tsx`. The shell shows the use case, the mode and the source strip. Light and dark follow the system setting, with a toggle remembered in `localStorage` inside try/catch.
-- [ ] T031 [US1] packages/presentation/snapl_presentation/dashboard/pages.py: locate the built UI, build the fallback page with its notice, and resolve an asset path safely. app.py: `/`, `/plain`, `/assets/{path}` and the policy middleware. cli.py: the extra start line when the UI is not built.
-- [ ] T032 [US1] tasks/dashboard.py with `build`, `dev`, `test`, `types` and `e2e`, registered in tasks/__init__.py. packages/presentation/pyproject.toml artifacts. `.gitignore`. `.pre-commit-config.yaml`.
-- [ ] T033 [US1] `.github/file-filters.yml` `ui` filter. `.github/workflows/quality.yml`: the `ui` job (setup-node from `.nvmrc`, `npm ci`, `tsc --noEmit`, ESLint, `types:check`, Vitest with coverage, build) and the gate. `.github/workflows/build-artifacts.yml`: build the UI before the presentation wheel and check the wheel holds `static/ui/index.html`.
-- [ ] T034 [US1] Run `uv run invoke dashboard.build` and `uv run invoke dashboard.test` locally, and `uv build --package snapl-presentation` then `unzip -l` for `static/ui/index.html` (quickstart item 9). Paste the results into the PR.
+- [x] T027 [US1] packages/presentation/ui/: `package.json` with the pinned versions of research R1, `package-lock.json`, `.nvmrc`, `tsconfig.json`, `vite.config.ts` (output to `../snapl_presentation/dashboard/static/ui`, dev proxy for `/api`), `vitest.config.ts` (jsdom, coverage threshold 80% lines, excluding `src/api/schema.d.ts` and `src/components/ui/`), `eslint.config.js` (`react/no-danger` as an error), `index.html`, `src/main.tsx`, `src/index.css` with the Tailwind entry and the bundled font. *As built*: TypeScript 5.9.3 and no `eslint-plugin-react` (research R1, amended). `vitest.config.ts` also excludes `src/main.tsx` and the test support files from coverage.
+- [x] T028 [US1] packages/presentation/ui/src/api/schema.d.ts, generated from tests/unit/test_presentation/fixtures/openapi_v1.json, with `types` and `types:check` scripts in `package.json`. `src/api/open.ts`.
+- [x] T029 [US1] packages/presentation/ui/src/data/provider.ts (`DataProvider`, data-model.md), `http.ts`, `usePolling.ts`.
+- [x] T030 [US1] packages/presentation/ui/src/components/ui/ (the copied shadcn components in research R1), `ViewFrame.tsx`, `SourceStrip.tsx`, `Command.tsx`, `Shell.tsx`, `App.tsx`. The shell shows the use case, the mode and the source strip. Light and dark follow the system setting, with a toggle remembered in `localStorage` inside try/catch. *As built*: no shadcn components were copied, because the shell uses none (research R1, amended). The theme toggle is a select.
+- [x] T031 [US1] packages/presentation/snapl_presentation/dashboard/pages.py: locate the built UI, build the fallback page with its notice, and resolve an asset path safely. app.py: `/`, `/plain`, `/assets/{path}` and the policy middleware. cli.py: the extra start line when the UI is not built.
+- [x] T032 [US1] tasks/dashboard.py with `build`, `dev`, `test`, `types` and `e2e`, registered in tasks/__init__.py. packages/presentation/pyproject.toml artifacts. `.gitignore`. `.pre-commit-config.yaml`.
+- [x] T033 [US1] `.github/file-filters.yml` `ui` filter. `.github/workflows/quality.yml`: the `ui` job (setup-node from `.nvmrc`, `npm ci`, `tsc --noEmit`, ESLint, `types:check`, Vitest with coverage, build) and the gate. `.github/workflows/build-artifacts.yml`: build the UI before the presentation wheel and check the wheel holds `static/ui/index.html`. *As built*: the job also runs the browser check, brought forward from T041 with `@playwright/test`, `packages/presentation/ui/e2e/smoke.spec.ts` and dev/scripts/serve_dashboard_fixtures.py.
+- [x] T034 [US1] Run `uv run invoke dashboard.build` and `uv run invoke dashboard.test` locally, and `uv build --package snapl-presentation` then `unzip -l` for `static/ui/index.html` (quickstart item 9). Paste the results into the PR.
 
 **Checkpoint**: `snapl dashboard` serves a built shell at `/`, the plain page at `/plain`, and the plain page at `/` on a machine without the build.
 
@@ -198,6 +198,7 @@ Each PR says `Closes` a task issue under #146 and carries `changelog/146.added.m
   - Last scan, last deploy outcome and reason, recent runs for the device, and any link disagreement from the topology are shown.
   - Escape closes it, and focus returns to the device's button.
 - [ ] T041 [US1] packages/presentation/ui/e2e/smoke.spec.ts and dev/scripts/serve_dashboard_fixtures.py (research R16):
+  - *Partly done in PR C*: the fixture server, the Playwright config, the CI step and a first spec (the policy, off-origin requests, the theme, `/plain`) exist. This task adds the topology assertions.
   - The script serves the real app on a free port: audit from `audit_demo_arc.sqlite`, intent from dcfabric's seed, the other sources unavailable, the clock fixed at the fixture's end.
   - The spec checks six devices in two tiers and eight links, leaf-01 labelled undesired, selecting leaf-01 opens the drawer with its path, and reloading the copied address reopens it.
   - It records every request and fails on any whose origin is not the server's (SC-007).

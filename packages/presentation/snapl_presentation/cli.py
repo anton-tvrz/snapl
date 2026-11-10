@@ -680,6 +680,13 @@ def _port_in_use(host: str, port: int) -> bool:
     return False
 
 
+def _built_ui():
+    """Where the built designed UI is, or None when this checkout has not built it."""
+    from snapl_presentation.dashboard import pages  # noqa: PLC0415
+
+    return pages.find_ui(pages.BUILT_UI)
+
+
 def _serve_dashboard(settings: CliSettings, use_case: str, host: str, port: int) -> None:
     """Build the sources and serve until interrupted.
 
@@ -747,6 +754,10 @@ def dashboard(
 
     url_host = f"[{host}]" if ":" in host else host
     typer.echo(f"Dashboard for {use_case} at http://{url_host}:{port} (read-only, Ctrl-C to stop)")
+    if _built_ui() is None:
+        from snapl_presentation.dashboard import pages  # noqa: PLC0415
+
+        typer.echo(pages.NOT_BUILT)
     # Nothing runs server-side on the dashboard's behalf: stopping it is the
     # whole of what Ctrl-C means here, so it is a clean exit.
     with contextlib.suppress(KeyboardInterrupt):

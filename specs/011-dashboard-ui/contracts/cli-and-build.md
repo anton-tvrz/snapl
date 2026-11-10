@@ -73,11 +73,13 @@ snapl dashboard [--use-case TEXT] [--port INT] [--host TEXT]
 
 | task | does |
 | --- | --- |
-| `invoke dashboard.build` | `npm ci`, then the UI build, into `packages/presentation/snapl_presentation/dashboard/static/ui/`. Fails with `Node 22 or later is needed to build the UI (only to build it)` when `node` is missing or older. |
+| `invoke dashboard.build` | `npm ci`, then the UI build, into `packages/presentation/snapl_presentation/dashboard/static/ui/`. Fails with `Node 22.12 or later is needed to build the UI (only to build it). Running snapl does not need Node.` when `node` is missing or older. *Amended in PR C*: the floor is 22.12, Vite 8's. |
 | `invoke dashboard.dev` | The Vite dev server, proxying `/api` to `DASHBOARD_PORT`. Needs `snapl dashboard` running. |
 | `invoke dashboard.test` | `tsc --noEmit`, ESLint, the types check, and Vitest with coverage. |
 | `invoke dashboard.types` | Regenerates `src/api/schema.d.ts` from the OpenAPI snapshot. |
-| `invoke dashboard.e2e` | Builds, then runs the Playwright check against the fixture server. |
+| `invoke dashboard.e2e` | Builds, installs the browser the check uses, then runs the Playwright check against the fixture server. |
+
+Every task takes `--no-install` to skip `npm ci` when the dependencies are already there.
 
 `invoke check-all` is unchanged: it stays Python-only, so it never needs Node.
 
@@ -89,4 +91,4 @@ snapl dashboard [--use-case TEXT] [--port INT] [--host TEXT]
 
 ## CI
 
-`quality.yml` gains a `ui` job behind a `ui` path filter (`packages/presentation/ui/**`, `packages/presentation/snapl_presentation/dashboard/**`, `tests/unit/test_presentation/fixtures/openapi_v1.json`, `dev/scripts/serve_dashboard_fixtures.py`). The quality gate lists it, and treats `skipped` as passing, as for every other job.
+`quality.yml` gains a `ui` job behind a `ui` path filter (`packages/presentation/ui/**`, `packages/presentation/snapl_presentation/dashboard/**`, `tests/unit/test_presentation/fixtures/openapi_v1.json`, `dev/scripts/serve_dashboard_fixtures.py`, and `quality.yml` itself, so a change to the job runs it). The quality gate lists it, and treats `skipped` as passing, as for every other job.

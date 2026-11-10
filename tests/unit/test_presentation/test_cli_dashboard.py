@@ -121,3 +121,37 @@ def test_ctrl_c_exits_zero(serve):
 
     assert result.exit_code == 0
     assert "workflow" not in result.output
+
+
+# --- the designed UI (spec 011, contracts/cli-and-build.md) --------------------------
+
+
+def test_says_when_the_designed_ui_is_not_built(serve, tmp_path):
+    with patch.object(cli, "_port_in_use", return_value=False), patch.object(cli, "_built_ui", return_value=None):
+        result = runner.invoke(cli.app, ["dashboard"])
+
+    assert result.exit_code == 0, result.output
+    lines = result.output.splitlines()
+    assert lines[0].startswith("Dashboard for dcfabric at http://127.0.0.1:18030")
+    assert lines[1] == (
+        "The designed UI is not built: serving the plain page. Build it with: uv run invoke dashboard.build"
+    )
+    serve.assert_called_once()
+
+
+def test_says_nothing_more_when_the_designed_ui_is_built(serve, tmp_path):
+    with patch.object(cli, "_port_in_use", return_value=False), patch.object(cli, "_built_ui", return_value=tmp_path):
+        result = runner.invoke(cli.app, ["dashboard"])
+
+    assert result.exit_code == 0, result.output
+    assert "not built" not in result.output
+    assert len(result.output.splitlines()) == 1
+
+
+def test_built_ui_looks_in_the_packaged_location():
+    from snapl_presentation.dashboard import pages
+
+    with patch.object(pages, "find_ui", return_value=None) as find:
+        assert cli._built_ui() is None
+
+    find.assert_called_once_with(pages.BUILT_UI)

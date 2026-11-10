@@ -24,3 +24,12 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["snapl_presentation"]
+# The designed UI's built files (spec 011). They are git-ignored, and hatchling
+# leaves ignored files out unless they are listed here. Build them first with
+# `uv run invoke dashboard.build`; without them the wheel serves the plain page.
+artifacts = ["snapl_presentation/dashboard/static/ui/**"]
+
+[tool.hatch.build.targets.sdist]
+artifacts = ["snapl_presentation/dashboard/static/ui/**"]
+# The UI's source and toolchain are not needed to install or run the package.
+exclude = ["ui"]

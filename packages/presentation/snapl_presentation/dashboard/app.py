@@ -12,17 +12,18 @@ inside a ``200`` (FR-005, FR-007).
 from __future__ import annotations
 
 import asyncio
+import pathlib  # noqa: TC003 — FastAPI resolves annotations at runtime
 import time
 from datetime import datetime, timedelta
-from importlib import resources
 from typing import TYPE_CHECKING, Annotated, Any
 from urllib.parse import quote
 
-from fastapi import APIRouter, FastAPI, HTTPException, Path, Query
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi import APIRouter, FastAPI, HTTPException, Path, Query, Request, Response
+from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse
 from pydantic import AwareDatetime
 
 from snapl_orchestrator.models import AuditEventType, drift_schedule_id
+from snapl_presentation.dashboard import pages
 from snapl_presentation.dashboard.ci import REPO_REMEDY
 from snapl_presentation.dashboard.exposition import CONTENT_TYPE, SourceOutcome, render_exposition
 from snapl_presentation.dashboard.models import (
@@ -550,10 +551,6 @@ def _device_names(sot: View[Any], last_known: dict) -> dict:
     return last_known
 
 
-def _page() -> str:
-    return resources.files("snapl_presentation.dashboard").joinpath("static/index.html").read_text(encoding="utf-8")
-
-
 def create_app(
     sources: Sources,
     settings: CliSettings,
@@ -562,12 +559,15 @@ def create_app(
     clock: Callable[[], datetime] = utcnow,
     repo: str | None = None,
     archive: ArchiveInfo | None = None,
+    ui_dir: pathlib.Path | None = pages.BUILT_UI,
 ) -> FastAPI:
     """The dashboard for one use case, served from ``sources``.
 
     ``repo`` is the GitHub ``owner/name`` the CI view reads, for the links.
     ``archive`` describes the history archive the sources read, when the
     server is showing one and not the live stack (spec 011).
+    ``ui_dir`` is where the built UI is looked for. With none there, the root
+    serves the plain page (spec 011 research R2).
     """
     app = FastAPI(
         title="snapl dashboard",
@@ -896,10 +896,39 @@ def create_app(
         """
         return PlainTextResponse(render_exposition(reader.outcomes), media_type=CONTENT_TYPE)
 
-    page = _page()
+    ui = pages.find_ui(ui_dir)
+    plain = pages.plain_page()
+    fallback = pages.fallback_page()
+    plain_headers = {"Content-Security-Policy": pages.PLAIN_POLICY, "Cache-Control": "no-cache"}
 
-    @app.get("/", response_class=HTMLResponse, include_in_schema=False)
-    async def index() -> HTMLResponse:
-        return HTMLResponse(page)
+    @app.middleware("http")
+    async def content_security_policy(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        """No response lets the browser reach another origin (FR-005). The
+        plain page sets its own, looser policy for its inline script."""
+        response = await call_next(request)
+        response.headers.setdefault("Content-Security-Policy", pages.UI_POLICY)
+        return response
+
+    @app.get("/", include_in_schema=False)
+    async def index() -> Response:
+        """The designed UI, or the plain page with a notice when it is not built."""
+        if ui is None:
+            return HTMLResponse(fallback, headers=plain_headers)
+        return FileResponse(ui / "index.html", media_type="text/html", headers={"Cache-Control": "no-cache"})
+
+    @app.get("/plain", response_class=HTMLResponse, include_in_schema=False)
+    async def plain_page() -> HTMLResponse:
+        """010's plain page, always."""
+        return HTMLResponse(plain, headers=plain_headers)
+
+    @app.get("/assets/{path:path}", include_in_schema=False)
+    async def asset(path: str) -> FileResponse:
+        """One built file of the UI. Its name carries a content hash, so it never changes."""
+        found = pages.asset_path(ui, path) if ui is not None else None
+        if found is None:
+            raise HTTPException(status_code=404)
+        return FileResponse(found, headers={"Cache-Control": pages.IMMUTABLE})
 
     return app
