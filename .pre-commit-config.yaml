@@ -37,7 +37,8 @@ repos:
         exclude: |
             (?x)^(
                 \.venv/.*|
-                uv\.lock
+                uv\.lock|
+                packages/presentation/ui/package-lock\.json
             )$
 
   - repo: https://github.com/gitleaks/gitleaks

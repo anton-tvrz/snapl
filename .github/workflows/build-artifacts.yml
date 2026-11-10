@@ -39,8 +39,25 @@ jobs:
       - name: Build snapl-orchestrator
         run: uv build --package snapl-orchestrator
 
+      # The designed dashboard UI is built, not committed (spec 011): build it
+      # before the wheel so the wheel ships it and snapl never needs Node.
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: packages/presentation/ui/.nvmrc
+          cache: npm
+          cache-dependency-path: packages/presentation/ui/package-lock.json
+
+      - name: Build the dashboard UI
+        working-directory: packages/presentation/ui
+        run: npm ci --no-audit --no-fund && npm run build
+
       - name: Build snapl-presentation
         run: uv build --package snapl-presentation
+
+      - name: Check the wheel ships the dashboard UI
+        run: |
+          unzip -l dist/snapl_presentation-*.whl | grep -q "snapl_presentation/dashboard/static/ui/index.html" \
+            || { echo "the presentation wheel has no snapl_presentation/dashboard/static/ui/index.html"; exit 1; }
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v7

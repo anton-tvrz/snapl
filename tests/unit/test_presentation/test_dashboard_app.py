@@ -54,6 +54,9 @@ SNAPSHOT = Path(__file__).parent / "fixtures" / "openapi_v1.json"
 # Every route in contracts/dashboard-api.md.
 CONTRACT_ROUTES = {
     ("/", "GET"),
+    # Spec 011: the plain page for good, and the built UI's files.
+    ("/plain", "GET"),
+    ("/assets/{path:path}", "GET"),
     ("/api/v1/ci", "GET"),
     ("/api/v1/devices", "GET"),
     ("/api/v1/history", "GET"),
@@ -183,7 +186,15 @@ def _client(
         lab_runs=FakeSource(lab or _lab_ok()),
         prometheus=prometheus or FakePrometheus(),
     )
-    app = create_app(sources, settings or CliSettings(), "dcfabric", clock=lambda: T0 + timedelta(seconds=5), repo=repo)
+    app = create_app(
+        sources,
+        settings or CliSettings(),
+        "dcfabric",
+        clock=lambda: T0 + timedelta(seconds=5),
+        repo=repo,
+        # Never the UI a developer happens to have built: these tests pin the plain page.
+        ui_dir=None,
+    )
     return TestClient(app)
 
 

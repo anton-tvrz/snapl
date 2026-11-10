@@ -1,0 +1,87 @@
+@import "tailwindcss";
+@import "@fontsource-variable/inter";
+
+/* Colour tokens. Light is the default; dark follows the system unless the
+   viewer chose one (data-theme on <html>). State colours are picked to hold
+   WCAG 2.1 AA on both backgrounds; the full encoding rules arrive with the
+   topology (dev/skills/dashboard). */
+:root {
+  color-scheme: light dark;
+  --page: #f7f7f5;
+  --surface: #ffffff;
+  --sunken: #efefec;
+  --ink: #1b1c1e;
+  --muted: #5b5f66;
+  --line: #d9dad6;
+  --ok: #1a7f4b;
+  --warn: #9a5b00;
+  --bad: #b3261e;
+  --warn-surface: #fdf4e3;
+  --warn-line: #e6c88a;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --page: #111316;
+    --surface: #1a1d21;
+    --sunken: #24282d;
+    --ink: #eceef0;
+    --muted: #a3a9b1;
+    --line: #333940;
+    --ok: #4cc38a;
+    --warn: #e2a13c;
+    --bad: #f2867f;
+    --warn-surface: #2b2414;
+    --warn-line: #6b5420;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #111316;
+  --surface: #1a1d21;
+  --sunken: #24282d;
+  --ink: #eceef0;
+  --muted: #a3a9b1;
+  --line: #333940;
+  --ok: #4cc38a;
+  --warn: #e2a13c;
+  --bad: #f2867f;
+  --warn-surface: #2b2414;
+  --warn-line: #6b5420;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+@theme inline {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --color-page: var(--page);
+  --color-surface: var(--surface);
+  --color-sunken: var(--sunken);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-bad: var(--bad);
+  --color-warn-surface: var(--warn-surface);
+  --color-warn-line: var(--warn-line);
+}
+
+body {
+  background: var(--page);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-feature-settings: "tnum";
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
