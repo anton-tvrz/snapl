@@ -6,6 +6,7 @@ import { App } from "./App";
 import type { DataProvider, Range, RunsQuery } from "./data/provider";
 import {
   DEVICES_AT_SCAN_2,
+  HISTORY,
   LINKS,
   METRICS,
   MODE,
@@ -40,6 +41,7 @@ function provider() {
     runs: async (query) => (calls.runs(query), RUNS_AT_SCAN_2),
     timeline: async (range) => (calls.timeline(range), range ? TIMELINE_AT_SCAN_2 : TIMELINE),
     links: async () => LINKS,
+    history: async () => HISTORY,
     steps: async () => STEPS_DEPLOY,
     metrics: async (view) => METRICS[view],
   };

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { ApiError } from "./data/http";
 import type { DataProvider } from "./data/provider";
-import { LINKS, METRICS, MODE, NOW, OVERVIEW, OVERVIEW_UP, SOURCES, STEPS_DEPLOY, TIMELINE, TOPOLOGY } from "./test/fixtures";
+import { HISTORY, LINKS, METRICS, MODE, NOW, OVERVIEW, OVERVIEW_UP, SOURCES, STEPS_DEPLOY, TIMELINE, TOPOLOGY } from "./test/fixtures";
 
 function provider(overrides: Partial<DataProvider> = {}): DataProvider {
   const unused = async () => {
@@ -20,6 +20,7 @@ function provider(overrides: Partial<DataProvider> = {}): DataProvider {
     devices: unused,
     runs: unused,
     timeline: async () => TIMELINE,
+    history: async () => HISTORY,
     steps: async () => STEPS_DEPLOY,
     metrics: async (view: keyof typeof METRICS) => METRICS[view],
     ...overrides,
@@ -316,5 +317,17 @@ describe("App", () => {
     });
 
     expect(metrics).toHaveBeenCalledTimes(12);
+  });
+
+  it("has the history table, asked over the chosen range in buckets that keep it readable", async () => {
+    const history = vi.fn(async () => HISTORY);
+    render(<App provider={provider({ history })} />);
+
+    expect(await screen.findByRole("region", { name: "Drift and deploys by hour" })).toBeInTheDocument();
+    expect(history).toHaveBeenLastCalledWith(undefined, undefined);
+
+    await userEvent.click(screen.getByRole("button", { name: "7 d" }));
+
+    expect(history).toHaveBeenLastCalledWith({ start: new Date(NOW.getTime() - 7 * 86_400_000), end: NOW }, "1d");
   });
 });

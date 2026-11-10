@@ -78,6 +78,13 @@ export class HttpProvider implements DataProvider {
       limit: query.limit,
     });
 
+  history = (range?: Range, bucket?: string) =>
+    this.#get<Awaited<ReturnType<DataProvider["history"]>>>("history", {
+      start: range?.start.toISOString(),
+      end: range?.end.toISOString(),
+      bucket,
+    });
+
   timeline = (range?: Range) =>
     this.#get<Awaited<ReturnType<DataProvider["timeline"]>>>("drift-timeline", {
       start: range?.start.toISOString(),

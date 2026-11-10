@@ -283,8 +283,8 @@ Each PR says `Closes` a task issue under #146 and carries `changelog/146.added.m
   - The picker offers 1 h, 24 h, 7 d and a custom start and end, writes `from` and `to` to the URL, and rejects an end before its start without a request.
   - A `422` from the server shows its message.
   - Each chart has a text alternative: a table of the latest value per series.
-- [ ] T061 [P] [US4] packages/presentation/ui/src/parity.test.ts: for each fact rendered by 010's plain page (list them from `static/index.html`'s render functions in the test's table), name the designed component that shows it. The test fails when a row has no component. This is SC-011's checklist as a test.
-- [ ] T062 [US4] Extend packages/presentation/ui/e2e/smoke.spec.ts: the runs panel lists the fixture's 12 runs, and the unavailable sources' panels each show a reason and a remedy.
+- [x] T061 [P] [US4] packages/presentation/ui/src/parity.test.ts: for each fact rendered by 010's plain page (list them from `static/index.html`'s render functions in the test's table), name the designed component that shows it. The test fails when a row has no component. This is SC-011's checklist as a test.
+- [x] T062 [US4] Extend packages/presentation/ui/e2e/smoke.spec.ts: the runs panel lists the fixture's 12 runs, and the unavailable sources' panels each show a reason and a remedy.
 
 ### Implementation
 
@@ -292,8 +292,10 @@ Each PR says `Closes` a task issue under #146 and carries `changelog/146.added.m
 - [x] T064 [P] [US4] packages/presentation/ui/src/components/panels/Undesired.tsx, Ci.tsx, LabEvidence.tsx, Links.tsx.
   - *PR F1*: Undesired.tsx. *PR F2*: Ci.tsx, LabEvidence.tsx, Links.tsx.
 - [x] T065 [US4] packages/presentation/ui/src/components/panels/Metrics.tsx and RangePicker.tsx, with Recharts, polled every 30 s.
-- [ ] T066 [US4] App.tsx and Shell.tsx: the page layout for 1280 pixels and wider, stacking down to 1024 with no page-level horizontal scroll (a Playwright viewport assertion at both widths).
-- [ ] T067 [US4] Extend tests/unit/test_presentation/test_dashboard_app.py: for the same fixtures, the designed page's sources (`/overview`, `/devices`) and `snapl status --json` agree on every device's state and the schedule (SC-011, extending 010's SC-002 test).
+- [x] T066 [US4] App.tsx and Shell.tsx: the page layout for 1280 pixels and wider, stacking down to 1024 with no page-level horizontal scroll (a Playwright viewport assertion at both widths).
+- [x] T067 [US4] Extend tests/unit/test_presentation/test_dashboard_app.py: for the same fixtures, the designed page's sources (`/overview`, `/devices`) and `snapl status --json` agree on every device's state and the schedule (SC-011, extending 010's SC-002 test).
+  - *PR F4*: `snapl status --json` reports no per-device state, so the device states are checked between `/overview`, `/devices` and `/devices?at=now`, and the schedule against `snapl schedule show --json` (the existing SC-002 test).
+- [x] T067a [US4] *Added in PR F4*: packages/presentation/ui/src/components/panels/History.tsx and lib/history.ts, 010's per-hour history table on the designed page (FR-029: every plain-page fact). No task named it; T061's parity test would fail without it.
 - [ ] T068 [US4] **Needs the maintainer**: quickstart item 11 (the three questions, SC-014).
 
 **Checkpoint**: an operator needs only the designed page.

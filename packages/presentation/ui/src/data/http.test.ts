@@ -57,6 +57,18 @@ describe("HttpProvider", () => {
     expect(requested(fetchFn)).toEqual(["/api/v1/drift-timeline"]);
   });
 
+  it("asks for the history over a range, in buckets", async () => {
+    const { http, fetchFn } = provider();
+
+    await http.history();
+    await http.history({ start: new Date("2026-11-01T00:00:00Z"), end: new Date("2026-11-08T00:00:00Z") }, "1d");
+
+    expect(requested(fetchFn)).toEqual([
+      "/api/v1/history",
+      "/api/v1/history?start=2026-11-01T00%3A00%3A00.000Z&end=2026-11-08T00%3A00%3A00.000Z&bucket=1d",
+    ]);
+  });
+
   it("leaves the metrics range to the server when none is given", async () => {
     const { http, fetchFn } = provider();
 

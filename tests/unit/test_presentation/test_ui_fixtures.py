@@ -51,6 +51,8 @@ REQUESTS = {
     "steps-reconcile.json": "/api/v1/runs/steps?workflow_id=reconcile-217b6000-0e6c-4919-81d9-9f6a1075cd1d"
     "&started_at=2026-11-07T21:20:15.472996Z",
     "links.json": "/api/v1/links",
+    # 010's history over the server's default range, hourly: the plain page's table.
+    "history.json": "/api/v1/history",
 }
 
 # The same arc with the other sources up (the server's --sources up), for the

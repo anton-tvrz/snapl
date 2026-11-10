@@ -924,6 +924,27 @@ def test_devices_and_schedule_agree_with_snapl_status_and_schedule_show():
     assert overview["schedule"]["data"]["schedule"] == shown
 
 
+def test_every_device_view_agrees_on_each_device_state_and_the_schedule():
+    """SC-011: the designed page reads /overview and /devices, the plain page
+    /overview; for the same sources they give every device the same state, and
+    the schedule they give is the one `snapl schedule show --json` gives (the
+    test above). `snapl status --json` reports no per-device state, so the
+    states are checked between the API's two device views."""
+    sot = View(source=SourceName.SOT, available=True, fetched_at=T0, data=[LEAF, SPINE])
+    temporal = _temporal_ok(schedule=_schedule())
+    client = _app_with({SourceName.SOT: FakeSource(sot), SourceName.TEMPORAL: FakeSource(temporal)})
+
+    overview, _ = _overview(client)
+    devices = client.get("/api/v1/devices").json()["devices"]["data"]
+    at_now = client.get("/api/v1/devices", params={"at": (T0 + timedelta(seconds=5)).isoformat()}).json()
+
+    states = {d["name"]: d["drift_state"] for d in overview["devices"]["data"]}
+    assert states == {"leaf-01": "missing", "spine-01": "never_scanned"}
+    assert {d["name"]: d["drift_state"] for d in devices} == states
+    assert {d["name"]: d["drift_state"] for d in at_now["devices"]["data"]} == states
+    assert overview["schedule"]["data"]["schedule"]["mode"] == "remediate"
+
+
 class SlowSource:
     """Answers after ``delay`` seconds; counts how often it was asked."""
 
