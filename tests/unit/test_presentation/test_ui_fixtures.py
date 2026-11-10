@@ -50,10 +50,12 @@ REQUESTS = {
     "&started_at=2026-11-07T21:20:15.648265Z",
     "steps-reconcile.json": "/api/v1/runs/steps?workflow_id=reconcile-217b6000-0e6c-4919-81d9-9f6a1075cd1d"
     "&started_at=2026-11-07T21:20:15.472996Z",
+    "links.json": "/api/v1/links",
 }
 
 # The same arc with the other sources up (the server's --sources up), for the
-# panels that read them: an active schedule, one worker, a scan running.
+# panels that read them: an active schedule, one worker, a scan running, CI on
+# main and two PRs, and lab runs of both suites.
 UP_REQUESTS = {
     "up/overview.json": "/api/v1/overview",
 }
@@ -113,6 +115,8 @@ def test_the_up_server_has_temporal_up_and_the_default_server_does_not(client: T
     assert up["schedule"]["available"] is True
     assert up["worker"]["data"]["pollers"] == 1
     assert [run["workflow_type"] for run in up["running"]["data"]] == ["ScanDrift"]
+    assert [target["kind"] for target in up["ci"]["data"]["targets"]] == ["main", "pull_request", "pull_request"]
+    assert set(up["lab"]["data"]["latest"]) == {"e2e", "integration"}
 
 
 def test_fixture_answers_are_the_same_on_every_run(client: TestClient):

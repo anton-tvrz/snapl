@@ -1,10 +1,75 @@
 {
   "ci": {
-    "available": false,
-    "data": null,
-    "fetched_at": null,
-    "reason": "ci is not part of the fixture server",
-    "remedy": "export GITHUB_TOKEN=\u2026",
+    "available": true,
+    "data": {
+      "authenticated": false,
+      "omitted_prs": 3,
+      "rate_limit_remaining": null,
+      "repo": "anton-tvrz/snapl",
+      "targets": [
+        {
+          "coverage_pct": 91.4,
+          "gate": "success",
+          "head_sha": "e534978000000000000000000000000000000000",
+          "jobs": [
+            {
+              "name": "Unit Tests",
+              "result": "success",
+              "url": "https://github.com/anton-tvrz/snapl/actions/runs/100/job/101"
+            },
+            {
+              "name": "Dashboard UI",
+              "result": "success",
+              "url": "https://github.com/anton-tvrz/snapl/actions/runs/100/job/101"
+            }
+          ],
+          "kind": "main",
+          "number": null,
+          "run_url": "https://github.com/anton-tvrz/snapl/actions/runs/100",
+          "title": null
+        },
+        {
+          "coverage_pct": null,
+          "gate": "failure",
+          "head_sha": "884d9b1000000000000000000000000000000000",
+          "jobs": [
+            {
+              "name": "Unit Tests",
+              "result": "failure",
+              "url": "https://github.com/anton-tvrz/snapl/actions/runs/200/job/201"
+            },
+            {
+              "name": "Dashboard UI",
+              "result": "success",
+              "url": "https://github.com/anton-tvrz/snapl/actions/runs/200/job/201"
+            }
+          ],
+          "kind": "pull_request",
+          "number": 212,
+          "run_url": "https://github.com/anton-tvrz/snapl/actions/runs/200",
+          "title": "feat(presentation): dashboard panels"
+        },
+        {
+          "coverage_pct": null,
+          "gate": "success",
+          "head_sha": "9d24992000000000000000000000000000000000",
+          "jobs": [
+            {
+              "name": "Unit Tests",
+              "result": "success",
+              "url": "https://github.com/anton-tvrz/snapl/actions/runs/300/job/301"
+            }
+          ],
+          "kind": "pull_request",
+          "number": 210,
+          "run_url": "https://github.com/anton-tvrz/snapl/actions/runs/300",
+          "title": "docs: dashboard guide"
+        }
+      ]
+    },
+    "fetched_at": "2026-11-07T21:20:48.919877Z",
+    "reason": null,
+    "remedy": null,
     "source": "ci",
     "stale": false
   },
@@ -149,11 +214,128 @@
   },
   "generated_at": "2026-11-07T21:20:48.919877Z",
   "lab": {
-    "available": false,
-    "data": null,
-    "fetched_at": null,
-    "reason": "lab_runs is not part of the fixture server",
-    "remedy": "uv run invoke test-e2e",
+    "available": true,
+    "data": {
+      "commits_on_main_since": {
+        "e2e": 3,
+        "integration": null
+      },
+      "commits_unknown_reason": {
+        "integration": "commit cccccccc is not in the local history"
+      },
+      "latest": {
+        "e2e": {
+          "branch": "main",
+          "commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "device_image": null,
+          "dirty": false,
+          "ended_at": "2026-11-07T20:20:48.919877Z",
+          "errors": null,
+          "failed": 0,
+          "id": "20261107T201500Z-e2e",
+          "passed": 14,
+          "problem": null,
+          "skipped": 1,
+          "started_at": "2026-11-07T20:15:48.919877Z",
+          "status": "passed",
+          "suite": "e2e",
+          "tree": null
+        },
+        "integration": {
+          "branch": "overnight/011-e1-replay",
+          "commit": "cccccccccccccccccccccccccccccccccccccccc",
+          "device_image": null,
+          "dirty": true,
+          "ended_at": "2026-11-06T18:30:48.919877Z",
+          "errors": null,
+          "failed": 2,
+          "id": "20261106T180000Z-integration",
+          "passed": 20,
+          "problem": null,
+          "skipped": 0,
+          "started_at": "2026-11-06T18:20:48.919877Z",
+          "status": "failed",
+          "suite": "integration",
+          "tree": null
+        }
+      },
+      "matched_by": {
+        "e2e": "ancestor"
+      },
+      "runs": [
+        {
+          "branch": "main",
+          "commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "device_image": null,
+          "dirty": false,
+          "ended_at": "2026-11-07T20:20:48.919877Z",
+          "errors": null,
+          "failed": 0,
+          "id": "20261107T201500Z-e2e",
+          "passed": 14,
+          "problem": null,
+          "skipped": 1,
+          "started_at": "2026-11-07T20:15:48.919877Z",
+          "status": "passed",
+          "suite": "e2e",
+          "tree": null
+        },
+        {
+          "branch": null,
+          "commit": null,
+          "device_image": null,
+          "dirty": null,
+          "ended_at": null,
+          "errors": null,
+          "failed": null,
+          "id": "20261107T190000Z-e2e",
+          "passed": null,
+          "problem": null,
+          "skipped": null,
+          "started_at": null,
+          "status": "incomplete",
+          "suite": "e2e",
+          "tree": null
+        },
+        {
+          "branch": "overnight/011-e1-replay",
+          "commit": "cccccccccccccccccccccccccccccccccccccccc",
+          "device_image": null,
+          "dirty": true,
+          "ended_at": "2026-11-06T18:30:48.919877Z",
+          "errors": null,
+          "failed": 2,
+          "id": "20261106T180000Z-integration",
+          "passed": 20,
+          "problem": null,
+          "skipped": 0,
+          "started_at": "2026-11-06T18:20:48.919877Z",
+          "status": "failed",
+          "suite": "integration",
+          "tree": null
+        },
+        {
+          "branch": null,
+          "commit": null,
+          "device_image": null,
+          "dirty": null,
+          "ended_at": null,
+          "errors": null,
+          "failed": null,
+          "id": "20261105T120000Z-integration",
+          "passed": null,
+          "problem": "run.json is not JSON",
+          "skipped": null,
+          "started_at": null,
+          "status": "unreadable",
+          "suite": "integration",
+          "tree": null
+        }
+      ]
+    },
+    "fetched_at": "2026-11-07T21:20:48.919877Z",
+    "reason": null,
+    "remedy": null,
     "source": "lab_runs",
     "stale": false
   },

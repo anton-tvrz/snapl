@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { ApiError } from "./data/http";
 import type { DataProvider } from "./data/provider";
-import { MODE, OVERVIEW, OVERVIEW_UP, SOURCES, STEPS_DEPLOY, TIMELINE, TOPOLOGY } from "./test/fixtures";
+import { LINKS, MODE, OVERVIEW, OVERVIEW_UP, SOURCES, STEPS_DEPLOY, TIMELINE, TOPOLOGY } from "./test/fixtures";
 
 function provider(overrides: Partial<DataProvider> = {}): DataProvider {
   const unused = async () => {
@@ -16,7 +16,7 @@ function provider(overrides: Partial<DataProvider> = {}): DataProvider {
     sources: async () => SOURCES,
     overview: async () => OVERVIEW,
     topology: async () => TOPOLOGY,
-    links: unused,
+    links: async () => LINKS,
     devices: unused,
     runs: unused,
     timeline: async () => TIMELINE,
@@ -253,5 +253,24 @@ describe("App", () => {
     await userEvent.click(await screen.findByRole("button", { name: /^spine-01,/ }));
 
     expect(screen.getByRole("region", { name: "Runs" })).toHaveTextContent("Only spine-01's runs.");
+  });
+
+  it("has a panel for CI and the live lab evidence, and the links", async () => {
+    render(<App provider={provider({ overview: async () => OVERVIEW_UP })} />);
+
+    expect(await screen.findByRole("region", { name: "CI" })).toHaveTextContent("#212");
+    expect(screen.getByRole("region", { name: "Live lab evidence" })).toHaveTextContent("3 commits on main since this run");
+    expect(await screen.findByRole("region", { name: "Links" })).toHaveTextContent("Project board");
+  });
+
+  it("asks for the links once", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const links = vi.fn(async () => LINKS);
+    render(<App provider={provider({ links })} />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+
+    expect(links).toHaveBeenCalledTimes(1);
   });
 });

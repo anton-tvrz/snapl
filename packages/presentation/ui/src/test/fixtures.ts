@@ -4,6 +4,7 @@
 import type {
   DevicesResponse,
   DriftTimelineResponse,
+  LinksResponse,
   ModeResponse,
   Overview,
   RunStepsResponse,
@@ -18,6 +19,7 @@ import devices from "./fixtures/devices.json";
 import mode from "./fixtures/mode.json";
 import overview from "./fixtures/overview.json";
 import runsAtScan2 from "./fixtures/runs-at-scan-2.json";
+import links from "./fixtures/links.json";
 import sources from "./fixtures/sources.json";
 import stepsDeploy from "./fixtures/steps-deploy.json";
 import stepsReconcile from "./fixtures/steps-reconcile.json";
@@ -28,6 +30,7 @@ import topology from "./fixtures/topology.json";
 
 export const MODE = mode as unknown as ModeResponse;
 export const SOURCES = sources as unknown as SourcesResponse;
+export const LINKS = links as unknown as LinksResponse;
 export const OVERVIEW = overview as unknown as Overview;
 /** The same arc with the other sources up: an active schedule, one worker, a scan running. */
 export const OVERVIEW_UP = overviewUp as unknown as Overview;
