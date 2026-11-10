@@ -49,6 +49,14 @@ describe("HttpProvider", () => {
     ]);
   });
 
+  it("leaves the timeline's range to the server when none is given", async () => {
+    const { http, fetchFn } = provider();
+
+    await http.timeline();
+
+    expect(requested(fetchFn)).toEqual(["/api/v1/drift-timeline"]);
+  });
+
   it("sends a range for the timeline and for metrics", async () => {
     const { http, fetchFn } = provider();
     const range = { start: new Date("2026-11-07T20:00:00Z"), end: new Date("2026-11-07T21:00:00Z") };

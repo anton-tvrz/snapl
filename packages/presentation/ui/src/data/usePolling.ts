@@ -11,13 +11,18 @@ export interface Polled<T> {
  * Calls `fn` at once and then every `intervalMs`. A hidden tab asks nothing,
  * and asks at once when it is shown again (spec 011 FR-033). With a null
  * interval it asks once.
+ *
+ * A change of `key` asks again at once, keeping the last answer on show until
+ * the new one arrives, and drops any answer still on its way for the old key.
+ * A null key asks nothing.
  */
-export function usePolling<T>(fn: () => Promise<T>, intervalMs: number | null): Polled<T> {
+export function usePolling<T>(fn: () => Promise<T>, intervalMs: number | null, key: string | null = ""): Polled<T> {
   const [state, setState] = useState<Polled<T>>({ data: undefined, error: null });
   const latest = useRef(fn);
   latest.current = fn;
 
   useEffect(() => {
+    if (key === null) return;
     let alive = true;
     let timer: ReturnType<typeof setInterval> | undefined;
 
@@ -48,7 +53,7 @@ export function usePolling<T>(fn: () => Promise<T>, intervalMs: number | null): 
       stop();
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [intervalMs]);
+  }, [intervalMs, key]);
 
   return state;
 }

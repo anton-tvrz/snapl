@@ -151,3 +151,32 @@ test("the devices can be reached and opened from the keyboard", async ({ page })
 
   await expect(page.getByRole("dialog", { name: "leaf-01" })).toBeVisible();
 });
+
+test("the drift can be replayed scan by scan, and the page returns to now", async ({ page, baseURL }) => {
+  const seen = watch(page, baseURL ?? "");
+  await page.goto("/");
+  const spine = page.getByRole("button", { name: /^spine-01,/ });
+  await expect(spine).toHaveAccessibleName("spine-01, spine, In sync");
+  await expect(page.getByText("Latest repaired drift.")).toBeVisible();
+
+  // From now, two scans back: after scan 2, before the reconcile's clean scan.
+  const slider = page.getByRole("slider", { name: "As of" });
+  await slider.focus();
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("ArrowLeft");
+
+  await expect(slider).toHaveAttribute("aria-valuetext", "As of 2026-11-07 21:20:15 UTC");
+  await expect(page).toHaveURL(/[?&]at=2026-11-07T21%3A20%3A15\.330Z/);
+  const banner = page.getByRole("region", { name: "Past time" });
+  await expect(banner).toContainText("Showing the fabric as of 2026-11-07 21:20:15 UTC");
+  await expect(spine).toHaveAccessibleName("spine-01, spine, Missing intent");
+  await expect(page.getByText("No drift has been repaired yet.")).toBeVisible();
+
+  await banner.getByRole("button", { name: "Return to now" }).click();
+
+  await expect(banner).toHaveCount(0);
+  await expect(spine).toHaveAccessibleName("spine-01, spine, In sync");
+  expect(new URL(page.url()).searchParams.has("at")).toBe(false);
+  expect(seen.offOrigin).toEqual([]);
+  expect(seen.blocked).toEqual([]);
+});

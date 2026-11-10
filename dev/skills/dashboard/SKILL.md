@@ -49,6 +49,14 @@ A state a newer server sends is shown by its raw text, never hidden (010 contrac
 - The top tier's names go above their marks, so no link crosses them.
 - Above 32 devices the drawing is replaced by the device list, with the reason.
 
+## Lanes and the "as of" time
+
+- A lane draws each scan's state as its mark (shape and glyph) on a stretch in its kind's colour. A state is held until the next scan for at most 15 minutes; after that the lane is hatched as no data, never the last known state.
+- Every lane also says what it shows in words, for screen readers.
+- Times from the audit trail have microseconds. Compare them through `pointTime` in `lib/lanes.ts`, which rounds up to the millisecond, so the page and the server agree on which scans come before an "as of" time.
+- At a past time, the banner says so, and every view whose source keeps no history says it shows only the present. Running workflows and the schedule's repeated failures are left off the drawing then.
+- The headline's duration is scan to scan. Never call it time to detect.
+
 ## Motion
 
 - Nothing moves when the viewer asks for reduced motion (`prefers-reduced-motion`). The same ring is drawn still.

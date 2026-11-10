@@ -133,4 +133,59 @@ describe("usePolling", () => {
 
     expect(result.current.data).toBeUndefined();
   });
+
+  it("asks again at once when its key changes, and drops the answer for the old key", async () => {
+    let resolveOld: (value: string) => void = () => {};
+    const fn = vi
+      .fn<(key: string) => Promise<string>>()
+      .mockImplementationOnce(() => new Promise<string>((done) => (resolveOld = done)))
+      .mockImplementation(async (key) => `answer for ${key}`);
+    const { result, rerender } = renderHook(({ key }) => usePolling(() => fn(key), 60000, key), {
+      initialProps: { key: "a" },
+    });
+
+    rerender({ key: "b" });
+    await flush();
+    resolveOld("answer for a");
+    await flush();
+
+    expect(fn).toHaveBeenLastCalledWith("b");
+    expect(result.current.data).toBe("answer for b");
+  });
+
+  it("keeps the last answer while a new key is asked for", async () => {
+    let resolveB: (value: string) => void = () => {};
+    const fn = vi
+      .fn<(key: string) => Promise<string>>()
+      .mockImplementationOnce(async () => "answer for a")
+      .mockImplementationOnce(() => new Promise<string>((done) => (resolveB = done)))
+      .mockImplementation(async (key) => `answer for ${key}`);
+    const { result, rerender } = renderHook(({ key }) => usePolling(() => fn(key), 60000, key), {
+      initialProps: { key: "a" },
+    });
+    await flush();
+
+    rerender({ key: "b" });
+    await flush();
+    expect(result.current.data).toBe("answer for a");
+
+    resolveB("answer for b");
+    await flush();
+    expect(result.current.data).toBe("answer for b");
+  });
+
+  it("asks nothing while its key is null", async () => {
+    const fn = vi.fn(async () => "answer");
+    const { rerender } = renderHook(({ key }) => usePolling(fn, 60000, key), {
+      initialProps: { key: null as string | null },
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(120000);
+    });
+    expect(fn).not.toHaveBeenCalled();
+
+    rerender({ key: "now" });
+    await flush();
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
 });

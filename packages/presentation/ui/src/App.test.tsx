@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { ApiError } from "./data/http";
 import type { DataProvider } from "./data/provider";
-import { MODE, OVERVIEW, SOURCES, TOPOLOGY } from "./test/fixtures";
+import { MODE, OVERVIEW, SOURCES, TIMELINE, TOPOLOGY } from "./test/fixtures";
 
 function provider(overrides: Partial<DataProvider> = {}): DataProvider {
   const unused = async () => {
@@ -19,7 +19,7 @@ function provider(overrides: Partial<DataProvider> = {}): DataProvider {
     links: unused,
     devices: unused,
     runs: unused,
-    timeline: unused,
+    timeline: async () => TIMELINE,
     steps: unused,
     metrics: unused,
     ...overrides,

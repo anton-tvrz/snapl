@@ -40,7 +40,8 @@ export interface DataProvider {
   topology(): Promise<TopologyResponse>;
   devices(at?: Date): Promise<DevicesResponse>;
   runs(query: RunsQuery): Promise<RunsResponse>;
-  timeline(range: Range): Promise<DriftTimelineResponse>;
+  /** Without a range, the server's default: the last 24 hours by its own clock. */
+  timeline(range?: Range): Promise<DriftTimelineResponse>;
   steps(run: RunId): Promise<RunStepsResponse>;
   metrics(view: MetricsViewName, range: Range): Promise<MetricsResponse>;
 }
