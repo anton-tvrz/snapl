@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { MODE, MODE_ARCHIVE } from "../test/fixtures";
+import type { ModeResponse } from "../api/types";
 import { ModeBanner } from "./ModeBanner";
 
 describe("ModeBanner", () => {
@@ -31,5 +32,20 @@ describe("ModeBanner", () => {
     const { container } = render(<ModeBanner mode={MODE} />);
 
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it("in a snapshot, says it is a recording, when it was made, from which commit and over which range", () => {
+    const snapshot = {
+      ...MODE_ARCHIVE,
+      mode: "snapshot",
+      archive: { ...MODE_ARCHIVE.archive!, name: "snapshot", parts: [], metrics_start: "2026-11-06T21:20:48Z", metrics_end: "2026-11-07T21:20:48Z" },
+    } as ModeResponse;
+    render(<ModeBanner mode={snapshot} />);
+
+    const banner = screen.getByRole("region", { name: "Recording" });
+    expect(banner).toHaveTextContent(
+      "A recording made 2026-11-07 21:20:48 UTC from commit 6baff39, covering 2026-11-06 21:20:48 UTC to 2026-11-07 21:20:48 UTC.",
+    );
+    expect(banner).toHaveTextContent("Nothing here is live, and nothing refreshes.");
   });
 });

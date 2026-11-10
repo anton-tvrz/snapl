@@ -67,4 +67,15 @@ describe("Shell", () => {
     expect(document.documentElement.dataset.theme).toBe("dark");
     expect(localStorage.getItem("snapl.theme")).toBe("dark");
   });
+
+  it("has no link to the plain page in a recording, which has no server", () => {
+    render(
+      <Shell useCase="dcfabric" mode="snapshot">
+        <p>page</p>
+      </Shell>,
+    );
+
+    expect(screen.getByText("Recording")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Plain page" })).not.toBeInTheDocument();
+  });
 });

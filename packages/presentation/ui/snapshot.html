@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- A snapshot has no server to send a policy: it carries its own, and asks nothing of any origin (research R4). -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <title>snapl recording</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script id="snapl-bundle" type="application/json"></script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

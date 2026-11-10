@@ -6,6 +6,7 @@ import { utcText } from "../lib/time";
  * the commit, and the parts it lacks. Nothing in live mode.
  */
 export function ModeBanner({ mode }: { mode: ModeResponse | undefined }) {
+  if (mode?.mode === "snapshot" && mode.archive) return <RecordingBanner info={mode.archive} />;
   const archive = mode?.mode === "archive" ? mode.archive : null;
   if (!archive) return null;
   const missing = archive.parts.filter((part) => !part.present);
@@ -27,6 +28,24 @@ export function ModeBanner({ mode }: { mode: ModeResponse | undefined }) {
           ))}
         </ul>
       )}
+    </section>
+  );
+}
+
+/** A snapshot file (spec 011 FR-041): a recording, never live. */
+function RecordingBanner({ info }: { info: NonNullable<ModeResponse["archive"]> }) {
+  const commit = info.snapl_commit ? `commit ${info.snapl_commit.slice(0, 7)}` : "an unknown commit";
+  const range =
+    info.metrics_start && info.metrics_end
+      ? `, covering ${utcText(new Date(info.metrics_start))} to ${utcText(new Date(info.metrics_end))}`
+      : "";
+  return (
+    <section aria-label="Recording" className="mb-4 rounded-lg border-2 border-ink bg-sunken p-3 text-sm">
+      <p className="font-semibold">
+        A recording made {utcText(new Date(info.created_at))} from {commit}
+        {range}.
+      </p>
+      <p className="mt-1">Nothing here is live, and nothing refreshes.</p>
     </section>
   );
 }

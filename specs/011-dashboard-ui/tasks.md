@@ -361,22 +361,22 @@ Each PR says `Closes` a task issue under #146 and carries `changelog/146.added.m
   - Writing goes through a `.partial` file; an existing target is refused without `--force`.
   - No template: the contract's error and exit code.
 - [x] T080 [P] [US6] Extend tests/unit/test_presentation/test_dashboard_at.py with a generator, run by a pytest that also asserts the file is current: tests/unit/test_presentation/fixtures/devices_at.json holds the timeline response and the `/devices?at=` and `/runs?at=` answers for a time just before and just after every scan boundary in `audit_demo_arc.sqlite`.
-- [ ] T081 [P] [US6] packages/presentation/ui/src/data/inline.test.ts:
+- [x] T081 [P] [US6] packages/presentation/ui/src/data/inline.test.ts:
   - For every entry in `devices_at.json`, `InlineProvider.devices(at)` equals the server's answer for drift state, paths, error, last scan time and last deploy (SC-004). The same for `runs({at})` states.
   - Without `at`, each method returns the bundled response.
   - `metrics` returns the bundled view, and an unavailable view for a range that is not the bundled one.
   - A bundle with an unknown `format` is refused with a message.
   - `mode()` is `snapshot`, with `now` the bundle's `end`.
-- [ ] T082 [P] [US6] packages/presentation/ui/src/App.snapshot.test.tsx:
+- [x] T082 [P] [US6] packages/presentation/ui/src/App.snapshot.test.tsx:
   - The recording banner shows when it was made, the commit and the range.
   - No view is labelled live, nothing polls, and suggested commands appear under "the operator could run" with no copy control.
   - The scrubber works over the bundle's range.
-- [ ] T083 [US6] packages/presentation/ui/e2e/snapshot.spec.ts: build a snapshot from the fixture server's app with the CLI, open it as a `file://` URL with the browser context offline, and check the topology, the scrubber replaying spine-01's drift, the loop strip, and that the page made zero requests (SC-009). Assert the file is under 3 MB, and print its size.
+- [x] T083 [US6] packages/presentation/ui/e2e/snapshot.spec.ts: build a snapshot from the fixture server's app with the CLI, open it as a `file://` URL with the browser context offline, and check the topology, the scrubber replaying spine-01's drift, the loop strip, and that the page made zero requests (SC-009). Assert the file is under 3 MB, and print its size.
 
 ### Implementation
 
-- [ ] T084 [US6] packages/presentation/ui/snapshot.html and vite.snapshot.config.ts (`vite-plugin-singlefile`, the `<meta>` policy of research R4, the empty bundle element), built by the same `npm run build` into `static/ui/snapshot.html`.
-- [ ] T085 [US6] packages/presentation/ui/src/data/inline.ts, and `main.tsx` choosing `InlineProvider` when the bundle element is present and not empty.
+- [x] T084 [US6] packages/presentation/ui/snapshot.html and vite.snapshot.config.ts (`vite-plugin-singlefile`, the `<meta>` policy of research R4, the empty bundle element), built by the same `npm run build` into `static/ui/snapshot.html`.
+- [x] T085 [US6] packages/presentation/ui/src/data/inline.ts, and `main.tsx` choosing `InlineProvider` when the bundle element is present and not empty.
 - [x] T086 [US6] packages/presentation/snapl_presentation/dashboard/snapshot.py: `collect_bundle`, `render`, `write`. cli.py: `--snapshot`, `--days`, `--force`, alone or with `--archive`, printing the contract's summary.
 - [ ] T087 [US6] **Needs the lab**: quickstart item 7 in Chromium, Firefox and Safari, with the file's size recorded in the PR.
 - [ ] T088 [US6] **Needs the maintainer**: quickstart items 10 (a first-time viewer, SC-003) and 12 (read a snapshot before publishing one).

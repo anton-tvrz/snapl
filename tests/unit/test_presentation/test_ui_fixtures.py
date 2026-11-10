@@ -136,6 +136,14 @@ def test_ui_fixture_with_every_source_up_is_what_the_server_answers(client_up: T
     _check(_body(client_up, UP_REQUESTS[name]), name)
 
 
+def test_ui_fixture_snapshot_bundle_is_what_the_command_collects(client_up: TestClient):
+    """A day of the arc with every source up, as `snapl dashboard --snapshot --days 1` bundles it."""
+    from snapl_presentation.dashboard.snapshot import collect_bundle
+
+    bundle = collect_bundle(client_up.app, days=1, commit="6baff39", source="live")
+    _check(json.dumps(bundle, indent=2, sort_keys=True) + "\n", "snapshot/bundle.json")
+
+
 @pytest.mark.parametrize("name", sorted(ARCHIVE_REQUESTS))
 def test_ui_fixture_in_archive_mode_is_what_the_server_answers(client_archive: TestClient, name: str):
     _check(_body(client_archive, ARCHIVE_REQUESTS[name]), name)
@@ -163,4 +171,4 @@ def test_fixture_answers_are_the_same_on_every_run(client: TestClient):
 
 def test_there_is_no_fixture_file_without_a_request():
     found = {str(path.relative_to(FIXTURES)) for path in FIXTURES.rglob("*.json")}
-    assert found == set(REQUESTS) | set(UP_REQUESTS) | set(ARCHIVE_REQUESTS)
+    assert found == set(REQUESTS) | set(UP_REQUESTS) | set(ARCHIVE_REQUESTS) | {"snapshot/bundle.json"}

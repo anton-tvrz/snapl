@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { DeviceView, TopologyNode } from "./api/types";
-import { Command } from "./components/Command";
+import { Command, Recording } from "./components/Command";
 import { DeviceDrawer } from "./components/DeviceDrawer";
 import { ModeBanner } from "./components/ModeBanner";
 import { LoopStrip } from "./components/LoopStrip";
@@ -76,7 +76,10 @@ export function App({ provider }: Props) {
   const mode = usePolling(provider.mode, null);
   // An archive does not change: in archive mode nothing is asked twice (FR-036).
   const archived = mode.data?.mode === "archive";
-  const every = (ms: number) => (archived ? null : ms);
+  const recording = mode.data?.mode === "snapshot";
+  // Neither an archive nor a snapshot changes: nothing is asked twice (FR-036, FR-041).
+  const fixed = archived || recording;
+  const every = (ms: number) => (fixed ? null : ms);
   const overview = usePolling(provider.overview, every(OVERVIEW_MS));
   const topology = usePolling(provider.topology, every(TOPOLOGY_MS));
   const sources = usePolling(provider.sources, every(OVERVIEW_MS));
@@ -252,247 +255,261 @@ export function App({ provider }: Props) {
       mode={mode.data?.mode}
     >
       <ArchiveMode.Provider value={archived}>
-        <ModeBanner mode={mode.data} />
-        {unreachable && (
-          <div
-            role="alert"
-            className="mb-4 rounded-lg border border-warn-line bg-warn-surface p-3 text-sm"
-          >
-            <p className="font-medium">{unreachable.message}</p>
-            <p className="mt-2">
-              <Command text="uv run snapl dashboard" />
-            </p>
-          </div>
-        )}
-
-        {at && (
-          <section
-            aria-label="Past time"
-            className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border-2 border-ink bg-sunken p-3 text-sm"
-          >
-            <div className="min-w-0 flex-1">
-              <p className="font-semibold">
-                Showing the fabric as of {utcText(at)} ({localText(at)} your
-                time)
+        <Recording.Provider value={recording}>
+          <ModeBanner mode={mode.data} />
+          {unreachable && (
+            <div
+              role="alert"
+              className="mb-4 rounded-lg border border-warn-line bg-warn-surface p-3 text-sm"
+            >
+              <p className="font-medium">{unreachable.message}</p>
+              <p className="mt-2">
+                <Command text="uv run snapl dashboard" />
               </p>
-              {domain?.history && at < domain.history && (
-                <p className="mt-1">
-                  History starts at {utcText(domain.history)}: nothing was
-                  recorded before it.
-                </p>
-              )}
             </div>
-            <button
-              type="button"
-              onClick={() => setAt(undefined)}
-              className="rounded border border-ink bg-surface px-3 py-1 font-medium"
-            >
-              Return to now
-            </button>
-          </section>
-        )}
-
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
-          <div className="min-w-0">
-            <ViewFrame title="Fabric" view={graph} now={now}>
-              {at && (
-                <p className="mb-3 text-xs text-muted">
-                  Devices and links are today's: the Source of Truth keeps no
-                  history. Their states are as of the time shown.
-                </p>
-              )}
-              {graph?.data && fabricReady && (
-                <Topology
-                  topology={graph.data}
-                  devices={devices}
-                  activity={activity}
-                  marked={marked}
-                  flagged={flagged}
-                  selected={selected}
-                  onSelect={onSelect}
-                />
-              )}
-              {!fabricReady && (
-                <p className="text-sm text-muted">
-                  Loading the fabric at that time…
-                </p>
-              )}
-            </ViewFrame>
-            {graph && !graph.data && devicesView && (
-              <div className="mt-3">
-                <DeviceList
-                  devices={devices}
-                  selected={selected}
-                  onSelect={onSelect}
-                />
-              </div>
-            )}
-          </div>
-          {open && (
-            <DeviceDrawer
-              key={open.name}
-              device={open}
-              runs={runs}
-              linkNotes={graph?.data ? linkNotes(graph.data, open.name) : []}
-              now={shown}
-              onClose={onClose}
-              onSelectRun={onSelectRun}
-              selectedRun={chosenRun}
-            />
           )}
-        </div>
 
-        {loopRun && (
-          <div className="mt-4">
-            <ViewFrame
-              title="The loop"
-              view={loop}
-              now={now}
-              error={steps.error}
+          {at && (
+            <section
+              aria-label="Past time"
+              className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border-2 border-ink bg-sunken p-3 text-sm"
             >
-              <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
-                <span>
-                  {chosenRun
-                    ? "Chosen run"
-                    : at
-                      ? "Latest run as of the time shown"
-                      : "Latest run"}
-                </span>
-                {chosenRun && (
-                  <button
-                    type="button"
-                    onClick={() => setChosenRun(undefined)}
-                    className="rounded border border-line px-2 py-0.5 text-ink"
-                  >
-                    Show the latest run
-                  </button>
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold">
+                  Showing the fabric as of {utcText(at)} ({localText(at)} your
+                  time)
+                </p>
+                {domain?.history && at < domain.history && (
+                  <p className="mt-1">
+                    History starts at {utcText(domain.history)}: nothing was
+                    recorded before it.
+                  </p>
                 )}
               </div>
-              {at && (
-                <p className="mb-3 text-xs text-muted">
-                  Its steps are shown as the audit trail records them now, which
-                  may be after the time shown.
-                </p>
-              )}
-              {loop?.data ? (
-                <LoopStrip steps={loop.data} />
-              ) : (
-                <p className="text-sm text-muted">
-                  The audit trail holds no record of this run.
-                </p>
-              )}
-            </ViewFrame>
-          </div>
-        )}
+              <button
+                type="button"
+                onClick={() => setAt(undefined)}
+                className="rounded border border-ink bg-surface px-3 py-1 font-medium"
+              >
+                Return to now
+              </button>
+            </section>
+          )}
 
-        <div className="mt-4">
-          <RangePicker
-            // An archive's time arrives with its first answer: the custom fields start from it.
-          key={range ? `${range.start.getTime()}` : archived ? `archive-${now.getTime()}` : "now"}
-            value={range}
-            now={now}
-            onChange={setRange}
-            archived={exportedRange}
-          />
-        </div>
-
-        <div className="mt-4">
-          <ViewFrame
-            title="Drift over time"
-            view={lanes}
-            now={now}
-            error={timeline.error}
-          >
-            {told && <Headline timeline={told} asOf={shown} />}
-            {lanesData && domain && (
-              <>
-                <Lanes
-                  timeline={lanesData}
-                  domain={domain}
-                  now={now}
-                  cursor={at}
-                  error={timeline.error}
-                  onSelectRun={onSelectRun}
-                />
-                {lanesData.lanes.length > 0 && (
-                  <Scrubber
-                    domain={domain}
-                    stops={stops}
-                    value={at}
-                    onChange={setAt}
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
+            <div className="min-w-0">
+              <ViewFrame title="Fabric" view={graph} now={now}>
+                {at && (
+                  <p className="mb-3 text-xs text-muted">
+                    Devices and links are today's: the Source of Truth keeps no
+                    history. Their states are as of the time shown.
+                  </p>
+                )}
+                {graph?.data && fabricReady && (
+                  <Topology
+                    topology={graph.data}
+                    devices={devices}
+                    activity={activity}
+                    marked={marked}
+                    flagged={flagged}
+                    selected={selected}
+                    onSelect={onSelect}
                   />
                 )}
-              </>
-            )}
-          </ViewFrame>
-        </div>
-
-        <div className="mt-4">
-          <History
-            history={historyAnswer.data}
-            now={now}
-            error={historyAnswer.error}
-          />
-        </div>
-
-        <div className="mt-4 grid gap-4 lg:grid-cols-2">
-          <Schedule
-            schedule={overview.data?.schedule}
-            worker={overview.data?.worker}
-            now={now}
-            presentOnly={!!at}
-          />
-          <Running
-            running={overview.data?.running}
-            now={now}
-            presentOnly={!!at}
-          />
-        </div>
-        <div className="mt-4">
-          <Runs
-            key={selected ?? ""}
-            runs={at ? pastRuns.data?.runs : overview.data?.runs}
-            now={shown}
-            device={selected}
-          />
-        </div>
-        <div className="mt-4">
-          <Undesired devices={devicesView} now={now} />
-        </div>
-        <div className="mt-4 grid gap-4 lg:grid-cols-2">
-          <Ci ci={overview.data?.ci} now={now} presentOnly={!!at} />
-          <LabEvidence lab={overview.data?.lab} now={now} presentOnly={!!at} />
-        </div>
-
-        <section aria-label="Metrics" className="mt-6">
-          <h2 className="mb-3 text-sm font-semibold">Metrics</h2>
-          <div className="grid gap-4 lg:grid-cols-2">
-            {METRIC_VIEWS.map((view) => (
-              <MetricView
-                key={view.name}
-                provider={provider}
-                name={view.name}
-                title={view.title}
-                range={archived ? undefined : range}
-                live={!archived}
-                now={now}
+                {!fabricReady && (
+                  <p className="text-sm text-muted">
+                    Loading the fabric at that time…
+                  </p>
+                )}
+              </ViewFrame>
+              {graph && !graph.data && devicesView && (
+                <div className="mt-3">
+                  <DeviceList
+                    devices={devices}
+                    selected={selected}
+                    onSelect={onSelect}
+                  />
+                </div>
+              )}
+            </div>
+            {open && (
+              <DeviceDrawer
+                key={open.name}
+                device={open}
+                runs={runs}
+                linkNotes={graph?.data ? linkNotes(graph.data, open.name) : []}
+                now={shown}
+                onClose={onClose}
+                onSelectRun={onSelectRun}
+                selectedRun={chosenRun}
               />
-            ))}
+            )}
           </div>
-        </section>
 
-        <section aria-label="Sources">
-          <h2 className="mt-6 mb-3 text-sm font-semibold">Sources</h2>
-          {at && (
-            <p className="mb-3 text-xs text-muted">
-              Shows only the present: these are the sources' states now.
-            </p>
+          {loopRun && (
+            <div className="mt-4">
+              <ViewFrame
+                title="The loop"
+                view={loop}
+                now={now}
+                error={steps.error}
+              >
+                <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
+                  <span>
+                    {chosenRun
+                      ? "Chosen run"
+                      : at
+                        ? "Latest run as of the time shown"
+                        : "Latest run"}
+                  </span>
+                  {chosenRun && (
+                    <button
+                      type="button"
+                      onClick={() => setChosenRun(undefined)}
+                      className="rounded border border-line px-2 py-0.5 text-ink"
+                    >
+                      Show the latest run
+                    </button>
+                  )}
+                </div>
+                {at && (
+                  <p className="mb-3 text-xs text-muted">
+                    Its steps are shown as the audit trail records them now,
+                    which may be after the time shown.
+                  </p>
+                )}
+                {loop?.data ? (
+                  <LoopStrip steps={loop.data} />
+                ) : (
+                  <p className="text-sm text-muted">
+                    The audit trail holds no record of this run.
+                  </p>
+                )}
+              </ViewFrame>
+            </div>
           )}
-          <SourceStrip sources={sources.data?.sources} now={now} />
-        </section>
-        <div className="mt-6">
-          <Links links={linkList.data} />
-        </div>
+
+          {!recording && (
+            <div className="mt-4">
+              <RangePicker
+                // An archive's time arrives with its first answer: the custom fields start from it.
+                key={
+                  range
+                    ? `${range.start.getTime()}`
+                    : archived
+                      ? `archive-${now.getTime()}`
+                      : "now"
+                }
+                value={range}
+                now={now}
+                onChange={setRange}
+                archived={exportedRange}
+              />
+            </div>
+          )}
+
+          <div className="mt-4">
+            <ViewFrame
+              title="Drift over time"
+              view={lanes}
+              now={now}
+              error={timeline.error}
+            >
+              {told && <Headline timeline={told} asOf={shown} />}
+              {lanesData && domain && (
+                <>
+                  <Lanes
+                    timeline={lanesData}
+                    domain={domain}
+                    now={now}
+                    cursor={at}
+                    error={timeline.error}
+                    onSelectRun={onSelectRun}
+                  />
+                  {lanesData.lanes.length > 0 && (
+                    <Scrubber
+                      domain={domain}
+                      stops={stops}
+                      value={at}
+                      onChange={setAt}
+                    />
+                  )}
+                </>
+              )}
+            </ViewFrame>
+          </div>
+
+          <div className="mt-4">
+            <History
+              history={historyAnswer.data}
+              now={now}
+              error={historyAnswer.error}
+            />
+          </div>
+
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            <Schedule
+              schedule={overview.data?.schedule}
+              worker={overview.data?.worker}
+              now={now}
+              presentOnly={!!at}
+            />
+            <Running
+              running={overview.data?.running}
+              now={now}
+              presentOnly={!!at}
+            />
+          </div>
+          <div className="mt-4">
+            <Runs
+              key={selected ?? ""}
+              runs={at ? pastRuns.data?.runs : overview.data?.runs}
+              now={shown}
+              device={selected}
+            />
+          </div>
+          <div className="mt-4">
+            <Undesired devices={devicesView} now={now} />
+          </div>
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            <Ci ci={overview.data?.ci} now={now} presentOnly={!!at} />
+            <LabEvidence
+              lab={overview.data?.lab}
+              now={now}
+              presentOnly={!!at}
+            />
+          </div>
+
+          <section aria-label="Metrics" className="mt-6">
+            <h2 className="mb-3 text-sm font-semibold">Metrics</h2>
+            <div className="grid gap-4 lg:grid-cols-2">
+              {METRIC_VIEWS.map((view) => (
+                <MetricView
+                  key={view.name}
+                  provider={provider}
+                  name={view.name}
+                  title={view.title}
+                  range={fixed ? undefined : range}
+                  live={!fixed}
+                  now={now}
+                />
+              ))}
+            </div>
+          </section>
+
+          <section aria-label="Sources">
+            <h2 className="mt-6 mb-3 text-sm font-semibold">Sources</h2>
+            {at && (
+              <p className="mb-3 text-xs text-muted">
+                Shows only the present: these are the sources' states now.
+              </p>
+            )}
+            <SourceStrip sources={sources.data?.sources} now={now} />
+          </section>
+          <div className="mt-6">
+            <Links links={linkList.data} />
+          </div>
+        </Recording.Provider>
       </ArchiveMode.Provider>
     </Shell>
   );
