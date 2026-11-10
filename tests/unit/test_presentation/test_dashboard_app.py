@@ -29,6 +29,8 @@ from snapl_orchestrator.models import (
 from snapl_orchestrator.worker.client import RunningWorkflowInfo
 from snapl_presentation.dashboard.app import create_app
 from snapl_presentation.dashboard.models import (
+    ArchiveInfo,
+    ArchivePart,
     CiStatus,
     CiTarget,
     JobResult,
@@ -40,7 +42,7 @@ from snapl_presentation.dashboard.models import (
     SourceName,
     View,
 )
-from snapl_presentation.dashboard.sources import Sources, TemporalSnapshot
+from snapl_presentation.dashboard.sources import STACK_REMEDY, Sources, TemporalSnapshot
 from snapl_presentation.settings import CliSettings
 from tests.unit.test_presentation.dashboard_fakes import seed_states
 
@@ -64,6 +66,9 @@ CONTRACT_ROUTES = {
     ("/api/v1/sources", "GET"),
     # Spec 011 (contracts/ui-api.md).
     ("/api/v1/topology", "GET"),
+    ("/api/v1/drift-timeline", "GET"),
+    ("/api/v1/runs/steps", "GET"),
+    ("/api/v1/mode", "GET"),
     ("/api/v1/openapi.json", "GET"),
     ("/api/v1/openapi.json", "HEAD"),
     # Prometheus text format for scrapers, outside /api/v1 (spec 012 R8).
@@ -295,6 +300,9 @@ def test_every_route_only_reads_and_matches_the_contract():
         "/api/v1/sources",
         "/api/v1/metrics/gnmi-duration",
         "/api/v1/topology",
+        "/api/v1/drift-timeline",
+        "/api/v1/runs/steps",
+        "/api/v1/mode",
     ],
 )
 @pytest.mark.parametrize("method", ["HEAD", "POST", "PUT", "PATCH", "DELETE"])
@@ -1295,3 +1303,204 @@ def test_topology_shows_the_last_good_answer_as_stale():
 
 def test_topology_rejects_a_use_case_the_server_was_not_started_for():
     assert _client().get("/api/v1/topology", params={"use_case": "site_edge"}).status_code == 422
+
+
+# --- /api/v1/drift-timeline (spec 011) -------------------------------------------
+
+
+def test_drift_timeline_defaults_to_the_24_hours_before_now():
+    body = _client().get("/api/v1/drift-timeline").json()
+
+    view = body["timeline"]
+    assert (view["source"], view["available"]) == ("audit", True)
+    timeline = view["data"]
+    assert (timeline["start"], timeline["end"]) == ("2026-11-06T21:00:05Z", "2026-11-07T21:00:05Z")
+    assert [(lane["name"], len(lane["points"])) for lane in timeline["lanes"]] == [("spine-01", 0), ("leaf-01", 1)]
+    assert timeline["lanes"][1]["points"][0]["missing_paths"] == ["/a"]
+    assert [(e["name"], e["closed_at"]) for e in timeline["episodes"]] == [("leaf-01", None)]
+    assert (timeline["latest_closed"], timeline["open_count"]) == (None, 1)
+
+
+def test_drift_timeline_takes_a_range():
+    params = {"start": "2026-11-07T20:00:00Z", "end": "2026-11-07T20:30:00Z"}
+
+    timeline = _client().get("/api/v1/drift-timeline", params=params).json()["timeline"]["data"]
+
+    # The only scan is at 21:00, after this range ends.
+    assert all(lane["points"] == [] for lane in timeline["lanes"])
+    assert (timeline["episodes"], timeline["open_count"]) == ([], 0)
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"start": "2026-11-07T21:00:00Z", "end": "2026-11-07T21:00:00Z"},
+        {"start": "2026-11-07T22:00:00Z", "end": "2026-11-07T21:00:00Z"},
+        {"start": "2026-11-07T21:00:00"},
+        {"use_case": "site_edge"},
+    ],
+)
+def test_drift_timeline_rejects_a_bad_request(params: dict[str, str]):
+    assert _client().get("/api/v1/drift-timeline", params=params).status_code == 422
+
+
+def test_drift_timeline_refuses_a_range_with_too_many_scan_points(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr("snapl_presentation.dashboard.app.MAX_SCAN_POINTS", 0)
+
+    response = _client().get("/api/v1/drift-timeline")
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == (
+        "the range holds 1 scan points; one answer carries at most 0. Ask for a shorter range."
+    )
+
+
+def test_drift_timeline_with_the_audit_trail_down_says_so():
+    down = View(source=SourceName.AUDIT, available=False, reason="unable to open database file", remedy="snapl scan")
+
+    view = _client(audit=down).get("/api/v1/drift-timeline").json()["timeline"]
+
+    assert (view["available"], view["reason"], view["remedy"]) == (False, "unable to open database file", "snapl scan")
+    assert view["data"] is None
+
+
+def test_drift_timeline_with_the_sot_down_still_draws_lanes_from_the_trail():
+    down = View(source=SourceName.SOT, available=False, reason="Infrahub is unreachable", remedy=STACK_REMEDY)
+
+    view = _client(sot=down, names={LEAF.device.id: "leaf-01"}).get("/api/v1/drift-timeline").json()["timeline"]
+
+    assert view["available"] is True
+    assert [(lane["name"], lane["in_intent"]) for lane in view["data"]["lanes"]] == [("leaf-01", True)]
+
+
+# --- /api/v1/runs/steps (spec 011) -------------------------------------------------
+
+
+def _failed_deploy_events() -> list[AuditEvent]:
+    common = {"workflow_id": "deploy-intent-leaf", "workflow_type": "DeployIntent", "target_id": LEAF.device.id}
+    return [
+        AuditEvent(
+            event_id=uuid4(),
+            event_type=AuditEventType.WORKFLOW_STARTED,
+            payload={"parent_workflow_id": None},
+            timestamp=T0,
+            **common,
+        ),
+        AuditEvent(
+            event_id=uuid4(),
+            event_type=AuditEventType.ACTIVITY_COMPLETED,
+            activity_name="fetch_desired_state",
+            outcome="success",
+            timestamp=T0 + timedelta(seconds=1),
+            **common,
+        ),
+        AuditEvent(
+            event_id=uuid4(),
+            event_type=AuditEventType.WORKFLOW_TERMINATED,
+            outcome="failure",
+            reason=WorkflowReason.APPLY_FAILED,
+            payload={"detail": "gNMI set rejected"},
+            timestamp=T0 + timedelta(seconds=2),
+            **common,
+        ),
+    ]
+
+
+def _steps_client() -> TestClient:
+    return _client(audit=View(source=SourceName.AUDIT, available=True, fetched_at=T0, data=_failed_deploy_events()))
+
+
+def test_run_steps_names_the_block_that_failed():
+    params = {"workflow_id": "deploy-intent-leaf", "started_at": "2026-11-07T21:00:00Z"}
+
+    body = _steps_client().get("/api/v1/runs/steps", params=params).json()
+
+    view = body["steps"]
+    assert (view["source"], view["available"]) == ("audit", True)
+    steps = view["data"]
+    assert (steps["run"]["workflow_type"], steps["run"]["target"], steps["run"]["state"]) == (
+        "DeployIntent",
+        "leaf-01",
+        "failed",
+    )
+    assert steps["recorded"] is True
+    assert [(b["block"], b["status"]) for b in steps["blocks"]] == [
+        ("intent", "done"),
+        ("executor", "failed"),
+        ("collector", "not_reached"),
+        ("observability", "not_reached"),
+        ("orchestrator", "done"),
+        ("presentation", "surface"),
+    ]
+    assert steps["blocks"][1]["reason"] == "apply_failed: gNMI set rejected"
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"workflow_id": "no-such-run", "started_at": "2026-11-07T21:00:00Z"},
+        # The id exists, but no run of it started at this time.
+        {"workflow_id": "deploy-intent-leaf", "started_at": "2026-11-07T21:00:01Z"},
+    ],
+)
+def test_run_steps_for_a_run_the_trail_does_not_hold_is_an_empty_view(params: dict[str, str]):
+    response = _steps_client().get("/api/v1/runs/steps", params=params)
+
+    assert response.status_code == 200
+    view = response.json()["steps"]
+    assert (view["available"], view["data"]) == (True, None)
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"workflow_id": "deploy-intent-leaf"},
+        {"started_at": "2026-11-07T21:00:00Z"},
+        {"workflow_id": "deploy-intent-leaf", "started_at": "2026-11-07T21:00:00"},
+    ],
+)
+def test_run_steps_rejects_a_bad_request(params: dict[str, str]):
+    assert _steps_client().get("/api/v1/runs/steps", params=params).status_code == 422
+
+
+def test_run_steps_with_the_audit_trail_down_says_so():
+    down = View(source=SourceName.AUDIT, available=False, reason="unable to open database file", remedy="snapl scan")
+    params = {"workflow_id": "deploy-intent-leaf", "started_at": "2026-11-07T21:00:00Z"}
+
+    view = _client(audit=down).get("/api/v1/runs/steps", params=params).json()["steps"]
+
+    assert (view["available"], view["reason"], view["data"]) == (False, "unable to open database file", None)
+
+
+# --- /api/v1/mode (spec 011) -------------------------------------------------------
+
+
+def test_mode_is_live_with_the_servers_clock():
+    body = _client().get("/api/v1/mode").json()
+
+    assert (body["mode"], body["now"], body["archive"]) == ("live", "2026-11-07T21:00:05Z", None)
+    assert body["use_case"] == "dcfabric"
+
+
+def test_mode_names_the_archive_it_serves():
+    archive = ArchiveInfo(
+        name="snapl-history-20261101T090000Z.tar.gz",
+        created_at=T0,
+        snapl_commit="6baff39",
+        parts=[ArchivePart(name="audit", present=True), ArchivePart(name="metrics", present=False, reason="not up")],
+    )
+    sources = Sources(
+        audit=FakeSource(_audit_ok()),
+        sot=FakeSource(_sot_ok()),
+        temporal=FakeSource(_temporal_ok()),
+        ci=FakeSource(_ci_ok()),
+        lab_runs=FakeSource(_lab_ok()),
+        prometheus=FakePrometheus(),
+    )
+    app = create_app(sources, CliSettings(), "dcfabric", clock=lambda: T0, archive=archive)
+
+    body = TestClient(app).get("/api/v1/mode").json()
+
+    assert (body["mode"], body["now"]) == ("archive", "2026-11-07T21:00:00Z")
+    assert body["archive"]["name"] == "snapl-history-20261101T090000Z.tar.gz"
+    assert body["archive"]["parts"][1] == {"name": "metrics", "present": False, "reason": "not up"}

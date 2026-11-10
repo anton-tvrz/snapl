@@ -16,7 +16,15 @@ import pytest
 from snapl_intent.models import DesiredState, Device
 from snapl_orchestrator.models import AuditEvent, AuditEventType, WorkflowReason
 from snapl_presentation.dashboard.models import Bucket, SeriesName
-from snapl_presentation.dashboard.projections import project_devices, project_runs, project_series
+from snapl_presentation.dashboard.projections import (
+    project_devices,
+    project_runs,
+    project_series,
+    project_steps,
+    project_timeline,
+    project_topology,
+    run_events,
+)
 
 pytestmark = [pytest.mark.unit, pytest.mark.slow]
 
@@ -140,3 +148,36 @@ def test_a_30_day_hourly_series_is_under_a_second(trail):
 
     for name in SeriesName:
         assert _timed(lambda name=name: project_series(trail, name, start, end, Bucket.HOUR)) < LIMIT_S, name
+
+
+# --- spec 011 (SC-013) -------------------------------------------------------------
+
+
+def _states() -> list[DesiredState]:
+    return [
+        DesiredState(
+            device=Device(id=d, name=f"dev-{i}", management_address="10.0.0.1", role="leaf", use_case="dcfabric")
+        )
+        for i, d in enumerate(DEVICES)
+    ]
+
+
+def test_timeline_projection_is_under_a_second(trail):
+    """A day's lanes, with episodes folded from the whole trail before it."""
+    end = max(event.timestamp for event in trail)
+
+    assert _timed(lambda: project_timeline(trail, _states(), {}, end - timedelta(hours=24), end)) < LIMIT_S
+
+
+def test_finding_one_runs_steps_is_under_a_second(trail):
+    start = next(e for e in reversed(trail) if e.workflow_type == "DeployIntent" and e.payload)
+    runs = project_runs(trail, None, T0, names={}, ui_address="http://ui", namespace="default", limit=1)
+
+    def steps():
+        project_steps(runs[0], run_events(trail, start.workflow_id, start.timestamp))
+
+    assert _timed(steps) < LIMIT_S
+
+
+def test_topology_projection_is_under_a_second():
+    assert _timed(lambda: project_topology(_states())) < LIMIT_S

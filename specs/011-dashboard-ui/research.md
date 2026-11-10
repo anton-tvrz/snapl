@@ -214,8 +214,12 @@ Server-sent events stay out. Polling plus the audit-derived window meets SC-002 
 **Measured**: the fixture's eight deploys each have all four step records, with `outcome: success`. It has no failed deploy.
 
 **Decision**: `GET /api/v1/runs/steps?workflow_id=&started_at=`, built by a pure function `project_steps(run_events)`.
-- One table on the server, `STEP_BLOCKS`, maps the four activity names to `intent`, `executor`, `collector` and `observability`. A second, `FAILURE_BLOCKS`, maps the failure reasons to the block whose step failed.
-- For a `DeployIntent` run, `recorded` is true. Each block is `done` (its step record exists), `failed` (the run's failure reason maps to it), or `not_reached`.
+- One table on the server, `STEP_BLOCKS`, maps the four activity names to `intent`, `executor`, `collector` and `observability`.
+- For a `DeployIntent` run, `recorded` is true. Each block is `done` (its step record exists), `failed`, or `not_reached`.
+- **Which block failed** (*amended in PR B*): the first plan mapped each failure reason to a block. Reading `deploy_intent.py` again showed that is wrong for one case: `collect_failed` ends the run both when the collect fails and when the drift check itself fails, after the collect step was recorded. So the reason does not name the block. The rule is now:
+  - a run that ended with `intent_unavailable`, `device_not_found`, `apply_failed` or `collect_failed` failed at the first block with no step record;
+  - `verification_failed` fails Observability, whose check ran and found drift left on the device;
+  - `cancelled` and `audit_failed` blame no block. Blocks with no record are `not_reached`.
 - For any other run type, `recorded` is false, the four blocks are `not_recorded`, and the UI shows the outcome only (FR-028).
 - The Orchestrator block is `done` for any run with a start record. Presentation is `surface` (spec Assumptions).
 - An unknown activity name is returned as a step with `block: null`, never dropped.

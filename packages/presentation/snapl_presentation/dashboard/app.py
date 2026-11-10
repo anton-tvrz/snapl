@@ -26,9 +26,12 @@ from snapl_orchestrator.models import AuditEventType, drift_schedule_id
 from snapl_presentation.dashboard.ci import REPO_REMEDY
 from snapl_presentation.dashboard.exposition import CONTENT_TYPE, SourceOutcome, render_exposition
 from snapl_presentation.dashboard.models import (
+    ArchiveInfo,
     Bucket,
     CiStatus,
     DeviceView,
+    DriftTimeline,
+    DriftTimelineResponse,
     Envelope,
     LabEvidence,
     Link,
@@ -37,7 +40,10 @@ from snapl_presentation.dashboard.models import (
     MetricsData,
     MetricsResponse,
     MetricsViewName,
+    ModeResponse,
     Overview,
+    RunSteps,
+    RunStepsResponse,
     RunView,
     ScheduleStatus,
     Series,
@@ -49,6 +55,7 @@ from snapl_presentation.dashboard.models import (
     WorkerStatus,
 )
 from snapl_presentation.dashboard.projections import (
+    MAX_SCAN_POINTS,
     RunFilters,
     events_until,
     intent_devices,
@@ -58,7 +65,10 @@ from snapl_presentation.dashboard.projections import (
     project_running,
     project_runs,
     project_series,
+    project_steps,
+    project_timeline,
     project_topology,
+    run_events,
 )
 from snapl_presentation.dashboard.prometheus import SCRAPE_INTERVAL_S, plan_range
 from snapl_presentation.dashboard.sources import AUDIT_REMEDY, STACK_REMEDY, Sources, SourceUnavailable, utcnow
@@ -551,10 +561,13 @@ def create_app(
     *,
     clock: Callable[[], datetime] = utcnow,
     repo: str | None = None,
+    archive: ArchiveInfo | None = None,
 ) -> FastAPI:
     """The dashboard for one use case, served from ``sources``.
 
     ``repo`` is the GitHub ``owner/name`` the CI view reads, for the links.
+    ``archive`` describes the history archive the sources read, when the
+    server is showing one and not the live stack (spec 011).
     """
     app = FastAPI(
         title="snapl dashboard",
@@ -618,6 +631,107 @@ def create_app(
             at=at,
         )
         return RunsResponse(use_case=served, generated_at=clock(), runs=runs_view, running=running_view)
+
+    @router.get("/runs/steps", response_model=RunStepsResponse)
+    async def run_steps(
+        workflow_id: Annotated[str, Query(description="The run's workflow id.")],
+        started_at: Annotated[AwareDatetime, Query(description="When the run started: one id can hold many runs.")],
+        requested: UseCaseQuery = None,
+    ) -> RunStepsResponse:
+        """What each NAF block did in one run, as far as the audit trail records it (spec 011)."""
+        served = _check_use_case(requested)
+        audit, temporal, sot = await reader.read_all(SourceName.AUDIT, SourceName.TEMPORAL, SourceName.SOT)
+        steps: RunSteps | None = None
+        of_run = run_events(audit.data or [], workflow_id, started_at)
+        if of_run:
+            snapshot = temporal.data if temporal.available else None
+            (run,) = project_runs(
+                of_run,
+                {info.workflow_id for info in snapshot.running} if snapshot else None,
+                clock(),
+                names=_device_names(sot, sources.sot.names),
+                ui_address=settings.temporal_ui_address,
+                namespace=settings.temporal_namespace,
+            )
+            # The trigger needs the whole trail: a deploy's parent is another run.
+            trigger = next(
+                (
+                    view.trigger
+                    for view in project_runs(
+                        audit.data or [],
+                        None,
+                        clock(),
+                        names={},
+                        ui_address=settings.temporal_ui_address,
+                        namespace=settings.temporal_namespace,
+                        limit=len(audit.data or []) or 1,
+                        filters=RunFilters(workflow_types=frozenset({run.workflow_type})),
+                    )
+                    if (view.workflow_id, view.started_at) == (run.workflow_id, run.started_at)
+                ),
+                run.trigger,
+            )
+            steps = project_steps(run.model_copy(update={"trigger": trigger}), of_run)
+        view: View[RunSteps] = View(
+            source=SourceName.AUDIT,
+            available=audit.available,
+            stale=audit.stale,
+            fetched_at=audit.fetched_at,
+            reason=audit.reason,
+            remedy=audit.remedy,
+            data=steps,
+        )
+        return RunStepsResponse(use_case=served, generated_at=clock(), steps=view)
+
+    @router.get("/drift-timeline", response_model=DriftTimelineResponse)
+    async def drift_timeline(
+        requested: UseCaseQuery = None,
+        start: Annotated[AwareDatetime | None, Query(description="Defaults to end - 24h.")] = None,
+        end: Annotated[AwareDatetime | None, Query(description="Defaults to now.")] = None,
+    ) -> DriftTimelineResponse:
+        """One lane of scan points per device, and the drift episodes over them (spec 011)."""
+        served = _check_use_case(requested)
+        range_end = end or clock()
+        range_start = start or range_end - timedelta(hours=24)
+        audit, sot = await reader.read_all(SourceName.AUDIT, SourceName.SOT)
+        timeline: DriftTimeline | None = None
+        if audit.data is not None:
+            try:
+                timeline = project_timeline(
+                    audit.data,
+                    sot.data if sot.available else None,
+                    _device_names(sot, sources.sot.names),
+                    range_start,
+                    range_end,
+                    max_points=MAX_SCAN_POINTS,
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+        elif range_start >= range_end:
+            raise HTTPException(status_code=422, detail="start must be before end")
+        view: View[DriftTimeline] = View(
+            source=SourceName.AUDIT,
+            available=audit.available,
+            stale=audit.stale,
+            fetched_at=audit.fetched_at,
+            reason=audit.reason,
+            remedy=audit.remedy,
+            data=timeline,
+        )
+        return DriftTimelineResponse(use_case=served, generated_at=clock(), timeline=view)
+
+    @router.get("/mode", response_model=ModeResponse)
+    async def mode(requested: UseCaseQuery = None) -> ModeResponse:
+        """Whether this server shows the live stack or a history archive (spec 011)."""
+        served = _check_use_case(requested)
+        now = clock()
+        return ModeResponse(
+            use_case=served,
+            generated_at=now,
+            mode="archive" if archive is not None else "live",
+            now=now,
+            archive=archive,
+        )
 
     @router.get("/schedule", response_model=ScheduleResponse)
     async def schedule(requested: UseCaseQuery = None) -> ScheduleResponse:

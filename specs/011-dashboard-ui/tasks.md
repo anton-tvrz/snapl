@@ -80,7 +80,7 @@ Each PR says `Closes` a task issue under #146 and carries `changelog/146.added.m
 
 ### Tests (write first, verify they fail)
 
-- [ ] T011 [P] [US2] tests/unit/test_presentation/test_dashboard_timeline.py, for `project_timeline(events, names, start, end)`:
+- [x] T011 [P] [US2] tests/unit/test_presentation/test_dashboard_timeline.py, for `project_timeline(events, names, start, end)`:
   - Against `audit_demo_arc.sqlite`: six lanes of three points each. spine-01 has one episode, opened at scan 1, closed at scan 3, `scans: 3`, `closed_by.kind: reconcile` naming the reconcile's child deploy. leaf-01 has one open episode with `closed_at`, `duration_s` and `closed_by` all null. `latest_closed` is spine-01's and `open_count` is 1.
   - Hand-built events for each rule in data-model.md: repaired then drifted again gives two episodes; an error scan inside an episode is counted and leaves it open; an error scan with no episode opens none; a clean scan with no deploy in between gives `closed_by: null`; a deploy that failed is not a closer; an operator's direct deploy gives `kind: deploy`; a scheduled one gives `kind: remediation`.
   - A deploy that ended before the last drifted scan is not the closer.
@@ -88,28 +88,28 @@ Each PR says `Closes` a task issue under #146 and carries `changelog/146.added.m
   - A device no longer in intent keeps its lane with `in_intent: false`.
   - A scan recorded before FR-012a (no `undesired_paths`) gives a `drifted` point with `unclassified_paths`.
   - More than 20,000 points raises the error the route turns into `422`.
-- [ ] T012 [P] [US3] tests/unit/test_presentation/test_dashboard_steps.py, for `project_steps(run, run_events)`:
+- [x] T012 [P] [US3] tests/unit/test_presentation/test_dashboard_steps.py, for `project_steps(run, run_events)`:
   - A fixture deploy: `recorded: true`, four steps in order with their blocks and times, and blocks `done, done, done, done, done, surface`.
   - Hand-built failed deploys, one per failure reason (`intent_unavailable`, `device_not_found`, `apply_failed`, `collect_failed`, `verification_failed`): the mapped block is `failed` with the reason, earlier blocks are `done`, later ones `not_reached`. Mark the test module's docstring: these shapes are read from `deploy_intent.py`, not captured (research R15).
   - A deploy in progress with two step records: two blocks `done`, two `not_reached`, none in progress.
   - A `ScanDrift` and a `ReconcileDevices` run: `recorded: false`, the four blocks `not_recorded`, Orchestrator `done`.
   - An unknown activity name is returned as a step with `block: null`.
   - `STEP_BLOCKS` covers exactly the activity names `deploy_intent.py` records. Assert against names collected from the fixture, so a new recorded step fails the test.
-- [ ] T013 [P] [US2] Extend tests/unit/test_presentation/test_dashboard_app.py:
+- [x] T013 [P] [US2] Extend tests/unit/test_presentation/test_dashboard_app.py:
   - `GET /api/v1/drift-timeline` with defaults, with `start >= end` (`422`), and with too many points (`422`, message as in contracts/ui-api.md).
   - `GET /api/v1/runs/steps` for a known run, for an unknown one (`200`, `data: null`), and with a naive `started_at` (`422`).
   - `GET /api/v1/mode` returns `live`, the injected clock's time and no archive.
   - The read-only walk and the OpenAPI snapshot include all three.
-  - With 100,000 generated events, each new route answers within 1 s (SC-013). Mark it `slow`, as 010's SC-007 test is.
+  - With 100,000 generated events, each new route answers within 1 s (SC-013). Mark it `slow`, as 010's SC-007 test is. *As built*: measured on the projections in tests/unit/test_presentation/test_dashboard_performance.py, where 010's SC-007 tests already are.
 
 ### Implementation
 
-- [ ] T014 [US2] models.py: `ScanPoint`, `DeviceLane`, `EpisodeClose`, `DriftEpisode`, `DriftTimeline`, `DriftTimelineResponse`, with their validators.
-- [ ] T015 [US2] projections.py: `project_timeline`, reusing 010's per-device scan classification and trigger rules without copying them.
-- [ ] T016 [US3] models.py: `NafBlock`, `BlockStatus`, `RunStep`, `BlockState`, `RunSteps`, `RunStepsResponse`. projections.py: `STEP_BLOCKS`, `FAILURE_BLOCKS`, `project_steps`.
-- [ ] T017 [US5] models.py: `ArchivePart`, `ArchiveInfo`, `ModeResponse`. app.py: `create_app` takes an optional `archive: ArchiveInfo`, and serves `GET /api/v1/mode`.
-- [ ] T018 [US2] app.py: `GET /api/v1/drift-timeline` and `GET /api/v1/runs/steps`.
-- [ ] T019 [US2] Amend specs/010-dashboard-read-api/contracts/dashboard-api.md "Versioning": `NafBlock` and `BlockStatus` join the open enums, and the 011 routes are listed with a link to this spec's contract. Update the OpenAPI snapshot.
+- [x] T014 [US2] models.py: `ScanPoint`, `DeviceLane`, `EpisodeClose`, `DriftEpisode`, `DriftTimeline`, `DriftTimelineResponse`, with their validators.
+- [x] T015 [US2] projections.py: `project_timeline`, reusing 010's per-device scan classification and trigger rules without copying them.
+- [x] T016 [US3] models.py: `NafBlock`, `BlockStatus`, `RunStep`, `BlockState`, `RunSteps`, `RunStepsResponse`. projections.py: `STEP_BLOCKS`, `run_events`, `project_steps`. *As built*: no `FAILURE_BLOCKS` table. The failed block is the first with no record (research R15, amended).
+- [x] T017 [US5] models.py: `ArchivePart`, `ArchiveInfo`, `ModeResponse`. app.py: `create_app` takes an optional `archive: ArchiveInfo`, and serves `GET /api/v1/mode`.
+- [x] T018 [US2] app.py: `GET /api/v1/drift-timeline` and `GET /api/v1/runs/steps`.
+- [x] T019 [US2] Amend specs/010-dashboard-read-api/contracts/dashboard-api.md "Versioning": `NafBlock` and `BlockStatus` join the open enums, and the 011 routes are listed with a link to this spec's contract. Update the OpenAPI snapshot.
 
 **Checkpoint**: every fact the UI will show is available from the API on fixtures.
 
