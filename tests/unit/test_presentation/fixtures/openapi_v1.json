@@ -842,6 +842,25 @@
         "title": "Link",
         "type": "object"
       },
+      "LinkEnd": {
+        "additionalProperties": false,
+        "properties": {
+          "device": {
+            "title": "Device",
+            "type": "string"
+          },
+          "interface": {
+            "title": "Interface",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device",
+          "interface"
+        ],
+        "title": "LinkEnd",
+        "type": "object"
+      },
       "LinkGroup": {
         "enum": [
           "stack",
@@ -1685,6 +1704,127 @@
         "title": "SourcesResponse",
         "type": "object"
       },
+      "Topology": {
+        "additionalProperties": false,
+        "properties": {
+          "links": {
+            "items": {
+              "$ref": "#/components/schemas/TopologyLink"
+            },
+            "title": "Links",
+            "type": "array"
+          },
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/TopologyNode"
+            },
+            "title": "Nodes",
+            "type": "array"
+          },
+          "unlinked": {
+            "items": {
+              "$ref": "#/components/schemas/UnlinkedInterface"
+            },
+            "title": "Unlinked",
+            "type": "array"
+          }
+        },
+        "required": [
+          "nodes",
+          "links",
+          "unlinked"
+        ],
+        "title": "Topology",
+        "type": "object"
+      },
+      "TopologyLink": {
+        "additionalProperties": false,
+        "description": "One link, as intent declares it. Its ends are ordered by (device,\ninterface), so a link declared from both ends has one identity.",
+        "properties": {
+          "a": {
+            "$ref": "#/components/schemas/LinkEnd"
+          },
+          "agreed": {
+            "title": "Agreed",
+            "type": "boolean"
+          },
+          "b": {
+            "$ref": "#/components/schemas/LinkEnd"
+          },
+          "declared_by": {
+            "enum": [
+              "both",
+              "a",
+              "b"
+            ],
+            "title": "Declared By",
+            "type": "string"
+          }
+        },
+        "required": [
+          "a",
+          "b",
+          "declared_by",
+          "agreed"
+        ],
+        "title": "TopologyLink",
+        "type": "object"
+      },
+      "TopologyNode": {
+        "additionalProperties": false,
+        "properties": {
+          "device_id": {
+            "format": "uuid",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_id",
+          "name",
+          "role"
+        ],
+        "title": "TopologyNode",
+        "type": "object"
+      },
+      "TopologyResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "contract_version": {
+            "const": "1",
+            "default": "1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "topology": {
+            "$ref": "#/components/schemas/View_Topology_"
+          },
+          "use_case": {
+            "title": "Use Case",
+            "type": "string"
+          }
+        },
+        "required": [
+          "use_case",
+          "generated_at",
+          "topology"
+        ],
+        "title": "TopologyResponse",
+        "type": "object"
+      },
       "Trigger": {
         "enum": [
           "schedule",
@@ -1693,6 +1833,41 @@
         ],
         "title": "Trigger",
         "type": "string"
+      },
+      "UnlinkedInterface": {
+        "additionalProperties": false,
+        "properties": {
+          "device": {
+            "title": "Device",
+            "type": "string"
+          },
+          "interface": {
+            "title": "Interface",
+            "type": "string"
+          },
+          "peer_device": {
+            "title": "Peer Device",
+            "type": "string"
+          },
+          "peer_interface": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peer Interface"
+          }
+        },
+        "required": [
+          "device",
+          "interface",
+          "peer_device"
+        ],
+        "title": "UnlinkedInterface",
+        "type": "object"
       },
       "ValidationError": {
         "properties": {
@@ -2063,6 +2238,73 @@
         "title": "View[ScheduleStatus]",
         "type": "object"
       },
+      "View_Topology_": {
+        "additionalProperties": false,
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Topology"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fetched_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fetched At"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "remedy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remedy"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SourceName"
+          },
+          "stale": {
+            "default": false,
+            "title": "Stale",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "source",
+          "available"
+        ],
+        "title": "View[Topology]",
+        "type": "object"
+      },
       "View_WorkerStatus_": {
         "additionalProperties": false,
         "properties": {
@@ -2384,6 +2626,25 @@
               ],
               "description": "Defaults to the server's --use-case.",
               "title": "Use Case"
+            }
+          },
+          {
+            "description": "Show the state the audit trail recorded up to this time. Defaults to now.",
+            "in": "query",
+            "name": "at",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Show the state the audit trail recorded up to this time. Defaults to now.",
+              "title": "At"
             }
           }
         ],
@@ -2887,6 +3148,25 @@
               "description": "A device name.",
               "title": "Device"
             }
+          },
+          {
+            "description": "Show the state the audit trail recorded up to this time. Defaults to now.",
+            "in": "query",
+            "name": "at",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Show the state the audit trail recorded up to this time. Defaults to now.",
+              "title": "At"
+            }
           }
         ],
         "responses": {
@@ -3009,6 +3289,55 @@
           }
         },
         "summary": "Sources Status"
+      }
+    },
+    "/api/v1/topology": {
+      "get": {
+        "description": "The use case's devices and the links intent declares (spec 011).",
+        "operationId": "topology_api_v1_topology_get",
+        "parameters": [
+          {
+            "description": "Defaults to the server's --use-case.",
+            "in": "query",
+            "name": "use_case",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to the server's --use-case.",
+              "title": "Use Case"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TopologyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Topology"
       }
     }
   }

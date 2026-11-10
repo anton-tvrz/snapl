@@ -20,9 +20,9 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, FastAPI, HTTPException, Path, Query
 from fastapi.responses import HTMLResponse, PlainTextResponse
-from pydantic import AwareDatetime  # noqa: TC002 — FastAPI resolves query types at runtime
+from pydantic import AwareDatetime
 
-from snapl_orchestrator.models import drift_schedule_id
+from snapl_orchestrator.models import AuditEventType, drift_schedule_id
 from snapl_presentation.dashboard.ci import REPO_REMEDY
 from snapl_presentation.dashboard.exposition import CONTENT_TYPE, SourceOutcome, render_exposition
 from snapl_presentation.dashboard.models import (
@@ -43,17 +43,22 @@ from snapl_presentation.dashboard.models import (
     Series,
     SeriesName,
     SourceName,
+    Topology,
+    TopologyResponse,
     View,
     WorkerStatus,
 )
 from snapl_presentation.dashboard.projections import (
     RunFilters,
+    events_until,
+    intent_devices,
     latest_pause,
     project_devices,
     project_repeated_failures,
     project_running,
     project_runs,
     project_series,
+    project_topology,
 )
 from snapl_presentation.dashboard.prometheus import SCRAPE_INTERVAL_S, plan_range
 from snapl_presentation.dashboard.sources import AUDIT_REMEDY, STACK_REMEDY, Sources, SourceUnavailable, utcnow
@@ -68,6 +73,15 @@ if TYPE_CHECKING:
 # The function argument cannot be called `use_case` (the server's own), so the
 # contract's name is an alias.
 UseCaseQuery = Annotated[str | None, Query(alias="use_case", description="Defaults to the server's --use-case.")]
+# Spec 011: project from the audit events recorded up to this time (research R11).
+AtQuery = Annotated[
+    AwareDatetime | None,
+    Query(description="Show the state the audit trail recorded up to this time. Defaults to now."),
+]
+# The workflow engine keeps no history the dashboard reads, so a past time has
+# no "running" view of its own.
+NO_HISTORY_REASON = "the workflow engine has no history"
+NO_HISTORY_REMEDY = "request this route without `at` to see what is running now"
 
 
 class DevicesResponse(Envelope):
@@ -397,9 +411,18 @@ def compose_runs(
     *,
     limit: int,
     filters: RunFilters = RunFilters(),  # noqa: B008 — frozen, so sharing it is safe
+    at: datetime | None = None,
 ) -> tuple[View[list[RunView]], View[list[RunView]]]:
-    """The runs view (from the audit trail) and the running view (from Temporal)."""
+    """The runs view (from the audit trail) and the running view (from Temporal).
+
+    With ``at``, both are as of that time (spec 011 research R11): the runs
+    come from the events recorded by then, and Temporal is not asked.
+    """
     events = audit.data or []
+    if at is not None:
+        return _runs_at(audit, names, settings, at, limit=limit, filters=filters), View(
+            source=SourceName.TEMPORAL, available=False, reason=NO_HISTORY_REASON, remedy=NO_HISTORY_REMEDY
+        )
     # Only a current answer says what is running; a stale one could be wrong.
     snapshot = temporal.data if temporal.available else None
     projected = project_runs(
@@ -443,10 +466,77 @@ def compose_runs(
     return runs_view, _from_temporal(temporal, running)
 
 
+def _runs_at(
+    audit: View[Any],
+    names: dict,
+    settings: CliSettings,
+    at: datetime,
+    *,
+    limit: int,
+    filters: RunFilters,
+) -> View[list[RunView]]:
+    """Runs as of ``at``. A run open then is ``running`` if the trail holds its
+    end after ``at``, and ``unfinished`` otherwise: only the trail is evidence."""
+    events = audit.data or []
+    until = events_until(events, at)
+    ended = {
+        (event.workflow_id, event.timestamp)
+        for event in until
+        if event.event_type in {AuditEventType.WORKFLOW_TERMINATED, AuditEventType.WORKFLOW_CANCELLED}
+    }
+    ended_later = {
+        event.workflow_id
+        for event in events
+        if event.timestamp > at
+        and event.event_type in {AuditEventType.WORKFLOW_TERMINATED, AuditEventType.WORKFLOW_CANCELLED}
+        and (event.workflow_id, event.timestamp) not in ended
+    }
+    projected = project_runs(
+        until,
+        ended_later,
+        at,
+        names=names,
+        ui_address=settings.temporal_ui_address,
+        namespace=settings.temporal_namespace,
+        limit=limit,
+        filters=filters,
+    )
+    return View(
+        source=SourceName.AUDIT,
+        available=audit.available,
+        stale=audit.stale,
+        fetched_at=audit.fetched_at,
+        reason=audit.reason,
+        remedy=audit.remedy,
+        data=projected,
+    )
+
+
+def _as_of(audit: View[Any], at: datetime | None) -> View[Any]:
+    """The audit view holding only the events recorded up to ``at``."""
+    if at is None or audit.data is None:
+        return audit
+    return audit.model_copy(update={"data": events_until(audit.data, at)})
+
+
+def compose_topology(sot: View[Any]) -> View[Topology]:
+    """The topology from intent (spec 011 research R6). There is no audit-derived
+    fallback: links exist only in intent. A last good answer is shown as stale."""
+    return View(
+        source=SourceName.SOT,
+        available=sot.available,
+        stale=sot.stale,
+        fetched_at=sot.fetched_at,
+        reason=sot.reason,
+        remedy=sot.remedy,
+        data=project_topology(sot.data) if sot.data is not None else None,
+    )
+
+
 def _device_names(sot: View[Any], last_known: dict) -> dict:
     """Device names from the SoT's answer, or from its last good read in this process."""
     if sot.data:
-        return {state.device.id: state.device.name for state in sot.data}
+        return {device.id: device.name for device in intent_devices(sot.data)}
     return last_known
 
 
@@ -484,15 +574,27 @@ def create_app(
             )
         return use_case
 
+    def _check_at(at: datetime | None) -> None:
+        if at is not None and at > clock():
+            raise HTTPException(status_code=422, detail="`at` is later than now: there is no state to show yet")
+
     @router.get("/devices", response_model=DevicesResponse)
-    async def devices(requested: UseCaseQuery = None) -> DevicesResponse:
+    async def devices(requested: UseCaseQuery = None, at: AtQuery = None) -> DevicesResponse:
         served = _check_use_case(requested)
+        _check_at(at)
         audit, sot = await reader.read_all(SourceName.AUDIT, SourceName.SOT)
         return DevicesResponse(
             use_case=served,
             generated_at=clock(),
-            devices=compose_devices(audit, sot, sources.sot.names),
+            devices=compose_devices(_as_of(audit, at), sot, sources.sot.names),
         )
+
+    @router.get("/topology", response_model=TopologyResponse)
+    async def topology(requested: UseCaseQuery = None) -> TopologyResponse:
+        """The use case's devices and the links intent declares (spec 011)."""
+        served = _check_use_case(requested)
+        sot = await reader.read(SourceName.SOT)
+        return TopologyResponse(use_case=served, generated_at=clock(), topology=compose_topology(sot))
 
     @router.get("/runs", response_model=RunsResponse)
     async def runs(
@@ -500,8 +602,10 @@ def create_app(
         limit: Annotated[int, Query(ge=1, le=500)] = 50,
         workflow_type: Annotated[list[str] | None, Query(description="Repeatable.")] = None,
         device: Annotated[str | None, Query(description="A device name.")] = None,
+        at: AtQuery = None,
     ) -> RunsResponse:
         served = _check_use_case(requested)
+        _check_at(at)
         audit, temporal, sot = await reader.read_all(SourceName.AUDIT, SourceName.TEMPORAL, SourceName.SOT)
         runs_view, running_view = compose_runs(
             audit,
@@ -511,6 +615,7 @@ def create_app(
             clock(),
             limit=limit,
             filters=RunFilters(workflow_types=frozenset(workflow_type or ()), device=device),
+            at=at,
         )
         return RunsResponse(use_case=served, generated_at=clock(), runs=runs_view, running=running_view)
 

@@ -11,6 +11,7 @@ inserted well after its timestamp (research R3).
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Literal
@@ -23,6 +24,7 @@ from snapl_presentation.dashboard.models import (
     DeployOutcome,
     DeviceView,
     DriftState,
+    LinkEnd,
     Marker,
     Point,
     RepeatedRepairFailure,
@@ -30,7 +32,11 @@ from snapl_presentation.dashboard.models import (
     RunView,
     Series,
     SeriesName,
+    Topology,
+    TopologyLink,
+    TopologyNode,
     Trigger,
+    UnlinkedInterface,
 )
 from snapl_presentation.exceptions import first_line
 
@@ -45,6 +51,53 @@ if TYPE_CHECKING:
 UNDESIRED_NOTE = "Config on the device but not in intent is not removed automatically (#65)."
 
 _DEPLOY_TERMINAL = {AuditEventType.WORKFLOW_TERMINATED, AuditEventType.WORKFLOW_CANCELLED}
+
+
+# --- intent devices and their order (spec 011 research R6) ---------------------
+
+
+@dataclass(frozen=True)
+class IntentDevice:
+    """What the dashboard reads of a device in intent: who it is and its role.
+
+    The live Source of Truth supplies ``DesiredState``; an archive supplies only
+    this much (spec 011 research R13). The projections take either.
+    """
+
+    id: UUID
+    name: str
+    role: str
+
+
+def intent_devices(states: Sequence[DesiredState | IntentDevice]) -> list[IntentDevice]:
+    return [
+        s if isinstance(s, IntentDevice) else IntentDevice(s.device.id, s.device.name, s.device.role) for s in states
+    ]
+
+
+_ROLE_TIERS = {"spine": 0, "leaf": 1}
+_DIGITS = re.compile(r"(\d+)")
+
+
+def tier_key(role: str | None, name: str) -> tuple:
+    """Sort key: spines, then leaves, then other roles by name, then no role.
+
+    Inside a tier, names sort with their numbers compared as numbers, so
+    ``leaf-2`` comes before ``leaf-10``.
+    """
+    natural = tuple((0, int(part), "") if part.isdigit() else (1, 0, part) for part in _DIGITS.split(name) if part)
+    if role is None:
+        return (3, "", natural)
+    return (_ROLE_TIERS.get(role, 2), role if role not in _ROLE_TIERS else "", natural)
+
+
+def events_until(events: Sequence[AuditEvent], at: datetime) -> list[AuditEvent]:
+    """The events recorded at or before ``at``, in the order given.
+
+    A filter, not a slice: rows land after their timestamp (010 research R3),
+    so the sequence is not in time order.
+    """
+    return [event for event in events if event.timestamp <= at]
 
 
 def _device_id(event: AuditEvent) -> UUID | None:
@@ -124,7 +177,7 @@ def _deploy_outcome(event: AuditEvent | None) -> DeployOutcome | None:
 
 def project_devices(
     events: Sequence[AuditEvent],
-    states: Sequence[DesiredState] | None,
+    states: Sequence[DesiredState | IntentDevice] | None,
     names: Mapping[UUID, str],
 ) -> list[DeviceView]:
     """Each device's drift state, last scan and last deploy.
@@ -138,7 +191,7 @@ def project_devices(
             used to name devices in the degraded list.
 
     Returns:
-        The devices, spines first and then by name.
+        The devices, by role tier and then by name (``tier_key``).
     """
     last_scan: dict[UUID, AuditEvent] = {}
     last_deploy: dict[UUID, AuditEvent] = {}
@@ -155,7 +208,7 @@ def project_devices(
 
     devices: list[tuple[UUID, str, str | None, bool]]
     if states is not None:
-        devices = [(s.device.id, s.device.name, s.device.role, True) for s in states]
+        devices = [(device.id, device.name, device.role, True) for device in intent_devices(states)]
     else:
         devices = [(d, names.get(d, str(d)), None, d in names) for d in seen]
 
@@ -170,7 +223,65 @@ def project_devices(
         )
         for device_id, name, role, in_intent in devices
     ]
-    return sorted(views, key=lambda view: (view.role != "spine", view.name))
+    return sorted(views, key=lambda view: tier_key(view.role, view.name))
+
+
+# --- topology (spec 011 research R6) --------------------------------------------
+
+
+def project_topology(states: Sequence[DesiredState]) -> Topology:
+    """The use case's devices and the links their interfaces declare.
+
+    Links exist only in intent: each interface names its peer. A link is one
+    pair of ends. Where the two ends do not declare the same pair, each claim
+    is shown as it is, with ``agreed`` false, and nothing is corrected.
+    """
+    devices = {state.device.name for state in states}
+    # (end, end), ordered -> the device names that declared exactly this pair.
+    declared: dict[tuple[tuple[str, str], tuple[str, str]], set[str]] = {}
+    half: list[UnlinkedInterface] = []
+    unlinked: list[UnlinkedInterface] = []
+    for state in states:
+        name = state.device.name
+        for interface in state.interfaces:
+            if interface.peer_device is None:
+                continue
+            claim = UnlinkedInterface(
+                device=name,
+                interface=interface.name,
+                peer_device=interface.peer_device,
+                peer_interface=interface.peer_interface,
+            )
+            if interface.peer_device == name or interface.peer_device not in devices:
+                unlinked.append(claim)
+            elif interface.peer_interface is None:
+                half.append(claim)
+            else:
+                ends = sorted([(name, interface.name), (interface.peer_device, interface.peer_interface)])
+                declared.setdefault((ends[0], ends[1]), set()).add(name)
+
+    # A peer named without its interface is a link only if the peer declares it.
+    for claim in half:
+        end = (claim.device, claim.interface)
+        if not any(end in pair and claim.peer_device in {pair[0][0], pair[1][0]} for pair in declared):
+            unlinked.append(claim)
+
+    links = []
+    for (a, b), declarers in sorted(declared.items()):
+        both = declarers == {a[0], b[0]}
+        links.append(
+            TopologyLink(
+                a=LinkEnd(device=a[0], interface=a[1]),
+                b=LinkEnd(device=b[0], interface=b[1]),
+                declared_by="both" if both else ("a" if a[0] in declarers else "b"),
+                agreed=both,
+            )
+        )
+    nodes = sorted(
+        (TopologyNode(device_id=s.device.id, name=s.device.name, role=s.device.role) for s in states),
+        key=lambda node: tier_key(node.role, node.name),
+    )
+    return Topology(nodes=nodes, links=links, unlinked=sorted(unlinked, key=lambda u: (u.device, u.interface)))
 
 
 # --- runs (research R5) --------------------------------------------------------

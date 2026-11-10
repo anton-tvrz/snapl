@@ -20,7 +20,9 @@ from snapl_orchestrator.models import AuditEvent, AuditEventType, WorkflowReason
 from snapl_orchestrator.worker.client import RunningWorkflowInfo
 from snapl_presentation.dashboard.models import Bucket, DriftState, RunState, SeriesName, Trigger
 from snapl_presentation.dashboard.projections import (
+    IntentDevice,
     RunFilters,
+    intent_devices,
     latest_pause,
     project_devices,
     project_repeated_failures,
@@ -1081,3 +1083,31 @@ def test_empty_trail_has_no_first_event():
 
     assert series.first_event_at is None
     assert series.points == []
+
+
+# --- intent devices (spec 011 research R6) -----------------------------------------
+
+
+def test_devices_project_the_same_from_intent_device_records(states):
+    """Archive mode has names and roles but no DesiredState (spec 011 R13)."""
+    events = [
+        _scan(LEAF, T0, status="drifted", paths=["/a"], undesired=[]),
+        _deploy(SPINE, T0 + timedelta(seconds=1)),
+    ]
+    records = [IntentDevice(id=s.device.id, name=s.device.name, role=s.device.role) for s in states]
+
+    assert project_devices(events, records, {}) == project_devices(events, states, {})
+
+
+def test_intent_devices_takes_desired_states_and_records_alike(states):
+    records = intent_devices(states)
+
+    assert records == [IntentDevice(LEAF, "leaf-01", "leaf"), IntentDevice(SPINE, "spine-01", "spine")]
+    assert intent_devices(records) == records
+
+
+def test_devices_sort_by_role_tier_then_natural_name():
+    devices = [("leaf-10", "leaf"), ("leaf-2", "leaf"), ("spine-1", "spine")]
+    states = [_state(uuid4(), name, role) for name, role in devices]
+
+    assert [view.name for view in project_devices([], states, {})] == ["spine-1", "leaf-2", "leaf-10"]
