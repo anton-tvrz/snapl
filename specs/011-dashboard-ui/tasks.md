@@ -167,37 +167,37 @@ Each PR says `Closes` a task issue under #146 and carries `changelog/146.added.m
 
 ### Tests (write first, verify they fail)
 
-- [ ] T035 [P] [US1] packages/presentation/ui/src/lib/encoding.test.ts (research R17, SC-010):
+- [x] T035 [P] [US1] packages/presentation/ui/src/lib/encoding.test.ts (research R17, SC-010): *As built*: a `color.ts` module (WCAG contrast and OKLab distance under simulated deficiency) is tested on its own. The colour-vision check is stated as: every state differs from every other by shape and glyph, because the status green and red are about 4 apart under red-green deficiency (dev/skills/dashboard).
   - Each of the seven drift states has a colour token, a shape, an icon and a label, and no two states share both shape and icon.
   - Each state's mark colour has at least 3:1 contrast, and its text 4.5:1, against the light and the dark background.
   - Under simulated protanopia, deuteranopia and tritanopia, and in greyscale, any two states with the same shape differ by at least the colour distance set in the module.
   - An unknown state gets the neutral encoding, with its raw text as the label.
   - The same checks for the run-state and source-status tables.
-- [ ] T036 [P] [US1] packages/presentation/ui/src/lib/layout.test.ts, for `layoutTiers(nodes, links, size)`:
+- [x] T036 [P] [US1] packages/presentation/ui/src/lib/layout.test.ts, for `layoutTiers(nodes, links, size)`:
   - dcfabric: two tiers, spines above leaves, evenly spaced, in name order, with eight link paths between the right nodes.
   - The same input gives the same output, and a shuffled input gives the same output.
   - A role it does not know gets its own tier after the known ones. No two nodes share a position.
   - 33 nodes returns the "too many" result, with the count and the limit.
   - One node, and nodes with no links, are placed without error.
-- [ ] T037 [P] [US1] packages/presentation/ui/src/lib/paths.test.ts and activity.test.ts:
+- [x] T037 [P] [US1] packages/presentation/ui/src/lib/paths.test.ts and activity.test.ts:
   - `interfaceOf` on the fixture's two paths, on a path with no interface segment, and on an interface name containing `]`-free special characters such as `ethernet-1/1` and `lag1.0`.
   - `markedLinks(devices, links)`: spine-01's `ethernet-1/1` marks its link to leaf-01, and leaf-01's `ethernet-1/7` marks no link (research R8).
   - `activityFor(overview)`: a running deploy marks its device `active`. A run that ended 9 s before `generated_at` marks it `recent` with the outcome, and one that ended 11 s before does not. A fabric-wide run marks the fabric and no device.
-- [ ] T038 [P] [US1] packages/presentation/ui/src/lib/urlState.test.ts: parse and write `device`, `at`, `from`, `to` and `run`; ignore a malformed value without throwing; and write with `replaceState`, never `pushState`.
-- [ ] T039 [P] [US1] packages/presentation/ui/src/components/topology/Topology.test.tsx, on fixture responses saved from the Phase 1 routes:
+- [x] T038 [P] [US1] packages/presentation/ui/src/lib/urlState.test.ts: parse and write `device`, `at`, `from`, `to` and `run`; ignore a malformed value without throwing; and write with `replaceState`, never `pushState`.
+- [x] T039 [P] [US1] packages/presentation/ui/src/components/topology/Topology.test.tsx, on fixture responses saved from the Phase 1 routes: *As built*: the component tests render API responses captured from the real app on the demo arc (`src/test/fixtures/`), pinned by `tests/unit/test_presentation/test_ui_fixtures.py`.
   - Six device buttons and eight links, each device labelled with its name, role and state label.
   - The marked link carries its mark, and the legend lists only the states shown.
   - Activity renders a pulse class, and a static ring when reduced motion is requested (a stubbed `matchMedia`).
   - A device flagged for repeated failed repairs carries that mark.
   - With the topology view unavailable, the device list is shown with the reason and remedy. With 33 devices, the list is shown with the "too many" reason.
   - Devices are reachable in tier order with Tab, and Enter selects.
-- [ ] T040 [P] [US1] packages/presentation/ui/src/components/DeviceDrawer.test.tsx:
+- [x] T040 [P] [US1] packages/presentation/ui/src/components/DeviceDrawer.test.tsx:
   - A `missing` device lists its paths under "missing", and shows `snapl reconcile <name>` with the copy control.
   - An `undesired` device lists them under "undesired", shows the note that removal is not automatic, and shows no command.
   - An `error` device shows its error as text. A string such as `<img src=x onerror=alert(1)>` in an error or a path is rendered as text (assert no `img` element exists).
   - Last scan, last deploy outcome and reason, recent runs for the device, and any link disagreement from the topology are shown.
   - Escape closes it, and focus returns to the device's button.
-- [ ] T041 [US1] packages/presentation/ui/e2e/smoke.spec.ts and dev/scripts/serve_dashboard_fixtures.py (research R16):
+- [x] T041 [US1] packages/presentation/ui/e2e/smoke.spec.ts and dev/scripts/serve_dashboard_fixtures.py (research R16):
   - *Partly done in PR C*: the fixture server, the Playwright config, the CI step and a first spec (the policy, off-origin requests, the theme, `/plain`) exist. This task adds the topology assertions.
   - The script serves the real app on a free port: audit from `audit_demo_arc.sqlite`, intent from dcfabric's seed, the other sources unavailable, the clock fixed at the fixture's end.
   - The spec checks six devices in two tiers and eight links, leaf-01 labelled undesired, selecting leaf-01 opens the drawer with its path, and reloading the copied address reopens it.
@@ -206,10 +206,10 @@ Each PR says `Closes` a task issue under #146 and carries `changelog/146.added.m
 
 ### Implementation
 
-- [ ] T042 [US1] packages/presentation/ui/src/lib/encoding.ts, and dev/skills/dashboard/SKILL.md recording the rules of research R17 and pointing at the module.
-- [ ] T043 [US1] packages/presentation/ui/src/lib/layout.ts, paths.ts, activity.ts, urlState.ts.
-- [ ] T044 [US1] packages/presentation/ui/src/components/topology/Topology.tsx, Node.tsx, Link.tsx, Legend.tsx, DeviceList.tsx.
-- [ ] T045 [US1] packages/presentation/ui/src/components/DeviceDrawer.tsx, and App.tsx wiring: the overview every 5 s, the topology every 30 s, selection in the URL.
+- [x] T042 [US1] packages/presentation/ui/src/lib/encoding.ts, and dev/skills/dashboard/SKILL.md recording the rules of research R17 and pointing at the module.
+- [x] T043 [US1] packages/presentation/ui/src/lib/layout.ts, paths.ts, activity.ts, urlState.ts.
+- [x] T044 [US1] packages/presentation/ui/src/components/topology/Topology.tsx, Node.tsx, Link.tsx, Legend.tsx, DeviceList.tsx.
+- [x] T045 [US1] packages/presentation/ui/src/components/DeviceDrawer.tsx, and App.tsx wiring: the overview every 5 s, the topology every 30 s, selection in the URL. *As built*: also `src/lib/linkNotes.ts` (link disagreements in words, for the drawer). The page reads device states from `/overview`, not `/devices`, to save a request. Its test and code were written in the same step and not seen failing first.
 - [ ] T046 [US1] **Needs the lab**: quickstart item 1 (the demo arc on the topology, SC-001 and SC-002) and item 5 (a source down, SC-006).
 
 **Checkpoint**: the designed page replaces the device table. US1 is complete and demoable live.
