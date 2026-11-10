@@ -1,0 +1,128 @@
+{
+  "contract_version": "1",
+  "generated_at": "2026-11-07T21:20:48.919877Z",
+  "running": {
+    "available": false,
+    "data": null,
+    "fetched_at": null,
+    "reason": "the workflow engine has no history",
+    "remedy": "request this route without `at` to see what is running now",
+    "source": "temporal",
+    "stale": false
+  },
+  "runs": {
+    "available": true,
+    "data": [
+      {
+        "actor": null,
+        "duration_s": 1,
+        "ended_at": null,
+        "reason": null,
+        "started_at": "2026-11-07T21:20:14.123851Z",
+        "state": "running",
+        "target": "dcfabric",
+        "trigger": "operator",
+        "web_ui_url": "http://localhost:18034/namespaces/default/workflows/scan-drift-dcfabric-e9ad72a3-6448-4f39-8374-39c499b730a7",
+        "workflow_id": "scan-drift-dcfabric-e9ad72a3-6448-4f39-8374-39c499b730a7",
+        "workflow_type": "ScanDrift"
+      },
+      {
+        "actor": null,
+        "duration_s": 1,
+        "ended_at": "2026-11-07T21:20:13.770294Z",
+        "reason": null,
+        "started_at": "2026-11-07T21:20:12.623946Z",
+        "state": "succeeded",
+        "target": "dcfabric",
+        "trigger": "operator",
+        "web_ui_url": "http://localhost:18034/namespaces/default/workflows/scan-drift-dcfabric-12cfb1cd-59a3-4058-bdcf-128b3791d2e7",
+        "workflow_id": "scan-drift-dcfabric-12cfb1cd-59a3-4058-bdcf-128b3791d2e7",
+        "workflow_type": "ScanDrift"
+      },
+      {
+        "actor": null,
+        "duration_s": 0,
+        "ended_at": "2026-11-07T21:19:06.107470Z",
+        "reason": null,
+        "started_at": "2026-11-07T21:19:05.164383Z",
+        "state": "succeeded",
+        "target": "leaf-04",
+        "trigger": "operator",
+        "web_ui_url": "http://localhost:18034/namespaces/default/workflows/deploy-intent-18e29d6e-422b-a401-32d9-c5162961ffbe",
+        "workflow_id": "deploy-intent-18e29d6e-422b-a401-32d9-c5162961ffbe",
+        "workflow_type": "DeployIntent"
+      },
+      {
+        "actor": null,
+        "duration_s": 0,
+        "ended_at": "2026-11-07T21:19:04.444006Z",
+        "reason": null,
+        "started_at": "2026-11-07T21:19:03.517771Z",
+        "state": "succeeded",
+        "target": "leaf-03",
+        "trigger": "operator",
+        "web_ui_url": "http://localhost:18034/namespaces/default/workflows/deploy-intent-18e29d6e-3794-c788-32d5-c519c5f18e3a",
+        "workflow_id": "deploy-intent-18e29d6e-3794-c788-32d5-c519c5f18e3a",
+        "workflow_type": "DeployIntent"
+      },
+      {
+        "actor": null,
+        "duration_s": 0,
+        "ended_at": "2026-11-07T21:19:02.592607Z",
+        "reason": null,
+        "started_at": "2026-11-07T21:19:01.694875Z",
+        "state": "succeeded",
+        "target": "leaf-02",
+        "trigger": "operator",
+        "web_ui_url": "http://localhost:18034/namespaces/default/workflows/deploy-intent-18e29d6e-2e5b-c496-32da-c510ade043a0",
+        "workflow_id": "deploy-intent-18e29d6e-2e5b-c496-32da-c510ade043a0",
+        "workflow_type": "DeployIntent"
+      },
+      {
+        "actor": null,
+        "duration_s": 0,
+        "ended_at": "2026-11-07T21:19:00.859406Z",
+        "reason": null,
+        "started_at": "2026-11-07T21:18:59.944785Z",
+        "state": "succeeded",
+        "target": "leaf-01",
+        "trigger": "operator",
+        "web_ui_url": "http://localhost:18034/namespaces/default/workflows/deploy-intent-18e29d6e-246e-5cd1-32d2-c51d13d4de9e",
+        "workflow_id": "deploy-intent-18e29d6e-246e-5cd1-32d2-c51d13d4de9e",
+        "workflow_type": "DeployIntent"
+      },
+      {
+        "actor": null,
+        "duration_s": 1,
+        "ended_at": "2026-11-07T21:18:59.218795Z",
+        "reason": null,
+        "started_at": "2026-11-07T21:18:58.184022Z",
+        "state": "succeeded",
+        "target": "spine-02",
+        "trigger": "operator",
+        "web_ui_url": "http://localhost:18034/namespaces/default/workflows/deploy-intent-18e29d6e-1959-3451-32dc-c51d9065aa58",
+        "workflow_id": "deploy-intent-18e29d6e-1959-3451-32dc-c51d9065aa58",
+        "workflow_type": "DeployIntent"
+      },
+      {
+        "actor": null,
+        "duration_s": 1,
+        "ended_at": "2026-11-07T21:18:57.426209Z",
+        "reason": null,
+        "started_at": "2026-11-07T21:18:56.168004Z",
+        "state": "succeeded",
+        "target": "spine-01",
+        "trigger": "operator",
+        "web_ui_url": "http://localhost:18034/namespaces/default/workflows/deploy-intent-18e29d6d-e0c5-0ba7-32d1-c510fc3ef077",
+        "workflow_id": "deploy-intent-18e29d6d-e0c5-0ba7-32d1-c510fc3ef077",
+        "workflow_type": "DeployIntent"
+      }
+    ],
+    "fetched_at": "2026-11-07T21:20:48.919877Z",
+    "reason": null,
+    "remedy": null,
+    "source": "audit",
+    "stale": false
+  },
+  "use_case": "dcfabric"
+}

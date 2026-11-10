@@ -35,8 +35,15 @@ REQUESTS = {
     "topology.json": "/api/v1/topology",
     "devices.json": "/api/v1/devices",
     "timeline.json": "/api/v1/drift-timeline",
-    # Between the second and third scans of the arc: spine-01 still drifted.
-    "devices-at-scan-2.json": "/api/v1/devices?at=2026-11-07T21:20:16Z",
+    # The "as of" stops just after each scan of the arc: the latest point of the
+    # scan, rounded up to the next millisecond (the UI's lib/lanes.ts scanStops).
+    # spine-01 is drifted after scans 1 and 2 and in sync after scan 3.
+    "devices-at-scan-1.json": "/api/v1/devices?at=2026-11-07T21:20:13.666Z",
+    "devices-at-scan-2.json": "/api/v1/devices?at=2026-11-07T21:20:15.330Z",
+    "devices-at-scan-3.json": "/api/v1/devices?at=2026-11-07T21:20:18.853Z",
+    "runs-at-scan-2.json": "/api/v1/runs?at=2026-11-07T21:20:15.330Z",
+    # The headline as of scan 2: nothing repaired yet, two episodes open.
+    "timeline-at-scan-2.json": "/api/v1/drift-timeline?start=2026-11-06T21:20:48.919877Z&end=2026-11-07T21:20:15.330Z",
 }
 
 

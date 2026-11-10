@@ -67,6 +67,7 @@
   --color-ink: var(--ink);
   --color-muted: var(--muted);
   --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
   --color-ok: var(--ok);
   --color-warn: var(--warn);
   --color-bad: var(--bad);
@@ -115,4 +116,10 @@ body {
     animation: none !important;
     transition: none !important;
   }
+}
+
+/* A stretch of a lane with no scan: hatched, never the last known state. */
+.lane-no-data {
+  border: 1px solid var(--line);
+  background: repeating-linear-gradient(135deg, var(--line) 0 2px, transparent 2px 6px);
 }

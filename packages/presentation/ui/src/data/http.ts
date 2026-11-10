@@ -78,10 +78,10 @@ export class HttpProvider implements DataProvider {
       limit: query.limit,
     });
 
-  timeline = (range: Range) =>
+  timeline = (range?: Range) =>
     this.#get<Awaited<ReturnType<DataProvider["timeline"]>>>("drift-timeline", {
-      start: range.start.toISOString(),
-      end: range.end.toISOString(),
+      start: range?.start.toISOString(),
+      end: range?.end.toISOString(),
     });
 
   steps = (run: RunId) =>

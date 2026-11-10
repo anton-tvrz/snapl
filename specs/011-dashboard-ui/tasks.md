@@ -12,7 +12,7 @@
 - **PR B**: Phase 2 (contract, part two: timeline, steps, mode)
 - **PR C**: Phase 3 (UI foundation: toolchain, serving, CI)
 - **PR D**: Phase 4 (topology)
-- **PR E**: Phase 5 (the story: lanes, "as of", headline, loop strip)
+- **PR E**: Phase 5 (the story: lanes, "as of", headline, loop strip). Split in two at US3 to keep each under the size limit: **E1** is US2 (T047 to T049, T051's replay steps, T052 to T054), **E2** is the loop strip (T050, T055, T051's deploy step).
 - **PR F**: Phase 6 (panels)
 - **PR G**: Phase 7 (archive mode)
 - **PR H**: Phase 8 (snapshot)
@@ -222,20 +222,21 @@ Each PR says `Closes` a task issue under #146 and carries `changelog/146.added.m
 
 ### Tests (write first, verify they fail)
 
-- [ ] T047 [P] [US2] packages/presentation/ui/src/lib/lanes.test.ts and time.test.ts:
+- [x] T047 [P] [US2] packages/presentation/ui/src/lib/lanes.test.ts and time.test.ts:
   - `segments(points, range, now)`: a state is drawn from its scan to the next scan; a gap longer than 15 minutes draws 15 minutes of the state and then no data; the last point is held to `now` for at most 15 minutes; an error point draws an error segment.
   - `stateAt(points, t)`: the last point at or before `t`, `never_scanned` before the first, and no data when the last point is more than 15 minutes before `t`.
   - Time helpers: ages relative to a given now (never the wall clock directly), UTC and local labels, and a duration in words ("47 s", "3 min 12 s").
-- [ ] T048 [P] [US2] packages/presentation/ui/src/components/timeline/Lanes.test.tsx, Scrubber.test.tsx and Headline.test.tsx, on the fixture's timeline response:
+- [x] T048 [P] [US2] packages/presentation/ui/src/components/timeline/Lanes.test.tsx, Scrubber.test.tsx and Headline.test.tsx, on the fixture's timeline response:
   - Six lanes in tier order, spine-01 showing drifted then in sync, leaf-01 undesired throughout, and the reconcile marker between scans 2 and 3.
   - The scrubber moves with the pointer and with the arrow keys (one scan per press, Home and End for the range's ends), reports its value as text for assistive technology, and writes `at` to the URL.
   - "Return to now" clears `at`.
   - The headline shows spine-01's duration and "repaired by an operator's reconcile", never the words "detect" or "detection". With `latest_closed: null` it says no drift has been repaired yet. It shows the open count.
   - An episode with `closed_by: null` reads "repaired outside snapl, or intent changed (unknown)".
   - A `422` for too long a range shows the server's message and keeps the previous lanes.
-- [ ] T049 [P] [US2] packages/presentation/ui/src/App.past.test.tsx:
+- [x] T049 [P] [US2] packages/presentation/ui/src/App.past.test.tsx:
   - With `at` set, the provider is asked for `devices(at)` and `runs({at})`, the topology shows that state, and a banner states the past time with the return control.
   - The schedule, worker, CI and running views show "shows only the present", and the topology says its devices and links are today's.
+  - *PR E1*: the schedule, worker, CI and running panels arrive in Phase 6, so E1 checks the sources strip and the topology note. Phase 6's panel tests carry the rest (T058 below).
   - The past views are not polled every 5 s. They refetch when `at` changes and once a minute.
 - [ ] T050 [P] [US3] packages/presentation/ui/src/components/LoopStrip.test.tsx:
   - Six blocks in loop order. For a successful fixture deploy, four `done` with times, Orchestrator `done`, Presentation as "you are here".
@@ -245,12 +246,13 @@ Each PR says `Closes` a task issue under #146 and carries `changelog/146.added.m
   - An unknown block or status from the server is shown by its raw text.
   - Each status differs by icon as well as colour.
 - [ ] T051 [US2] Extend packages/presentation/ui/e2e/smoke.spec.ts: move the scrubber to between scans 1 and 3 and check spine-01 is drawn as missing with the past-time banner; return to now and check it is in sync; select the reconcile's deploy and check four blocks done.
+  - *PR E1*: the replay and return steps are in. The deploy step lands with the loop strip in PR E2.
 
 ### Implementation
 
-- [ ] T052 [US2] packages/presentation/ui/src/lib/lanes.ts, time.ts, episodes.ts (headline wording from an episode).
-- [ ] T053 [US2] packages/presentation/ui/src/components/timeline/Lanes.tsx, Scrubber.tsx, Headline.tsx.
-- [ ] T054 [US2] App.tsx: the "as of" state, the past-time banner, present-only labels through `ViewFrame`, and the refetch rules of research R11.
+- [x] T052 [US2] packages/presentation/ui/src/lib/lanes.ts, time.ts, episodes.ts (headline wording from an episode).
+- [x] T053 [US2] packages/presentation/ui/src/components/timeline/Lanes.tsx, Scrubber.tsx, Headline.tsx.
+- [x] T054 [US2] App.tsx: the "as of" state, the past-time banner, present-only labels through `ViewFrame`, and the refetch rules of research R11.
 - [ ] T055 [US3] packages/presentation/ui/src/components/LoopStrip.tsx, shown for the latest run and for a run selected in the drawer or the lanes' markers.
 - [ ] T056 [US2] **Needs the lab**: quickstart items 2 and 3 (replay and the headline against `snapl audit`).
 - [ ] T057 [US3] **Needs the lab**: quickstart item 4. Capture a failed deploy, replace the hand-built failed-deploy events in tests/unit/test_presentation/test_dashboard_steps.py with the captured rows, and update tests/unit/test_presentation/fixtures/README.md.
@@ -268,6 +270,7 @@ Each PR says `Closes` a task issue under #146 and carries `changelog/146.added.m
 - [ ] T058 [P] [US4] packages/presentation/ui/src/components/panels/Schedule.test.tsx and Runs.test.tsx, on 010's fixtures:
   - Schedule: mode, interval, last and next run; paused with reason and actor and no next run; no schedule with the create command; repeated failed repairs with the device, the count and the report-mode command; worker pollers, and "no worker" when zero.
   - Runs: type, target, start, duration, outcome, reason, trigger, actor when recorded, and the Temporal link opening in a new tab with `rel="noreferrer"`. Running runs first with elapsed time. A device filter from the URL. An unknown run state by raw text.
+  - *Moved from T049 (PR E1)*: with `at` set, the schedule, worker, CI and running panels say they show only the present (`ViewFrame presentOnly`), and the runs panel shows `runs({at})`.
 - [ ] T059 [P] [US4] packages/presentation/ui/src/components/panels/Undesired.test.tsx, Ci.test.tsx, LabEvidence.test.tsx and Links.test.tsx:
   - Undesired: every undesired path across the fabric grouped by device, the note that removal is not automatic (#65), and no command. Empty state when there is none.
   - CI: `main` first, each PR's gate and jobs with links, the failed job named, coverage or "none reported", `omitted_prs` with the token remedy.
