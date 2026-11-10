@@ -42,3 +42,6 @@ export type DeviceLane = Schemas["DeviceLane"];
 export type ScanPoint = Schemas["ScanPoint"];
 export type DriftEpisode = Schemas["DriftEpisode"];
 export type Marker = Schemas["Marker"];
+export type RunSteps = Schemas["RunSteps"];
+export type RunStep = Schemas["RunStep"];
+export type BlockState = Schemas["BlockState"];

@@ -1,4 +1,5 @@
 import type { DeviceLane, DriftTimeline, Marker } from "../../api/types";
+import type { RunId } from "../../data/provider";
 import { driftEncoding, TONES } from "../../lib/encoding";
 import { NO_DATA, pointTime, type Range, type Segment, segments } from "../../lib/lanes";
 import { utcText } from "../../lib/time";
@@ -15,6 +16,8 @@ interface Props {
   cursor?: Date;
   /** Why the last refresh was refused. The lanes already drawn stay. */
   error?: Error | null;
+  /** Shows a marker's run as the loop. Without it, markers are not buttons. */
+  onSelectRun?: (run: RunId) => void;
 }
 
 /** The width of the name column, shared with the scrubber so their times line up. */
@@ -123,7 +126,8 @@ function Lane({ lane, domain, now }: { lane: DeviceLane; domain: Range; now: Dat
  * mark, held until the next scan for at most 15 minutes, stretches with no scan
  * as no data, and the runs that repair drift as markers.
  */
-export function Lanes({ timeline, domain, now, cursor, error }: Props) {
+export function Lanes({ timeline, domain, now, cursor, error, onSelectRun }: Props) {
+  const Tag = onSelectRun ? "button" : "span";
   return (
     <div>
       {error && (
@@ -154,20 +158,24 @@ export function Lanes({ timeline, domain, now, cursor, error }: Props) {
               <ul aria-label="Repair runs">
                 {timeline.markers.map((marker) => {
                   const kind = MARKERS[marker.kind];
+                  const label = markerLabel(marker, domain);
                   return (
                     <li
                       key={`${marker.workflow_id}@${marker.t}`}
-                      aria-label={markerLabel(marker, domain)}
-                      title={markerLabel(marker, domain)}
+                      title={label}
                       className="absolute -top-5 bottom-0 w-0 border-l border-dashed border-line-strong"
                       style={{ left: `${position(domain, pointTime(marker.t))}%` }}
                     >
-                      <span
-                        aria-hidden="true"
-                        className="absolute -top-0.5 -translate-x-1/2 rounded border border-line-strong bg-surface px-1 text-[10px] leading-4 font-semibold"
+                      <Tag
+                        {...(onSelectRun && {
+                          type: "button" as const,
+                          onClick: () => onSelectRun({ workflow_id: marker.workflow_id, started_at: marker.t }),
+                        })}
+                        className="pointer-events-auto absolute -top-0.5 -translate-x-1/2 rounded border border-line-strong bg-surface px-1 text-[10px] leading-4 font-semibold"
                       >
-                        {kind?.tag ?? "?"}
-                      </span>
+                        <span aria-hidden="true">{kind?.tag ?? "?"}</span>
+                        <span className="sr-only">{label}</span>
+                      </Tag>
                     </li>
                   );
                 })}

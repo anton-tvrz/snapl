@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useId } from "react";
 
 import { sourceLabel } from "../api/open";
 import type { View } from "../api/types";
@@ -13,6 +13,8 @@ interface Props {
   now: Date;
   /** True when a past time is shown and this view's source keeps no history. */
   presentOnly?: boolean;
+  /** Why the last request failed. Shown in place of "Loading…" before any answer. */
+  error?: Error | null;
   children: ReactNode;
 }
 
@@ -21,14 +23,17 @@ interface Props {
  * when its source is down it gives the reason and the command that fixes it
  * (010 FR-005, FR-030, FR-031). Stale data is shown, labelled with its age.
  */
-export function ViewFrame({ title, view, now, presentOnly = false, children }: Props) {
+export function ViewFrame({ title, view, now, presentOnly = false, error, children }: Props) {
   const showContent = view !== undefined && (view.available || (view.stale === true && view.data != null));
   const age = ageText(view?.fetched_at, now);
+  const heading = useId();
 
   return (
-    <section className="rounded-lg border border-line bg-surface p-4">
+    <section aria-labelledby={heading} className="rounded-lg border border-line bg-surface p-4">
       <header className="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <h2 className="text-sm font-semibold">{title}</h2>
+        <h2 id={heading} className="text-sm font-semibold">
+          {title}
+        </h2>
         {view !== undefined && (
           <p className="text-xs text-muted">
             {sourceLabel(view.source)} · {age}
@@ -36,7 +41,14 @@ export function ViewFrame({ title, view, now, presentOnly = false, children }: P
         )}
       </header>
 
-      {view === undefined && <p className="text-sm text-muted">Loading…</p>}
+      {view === undefined &&
+        (error ? (
+          <p role="alert" className="text-sm break-words">
+            {error.message}
+          </p>
+        ) : (
+          <p className="text-sm text-muted">Loading…</p>
+        ))}
 
       {view !== undefined && !view.available && (
         <div className="mb-3 rounded border border-warn-line bg-warn-surface p-3 text-sm">

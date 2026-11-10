@@ -1,5 +1,6 @@
 import { render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "../../data/http";
 import { domainOf } from "../../lib/lanes";
@@ -58,9 +59,21 @@ describe("Lanes", () => {
     const marker = within(screen.getByRole("list", { name: "Repair runs" })).getByRole("listitem");
     const scans = lanes()[0]!.querySelectorAll("[data-scan]");
 
-    expect(marker).toHaveAccessibleName("Reconcile, started by an operator at 21:20:15 UTC");
+    expect(marker).toHaveTextContent("Reconcile, started by an operator at 21:20:15 UTC");
     expect(left(marker)).toBeGreaterThan(left(scans[1]!));
     expect(left(marker)).toBeLessThan(left(scans[2]!));
+  });
+
+  it("shows a marker's run as the loop when it is chosen", async () => {
+    const onSelectRun = vi.fn();
+    render(<Lanes timeline={timeline} domain={domain} now={NOW} onSelectRun={onSelectRun} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Reconcile, started by an operator at 21:20:15 UTC" }));
+
+    expect(onSelectRun).toHaveBeenCalledWith({
+      workflow_id: "reconcile-217b6000-0e6c-4919-81d9-9f6a1075cd1d",
+      started_at: "2026-11-07T21:20:15.472996Z",
+    });
   });
 
   it("draws the cursor at the shown time", () => {

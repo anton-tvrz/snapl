@@ -16,6 +16,23 @@ function frame(view: View<unknown> | undefined) {
 }
 
 describe("ViewFrame", () => {
+  it("says why it has nothing to show when its first request failed", () => {
+    render(
+      <ViewFrame title="Schedule" view={undefined} now={NOW} error={new Error("the dashboard server answered 500")}>
+        <p>the schedule itself</p>
+      </ViewFrame>,
+    );
+
+    expect(screen.getByRole("alert")).toHaveTextContent("the dashboard server answered 500");
+    expect(screen.queryByText("Loading…")).not.toBeInTheDocument();
+  });
+
+  it("is a region named by its title", () => {
+    frame({ ...base, available: true, data: {} });
+
+    expect(screen.getByRole("region", { name: "Schedule" })).toBeInTheDocument();
+  });
+
   it("shows its content with where the data came from and how old it is", () => {
     frame({ ...base, available: true, data: {} });
 

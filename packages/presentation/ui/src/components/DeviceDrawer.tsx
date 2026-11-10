@@ -1,8 +1,9 @@
 import { useEffect, useRef } from "react";
 
 import type { DeviceView, RunView } from "../api/types";
+import type { RunId } from "../data/provider";
 import { driftEncoding, runEncoding } from "../lib/encoding";
-import { ageText } from "../lib/time";
+import { ageText, utcText } from "../lib/time";
 import { Command } from "./Command";
 import { StateMark } from "./topology/StateMark";
 
@@ -16,6 +17,10 @@ interface Props {
   onClose: () => void;
   /** False in a recording, where the viewer cannot act on the fabric. */
   copy?: boolean;
+  /** Shows a run as the loop. Without it, the runs are not buttons. */
+  onSelectRun?: (run: RunId) => void;
+  /** The run the loop shows, if one was chosen. */
+  selectedRun?: RunId;
 }
 
 function Paths({ title, paths }: { title: string; paths: readonly string[] }) {
@@ -41,7 +46,7 @@ function Paths({ title, paths }: { title: string; paths: readonly string[] }) {
  * was last scanned and deployed, its recent runs, and the command that would
  * reconcile it. Everything recorded from the device is rendered as text.
  */
-export function DeviceDrawer({ device, runs, linkNotes, now, onClose, copy = true }: Props) {
+export function DeviceDrawer({ device, runs, linkNotes, now, onClose, copy = true, onSelectRun, selectedRun }: Props) {
   const encoding = driftEncoding(device.drift_state);
   const close = useRef<HTMLButtonElement>(null);
   const own = runs.filter((run) => run.target === device.name);
@@ -131,6 +136,19 @@ export function DeviceDrawer({ device, runs, linkNotes, now, onClose, copy = tru
                   <span className="ml-auto text-xs text-muted">
                     {run.trigger} · {ageText(run.started_at, now)}
                   </span>
+                  {onSelectRun && (
+                    <button
+                      type="button"
+                      aria-pressed={
+                        selectedRun?.workflow_id === run.workflow_id && selectedRun.started_at === run.started_at
+                      }
+                      aria-label={`Show the loop for ${run.workflow_type} started ${utcText(new Date(run.started_at))}`}
+                      onClick={() => onSelectRun({ workflow_id: run.workflow_id, started_at: run.started_at })}
+                      className="rounded border border-line px-1.5 text-xs aria-pressed:border-ink aria-pressed:font-semibold"
+                    >
+                      Loop
+                    </button>
+                  )}
                 </li>
               );
             })}

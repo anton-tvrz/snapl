@@ -44,6 +44,12 @@ REQUESTS = {
     "runs-at-scan-2.json": "/api/v1/runs?at=2026-11-07T21:20:15.330Z",
     # The headline as of scan 2: nothing repaired yet, two episodes open.
     "timeline-at-scan-2.json": "/api/v1/drift-timeline?start=2026-11-06T21:20:48.919877Z&end=2026-11-07T21:20:15.330Z",
+    # The loop strip: the reconcile's deploy of spine-01 (every step recorded)
+    # and the reconcile itself (its steps are not recorded one by one).
+    "steps-deploy.json": "/api/v1/runs/steps?workflow_id=deploy-intent-18e29d6d-e0c5-0ba7-32d1-c510fc3ef077"
+    "&started_at=2026-11-07T21:20:15.648265Z",
+    "steps-reconcile.json": "/api/v1/runs/steps?workflow_id=reconcile-217b6000-0e6c-4919-81d9-9f6a1075cd1d"
+    "&started_at=2026-11-07T21:20:15.472996Z",
 }
 
 

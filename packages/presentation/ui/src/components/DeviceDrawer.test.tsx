@@ -93,6 +93,35 @@ describe("DeviceDrawer", () => {
     expect(items[0]).toHaveTextContent("Succeeded");
   });
 
+  it("lets each run be chosen to show its loop, and marks the one shown", async () => {
+    const onSelectRun = vi.fn();
+    open({
+      device: device("spine-01"),
+      onSelectRun,
+      selectedRun: { workflow_id: "deploy-intent-18e29d6d-e0c5-0ba7-32d1-c510fc3ef077", started_at: "2026-11-07T21:18:56.168004Z" },
+    });
+    const list = screen.getByRole("list", { name: "Recent runs for spine-01" });
+    const buttons = within(list).getAllByRole("button", { name: /^Show the loop for DeployIntent started/ });
+
+    expect(buttons).toHaveLength(2);
+    expect(buttons[0]).toHaveAccessibleName("Show the loop for DeployIntent started 2026-11-07 21:20:15 UTC");
+    expect(buttons[0]).toHaveAttribute("aria-pressed", "false");
+    expect(buttons[1]).toHaveAttribute("aria-pressed", "true");
+
+    await userEvent.click(buttons[0]!);
+
+    expect(onSelectRun).toHaveBeenCalledWith({
+      workflow_id: "deploy-intent-18e29d6d-e0c5-0ba7-32d1-c510fc3ef077",
+      started_at: "2026-11-07T21:20:15.648265Z",
+    });
+  });
+
+  it("offers no loop where nothing can show one", () => {
+    open({ device: device("spine-01") });
+
+    expect(screen.queryByRole("button", { name: /^Show the loop/ })).not.toBeInTheDocument();
+  });
+
   it("says so when the audit trail holds no run for the device", () => {
     open({ runs: [] });
 

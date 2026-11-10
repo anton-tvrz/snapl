@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { DeviceView, TopologyNode } from "./api/types";
 import { Command } from "./components/Command";
 import { DeviceDrawer } from "./components/DeviceDrawer";
+import { LoopStrip } from "./components/LoopStrip";
 import { Shell } from "./components/Shell";
 import { SourceStrip } from "./components/SourceStrip";
 import { Headline } from "./components/timeline/Headline";
@@ -11,7 +12,7 @@ import { Scrubber } from "./components/timeline/Scrubber";
 import { DeviceList } from "./components/topology/DeviceList";
 import { Topology } from "./components/topology/Topology";
 import { ViewFrame } from "./components/ViewFrame";
-import type { DataProvider } from "./data/provider";
+import type { DataProvider, RunId } from "./data/provider";
 import { usePolling } from "./data/usePolling";
 import { activityFor } from "./lib/activity";
 import { domainOf, scanStops } from "./lib/lanes";
@@ -46,6 +47,7 @@ export function App({ provider }: Props) {
   const [initial] = useState(() => parseUrlState(location.search));
   const [selected, setSelected] = useState<string | undefined>(initial.device);
   const [at, setAt] = useState<Date | undefined>(initial.at);
+  const [chosenRun, setChosenRun] = useState<RunId | undefined>(initial.run);
   const range = initial.from && initial.to ? { start: initial.from, end: initial.to } : undefined;
 
   const mode = usePolling(provider.mode, null);
@@ -73,11 +75,12 @@ export function App({ provider }: Props) {
   );
 
   useEffect(() => {
-    writeUrlState({ ...parseUrlState(location.search), device: selected, at });
-  }, [selected, at]);
+    writeUrlState({ ...parseUrlState(location.search), device: selected, at, run: chosenRun });
+  }, [selected, at, chosenRun]);
 
   const onSelect = useCallback((name: string) => setSelected((current) => (current === name ? undefined : name)), []);
   const onClose = useCallback(() => setSelected(undefined), []);
+  const onSelectRun = useCallback((run: RunId) => setChosenRun(run), []);
 
   // The page's clock is the server's: the wall clock when live, the archive's
   // creation time otherwise. Nothing is dated by the browser's clock.
@@ -116,6 +119,20 @@ export function App({ provider }: Props) {
         : new Map((overview.data?.schedule.data?.repeated_failures ?? []).map((f) => [f.name, f.consecutive_failures])),
     [at, overview.data],
   );
+
+  // The loop strip shows the chosen run, or the latest run as of the time shown.
+  // A run still going is asked again every 5 s; a finished one never changes.
+  const latest = runs[0];
+  const loopRun = chosenRun ?? (latest && { workflow_id: latest.workflow_id, started_at: latest.started_at });
+  const loopRunning = runs.some(
+    (run) => run.workflow_id === loopRun?.workflow_id && run.started_at === loopRun.started_at && run.state === "running",
+  );
+  const steps = usePolling(
+    () => provider.steps(loopRun ?? { workflow_id: "", started_at: "" }),
+    loopRunning ? OVERVIEW_MS : null,
+    loopRun ? `${loopRun.workflow_id}@${loopRun.started_at}|${loopRunning}` : null,
+  );
+  const loop = steps.data?.steps;
 
   const domain = useMemo(() => (lanesData ? domainOf(lanesData) : undefined), [lanesData]);
   const stops = useMemo(() => (lanesData ? scanStops(lanesData.lanes) : []), [lanesData]);
@@ -198,25 +215,53 @@ export function App({ provider }: Props) {
             linkNotes={graph?.data ? linkNotes(graph.data, open.name) : []}
             now={shown}
             onClose={onClose}
+            onSelectRun={onSelectRun}
+            selectedRun={chosenRun}
           />
         )}
       </div>
 
+      {loopRun && (
+        <div className="mt-4">
+          <ViewFrame title="The loop" view={loop} now={now} error={steps.error}>
+            <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
+              <span>{chosenRun ? "Chosen run" : at ? "Latest run as of the time shown" : "Latest run"}</span>
+              {chosenRun && (
+                <button
+                  type="button"
+                  onClick={() => setChosenRun(undefined)}
+                  className="rounded border border-line px-2 py-0.5 text-ink"
+                >
+                  Show the latest run
+                </button>
+              )}
+            </div>
+            {loop?.data ? (
+              <LoopStrip steps={loop.data} />
+            ) : (
+              <p className="text-sm text-muted">The audit trail holds no record of this run.</p>
+            )}
+          </ViewFrame>
+        </div>
+      )}
+
       <div className="mt-4">
-        <ViewFrame title="Drift over time" view={lanes} now={now}>
+        <ViewFrame title="Drift over time" view={lanes} now={now} error={timeline.error}>
           {told && <Headline timeline={told} asOf={shown} />}
           {lanesData && domain && (
             <>
-              <Lanes timeline={lanesData} domain={domain} now={now} cursor={at} error={timeline.error} />
+              <Lanes
+                timeline={lanesData}
+                domain={domain}
+                now={now}
+                cursor={at}
+                error={timeline.error}
+                onSelectRun={onSelectRun}
+              />
               {lanesData.lanes.length > 0 && <Scrubber domain={domain} stops={stops} value={at} onChange={setAt} />}
             </>
           )}
         </ViewFrame>
-        {!lanes && timeline.error && (
-          <p role="alert" className="mt-2 text-sm break-words">
-            {timeline.error.message}
-          </p>
-        )}
       </div>
 
       <section aria-label="Sources">
