@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { ApiError } from "./data/http";
 import type { DataProvider } from "./data/provider";
-import { LINKS, MODE, OVERVIEW, OVERVIEW_UP, SOURCES, STEPS_DEPLOY, TIMELINE, TOPOLOGY } from "./test/fixtures";
+import { LINKS, METRICS, MODE, NOW, OVERVIEW, OVERVIEW_UP, SOURCES, STEPS_DEPLOY, TIMELINE, TOPOLOGY } from "./test/fixtures";
 
 function provider(overrides: Partial<DataProvider> = {}): DataProvider {
   const unused = async () => {
@@ -21,7 +21,7 @@ function provider(overrides: Partial<DataProvider> = {}): DataProvider {
     runs: unused,
     timeline: async () => TIMELINE,
     steps: async () => STEPS_DEPLOY,
-    metrics: unused,
+    metrics: async (view: keyof typeof METRICS) => METRICS[view],
     ...overrides,
   } as DataProvider;
 }
@@ -272,5 +272,49 @@ describe("App", () => {
     });
 
     expect(links).toHaveBeenCalledTimes(1);
+  });
+
+  it("has a panel for each metrics view", async () => {
+    render(<App provider={provider()} />);
+
+    for (const title of ["Workflow duration (95th percentile)", "Worker up", "Dashboard sources up"]) {
+      expect(await screen.findByRole("region", { name: title })).toBeInTheDocument();
+    }
+    expect(await screen.findByRole("table", { name: "Worker up: latest values" })).toHaveTextContent("up");
+  });
+
+  it("asks the lanes and the metrics for a chosen range, and keeps it in the address", async () => {
+    const timeline = vi.fn(async () => TIMELINE);
+    const metrics = vi.fn(async (view: keyof typeof METRICS) => METRICS[view]);
+    render(<App provider={provider({ timeline, metrics })} />);
+    await screen.findByRole("region", { name: "Worker up" });
+
+    await userEvent.click(screen.getByRole("button", { name: "24 h" }));
+
+    const range = { start: new Date(NOW.getTime() - 86_400_000), end: NOW };
+    expect(timeline).toHaveBeenLastCalledWith(range);
+    expect(metrics).toHaveBeenLastCalledWith("source-health", range);
+    const params = new URLSearchParams(location.search);
+    expect(params.get("from")).toBe(range.start.toISOString());
+    expect(params.get("to")).toBe(NOW.toISOString());
+
+    await userEvent.click(screen.getByRole("button", { name: "Follow now" }));
+
+    expect(timeline).toHaveBeenLastCalledWith(undefined);
+    expect(new URLSearchParams(location.search).has("from")).toBe(false);
+  });
+
+  it("reads the metrics every 30 s", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const metrics = vi.fn(async (view: keyof typeof METRICS) => METRICS[view]);
+    render(<App provider={provider({ metrics })} />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+
+    expect(metrics).toHaveBeenCalledTimes(12);
   });
 });

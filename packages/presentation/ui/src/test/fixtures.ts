@@ -5,6 +5,8 @@ import type {
   DevicesResponse,
   DriftTimelineResponse,
   LinksResponse,
+  MetricsResponse,
+  MetricsViewName,
   ModeResponse,
   Overview,
   RunStepsResponse,
@@ -26,6 +28,12 @@ import stepsReconcile from "./fixtures/steps-reconcile.json";
 import timelineAtScan2 from "./fixtures/timeline-at-scan-2.json";
 import timeline from "./fixtures/timeline.json";
 import overviewUp from "./fixtures/up/overview.json";
+import metricsWorkflowDuration from "./fixtures/up/metrics-workflow-duration.json";
+import metricsGnmiDuration from "./fixtures/up/metrics-gnmi-duration.json";
+import metricsGnmiErrors from "./fixtures/up/metrics-gnmi-errors.json";
+import metricsWorkerLag from "./fixtures/up/metrics-worker-lag.json";
+import metricsWorkerUp from "./fixtures/up/metrics-worker-up.json";
+import metricsSourceHealth from "./fixtures/up/metrics-source-health.json";
 import topology from "./fixtures/topology.json";
 
 export const MODE = mode as unknown as ModeResponse;
@@ -34,6 +42,15 @@ export const LINKS = links as unknown as LinksResponse;
 export const OVERVIEW = overview as unknown as Overview;
 /** The same arc with the other sources up: an active schedule, one worker, a scan running. */
 export const OVERVIEW_UP = overviewUp as unknown as Overview;
+/** Each metrics view over the hour before NOW, from the server with Prometheus up. */
+export const METRICS: Record<MetricsViewName, MetricsResponse> = {
+  "workflow-duration": metricsWorkflowDuration as unknown as MetricsResponse,
+  "gnmi-duration": metricsGnmiDuration as unknown as MetricsResponse,
+  "gnmi-errors": metricsGnmiErrors as unknown as MetricsResponse,
+  "worker-lag": metricsWorkerLag as unknown as MetricsResponse,
+  "worker-up": metricsWorkerUp as unknown as MetricsResponse,
+  "source-health": metricsSourceHealth as unknown as MetricsResponse,
+};
 export const TOPOLOGY = topology as unknown as TopologyResponse;
 export const DEVICES = devices as unknown as DevicesResponse;
 export const DEVICES_AT_SCAN_1 = devicesAtScan1 as unknown as DevicesResponse;

@@ -52,3 +52,5 @@ export type CiStatus = Schemas["CiStatus"];
 export type CiTarget = Schemas["CiTarget"];
 export type LabEvidence = Schemas["LabEvidence"];
 export type LabRun = Schemas["LabRun"];
+export type MetricsData = Schemas["MetricsData"];
+export type MetricSeries = Schemas["MetricSeries"];

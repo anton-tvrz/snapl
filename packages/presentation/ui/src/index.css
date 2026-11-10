@@ -19,6 +19,13 @@
   --bad: #b3261e;
   --warn-surface: #fdf4e3;
   --warn-line: #e6c88a;
+  /* Metrics series, in fixed order (dataviz reference palette, validated on --surface). */
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+  --series-6: #008300;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -36,6 +43,12 @@
     --bad: #f2867f;
     --warn-surface: #2b2414;
     --warn-line: #6b5420;
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --series-5: #d55181;
+    --series-6: #008300;
   }
 }
 
@@ -53,6 +66,12 @@
   --bad: #f2867f;
   --warn-surface: #2b2414;
   --warn-line: #6b5420;
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+  --series-6: #008300;
 }
 
 :root[data-theme="light"] {

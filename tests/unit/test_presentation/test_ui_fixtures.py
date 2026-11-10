@@ -58,6 +58,12 @@ REQUESTS = {
 # main and two PRs, and lab runs of both suites.
 UP_REQUESTS = {
     "up/overview.json": "/api/v1/overview",
+    "up/sources.json": "/api/v1/sources",
+    # Each metrics view over the server's default range: the hour before NOW.
+    **{
+        f"up/metrics-{view}.json": f"/api/v1/metrics/{view}"
+        for view in ("workflow-duration", "gnmi-duration", "gnmi-errors", "worker-lag", "worker-up", "source-health")
+    },
 }
 
 
@@ -117,6 +123,10 @@ def test_the_up_server_has_temporal_up_and_the_default_server_does_not(client: T
     assert [run["workflow_type"] for run in up["running"]["data"]] == ["ScanDrift"]
     assert [target["kind"] for target in up["ci"]["data"]["targets"]] == ["main", "pull_request", "pull_request"]
     assert set(up["lab"]["data"]["latest"]) == {"e2e", "integration"}
+    metrics = client_up.get("/api/v1/metrics/workflow-duration").json()["metrics"]
+    assert metrics["available"] is True
+    assert {series["labels"]["workflow_type"] for series in metrics["data"]["series"]} == {"DeployIntent", "ScanDrift"}
+    assert client.get("/api/v1/metrics/workflow-duration").json()["metrics"]["available"] is False
 
 
 def test_fixture_answers_are_the_same_on_every_run(client: TestClient):

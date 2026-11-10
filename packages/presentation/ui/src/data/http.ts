@@ -90,9 +90,9 @@ export class HttpProvider implements DataProvider {
       started_at: run.started_at,
     });
 
-  metrics = (view: MetricsViewName, range: Range) =>
+  metrics = (view: MetricsViewName, range?: Range) =>
     this.#get<Awaited<ReturnType<DataProvider["metrics"]>>>(`metrics/${view}`, {
-      start: range.start.toISOString(),
-      end: range.end.toISOString(),
+      start: range?.start.toISOString(),
+      end: range?.end.toISOString(),
     });
 }

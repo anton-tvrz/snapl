@@ -7,6 +7,7 @@ import type { DataProvider, Range, RunsQuery } from "./data/provider";
 import {
   DEVICES_AT_SCAN_2,
   LINKS,
+  METRICS,
   MODE,
   OVERVIEW,
   RUNS_AT_SCAN_2,
@@ -40,9 +41,7 @@ function provider() {
     timeline: async (range) => (calls.timeline(range), range ? TIMELINE_AT_SCAN_2 : TIMELINE),
     links: async () => LINKS,
     steps: async () => STEPS_DEPLOY,
-    metrics: async () => {
-      throw new Error("not asked");
-    },
+    metrics: async (view) => METRICS[view],
   };
   return { p, calls };
 }

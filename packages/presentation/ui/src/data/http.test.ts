@@ -57,6 +57,14 @@ describe("HttpProvider", () => {
     expect(requested(fetchFn)).toEqual(["/api/v1/drift-timeline"]);
   });
 
+  it("leaves the metrics range to the server when none is given", async () => {
+    const { http, fetchFn } = provider();
+
+    await http.metrics("worker-up");
+
+    expect(requested(fetchFn)).toEqual(["/api/v1/metrics/worker-up"]);
+  });
+
   it("sends a range for the timeline and for metrics", async () => {
     const { http, fetchFn } = provider();
     const range = { start: new Date("2026-11-07T20:00:00Z"), end: new Date("2026-11-07T21:00:00Z") };
