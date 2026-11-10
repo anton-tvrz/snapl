@@ -22,23 +22,31 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
+from snapl_presentation.dashboard import pages
 from snapl_presentation.dashboard.lab_runs import read_lab_evidence
 from snapl_presentation.dashboard.models import (
     ArchiveInfo,
     ArchivePart,
+    CiStatus,
     LabEvidence,
+    LinksResponse,
     MetricsData,
     MetricsViewName,
+    ScheduleStatus,
     SourceName,
     Topology,
     TopologyResponse,
     View,
+    WorkerStatus,
 )
 from snapl_presentation.dashboard.projections import IntentDevice
-from snapl_presentation.dashboard.sources import SourceUnavailable
+from snapl_presentation.dashboard.sources import AuditSource, Sources, SourceUnavailable
+from snapl_presentation.settings import CliSettings
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+
+    from fastapi import FastAPI
 
     from snapl_presentation.dashboard.prometheus import RangePlan
 
@@ -163,6 +171,15 @@ def archived_view[M: BaseModel](root: Path, key: str, model: type[M]) -> View[M]
     return view
 
 
+def _exported_names(root: Path) -> dict[UUID, str]:
+    for name, key in (("devices.json", "devices"), ("overview.json", "devices")):
+        exported = _export(root, name)
+        rows = ((exported or {}).get(key) or {}).get("data") or []
+        if rows:
+            return {UUID(row["device_id"]): row["name"] for row in rows}
+    return {}
+
+
 class ArchivedIntent:
     """The Source of Truth as exported: its devices and its topology, no more."""
 
@@ -174,7 +191,9 @@ class ArchivedIntent:
         self._created_at = created_at
         nodes = self._topology.data.nodes if self._topology and self._topology.data else []
         self._devices = [IntentDevice(UUID(str(node.device_id)), node.name, node.role or "") for node in nodes]
-        self.names: dict[UUID, str] = {device.id: device.name for device in self._devices}
+        # Names for the degraded device list: an archive made before the
+        # topology export still has the device views it exported.
+        self.names: dict[UUID, str] = {device.id: device.name for device in self._devices} or _exported_names(root)
 
     async def refresh(self) -> View[list[IntentDevice]]:
         if self._topology is None:
@@ -254,3 +273,59 @@ class ArchivedMetrics:
             exported = f"{data.start:%Y-%m-%d %H:%M} to {data.end:%Y-%m-%d %H:%M} UTC"
             raise SourceUnavailable(f"an archive holds only the exported range {exported}", ARCHIVE_REMEDY)
         return data
+
+
+@dataclass(frozen=True)
+class ArchiveExports:
+    """What the app shows as exported in archive mode, in place of composing it."""
+
+    schedule: View[ScheduleStatus]
+    worker: View[WorkerStatus]
+    topology: View[Topology]
+    links: LinksResponse | None
+    metrics: ArchivedMetrics
+
+
+def archive_sources(opened: OpenedArchive) -> tuple[Sources, ArchiveExports, ArchiveInfo]:
+    """The sources an archive serves from, what it exported, and its description with the metrics range."""
+    root, created = opened.root, opened.created_at
+    intent = ArchivedIntent(root, created)
+    metrics = ArchivedMetrics(root, created)
+    sources = Sources(
+        audit=AuditSource(str(root / "audit" / "snapl-audit.sqlite"), clock=lambda: created),
+        sot=intent,
+        temporal=ArchivedTemporal(),
+        ci=ArchivedView(root, "ci", CiStatus),
+        lab_runs=ArchivedLabRuns(root, created),
+        prometheus=metrics,
+    )
+    links = _export(root, "links.json")
+    exports = ArchiveExports(
+        schedule=archived_view(root, "schedule", ScheduleStatus),
+        worker=archived_view(root, "worker", WorkerStatus),
+        topology=intent.topology(),
+        links=LinksResponse.model_validate(links) if links is not None else None,
+        metrics=metrics,
+    )
+    ranges = [r for view in MetricsViewName if (r := metrics.exported_range(view)) is not None]
+    info = opened.info
+    if ranges:
+        info = info.model_copy(update={"metrics_start": ranges[0][0], "metrics_end": ranges[0][1]})
+    return sources, exports, info
+
+
+def create_archive_app(opened: OpenedArchive, *, ui_dir: Path | None = pages.BUILT_UI) -> FastAPI:
+    """The dashboard on an opened archive: its own clock, no settings from the environment."""
+    from snapl_presentation.dashboard.app import create_app  # noqa: PLC0415 — app imports this module's types
+
+    sources, exports, info = archive_sources(opened)
+    created = opened.created_at
+    return create_app(
+        sources,
+        CliSettings(),
+        opened.use_case,
+        clock=lambda: created,
+        archive=info,
+        exported=exports,
+        ui_dir=ui_dir,
+    )

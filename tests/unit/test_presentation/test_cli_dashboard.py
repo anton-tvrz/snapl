@@ -6,6 +6,7 @@ its address, what it refuses before serving, and what it tells the operator.
 
 from __future__ import annotations
 
+import json
 import socket
 from unittest.mock import patch
 
@@ -155,3 +156,103 @@ def test_built_ui_looks_in_the_packaged_location():
         assert cli._built_ui() is None
 
     find.assert_called_once_with(pages.BUILT_UI)
+
+
+# --- --archive (spec 011 T071, contracts/cli-and-build.md) ----------------------------
+
+
+@pytest.fixture
+def serve_app():
+    """The uvicorn server for an archive, patched: each call asks the app what is given in `asks`."""
+    answers: dict[str, dict] = {}
+    asks: list[str] = []
+
+    def fake(app, host, port):
+        from fastapi.testclient import TestClient
+
+        client = TestClient(app)
+        for path in asks:
+            answers[path] = client.get(path).json()
+
+    with patch.object(cli, "_serve_app", side_effect=fake) as patched:
+        patched.asks, patched.answers = asks, answers
+        yield patched
+
+
+def _archive(tmp_path, **kwargs):
+    from tests.unit.test_presentation.test_dashboard_archive import build_archive
+
+    return build_archive(tmp_path, **kwargs)
+
+
+def test_archive_start_line_names_the_file_its_time_commit_and_use_case(serve_app, tmp_path):
+    parts = [{"name": "metrics_snapshot", "path": "prometheus", "present": False, "source": "x", "reason": "down"}]
+    archive = _archive(tmp_path, manifest={"parts": parts}, prometheus=False)
+    port = _free_port()
+
+    result = runner.invoke(cli.app, ["dashboard", "--archive", str(archive), "--port", str(port)])
+
+    assert result.exit_code == 0, result.output
+    assert (
+        f"Archive {archive.name} (made 2026-11-07 21:20 UTC, commit 6baff39) for dcfabric "
+        f"at http://127.0.0.1:{port} (read-only, Ctrl-C to stop)"
+    ) in result.output
+    assert "  missing: metrics_snapshot (down)" in result.output
+    serve_app.assert_called_once()
+
+
+def test_archive_takes_the_use_case_from_its_manifest(serve_app, tmp_path):
+    archive = _archive(tmp_path, manifest={"use_case": "edge"})
+    serve_app.asks.append("/api/v1/mode")
+
+    result = runner.invoke(cli.app, ["dashboard", "--archive", str(archive), "--port", str(_free_port())])
+
+    assert "for edge at" in result.output
+    assert serve_app.answers["/api/v1/mode"]["use_case"] == "edge"
+    assert serve_app.answers["/api/v1/mode"]["mode"] == "archive"
+
+
+def test_archive_refuses_a_different_use_case(serve_app, tmp_path):
+    archive = _archive(tmp_path)
+
+    result = runner.invoke(cli.app, ["dashboard", "--archive", str(archive), "--use-case", "edge"])
+
+    assert result.exit_code == int(ExitCode.ERROR)
+    assert "is for use case 'dcfabric', not 'edge'" in result.output
+    serve_app.assert_not_called()
+
+
+@pytest.mark.parametrize("name", ["missing.tar.gz", "notes.txt"])
+def test_archive_refusals_exit_before_the_port_check(serve_app, tmp_path, name):
+    path = tmp_path / name
+    if name == "notes.txt":
+        path.write_text("hello")
+
+    with patch.object(cli, "_port_in_use", side_effect=AssertionError("port checked")):
+        result = runner.invoke(cli.app, ["dashboard", "--archive", str(path)])
+
+    assert result.exit_code == int(ExitCode.ERROR)
+    assert f"error: {path} " in result.output
+    serve_app.assert_not_called()
+
+
+def test_archive_reads_no_connection_settings_or_tokens(serve_app, tmp_path, monkeypatch):
+    for name, value in {
+        "TEMPORAL_HOST": "temporal.invalid:7233",
+        "INFRAHUB_ADDRESS": "http://infrahub.invalid",
+        "GITHUB_TOKEN": "ghp_not_a_real_token",
+        "SNAPL_AUDIT_DB": str(tmp_path / "other.sqlite"),
+        "PROMETHEUS_ADDRESS": "http://prometheus.invalid:9090",
+        "TEMPORAL_UI_ADDRESS": "http://temporal-ui.invalid",
+    }.items():
+        monkeypatch.setenv(name, value)
+    serve_app.asks.extend(["/api/v1/devices", "/api/v1/links", "/api/v1/sources", "/api/v1/runs"])
+
+    result = runner.invoke(cli.app, ["dashboard", "--archive", str(_archive(tmp_path)), "--port", str(_free_port())])
+
+    assert result.exit_code == 0, result.output
+    devices = serve_app.answers["/api/v1/devices"]["devices"]["data"]
+    assert {d["name"]: d["drift_state"] for d in devices}["leaf-01"] == "undesired"
+    everything = json.dumps(serve_app.answers)
+    assert ".invalid" not in everything
+    assert "ghp_" not in everything
