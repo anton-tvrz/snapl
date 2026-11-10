@@ -178,4 +178,38 @@ describe("App at a past time", () => {
 
     expect(await screen.findByText(/History starts at 2026-11-07 21:18:56 UTC/)).toBeInTheDocument();
   });
+
+  it("says the schedule, worker and running panels show only the present, and lists the runs as of then", async () => {
+    history.replaceState(null, "", `/?at=${STOP_2}`);
+    render(<App provider={provider().p} />);
+    await settle();
+
+    expect(await screen.findByRole("region", { name: "Schedule and worker" })).toHaveTextContent(
+      "Shows only the present",
+    );
+    expect(screen.getByRole("region", { name: "Running now" })).toHaveTextContent("Shows only the present");
+    const runs = screen.getByRole("region", { name: "Runs" });
+    expect(within(runs).getAllByRole("row")).toHaveLength(RUNS_AT_SCAN_2.runs.data!.length + 1);
+    expect(runs).not.toHaveTextContent("Shows only the present");
+  });
+
+  it("does not poll the loop at a past time, and says its steps are as recorded now", async () => {
+    history.replaceState(null, "", `/?at=${STOP_2}`);
+    const { p } = provider();
+    const steps = vi.fn(p.steps);
+    render(<App provider={{ ...p, steps }} />);
+    await settle();
+
+    const loop = await screen.findByRole("region", { name: "The loop" });
+    // The latest run as of scan 2 is a scan still running then.
+    expect(steps).toHaveBeenLastCalledWith({
+      workflow_id: RUNS_AT_SCAN_2.runs.data![0]!.workflow_id,
+      started_at: RUNS_AT_SCAN_2.runs.data![0]!.started_at,
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+    expect(steps).toHaveBeenCalledTimes(1);
+    expect(loop).toHaveTextContent("as the audit trail records them now");
+  });
 });

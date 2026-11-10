@@ -52,16 +52,31 @@ REQUESTS = {
     "&started_at=2026-11-07T21:20:15.472996Z",
 }
 
+# The same arc with the other sources up (the server's --sources up), for the
+# panels that read them: an active schedule, one worker, a scan running.
+UP_REQUESTS = {
+    "up/overview.json": "/api/v1/overview",
+}
 
-@pytest.fixture(scope="module")
-def client() -> TestClient:
+
+def _server():
     spec = importlib.util.spec_from_file_location("serve_dashboard_fixtures", SERVER)
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    return module
+
+
+@pytest.fixture(scope="module")
+def client() -> TestClient:
     # No UI directory: only the API is asked.
-    return TestClient(module.build_app(ui_dir=ROOT / "no-built-ui"))
+    return TestClient(_server().build_app(ui_dir=ROOT / "no-built-ui"))
+
+
+@pytest.fixture(scope="module")
+def client_up() -> TestClient:
+    return TestClient(_server().build_app(ui_dir=ROOT / "no-built-ui", up=True))
 
 
 def _body(client: TestClient, path: str) -> str:
@@ -71,9 +86,7 @@ def _body(client: TestClient, path: str) -> str:
     return json.dumps(body, indent=2, sort_keys=True) + "\n"
 
 
-@pytest.mark.parametrize("name", sorted(REQUESTS))
-def test_ui_fixture_is_what_the_server_answers(client: TestClient, name: str):
-    expected = _body(client, REQUESTS[name])
+def _check(expected: str, name: str) -> None:
     path = FIXTURES / name
 
     if os.environ.get("SNAPL_WRITE_UI_FIXTURES"):
@@ -84,6 +97,24 @@ def test_ui_fixture_is_what_the_server_answers(client: TestClient, name: str):
     assert path.read_text() == expected, f"{name} is out of date: see this module's docstring"
 
 
+@pytest.mark.parametrize("name", sorted(REQUESTS))
+def test_ui_fixture_is_what_the_server_answers(client: TestClient, name: str):
+    _check(_body(client, REQUESTS[name]), name)
+
+
+@pytest.mark.parametrize("name", sorted(UP_REQUESTS))
+def test_ui_fixture_with_every_source_up_is_what_the_server_answers(client_up: TestClient, name: str):
+    _check(_body(client_up, UP_REQUESTS[name]), name)
+
+
+def test_the_up_server_has_temporal_up_and_the_default_server_does_not(client: TestClient, client_up: TestClient):
+    assert client.get("/api/v1/overview").json()["schedule"]["available"] is False
+    up = client_up.get("/api/v1/overview").json()
+    assert up["schedule"]["available"] is True
+    assert up["worker"]["data"]["pollers"] == 1
+    assert [run["workflow_type"] for run in up["running"]["data"]] == ["ScanDrift"]
+
+
 def test_fixture_answers_are_the_same_on_every_run(client: TestClient):
     """Nothing in them depends on when the test runs."""
     assert _body(client, "/api/v1/overview") == _body(client, "/api/v1/overview")
@@ -91,4 +122,5 @@ def test_fixture_answers_are_the_same_on_every_run(client: TestClient):
 
 
 def test_there_is_no_fixture_file_without_a_request():
-    assert {path.name for path in FIXTURES.glob("*.json")} == set(REQUESTS)
+    found = {str(path.relative_to(FIXTURES)) for path in FIXTURES.rglob("*.json")}
+    assert found == set(REQUESTS) | set(UP_REQUESTS)

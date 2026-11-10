@@ -4,13 +4,15 @@ The real app, with:
 - the audit trail captured from a live demo arc (tests/unit/test_presentation/fixtures/README.md),
   opened read-only through the normal audit source;
 - intent built from dcfabric's seed file, with the device ids that arc recorded;
-- every other source unavailable, each with a reason and a remedy;
+- every other source unavailable, each with a reason and a remedy, or with
+  `--sources up` the other sources answering with canned data (an active
+  schedule, one worker, a scan running), for the panels that read them;
 - the clock fixed just after the arc's last scan, so ages and default ranges are stable.
 
 Nothing here reaches a lab, the stack or the network.
 
 Usage:
-    uv run python dev/scripts/serve_dashboard_fixtures.py [--port 18931]
+    uv run python dev/scripts/serve_dashboard_fixtures.py [--port 18931] [--sources down|up]
 """
 
 from __future__ import annotations
@@ -26,9 +28,16 @@ import uvicorn
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from snapl_presentation.dashboard.app import create_app  # noqa: E402 — after the path is set
+from snapl_orchestrator.models import (  # noqa: E402 — after the path is set
+    DriftResponseMode,
+    DriftScheduleView,
+    RunSummary,
+    ScheduledRunInfo,
+)
+from snapl_orchestrator.worker.client import RunningWorkflowInfo  # noqa: E402
+from snapl_presentation.dashboard.app import create_app  # noqa: E402
 from snapl_presentation.dashboard.models import SourceName, View  # noqa: E402
-from snapl_presentation.dashboard.sources import AuditSource, Sources  # noqa: E402
+from snapl_presentation.dashboard.sources import AuditSource, Sources, TemporalSnapshot  # noqa: E402
 from snapl_presentation.settings import CliSettings  # noqa: E402
 from tests.unit.test_presentation.dashboard_fakes import ARC_FIXTURE, SCAN_3_END, arc_states  # noqa: E402
 
@@ -70,11 +79,55 @@ class _Down:
         raise SourceUnavailable("prometheus is not part of the fixture server", REMEDIES[SourceName.PROMETHEUS])
 
 
-def build_app(ui_dir: Path | None = None):
+class _Up:
+    """A source answering with canned data, read just now."""
+
+    def __init__(self, source: SourceName, data: Any) -> None:
+        self._source = source
+        self._data = data
+
+    async def refresh(self) -> View[Any]:
+        return View(source=self._source, available=True, fetched_at=NOW, data=self._data)
+
+
+def _temporal_up() -> TemporalSnapshot:
+    """An active remediating schedule, one worker polling, and a scan running for 12 s."""
+    last = NOW - timedelta(minutes=5)
+    schedule = DriftScheduleView(
+        schedule_id="drift-response-dcfabric",
+        use_case_id="dcfabric",
+        interval=timedelta(minutes=5),
+        mode=DriftResponseMode.REMEDIATE,
+        paused=False,
+        next_runs=[NOW + timedelta(minutes=4)],
+        recent_runs=[
+            ScheduledRunInfo(
+                workflow_id=f"drift-response-dcfabric-{last:%Y-%m-%dT%H:%M:%SZ}",
+                scheduled_at=last,
+                started_at=last + timedelta(seconds=1),
+                status="COMPLETED",
+                summary=RunSummary(
+                    total=6, clean=5, drifted=1, errored=0, remediated=0, succeeded=0, failed=0, wrote=False
+                ),
+            )
+        ],
+    )
+    running = [
+        RunningWorkflowInfo(
+            workflow_id="scan-drift-dcfabric-live",
+            workflow_type="ScanDrift",
+            start_time=NOW - timedelta(seconds=12),
+            task_queue="snapl-tasks",
+        )
+    ]
+    return TemporalSnapshot(running=running, pollers=1, schedule=schedule)
+
+
+def build_app(ui_dir: Path | None = None, *, up: bool = False):
     sources = Sources(
         audit=AuditSource(str(ARC_FIXTURE), clock=lambda: NOW),
         sot=_Intent(),
-        temporal=_Down(SourceName.TEMPORAL),
+        temporal=_Up(SourceName.TEMPORAL, _temporal_up()) if up else _Down(SourceName.TEMPORAL),
         ci=_Down(SourceName.CI),
         lab_runs=_Down(SourceName.LAB_RUNS),
         prometheus=_Down(SourceName.PROMETHEUS),
@@ -86,8 +139,10 @@ def build_app(ui_dir: Path | None = None):
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--port", type=int, default=18931)
+    parser.add_argument("--sources", choices=["down", "up"], default="down")
     args = parser.parse_args()
-    uvicorn.run(build_app(), host="127.0.0.1", port=args.port, log_level="warning", access_log=False)
+    app = build_app(up=args.sources == "up")
+    uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning", access_log=False)
 
 
 if __name__ == "__main__":
