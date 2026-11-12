@@ -38,7 +38,7 @@ Do not edit the file by hand. To recapture, repeat the steps above and update th
 
 One `DeployIntent` run that failed at apply, captured from the lab (spec 011 T057, quickstart item 4). `test_dashboard_steps.py` reads it in place of the hand-built `apply_failed` events it used before. The other failure reasons are still built by hand, because the capture matched what `deploy_intent.py` writes.
 
-**Captured**: 2026-11-12, 09:06:23–09:06:29 UTC, from the shared lab audit DB. The worker ran `main` 10a4815. No orchestrator, executor, collector, observability or intent code changed between 10a4815 and `main` ca723ea.
+**Captured**: 2026-11-12, 09:06:23–09:06:29 UTC, from the shared lab audit DB. The worker was started at 20:47:47 UTC on 2026-11-09 from the main checkout, then at `main` 6baff39. No orchestrator, executor, collector, observability or intent code changed between 6baff39 and `main` ca723ea.
 
 **Lab**: `containerlab/dcfabric.yml`, `ghcr.io/nokia/srlinux:26.3.1`, converged before the run.
 
