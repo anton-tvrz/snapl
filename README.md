@@ -38,7 +38,10 @@ Single vendor: Nokia SR Linux. Vendor-specific code is confined to a few named p
 
 - **Removal is not implemented (#65).** Apply is a merge, so config deleted from intent stays on the device. snapl *detects* that undesired config and reports it, but does not remove it. Convergence is true for additions and changes.
 - **Self-healing is opt-in, per use case.** `demo.up` creates a report-only drift schedule (every 5 minutes); scheduled repairs happen only after `snapl schedule mode remediate`. A scheduled repair never removes config (#65), and a failed repair is retried every run until an operator switches back to report (#136).
-- **A local, read-only dashboard.** `snapl dashboard` serves a page and a JSON API on 127.0.0.1: device drift, workflow runs, the drift schedule, history from the audit trail, CI status, and recorded live lab runs (spec 010). It has no designed UI yet (#146) and no authentication.
+- **A local, read-only dashboard, with no authentication.** `snapl dashboard` serves on 127.0.0.1 (specs 010 to 012). Some limits of what it shows:
+  - The loop strip shows steps the audit trail recorded as finished. It never shows a step in progress, and scans and reconciles record no steps one by one.
+  - At a past time, the drawing shows today's devices and links, because the Source of Truth keeps no history. Only their states are from the past.
+  - An archive shows its metrics only over the range they were exported for, 7 days by default.
 - **Lab metrics, not monitoring.** Prometheus in the dev stack records how long workflows and gNMI calls take, gNMI errors, how long activities wait for a worker, and whether the worker and the dashboard's sources were up (spec 012). The dashboard charts them. There is no alerting, and the numbers describe a lab on one machine.
 - **Config-level verification only.** Intent describes configuration. Operational expectations (BGP sessions established, interfaces oper-up) are not yet checked.
 
@@ -65,6 +68,31 @@ Metrics and the audit trail outlive `demo.reset`: they live under `.snapl/` and 
 uv run invoke history.archive     # audit DB, metrics snapshot, lab runs and a dashboard export, in one tarball
 uv run invoke history.purge       # delete the stored metrics (stop the stack first), and nothing else
 ```
+
+## The dashboard
+
+![The dashboard at a past time: spine-01 missing intent, its detail open, and the loop strip](docs/images/dashboard-dark.png)
+
+`uv run snapl dashboard` serves the dashboard at http://127.0.0.1:18030. It only reads.
+
+The page draws the fabric with each device's drift state, by shape and colour, and a lane per device shows that state over time. "As of" replays the drift scan by scan, and the loop strip shows what each NAF block did in one run. Below them are the schedule, the runs, CI, lab evidence, the hourly history and the metrics. Each view says where its data came from and how old it is, and when a source is down it gives the command that fixes it.
+
+The page is built with Node, once, and Node is not needed to run snapl:
+
+```bash
+uv run invoke dashboard.build     # needs Node 22.12 or later
+```
+
+Without that build, `/` serves the plain page of spec 010, which is always at `/plain` as well.
+
+Two more ways to read it:
+
+```bash
+uv run snapl dashboard --archive .snapl/archives/<file>.tar.gz   # a history.archive tarball, with nothing running
+uv run snapl dashboard --snapshot demo.html --days 7              # one HTML file that opens offline, from disk
+```
+
+An archive opens with the stack stopped and contacts nothing. Ages and "now" are relative to when it was made. A snapshot is a recording: it says so, refreshes nothing, and includes error text and paths recorded from the devices as they were recorded, so read it before you share it.
 
 [`docs/demo-scenarios.md`](docs/demo-scenarios.md) walks through the full demo: deploy, inducing drift by hand, scanning, reconciling, and reading the audit trail.
 

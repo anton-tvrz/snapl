@@ -387,12 +387,13 @@ Each PR says `Closes` a task issue under #146 and carries `changelog/146.added.m
 
 ## Phase 9: Docs and Governance
 
-- [ ] T089 [P] README.md: the dashboard section describes the designed UI, `dashboard.build`, `/plain`, `--archive` and `--snapshot`, with one screenshot taken from the fixture server (dark mode). Known limitations gain: the loop strip shows completed steps only; a past time shows today's devices and links; an archive's metrics are the exported range only.
-- [ ] T090 [P] AGENTS.md and CLAUDE.md: the UI directory, the `dashboard.*` tasks, and the TypeScript test rule (spec FR-046). Add CLAUDE.md's "Recent Changes" line for 011 by hand: in planning, `update-agent-context.sh` named the entry after the working branch and dropped older entries, so its output was discarded.
-- [ ] T091 [P] docs/demo-scenarios.md: a scenario that runs the arc with the dashboard open, replays it, and writes a snapshot. Plain claims only (ADR-0004).
-- [ ] T092 [P] dev/adr/0005-dashboard-and-metrics-stack.md: Decision 2 to Accepted, with the PR numbers, and its diagram's browser node updated. `dev/guides/running-tests.md`: the UI tests and the browser check.
-- [ ] T093 Run the humanizer skill over the UI's visible strings (empty states, reasons the UI words itself, banners) and the README section, and apply what it finds. Device- and server-supplied text is not touched.
-- [ ] T094 Open a **draft** PR, from a branch that is not `overnight/` (`docs/146-constitution-ui-stack`), amending `.specify/memory/constitution.md` (research R18): the Technology Stack gains FastAPI and uvicorn, Prometheus and the UI toolchain; Principle III says it applies to UI code; minor version bump. Tick this task when the draft is open. Merging it is the maintainer's decision, and an unattended run never merges it.
+- [x] T089 [P] README.md: the dashboard section describes the designed UI, `dashboard.build`, `/plain`, `--archive` and `--snapshot`, with one screenshot taken from the fixture server (dark mode). Known limitations gain: the loop strip shows completed steps only; a past time shows today's devices and links; an archive's metrics are the exported range only.
+- [x] T090 [P] AGENTS.md and CLAUDE.md: the UI directory, the `dashboard.*` tasks, and the TypeScript test rule (spec FR-046). Add CLAUDE.md's "Recent Changes" line for 011 by hand: in planning, `update-agent-context.sh` named the entry after the working branch and dropped older entries, so its output was discarded.
+- [x] T091 [P] docs/demo-scenarios.md: a scenario that runs the arc with the dashboard open, replays it, and writes a snapshot. Plain claims only (ADR-0004).
+- [x] T092 [P] dev/adr/0005-dashboard-and-metrics-stack.md: Decision 2 to Accepted, with the PR numbers, and its diagram's browser node updated. `dev/guides/running-tests.md`: the UI tests and the browser check.
+- [x] T093 Run the humanizer skill over the UI's visible strings (empty states, reasons the UI words itself, banners) and the README section, and apply what it finds. Device- and server-supplied text is not touched.
+- [x] T094 Open a **draft** PR, from a branch that is not `overnight/` (`docs/146-constitution-ui-stack`), amending `.specify/memory/constitution.md` (research R18): the Technology Stack gains FastAPI and uvicorn, Prometheus and the UI toolchain; Principle III says it applies to UI code; minor version bump. Tick this task when the draft is open. Merging it is the maintainer's decision, and an unattended run never merges it.
+  - Draft opened: #232 (issue #231). Not merged by the run.
 - [ ] T095 **Needs the maintainer**: quickstart item 13 (try the design skill locally), and decide whether a snapshot is published for the demo post.
 - [ ] T096 **Needs the lab**: quickstart item 8 (a fresh clone with no Node serves the plain page).
 

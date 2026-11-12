@@ -12,7 +12,7 @@ describe("ModeBanner", () => {
     const banner = screen.getByRole("region", { name: "Archive" });
     expect(banner).toHaveTextContent("snapl-history-20261107T212048Z.tar.gz");
     expect(banner).toHaveTextContent("made 2026-11-07 21:20:48 UTC from commit 6baff39");
-    expect(banner).toHaveTextContent("Nothing is contacted. Ages are relative to when it was made.");
+    expect(banner).toHaveTextContent("This page contacts nothing. Ages count from when the archive was made.");
   });
 
   it("lists the parts the archive is missing, with their reasons", () => {

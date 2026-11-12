@@ -304,7 +304,10 @@ uv run snapl dashboard            # http://127.0.0.1:18030, in its own terminal
 
 Open the page, then run beats 1 to 3 of the demo arc in another terminal.
 
+Build the page once with `uv run invoke dashboard.build` (Node 22.12 or later). Without it, the dashboard serves the plain page of spec 010, which shows the same facts as tables, and the points below read the same there.
+
 **Point at:**
+- The fabric: spines above leaves, with the links intent declares. Each device's drift state has its own shape and glyph, not just a colour. Select a device for its detail.
 - Devices: each device's drift state and its direction. A few seconds after `snapl scan`, the device you changed by hand shows `undesired` or `missing`, with the exact paths and the command that fixes it. Undesired-only drift gets a note and no command, because removal isn't automatic (#65).
 - Recent runs: the deploy, scan and reconcile appear as each finishes, with its trigger (`operator` or `schedule`) and a link to the Temporal Web UI.
 - Schedule: the report-only schedule that `demo.up` created, its next run, and who paused it, if anyone did.
@@ -337,6 +340,30 @@ uv run snapl scan
 **Expect:** `curl -s localhost:18091/metrics | grep snapl_gnmi_call_duration_count` prints the counters the gNMI panels are built from, one per device, operation and outcome.
 
 The numbers come from a six-node lab on one machine. Quote them as that.
+
+---
+
+## Scenario 12 — Replay it, and take it with you
+
+**Story:** "The drift you just repaired, scan by scan, and a file that shows it to someone without the lab."
+
+Run beats 1 to 3 of the demo arc with the dashboard open (Scenario 10). Then:
+
+**Point at:**
+- Drift over time: one lane per device. The device you changed by hand shows its drifted scans, then in sync after the reconcile, which is marked `R` between them.
+- The headline above the lanes: how long the drift lasted, from the scan that first saw it to the scan that first saw it gone, and that an operator's reconcile repaired it. It is a scan-to-scan time, not a detection time: name it that way.
+- "As of": focus it and press ← to step back one scan. The fabric and the device's detail show that scan's state, and a banner says you are looking at a past time. "Return to now" leaves it.
+- The loop: press "Loop" on the reconcile's deploy in the device's detail. Intent, Executor, Collector and Observability show done, with their times.
+
+Then write the recording:
+
+```bash
+uv run snapl dashboard --snapshot demo.html --days 1
+```
+
+**Expect:** the command prints the file's size, the range it covers and what it holds. Open `demo.html` from disk with the network off: the same fabric, lanes, replay and loop strip, under a banner that says it is a recording. It makes no request.
+
+Read the file before you share it: it includes the error text and paths recorded from the devices as they were recorded.
 
 ---
 

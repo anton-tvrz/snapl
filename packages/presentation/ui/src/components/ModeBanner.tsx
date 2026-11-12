@@ -18,7 +18,7 @@ export function ModeBanner({ mode }: { mode: ModeResponse | undefined }) {
         Archive <span className="font-mono">{archive.name}</span>, made {utcText(new Date(archive.created_at))} from{" "}
         {commit}.
       </p>
-      <p className="mt-1">Nothing is contacted. Ages are relative to when it was made.</p>
+      <p className="mt-1">This page contacts nothing. Ages count from when the archive was made.</p>
       {missing.length > 0 && (
         <ul aria-label="Missing from this archive" className="mt-2 space-y-0.5 text-xs">
           {missing.map((part) => (
