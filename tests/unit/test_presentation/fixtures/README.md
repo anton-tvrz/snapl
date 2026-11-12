@@ -1,4 +1,4 @@
-# Dashboard test fixtures (spec 010)
+# Dashboard test fixtures (specs 010 and 011)
 
 ## `audit_demo_arc.sqlite`
 
@@ -33,3 +33,29 @@ So after the last scan, leaf-01 projects as `undesired` and every other device a
 **Format**: the worker writes WAL mode. The file was switched to rollback-journal mode (`PRAGMA journal_mode=DELETE`) and vacuumed after capture, so it is one self-contained file. A read-only open of a WAL-mode file would leave `-shm` files in the repository during tests. The rows are unchanged.
 
 Do not edit the file by hand. To recapture, repeat the steps above and update this README.
+
+## `audit_failed_deploy.sqlite`
+
+One `DeployIntent` run that failed at apply, captured from the lab (spec 011 T057, quickstart item 4). `test_dashboard_steps.py` reads it in place of the hand-built `apply_failed` events it used before. The other failure reasons are still built by hand, because the capture matched what `deploy_intent.py` writes.
+
+**Captured**: 2026-11-12, 09:06:23–09:06:29 UTC, from the shared lab audit DB. The worker ran `main` 10a4815. No orchestrator, executor, collector, observability or intent code changed between 10a4815 and `main` ca723ea.
+
+**Lab**: `containerlab/dcfabric.yml`, `ghcr.io/nokia/srlinux:26.3.1`, converged before the run.
+
+**Steps**:
+
+1. `docker pause clab-dcfabric-leaf-04`
+2. `snapl deploy leaf-04`. Result: `apply_failed in 5.7s`, `apply reported success=False`, exit 1.
+3. `docker unpause clab-dcfabric-leaf-04`. A scan after that found leaf-04 clean.
+
+**What it contains**: that run's three rows, copied with their ids and nothing else:
+
+| event | step | reason | payload |
+| --- | --- | --- | --- |
+| `workflow_started` | | | `{"parent_workflow_id": null}` |
+| `activity_completed` | `fetch_desired_state` | | `{}` |
+| `workflow_terminated` | | `apply_failed` | `{"detail": "apply reported success=False"}` |
+
+Nothing is recorded when `apply_config` fails, so the Executor block is the first with no record.
+
+**Format**: the same schema as the live DB, in rollback-journal mode and vacuumed, like the demo arc. Do not edit the file by hand. To recapture, repeat the steps above and update this README.

@@ -1,9 +1,10 @@
 """The steps one run recorded, by NAF block (spec 011 T012, research R15).
 
-The successful shapes come from the captured demo arc. The failed-deploy shapes
-below are NOT captured: they are built from what ``deploy_intent.py`` writes on
-each failure path (read 2026-11-10), and stay an assumption until a real failed
-deploy is captured from the lab (tasks.md T057).
+The successful shapes come from the captured demo arc, and a deploy that failed
+at apply comes from a capture too (tasks.md T057, fixtures/README.md). The other
+failure paths are NOT captured: they are built from what ``deploy_intent.py``
+writes on each one (read 2026-11-10). The capture matched that reading, so they
+stay built the same way.
 
 What the workflow records, and so what this projection can say:
 - one ``ACTIVITY_COMPLETED`` after each step that succeeded, in order;
@@ -23,7 +24,7 @@ import pytest
 from snapl_orchestrator.models import AuditEvent, AuditEventType, WorkflowReason
 from snapl_presentation.dashboard.models import BlockStatus, NafBlock, RunState, RunView, Trigger
 from snapl_presentation.dashboard.projections import STEP_BLOCKS, project_steps, run_events
-from tests.unit.test_presentation.dashboard_fakes import ARC, arc_events
+from tests.unit.test_presentation.dashboard_fakes import ARC, arc_events, failed_deploy_events
 
 pytestmark = pytest.mark.unit
 
@@ -145,7 +146,28 @@ async def test_run_events_picks_one_run_of_a_reused_workflow_id():
     assert run_events(events, "no-such-workflow", starts[0]) == []
 
 
-# --- failed deploys (built from deploy_intent.py, not captured) ----------------------
+# --- a failed deploy, captured ---------------------------------------------------------
+
+
+async def test_a_captured_deploy_that_failed_at_apply_fails_the_executor():
+    """leaf-04 paused in the lab, then ``snapl deploy leaf-04``: what the workflow really wrote."""
+    events = await failed_deploy_events()
+    assert [(e.event_type, e.activity_name, e.reason) for e in events] == [
+        (AuditEventType.WORKFLOW_STARTED, None, None),
+        (AuditEventType.ACTIVITY_COMPLETED, "fetch_desired_state", None),
+        (AuditEventType.WORKFLOW_TERMINATED, None, WorkflowReason.APPLY_FAILED),
+    ]
+
+    steps = project_steps(_run(events, RunState.FAILED), events)
+
+    assert _statuses(steps) == [DONE, FAILED, NOT_REACHED, NOT_REACHED, *TAIL]
+    assert steps.blocks[1].reason == "apply_failed: apply reported success=False"
+    assert steps.blocks[1].t == events[-1].timestamp
+    assert steps.blocks[0].t == events[1].timestamp
+    assert all(block.reason is None for block in steps.blocks if block.status is not FAILED)
+
+
+# --- the other failed deploys (built from deploy_intent.py, not captured) ---------------
 
 
 @pytest.mark.parametrize(
@@ -153,7 +175,6 @@ async def test_run_events_picks_one_run_of_a_reused_workflow_id():
     [
         (0, WorkflowReason.INTENT_UNAVAILABLE, [FAILED, NOT_REACHED, NOT_REACHED, NOT_REACHED]),
         (0, WorkflowReason.DEVICE_NOT_FOUND, [FAILED, NOT_REACHED, NOT_REACHED, NOT_REACHED]),
-        (1, WorkflowReason.APPLY_FAILED, [DONE, FAILED, NOT_REACHED, NOT_REACHED]),
         (2, WorkflowReason.COLLECT_FAILED, [DONE, DONE, FAILED, NOT_REACHED]),
         # The drift check itself failed: the workflow ends it with collect_failed
         # too, after the collect step was recorded.

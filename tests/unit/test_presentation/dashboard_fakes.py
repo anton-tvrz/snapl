@@ -24,6 +24,8 @@ if TYPE_CHECKING:
 REPO = Path(__file__).resolve().parents[3]
 SEEDS = REPO / "packages" / "intent" / "snapl_intent" / "seed"
 ARC_FIXTURE = Path(__file__).parent / "fixtures" / "audit_demo_arc.sqlite"
+# One deploy that failed at apply, captured from the lab (spec 011 T057).
+FAILED_DEPLOY_FIXTURE = Path(__file__).parent / "fixtures" / "audit_failed_deploy.sqlite"
 
 # name -> (role, device id) for the devices in the captured demo arc.
 ARC: dict[str, tuple[str, UUID]] = {
@@ -80,7 +82,15 @@ def arc_states() -> list[DesiredState]:
 
 
 async def arc_events() -> list[AuditEvent]:
-    log = SqliteAuditLog(database_url=str(ARC_FIXTURE), read_only=True)
+    return await _fixture_events(ARC_FIXTURE)
+
+
+async def failed_deploy_events() -> list[AuditEvent]:
+    return await _fixture_events(FAILED_DEPLOY_FIXTURE)
+
+
+async def _fixture_events(path: Path) -> list[AuditEvent]:
+    log = SqliteAuditLog(database_url=str(path), read_only=True)
     await log.initialize()
     try:
         return await log.query_by_time_range(datetime(1970, 1, 1, tzinfo=UTC), datetime(9999, 1, 1, tzinfo=UTC))
