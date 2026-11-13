@@ -4,7 +4,7 @@
 
 - **Decision 1** (FastAPI and uvicorn, spec 010): Accepted on 2026-11-08, once spec 010's implementation PRs (#154, #160, #162, #164, #166, #168) had merged.
 - **Decision 2** (spec 011): Accepted on 2026-11-10, once spec 011's implementation PRs had merged: #200, #202, #204, #206, #208, #210, #212, #214, #216, #218, #220, #222, #224, #226 and #228.
-- **Decision 3** (spec 012): Proposed. Implemented by #180, #182, #184, #186 and #188. It is accepted once the live evidence in spec 012's quickstart (items 1–5) is in (T042).
+- **Decision 3** (spec 012): Accepted on 2026-11-09. Implemented by #180, #182, #184, #186 and #188; spec 012's quickstart items 1–7 were run against the live lab in #195. Two defects it found are in this decision's metrics, and neither changes the decision: #191 (a series' first observation is invisible to `rate()`) and #192 (the default buckets make the gNMI p95 a constant 480 ms).
 
 ## Date
 
@@ -114,4 +114,4 @@ flowchart LR
 - Contributors who change the UI need Node. CI gains a front-end job.
 - Prometheus adds a Compose service and a host directory that grows until its size cap.
 - With no Grafana, dashboards are code, not configuration. That is a deliberate trade for a single maintainer.
-- The constitution's Technology Stack does not list these. Listing them needs a minor version bump, deferred until 011 or 012 lands, so the stack never claims something not yet in the code.
+- The constitution's Technology Stack lists FastAPI and uvicorn (010) and Prometheus (012) since 2.1.0 (#195). Node is added when 011 lands, so the stack never claims something not yet in the code.
