@@ -8,12 +8,18 @@ behind "is a worker running", and the SoT identity check (#107).
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from snapl_presentation.exceptions import ConnectionCliError
 
 if TYPE_CHECKING:
     from snapl_presentation.settings import CliSettings
+
+# Temporal keeps listing a stopped worker's pollers for minutes (#196), so a
+# poller counts only if Temporal heard from it this recently. An idle worker
+# long-polls, and its last poll was measured at up to about 60 s old on the lab.
+POLLER_STALE_AFTER = timedelta(seconds=90)
 
 
 async def probe(host_port: str, timeout: float) -> str | None:
@@ -77,7 +83,7 @@ async def identify_sot(store, *, address: str):
 
 
 async def count_pollers(client: Any, settings: CliSettings) -> int:
-    """How many workers are polling our task queue."""
+    """How many workers are polling our task queue, counting only recent pollers."""
     from temporalio.api.enums.v1 import TaskQueueType  # noqa: PLC0415
     from temporalio.api.taskqueue.v1 import TaskQueue  # noqa: PLC0415
     from temporalio.api.workflowservice.v1 import DescribeTaskQueueRequest  # noqa: PLC0415
@@ -91,4 +97,5 @@ async def count_pollers(client: Any, settings: CliSettings) -> int:
         client.service_client.workflow_service.describe_task_queue(request),
         timeout=settings.connect_timeout,
     )
-    return len(response.pollers)
+    cutoff = datetime.now(UTC) - POLLER_STALE_AFTER
+    return sum(1 for poller in response.pollers if poller.last_access_time.ToDatetime(UTC) >= cutoff)
