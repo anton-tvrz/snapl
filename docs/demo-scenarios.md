@@ -361,7 +361,7 @@ Then write the recording:
 uv run snapl dashboard --snapshot demo.html --days 1
 ```
 
-**Expect:** the command prints the file's size, the range it covers and what it holds. Open `demo.html` from disk with the network off: the same fabric, lanes, replay and loop strip, under a banner that says it is a recording. It makes no request.
+**Expect:** the command prints the file's size, the range it covers and what it holds. Open `demo.html` from disk, with no server running: the same fabric, lanes, replay and loop strip, under a banner that says it is a recording. It makes no request.
 
 Read the file before you share it: it includes the error text and paths recorded from the devices as they were recorded.
 
