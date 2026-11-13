@@ -8,9 +8,12 @@ from __future__ import annotations
 
 import asyncio
 import socket
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from temporalio.api.taskqueue.v1 import PollerInfo
+from temporalio.api.workflowservice.v1 import DescribeTaskQueueResponse
 
 from snapl_presentation import probes
 from snapl_presentation.exceptions import ConnectionCliError
@@ -79,12 +82,46 @@ async def test_connect_returns_the_client_when_the_probe_passes() -> None:
 
 @pytest.mark.asyncio
 async def test_count_pollers_counts_the_task_queue_pollers() -> None:
-    client = MagicMock()
-    client.service_client.workflow_service.describe_task_queue = AsyncMock(
-        return_value=MagicMock(pollers=[object(), object()])
-    )
+    client = _describing([_poller(seconds_ago=1), _poller(seconds_ago=30)])
 
     assert await probes.count_pollers(client, CliSettings()) == 2
+
+
+@pytest.mark.asyncio
+async def test_count_pollers_ignores_a_poller_temporal_last_heard_from_minutes_ago() -> None:
+    """Temporal lists a stopped worker's pollers for minutes after it stops (#196)."""
+    client = _describing([_poller(seconds_ago=5), _poller(seconds_ago=180), _poller(seconds_ago=240)])
+
+    assert await probes.count_pollers(client, CliSettings()) == 1
+
+
+@pytest.mark.asyncio
+async def test_count_pollers_counts_an_idle_worker_between_long_polls() -> None:
+    """An idle worker's last poll is up to about 60 s old (measured on the lab, #196)."""
+    client = _describing([_poller(seconds_ago=65)])
+
+    assert await probes.count_pollers(client, CliSettings()) == 1
+
+
+@pytest.mark.asyncio
+async def test_count_pollers_is_zero_once_every_poller_is_stale() -> None:
+    client = _describing([_poller(seconds_ago=probes.POLLER_STALE_AFTER.total_seconds() + 5)])
+
+    assert await probes.count_pollers(client, CliSettings()) == 0
+
+
+def _poller(*, seconds_ago: float) -> PollerInfo:
+    poller = PollerInfo(identity=f"worker-{seconds_ago:g}s")
+    poller.last_access_time.FromDatetime(datetime.now(UTC) - timedelta(seconds=seconds_ago))
+    return poller
+
+
+def _describing(pollers: list[PollerInfo]) -> MagicMock:
+    client = MagicMock()
+    client.service_client.workflow_service.describe_task_queue = AsyncMock(
+        return_value=DescribeTaskQueueResponse(pollers=pollers)
+    )
+    return client
 
 
 @pytest.mark.asyncio
