@@ -1,0 +1,505 @@
+{
+  "contract_version": "1",
+  "generated_at": "2026-11-07T21:20:48.919877Z",
+  "series": [
+    {
+      "bucket": null,
+      "end": "2026-11-07T21:20:48.919877Z",
+      "first_event_at": "2026-11-07T21:18:56.168004Z",
+      "markers": [
+        {
+          "kind": "reconcile",
+          "t": "2026-11-07T21:20:15.472996Z",
+          "trigger": "operator",
+          "workflow_id": "reconcile-217b6000-0e6c-4919-81d9-9f6a1075cd1d"
+        }
+      ],
+      "name": "drifted_devices",
+      "points": [
+        {
+          "by_outcome": null,
+          "t": "2026-11-07T21:20:13.770294Z",
+          "value": 2
+        },
+        {
+          "by_outcome": null,
+          "t": "2026-11-07T21:20:15.389714Z",
+          "value": 2
+        },
+        {
+          "by_outcome": null,
+          "t": "2026-11-07T21:20:18.919877Z",
+          "value": 1
+        }
+      ],
+      "start": "2026-11-06T21:20:48.919877Z"
+    },
+    {
+      "bucket": null,
+      "end": "2026-11-07T21:20:48.919877Z",
+      "first_event_at": "2026-11-07T21:18:56.168004Z",
+      "markers": [
+        {
+          "kind": "reconcile",
+          "t": "2026-11-07T21:20:15.472996Z",
+          "trigger": "operator",
+          "workflow_id": "reconcile-217b6000-0e6c-4919-81d9-9f6a1075cd1d"
+        }
+      ],
+      "name": "undesired_paths",
+      "points": [
+        {
+          "by_outcome": null,
+          "t": "2026-11-07T21:20:13.770294Z",
+          "value": 1
+        },
+        {
+          "by_outcome": null,
+          "t": "2026-11-07T21:20:15.389714Z",
+          "value": 1
+        },
+        {
+          "by_outcome": null,
+          "t": "2026-11-07T21:20:18.919877Z",
+          "value": 1
+        }
+      ],
+      "start": "2026-11-06T21:20:48.919877Z"
+    },
+    {
+      "bucket": "1h",
+      "end": "2026-11-07T21:20:48.919877Z",
+      "first_event_at": "2026-11-07T21:18:56.168004Z",
+      "markers": [
+        {
+          "kind": "reconcile",
+          "t": "2026-11-07T21:20:15.472996Z",
+          "trigger": "operator",
+          "workflow_id": "reconcile-217b6000-0e6c-4919-81d9-9f6a1075cd1d"
+        }
+      ],
+      "name": "deploys",
+      "points": [
+        {
+          "by_outcome": {
+            "failed": null,
+            "succeeded": null
+          },
+          "t": "2026-11-06T21:00:00Z",
+          "value": null
+        },
+        {
+          "by_outcome": {
+            "failed": null,
+            "succeeded": null
+          },
+          "t": "2026-11-06T22:00:00Z",
+          "value": null
+        },
+        {
+          "by_outcome": {
+            "failed": null,
+            "succeeded": null
+          },
+          "t": "2026-11-06T23:00:00Z",
+          "value": null
+        },
+        {
+          "by_outcome": {
+            "failed": null,
+            "succeeded": null
+          },
+          "t": "2026-11-07T00:00:00Z",
+          "value": null
+        },
+        {
+          "by_outcome": {
+            "failed": null,
+            "succeeded": null
+          },
+          "t": "2026-11-07T01:00:00Z",
+          "value": null
+        },
+        {
+          "by_outcome": {
+            "failed": null,
+            "succeeded": null
+          },
+          "t": "2026-11-07T02:00:00Z",
+          "value": null
+        },
+        {
+          "by_outcome": {
+            "failed": null,
+            "succeeded": null
+          },
+          "t": "2026-11-07T03:00:00Z",
+          "value": null
+        },
+        {
+          "by_outcome": {
+            "failed": null,
+            "succeeded": null
+          },
+          "t": "2026-11-07T04:00:00Z",
+          "value": null
+        },
+        {
+          "by_outcome": {
+            "failed": null,
+            "succeeded": null
+          },
+          "t": "2026-11-07T05:00:00Z",
+          "value": null
+        },
+        {
+          "by_outcome": {
+            "failed": null,
+            "succeeded": null
+          },
+          "t": "2026-11-07T06:00:00Z",
+          "value": null
+        },
+        {
+          "by_outcome": {
+            "failed": null,
+            "succeeded": null
+          },
+          "t": "2026-11-07T07:00:00Z",
+          "value": null
+        },
+        {
+          "by_outcome": {
+            "failed": null,
+            "succeeded": null
+          },
+          "t": "2026-11-07T08:00:00Z",
+          "value": null
+        },
+        {
+          "by_outcome": {
+            "failed": null,
+            "succeeded": null
+          },
+          "t": "2026-11-07T09:00:00Z",
+          "value": null
+        },
+        {
+          "by_outcome": {
+            "failed": null,
+            "succeeded": null
+          },
+          "t": "2026-11-07T10:00:00Z",
+          "value": null
+        },
+        {
+          "by_outcome": {
+            "failed": null,
+            "succeeded": null
+          },
+          "t": "2026-11-07T11:00:00Z",
+          "value": null
+        },
+        {
+          "by_outcome": {
+            "failed": null,
+            "succeeded": null
+          },
+          "t": "2026-11-07T12:00:00Z",
+          "value": null
+        },
+        {
+          "by_outcome": {
+            "failed": null,
+            "succeeded": null
+          },
+          "t": "2026-11-07T13:00:00Z",
+          "value": null
+        },
+        {
+          "by_outcome": {
+            "failed": null,
+            "succeeded": null
+          },
+          "t": "2026-11-07T14:00:00Z",
+          "value": null
+        },
+        {
+          "by_outcome": {
+            "failed": null,
+            "succeeded": null
+          },
+          "t": "2026-11-07T15:00:00Z",
+          "value": null
+        },
+        {
+          "by_outcome": {
+            "failed": null,
+            "succeeded": null
+          },
+          "t": "2026-11-07T16:00:00Z",
+          "value": null
+        },
+        {
+          "by_outcome": {
+            "failed": null,
+            "succeeded": null
+          },
+          "t": "2026-11-07T17:00:00Z",
+          "value": null
+        },
+        {
+          "by_outcome": {
+            "failed": null,
+            "succeeded": null
+          },
+          "t": "2026-11-07T18:00:00Z",
+          "value": null
+        },
+        {
+          "by_outcome": {
+            "failed": null,
+            "succeeded": null
+          },
+          "t": "2026-11-07T19:00:00Z",
+          "value": null
+        },
+        {
+          "by_outcome": {
+            "failed": null,
+            "succeeded": null
+          },
+          "t": "2026-11-07T20:00:00Z",
+          "value": null
+        },
+        {
+          "by_outcome": {
+            "failed": 0,
+            "succeeded": 8
+          },
+          "t": "2026-11-07T21:00:00Z",
+          "value": null
+        }
+      ],
+      "start": "2026-11-06T21:20:48.919877Z"
+    },
+    {
+      "bucket": "1h",
+      "end": "2026-11-07T21:20:48.919877Z",
+      "first_event_at": "2026-11-07T21:18:56.168004Z",
+      "markers": [
+        {
+          "kind": "reconcile",
+          "t": "2026-11-07T21:20:15.472996Z",
+          "trigger": "operator",
+          "workflow_id": "reconcile-217b6000-0e6c-4919-81d9-9f6a1075cd1d"
+        }
+      ],
+      "name": "repairs",
+      "points": [
+        {
+          "by_outcome": {
+            "failed": null,
+            "succeeded": null
+          },
+          "t": "2026-11-06T21:00:00Z",
+          "value": null
+        },
+        {
+          "by_outcome": {
+            "failed": null,
+            "succeeded": null
+          },
+          "t": "2026-11-06T22:00:00Z",
+          "value": null
+        },
+        {
+          "by_outcome": {
+            "failed": null,
+            "succeeded": null
+          },
+          "t": "2026-11-06T23:00:00Z",
+          "value": null
+        },
+        {
+          "by_outcome": {
+            "failed": null,
+            "succeeded": null
+          },
+          "t": "2026-11-07T00:00:00Z",
+          "value": null
+        },
+        {
+          "by_outcome": {
+            "failed": null,
+            "succeeded": null
+          },
+          "t": "2026-11-07T01:00:00Z",
+          "value": null
+        },
+        {
+          "by_outcome": {
+            "failed": null,
+            "succeeded": null
+          },
+          "t": "2026-11-07T02:00:00Z",
+          "value": null
+        },
+        {
+          "by_outcome": {
+            "failed": null,
+            "succeeded": null
+          },
+          "t": "2026-11-07T03:00:00Z",
+          "value": null
+        },
+        {
+          "by_outcome": {
+            "failed": null,
+            "succeeded": null
+          },
+          "t": "2026-11-07T04:00:00Z",
+          "value": null
+        },
+        {
+          "by_outcome": {
+            "failed": null,
+            "succeeded": null
+          },
+          "t": "2026-11-07T05:00:00Z",
+          "value": null
+        },
+        {
+          "by_outcome": {
+            "failed": null,
+            "succeeded": null
+          },
+          "t": "2026-11-07T06:00:00Z",
+          "value": null
+        },
+        {
+          "by_outcome": {
+            "failed": null,
+            "succeeded": null
+          },
+          "t": "2026-11-07T07:00:00Z",
+          "value": null
+        },
+        {
+          "by_outcome": {
+            "failed": null,
+            "succeeded": null
+          },
+          "t": "2026-11-07T08:00:00Z",
+          "value": null
+        },
+        {
+          "by_outcome": {
+            "failed": null,
+            "succeeded": null
+          },
+          "t": "2026-11-07T09:00:00Z",
+          "value": null
+        },
+        {
+          "by_outcome": {
+            "failed": null,
+            "succeeded": null
+          },
+          "t": "2026-11-07T10:00:00Z",
+          "value": null
+        },
+        {
+          "by_outcome": {
+            "failed": null,
+            "succeeded": null
+          },
+          "t": "2026-11-07T11:00:00Z",
+          "value": null
+        },
+        {
+          "by_outcome": {
+            "failed": null,
+            "succeeded": null
+          },
+          "t": "2026-11-07T12:00:00Z",
+          "value": null
+        },
+        {
+          "by_outcome": {
+            "failed": null,
+            "succeeded": null
+          },
+          "t": "2026-11-07T13:00:00Z",
+          "value": null
+        },
+        {
+          "by_outcome": {
+            "failed": null,
+            "succeeded": null
+          },
+          "t": "2026-11-07T14:00:00Z",
+          "value": null
+        },
+        {
+          "by_outcome": {
+            "failed": null,
+            "succeeded": null
+          },
+          "t": "2026-11-07T15:00:00Z",
+          "value": null
+        },
+        {
+          "by_outcome": {
+            "failed": null,
+            "succeeded": null
+          },
+          "t": "2026-11-07T16:00:00Z",
+          "value": null
+        },
+        {
+          "by_outcome": {
+            "failed": null,
+            "succeeded": null
+          },
+          "t": "2026-11-07T17:00:00Z",
+          "value": null
+        },
+        {
+          "by_outcome": {
+            "failed": null,
+            "succeeded": null
+          },
+          "t": "2026-11-07T18:00:00Z",
+          "value": null
+        },
+        {
+          "by_outcome": {
+            "failed": null,
+            "succeeded": null
+          },
+          "t": "2026-11-07T19:00:00Z",
+          "value": null
+        },
+        {
+          "by_outcome": {
+            "failed": null,
+            "succeeded": null
+          },
+          "t": "2026-11-07T20:00:00Z",
+          "value": null
+        },
+        {
+          "by_outcome": {
+            "failed": 0,
+            "succeeded": 0
+          },
+          "t": "2026-11-07T21:00:00Z",
+          "value": null
+        }
+      ],
+      "start": "2026-11-06T21:20:48.919877Z"
+    }
+  ],
+  "use_case": "dcfabric"
+}

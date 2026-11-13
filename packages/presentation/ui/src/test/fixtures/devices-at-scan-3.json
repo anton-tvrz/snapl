@@ -1,0 +1,143 @@
+{
+  "contract_version": "1",
+  "devices": {
+    "available": true,
+    "data": [
+      {
+        "device_id": "18e29d6d-e0c5-0ba7-32d1-c510fc3ef077",
+        "drift_state": "in_sync",
+        "error": null,
+        "in_intent": true,
+        "last_deploy": {
+          "ended_at": "2026-11-07T21:20:17.240047Z",
+          "reason": "succeeded",
+          "success": true,
+          "workflow_id": "deploy-intent-18e29d6d-e0c5-0ba7-32d1-c510fc3ef077"
+        },
+        "last_scan_workflow_id": "scan-drift-dcfabric-68101896-6a9c-4c65-8a84-24af2b98b12a",
+        "last_scanned_at": "2026-11-07T21:20:18.852982Z",
+        "missing_paths": [],
+        "name": "spine-01",
+        "note": null,
+        "role": "spine",
+        "suggested_command": null,
+        "unclassified_paths": [],
+        "undesired_paths": []
+      },
+      {
+        "device_id": "18e29d6e-1959-3451-32dc-c51d9065aa58",
+        "drift_state": "in_sync",
+        "error": null,
+        "in_intent": true,
+        "last_deploy": {
+          "ended_at": "2026-11-07T21:18:59.218795Z",
+          "reason": "succeeded",
+          "success": true,
+          "workflow_id": "deploy-intent-18e29d6e-1959-3451-32dc-c51d9065aa58"
+        },
+        "last_scan_workflow_id": "scan-drift-dcfabric-68101896-6a9c-4c65-8a84-24af2b98b12a",
+        "last_scanned_at": "2026-11-07T21:20:18.852982Z",
+        "missing_paths": [],
+        "name": "spine-02",
+        "note": null,
+        "role": "spine",
+        "suggested_command": null,
+        "unclassified_paths": [],
+        "undesired_paths": []
+      },
+      {
+        "device_id": "18e29d6e-246e-5cd1-32d2-c51d13d4de9e",
+        "drift_state": "undesired",
+        "error": null,
+        "in_intent": true,
+        "last_deploy": {
+          "ended_at": "2026-11-07T21:20:16.788287Z",
+          "reason": "succeeded",
+          "success": true,
+          "workflow_id": "deploy-intent-18e29d6e-246e-5cd1-32d2-c51d13d4de9e"
+        },
+        "last_scan_workflow_id": "scan-drift-dcfabric-68101896-6a9c-4c65-8a84-24af2b98b12a",
+        "last_scanned_at": "2026-11-07T21:20:18.744666Z",
+        "missing_paths": [],
+        "name": "leaf-01",
+        "note": "Config on the device but not in intent is not removed automatically (#65).",
+        "role": "leaf",
+        "suggested_command": null,
+        "unclassified_paths": [],
+        "undesired_paths": [
+          "/interface[name=ethernet-1/7]/description"
+        ]
+      },
+      {
+        "device_id": "18e29d6e-2e5b-c496-32da-c510ade043a0",
+        "drift_state": "in_sync",
+        "error": null,
+        "in_intent": true,
+        "last_deploy": {
+          "ended_at": "2026-11-07T21:19:02.592607Z",
+          "reason": "succeeded",
+          "success": true,
+          "workflow_id": "deploy-intent-18e29d6e-2e5b-c496-32da-c510ade043a0"
+        },
+        "last_scan_workflow_id": "scan-drift-dcfabric-68101896-6a9c-4c65-8a84-24af2b98b12a",
+        "last_scanned_at": "2026-11-07T21:20:18.744666Z",
+        "missing_paths": [],
+        "name": "leaf-02",
+        "note": null,
+        "role": "leaf",
+        "suggested_command": null,
+        "unclassified_paths": [],
+        "undesired_paths": []
+      },
+      {
+        "device_id": "18e29d6e-3794-c788-32d5-c519c5f18e3a",
+        "drift_state": "in_sync",
+        "error": null,
+        "in_intent": true,
+        "last_deploy": {
+          "ended_at": "2026-11-07T21:19:04.444006Z",
+          "reason": "succeeded",
+          "success": true,
+          "workflow_id": "deploy-intent-18e29d6e-3794-c788-32d5-c519c5f18e3a"
+        },
+        "last_scan_workflow_id": "scan-drift-dcfabric-68101896-6a9c-4c65-8a84-24af2b98b12a",
+        "last_scanned_at": "2026-11-07T21:20:18.852982Z",
+        "missing_paths": [],
+        "name": "leaf-03",
+        "note": null,
+        "role": "leaf",
+        "suggested_command": null,
+        "unclassified_paths": [],
+        "undesired_paths": []
+      },
+      {
+        "device_id": "18e29d6e-422b-a401-32d9-c5162961ffbe",
+        "drift_state": "in_sync",
+        "error": null,
+        "in_intent": true,
+        "last_deploy": {
+          "ended_at": "2026-11-07T21:19:06.107470Z",
+          "reason": "succeeded",
+          "success": true,
+          "workflow_id": "deploy-intent-18e29d6e-422b-a401-32d9-c5162961ffbe"
+        },
+        "last_scan_workflow_id": "scan-drift-dcfabric-68101896-6a9c-4c65-8a84-24af2b98b12a",
+        "last_scanned_at": "2026-11-07T21:20:18.608354Z",
+        "missing_paths": [],
+        "name": "leaf-04",
+        "note": null,
+        "role": "leaf",
+        "suggested_command": null,
+        "unclassified_paths": [],
+        "undesired_paths": []
+      }
+    ],
+    "fetched_at": "2026-11-07T21:20:48.919877Z",
+    "reason": null,
+    "remedy": null,
+    "source": "sot",
+    "stale": false
+  },
+  "generated_at": "2026-11-07T21:20:48.919877Z",
+  "use_case": "dcfabric"
+}

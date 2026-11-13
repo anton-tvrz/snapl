@@ -19,6 +19,7 @@ import functools
 import getpass
 import re
 from datetime import timedelta
+from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any
 from uuid import uuid4
 
@@ -680,16 +681,50 @@ def _port_in_use(host: str, port: int) -> bool:
     return False
 
 
+def _built_ui():
+    """Where the built designed UI is, or None when this checkout has not built it."""
+    from snapl_presentation.dashboard import pages  # noqa: PLC0415
+
+    return pages.find_ui(pages.BUILT_UI)
+
+
+def _snapshot_template() -> Path | None:
+    """The built snapshot template, or None when this checkout has not built the UI."""
+    from snapl_presentation.dashboard import pages  # noqa: PLC0415
+
+    template = pages.BUILT_UI / "snapshot.html"
+    return template if template.is_file() else None
+
+
+def _git_commit() -> str | None:
+    """The commit this checkout is at, for a snapshot's manifest."""
+    # Bandit B404: a fixed git command, no shell.
+    import subprocess  # nosec B404  # noqa: PLC0415
+
+    try:
+        result = subprocess.run(  # nosec B603 B607
+            ["git", "rev-parse", "HEAD"], capture_output=True, text=True, timeout=10, check=False
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return result.stdout.strip() or None if result.returncode == 0 else None
+
+
 def _serve_dashboard(settings: CliSettings, use_case: str, host: str, port: int) -> None:
     """Build the sources and serve until interrupted.
 
     No source is required at start-up (FR-007): each one reports its own
     failure in the views, and a missing audit file is never created.
     """
-    from pathlib import Path  # noqa: PLC0415
-
     import uvicorn  # noqa: PLC0415
 
+    app_ = _live_app(settings, use_case)
+    server = uvicorn.Server(uvicorn.Config(app_, host=host, port=port, log_level="warning", access_log=False))
+    asyncio.run(server.serve())
+
+
+def _live_app(settings: CliSettings, use_case: str) -> Any:
+    """The dashboard on the live sources, as `snapl dashboard` serves it."""
     from snapl_presentation.dashboard.app import create_app  # noqa: PLC0415
     from snapl_presentation.dashboard.ci import CiSource, resolve_repo  # noqa: PLC0415
     from snapl_presentation.dashboard.lab_runs import LabRunSource  # noqa: PLC0415
@@ -715,22 +750,11 @@ def _serve_dashboard(settings: CliSettings, use_case: str, host: str, port: int)
             settings.prometheus_address, settings.temporal_namespace, use_case, timeout=settings.connect_timeout
         ),
     )
-    app_ = create_app(sources, settings, use_case, repo=repo)
-    server = uvicorn.Server(uvicorn.Config(app_, host=host, port=port, log_level="warning", access_log=False))
-    asyncio.run(server.serve())
+    return create_app(sources, settings, use_case, repo=repo)
 
 
-@app.command()
-def dashboard(
-    use_case: UseCaseOpt = DEFAULT_USE_CASE,
-    port: Annotated[int | None, typer.Option("--port", help="Port to serve on [env: DASHBOARD_PORT].")] = None,
-    host: Annotated[str | None, typer.Option("--host", help="Address to bind [env: DASHBOARD_HOST].")] = None,
-) -> None:
-    """Serve a local, read-only dashboard of the fabric and the loop."""
-    settings = CliSettings.from_env()
-    host = host or settings.dashboard_host
-    port = port if port is not None else settings.dashboard_port
-
+def _check_address(host: str, port: int) -> None:
+    """Warn about a non-loopback address, and refuse a port in use (010's rules)."""
     if not _is_loopback(host):
         _stderr.print(
             f"[yellow]warning:[/] the dashboard has no authentication; anyone who can reach {host}:{port} can read it.",
@@ -745,8 +769,128 @@ def dashboard(
         )
         raise typer.Exit(int(ExitCode.ERROR))
 
+
+def _write_snapshot(
+    target: Path, app: Any, days: int, commit: str | None, *, force: bool, archive: str | None = None
+) -> None:
+    """Collect the bundle from ``app``, write the file and print what it holds. Binds no port."""
+    from snapl_presentation.dashboard.snapshot import (  # noqa: PLC0415
+        SnapshotError,
+        collect_bundle,
+        render,
+        summary,
+        write,
+    )
+
+    template = _snapshot_template()
+    if template is None:  # pragma: no cover — checked before the app is built
+        raise typer.Exit(int(ExitCode.ERROR))
+    try:
+        if target.exists() and not force:
+            raise SnapshotError(f"{target} already exists. Pass --force to replace it.")
+        bundle = collect_bundle(app, days=days, commit=commit, source="archive" if archive else "live")
+        write(target, render(template.read_text(encoding="utf-8"), bundle), force=force)
+    except SnapshotError as exc:
+        _stderr.print(f"[red]error:[/] {exc}", highlight=False, soft_wrap=True)
+        raise typer.Exit(int(ExitCode.ERROR)) from exc
+    for line in summary(target, bundle, archive=archive):
+        typer.echo(line)
+
+
+def _dashboard_archive(
+    path: Path, use_case: str | None, host: str, port: int, snapshot: tuple[Path, int, bool] | None = None
+) -> None:
+    """Serve one history archive until interrupted, or write a snapshot of it.
+
+    Refusals exit before the port is checked.
+    """
+    from snapl_presentation.dashboard.archive import ArchiveError, create_archive_app, open_archive  # noqa: PLC0415
+
+    try:
+        with open_archive(path) as opened:
+            if use_case is not None and use_case != opened.use_case:
+                _stderr.print(
+                    f"[red]error:[/] {path} is for use case {opened.use_case!r}, not {use_case!r}.",
+                    highlight=False,
+                    soft_wrap=True,
+                )
+                raise typer.Exit(int(ExitCode.ERROR))
+            if snapshot is not None:
+                target, days, force = snapshot
+                app_ = create_archive_app(opened)
+                _write_snapshot(target, app_, days, opened.info.snapl_commit, force=force, archive=opened.info.name)
+                raise typer.Exit(int(ExitCode.OK))
+            _check_address(host, port)
+            url_host = f"[{host}]" if ":" in host else host
+            commit = (opened.info.snapl_commit or "unknown")[:7]
+            made = opened.created_at.strftime("%Y-%m-%d %H:%M UTC")
+            typer.echo(
+                f"Archive {opened.info.name} (made {made}, commit {commit}) for {opened.use_case} "
+                f"at http://{url_host}:{port} (read-only, Ctrl-C to stop)"
+            )
+            for part in opened.info.parts:
+                if not part.present:
+                    typer.echo(f"  missing: {part.name} ({part.reason or 'no reason recorded'})")
+            with contextlib.suppress(KeyboardInterrupt):
+                _serve_app(create_archive_app(opened), host, port)
+    except ArchiveError as exc:
+        _stderr.print(f"[red]error:[/] {exc}", highlight=False, soft_wrap=True)
+        raise typer.Exit(int(ExitCode.ERROR)) from exc
+    raise typer.Exit(int(ExitCode.OK))
+
+
+def _serve_app(app: Any, host: str, port: int) -> None:
+    import uvicorn  # noqa: PLC0415
+
+    uvicorn.run(app, host=host, port=port, log_level="warning", access_log=False)
+
+
+@app.command()
+def dashboard(
+    use_case: Annotated[
+        str | None,
+        typer.Option("--use-case", help="Use case to operate on [default: dcfabric; with --archive, the archive's]."),
+    ] = None,
+    port: Annotated[int | None, typer.Option("--port", help="Port to serve on [env: DASHBOARD_PORT].")] = None,
+    host: Annotated[str | None, typer.Option("--host", help="Address to bind [env: DASHBOARD_HOST].")] = None,
+    archive: Annotated[
+        Path | None,
+        typer.Option("--archive", help="Serve from a history.archive tarball, read-only, with no stack."),
+    ] = None,
+    snapshot: Annotated[
+        Path | None,
+        typer.Option("--snapshot", help="Write a single-file snapshot to FILE and exit. Serves nothing."),
+    ] = None,
+    days: Annotated[
+        int, typer.Option("--days", min=1, max=90, help="With --snapshot: the days it covers, ending now.")
+    ] = 7,
+    force: Annotated[bool, typer.Option("--force", help="With --snapshot: replace an existing file.")] = False,
+) -> None:
+    """Serve a local, read-only dashboard of the fabric and the loop."""
+    # Only the dashboard's own address comes from the environment in archive
+    # mode: it reads no connection settings or tokens (spec 011).
+    settings = CliSettings.from_env()
+    host = host or settings.dashboard_host
+    port = port if port is not None else settings.dashboard_port
+    if snapshot is not None and _snapshot_template() is None:
+        from snapl_presentation.dashboard.snapshot import NOT_BUILT  # noqa: PLC0415
+
+        _stderr.print(f"[red]error:[/] {NOT_BUILT}", highlight=False, soft_wrap=True)
+        raise typer.Exit(int(ExitCode.ERROR))
+    if archive is not None:
+        _dashboard_archive(archive, use_case, host, port, (snapshot, days, force) if snapshot else None)
+    use_case = use_case or DEFAULT_USE_CASE
+    if snapshot is not None:
+        _write_snapshot(snapshot, _live_app(settings, use_case), days, _git_commit(), force=force)
+        raise typer.Exit(int(ExitCode.OK))
+
+    _check_address(host, port)
     url_host = f"[{host}]" if ":" in host else host
     typer.echo(f"Dashboard for {use_case} at http://{url_host}:{port} (read-only, Ctrl-C to stop)")
+    if _built_ui() is None:
+        from snapl_presentation.dashboard import pages  # noqa: PLC0415
+
+        typer.echo(pages.NOT_BUILT)
     # Nothing runs server-side on the dashboard's behalf: stopping it is the
     # whole of what Ctrl-C means here, so it is a clean exit.
     with contextlib.suppress(KeyboardInterrupt):

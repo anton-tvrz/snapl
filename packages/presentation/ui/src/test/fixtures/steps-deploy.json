@@ -1,0 +1,97 @@
+{
+  "contract_version": "1",
+  "generated_at": "2026-11-07T21:20:48.919877Z",
+  "steps": {
+    "available": true,
+    "data": {
+      "blocks": [
+        {
+          "block": "intent",
+          "reason": null,
+          "status": "done",
+          "t": "2026-11-07T21:20:16.153329Z"
+        },
+        {
+          "block": "executor",
+          "reason": null,
+          "status": "done",
+          "t": "2026-11-07T21:20:16.546006Z"
+        },
+        {
+          "block": "collector",
+          "reason": null,
+          "status": "done",
+          "t": "2026-11-07T21:20:16.942243Z"
+        },
+        {
+          "block": "observability",
+          "reason": null,
+          "status": "done",
+          "t": "2026-11-07T21:20:17.138697Z"
+        },
+        {
+          "block": "orchestrator",
+          "reason": null,
+          "status": "done",
+          "t": "2026-11-07T21:20:15.648265Z"
+        },
+        {
+          "block": "presentation",
+          "reason": null,
+          "status": "surface",
+          "t": null
+        }
+      ],
+      "recorded": true,
+      "run": {
+        "actor": null,
+        "duration_s": 1,
+        "ended_at": "2026-11-07T21:20:17.240047Z",
+        "reason": null,
+        "started_at": "2026-11-07T21:20:15.648265Z",
+        "state": "succeeded",
+        "target": "spine-01",
+        "trigger": "operator",
+        "web_ui_url": "http://localhost:18034/namespaces/default/workflows/deploy-intent-18e29d6d-e0c5-0ba7-32d1-c510fc3ef077",
+        "workflow_id": "deploy-intent-18e29d6d-e0c5-0ba7-32d1-c510fc3ef077",
+        "workflow_type": "DeployIntent"
+      },
+      "steps": [
+        {
+          "block": "intent",
+          "name": "fetch_desired_state",
+          "outcome": "done",
+          "reason": null,
+          "t": "2026-11-07T21:20:16.153329Z"
+        },
+        {
+          "block": "executor",
+          "name": "apply_config",
+          "outcome": "done",
+          "reason": null,
+          "t": "2026-11-07T21:20:16.546006Z"
+        },
+        {
+          "block": "collector",
+          "name": "collect_drift_state",
+          "outcome": "done",
+          "reason": null,
+          "t": "2026-11-07T21:20:16.942243Z"
+        },
+        {
+          "block": "observability",
+          "name": "detect_drift",
+          "outcome": "done",
+          "reason": null,
+          "t": "2026-11-07T21:20:17.138697Z"
+        }
+      ]
+    },
+    "fetched_at": "2026-11-07T21:20:48.919877Z",
+    "reason": null,
+    "remedy": null,
+    "source": "audit",
+    "stale": false
+  },
+  "use_case": "dcfabric"
+}

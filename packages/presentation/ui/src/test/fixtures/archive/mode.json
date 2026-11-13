@@ -1,0 +1,21 @@
+{
+  "archive": {
+    "created_at": "2026-11-07T21:20:48Z",
+    "metrics_end": "2026-11-07T21:18:00Z",
+    "metrics_start": "2026-10-31T21:18:00Z",
+    "name": "snapl-history-20261107T212048Z.tar.gz",
+    "parts": [
+      {
+        "name": "metrics_snapshot",
+        "present": false,
+        "reason": "down"
+      }
+    ],
+    "snapl_commit": "6baff39"
+  },
+  "contract_version": "1",
+  "generated_at": "2026-11-07T21:20:48Z",
+  "mode": "archive",
+  "now": "2026-11-07T21:20:48Z",
+  "use_case": "dcfabric"
+}

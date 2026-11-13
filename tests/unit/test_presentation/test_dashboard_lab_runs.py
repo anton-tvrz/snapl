@@ -258,3 +258,29 @@ async def test_source_reads_the_folder_on_every_refresh(runs_dir: Path, repo: Re
     assert second.data is not None
     assert len(second.data.runs) == len(first.data.runs) + 1
     assert second.fetched_at == datetime(2026, 11, 7, tzinfo=UTC)
+
+
+# --- without a git history (spec 011 archive mode, research R13) -------------------
+
+
+def test_without_a_repo_every_count_is_unknown_with_the_reason_and_git_is_not_run(
+    runs_dir: Path, monkeypatch: pytest.MonkeyPatch
+):
+    def no_git(*_args, **_kwargs):
+        raise AssertionError("git must not run without a repo")
+
+    monkeypatch.setattr(subprocess, "run", no_git)
+
+    evidence = read_lab_evidence(runs_dir, None, no_history="an archive has no git history")
+
+    assert evidence.latest
+    assert set(evidence.commits_on_main_since.values()) == {None}
+    assert set(evidence.commits_unknown_reason.values()) == {"an archive has no git history"}
+    assert evidence.matched_by == {}
+
+
+async def test_the_source_can_read_runs_with_no_repo(runs_dir: Path):
+    view = await LabRunSource(runs_dir, None, no_history="an archive has no git history").refresh()
+
+    assert view.available is True
+    assert set(view.data.commits_unknown_reason.values()) == {"an archive has no git history"}

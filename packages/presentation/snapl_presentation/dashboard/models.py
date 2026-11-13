@@ -388,6 +388,231 @@ class LinksResponse(Envelope):
     remedy: str | None = None
 
 
+# --- Topology (spec 011) ----------------------------------------------------------
+
+
+class TopologyNode(_Model):
+    device_id: UUID
+    name: str
+    role: str
+
+
+class LinkEnd(_Model):
+    # A device name.
+    device: str
+    interface: str
+
+
+class TopologyLink(_Model):
+    """One link, as intent declares it. Its ends are ordered by (device,
+    interface), so a link declared from both ends has one identity."""
+
+    a: LinkEnd
+    b: LinkEnd
+    declared_by: Literal["both", "a", "b"]
+    # True only when both ends name each other's device and interface.
+    agreed: bool
+
+    @model_validator(mode="after")
+    def _check(self) -> TopologyLink:
+        if self.a.device == self.b.device:
+            raise ValueError("a link joins two different devices")
+        if self.agreed and self.declared_by != "both":
+            raise ValueError("a link is agreed only when both ends declare it")
+        return self
+
+
+class UnlinkedInterface(_Model):
+    device: str
+    interface: str
+    # The peer as intent declares it: not a device of this use case, the device
+    # itself, or a device named without its interface.
+    peer_device: str
+    peer_interface: str | None = None
+
+
+class Topology(_Model):
+    # By role tier, then name.
+    nodes: list[TopologyNode]
+    links: list[TopologyLink]
+    unlinked: list[UnlinkedInterface]
+
+
+class TopologyResponse(Envelope):
+    topology: View[Topology]
+
+
+# --- Drift timeline (spec 011) ------------------------------------------------------
+
+
+class ScanPoint(_Model):
+    """What one scan recorded for one device."""
+
+    # The per-device scan record's timestamp.
+    t: UtcDatetime
+    # Never `never_scanned`: a point exists only where a scan does.
+    state: DriftState
+    missing_paths: list[str] = Field(default_factory=list)
+    undesired_paths: list[str] = Field(default_factory=list)
+    unclassified_paths: list[str] = Field(default_factory=list)
+    error: str | None = None
+    scan_workflow_id: str
+
+
+class DeviceLane(_Model):
+    device_id: UUID
+    name: str
+    # False for a device the audit trail holds that is no longer in the SoT.
+    in_intent: bool
+    # In the requested range, oldest first.
+    points: list[ScanPoint]
+
+
+class EpisodeClose(_Model):
+    """The deploy that repaired a drift episode."""
+
+    # A scheduled repair, an operator's reconcile, or an operator's direct deploy.
+    kind: Literal["remediation", "reconcile", "deploy"]
+    # The DeployIntent run.
+    workflow_id: str
+    trigger: Trigger
+    ended_at: UtcDatetime
+
+
+class DriftEpisode(_Model):
+    """One device's drift, from the scan that first saw it to the scan that first saw it gone."""
+
+    device_id: UUID
+    name: str
+    opened_at: UtcDatetime
+    # None while the episode is open.
+    closed_at: UtcDatetime | None = None
+    # closed_at - opened_at, scan to scan. Not the time to detect: nothing
+    # records when the drift was introduced.
+    duration_s: int | None = None
+    # Distinct states seen, in order of first appearance. `error` included.
+    states: list[DriftState]
+    # Scans from the opening one to the closing one, both included.
+    scans: int = Field(ge=1)
+    # None while open, and when no deploy targeted the device in between.
+    closed_by: EpisodeClose | None = None
+
+    @model_validator(mode="after")
+    def _check(self) -> DriftEpisode:
+        if (self.closed_at is None) != (self.duration_s is None):
+            raise ValueError("duration_s must be set exactly when the episode is closed")
+        if self.closed_at is None and self.closed_by is not None:
+            raise ValueError("closed_by must be empty while the episode is open")
+        return self
+
+
+class DriftTimeline(_Model):
+    start: UtcDatetime
+    end: UtcDatetime
+    lanes: list[DeviceLane]
+    # Every episode overlapping the range, oldest first.
+    episodes: list[DriftEpisode]
+    markers: list[Marker]
+    # The most recently closed episode in the whole trail up to `end`.
+    latest_closed: DriftEpisode | None = None
+    # Episodes open as of `end`.
+    open_count: int = Field(ge=0)
+    first_event_at: UtcDatetime | None = None
+
+
+class DriftTimelineResponse(Envelope):
+    timeline: View[DriftTimeline]
+
+
+# --- Run steps (spec 011) -----------------------------------------------------------
+
+
+class NafBlock(StrEnum):
+    INTENT = "intent"
+    EXECUTOR = "executor"
+    COLLECTOR = "collector"
+    OBSERVABILITY = "observability"
+    ORCHESTRATOR = "orchestrator"
+    PRESENTATION = "presentation"
+
+
+class BlockStatus(StrEnum):
+    DONE = "done"
+    FAILED = "failed"
+    NOT_REACHED = "not_reached"
+    # This run type records no steps one by one.
+    NOT_RECORDED = "not_recorded"
+    # Presentation: the surface being looked at, never a step.
+    SURFACE = "surface"
+
+
+class RunStep(_Model):
+    # The activity name as recorded.
+    name: str
+    # None for a name the server does not map to a block.
+    block: NafBlock | None
+    outcome: Literal["done", "failed"]
+    reason: str | None = None
+    t: UtcDatetime
+
+
+class BlockState(_Model):
+    block: NafBlock
+    status: BlockStatus
+    # Only when FAILED.
+    reason: str | None = None
+    # When its step, or its failure, was recorded.
+    t: UtcDatetime | None = None
+
+
+class RunSteps(_Model):
+    run: RunView
+    # True when this run type records its steps one by one (DeployIntent).
+    recorded: bool
+    # As recorded, oldest first.
+    steps: list[RunStep]
+    # Always the six blocks, in loop order.
+    blocks: list[BlockState] = Field(min_length=6, max_length=6)
+
+
+class RunStepsResponse(Envelope):
+    # `data` is None when the audit trail holds no such run.
+    steps: View[RunSteps]
+
+
+# --- Mode (spec 011) ----------------------------------------------------------------
+
+
+class ArchivePart(_Model):
+    name: str
+    present: bool
+    reason: str | None = None
+
+
+class ArchiveInfo(_Model):
+    # The file's name, not its path.
+    name: str
+    created_at: UtcDatetime
+    snapl_commit: str | None = None
+    parts: list[ArchivePart]
+    # The range the metrics were exported over: the only range an archive can show.
+    metrics_start: UtcDatetime | None = None
+    metrics_end: UtcDatetime | None = None
+
+
+class ModeResponse(Envelope):
+    mode: Literal["live", "archive"]
+    # The server's "now": the wall clock when live, the archive's creation time otherwise.
+    now: UtcDatetime
+    archive: ArchiveInfo | None = None
+
+    @model_validator(mode="after")
+    def _check(self) -> ModeResponse:
+        if (self.mode == "archive") != (self.archive is not None):
+            raise ValueError("archive must be set exactly when the mode is archive")
+        return self
+
+
 # --- Metrics (spec 012) ----------------------------------------------------------
 
 

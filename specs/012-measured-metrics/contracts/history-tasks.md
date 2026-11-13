@@ -44,6 +44,7 @@ uv run invoke history.archive [--use-case dcfabric]
   - `prometheus/<snapshot name>/…`
   - `test-runs/…`
   - `export/{overview,history,links,sources}.json`
+  - `export/{topology,devices,runs,drift-timeline}.json`, added by [spec 011](../../011-dashboard-ui/research.md) (R13) so `snapl dashboard --archive` can draw the fabric. `drift-timeline` covers the same 7 days as `history`. Archives made before it lack them and still open.
   - `export/metrics/<view>.json`
 - **Exit code:** 0 when every part is present, 1 when any part is missing. The archive is still written, and the missing parts are named on stderr and in the manifest.
 - **Prints:** the archive's path and size, then one line per part.

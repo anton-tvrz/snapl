@@ -12,23 +12,28 @@ inside a ``200`` (FR-005, FR-007).
 from __future__ import annotations
 
 import asyncio
+import pathlib  # noqa: TC003 — FastAPI resolves annotations at runtime
 import time
 from datetime import datetime, timedelta
-from importlib import resources
 from typing import TYPE_CHECKING, Annotated, Any
 from urllib.parse import quote
 
-from fastapi import APIRouter, FastAPI, HTTPException, Path, Query
-from fastapi.responses import HTMLResponse, PlainTextResponse
-from pydantic import AwareDatetime  # noqa: TC002 — FastAPI resolves query types at runtime
+from fastapi import APIRouter, FastAPI, HTTPException, Path, Query, Request, Response
+from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse
+from pydantic import AwareDatetime
 
-from snapl_orchestrator.models import drift_schedule_id
+from snapl_orchestrator.models import AuditEventType, drift_schedule_id
+from snapl_presentation.dashboard import pages
+from snapl_presentation.dashboard.archive import ARCHIVE_REMEDY, NOT_IN_ARCHIVE
 from snapl_presentation.dashboard.ci import REPO_REMEDY
 from snapl_presentation.dashboard.exposition import CONTENT_TYPE, SourceOutcome, render_exposition
 from snapl_presentation.dashboard.models import (
+    ArchiveInfo,
     Bucket,
     CiStatus,
     DeviceView,
+    DriftTimeline,
+    DriftTimelineResponse,
     Envelope,
     LabEvidence,
     Link,
@@ -37,23 +42,35 @@ from snapl_presentation.dashboard.models import (
     MetricsData,
     MetricsResponse,
     MetricsViewName,
+    ModeResponse,
     Overview,
+    RunSteps,
+    RunStepsResponse,
     RunView,
     ScheduleStatus,
     Series,
     SeriesName,
     SourceName,
+    Topology,
+    TopologyResponse,
     View,
     WorkerStatus,
 )
 from snapl_presentation.dashboard.projections import (
+    MAX_SCAN_POINTS,
     RunFilters,
+    events_until,
+    intent_devices,
     latest_pause,
     project_devices,
     project_repeated_failures,
     project_running,
     project_runs,
     project_series,
+    project_steps,
+    project_timeline,
+    project_topology,
+    run_events,
 )
 from snapl_presentation.dashboard.prometheus import SCRAPE_INTERVAL_S, plan_range
 from snapl_presentation.dashboard.sources import AUDIT_REMEDY, STACK_REMEDY, Sources, SourceUnavailable, utcnow
@@ -62,12 +79,22 @@ from snapl_presentation.exceptions import first_line
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Hashable
 
+    from snapl_presentation.dashboard.archive import ArchiveExports
     from snapl_presentation.settings import CliSettings
 
 
 # The function argument cannot be called `use_case` (the server's own), so the
 # contract's name is an alias.
 UseCaseQuery = Annotated[str | None, Query(alias="use_case", description="Defaults to the server's --use-case.")]
+# Spec 011: project from the audit events recorded up to this time (research R11).
+AtQuery = Annotated[
+    AwareDatetime | None,
+    Query(description="Show the state the audit trail recorded up to this time. Defaults to now."),
+]
+# The workflow engine keeps no history the dashboard reads, so a past time has
+# no "running" view of its own.
+NO_HISTORY_REASON = "the workflow engine has no history"
+NO_HISTORY_REMEDY = "request this route without `at` to see what is running now"
 
 
 class DevicesResponse(Envelope):
@@ -397,9 +424,18 @@ def compose_runs(
     *,
     limit: int,
     filters: RunFilters = RunFilters(),  # noqa: B008 — frozen, so sharing it is safe
+    at: datetime | None = None,
 ) -> tuple[View[list[RunView]], View[list[RunView]]]:
-    """The runs view (from the audit trail) and the running view (from Temporal)."""
+    """The runs view (from the audit trail) and the running view (from Temporal).
+
+    With ``at``, both are as of that time (spec 011 research R11): the runs
+    come from the events recorded by then, and Temporal is not asked.
+    """
     events = audit.data or []
+    if at is not None:
+        return _runs_at(audit, names, settings, at, limit=limit, filters=filters), View(
+            source=SourceName.TEMPORAL, available=False, reason=NO_HISTORY_REASON, remedy=NO_HISTORY_REMEDY
+        )
     # Only a current answer says what is running; a stale one could be wrong.
     snapshot = temporal.data if temporal.available else None
     projected = project_runs(
@@ -443,15 +479,78 @@ def compose_runs(
     return runs_view, _from_temporal(temporal, running)
 
 
+def _runs_at(
+    audit: View[Any],
+    names: dict,
+    settings: CliSettings,
+    at: datetime,
+    *,
+    limit: int,
+    filters: RunFilters,
+) -> View[list[RunView]]:
+    """Runs as of ``at``. A run open then is ``running`` if the trail holds its
+    end after ``at``, and ``unfinished`` otherwise: only the trail is evidence."""
+    events = audit.data or []
+    until = events_until(events, at)
+    ended = {
+        (event.workflow_id, event.timestamp)
+        for event in until
+        if event.event_type in {AuditEventType.WORKFLOW_TERMINATED, AuditEventType.WORKFLOW_CANCELLED}
+    }
+    ended_later = {
+        event.workflow_id
+        for event in events
+        if event.timestamp > at
+        and event.event_type in {AuditEventType.WORKFLOW_TERMINATED, AuditEventType.WORKFLOW_CANCELLED}
+        and (event.workflow_id, event.timestamp) not in ended
+    }
+    projected = project_runs(
+        until,
+        ended_later,
+        at,
+        names=names,
+        ui_address=settings.temporal_ui_address,
+        namespace=settings.temporal_namespace,
+        limit=limit,
+        filters=filters,
+    )
+    return View(
+        source=SourceName.AUDIT,
+        available=audit.available,
+        stale=audit.stale,
+        fetched_at=audit.fetched_at,
+        reason=audit.reason,
+        remedy=audit.remedy,
+        data=projected,
+    )
+
+
+def _as_of(audit: View[Any], at: datetime | None) -> View[Any]:
+    """The audit view holding only the events recorded up to ``at``."""
+    if at is None or audit.data is None:
+        return audit
+    return audit.model_copy(update={"data": events_until(audit.data, at)})
+
+
+def compose_topology(sot: View[Any]) -> View[Topology]:
+    """The topology from intent (spec 011 research R6). There is no audit-derived
+    fallback: links exist only in intent. A last good answer is shown as stale."""
+    return View(
+        source=SourceName.SOT,
+        available=sot.available,
+        stale=sot.stale,
+        fetched_at=sot.fetched_at,
+        reason=sot.reason,
+        remedy=sot.remedy,
+        data=project_topology(sot.data) if sot.data is not None else None,
+    )
+
+
 def _device_names(sot: View[Any], last_known: dict) -> dict:
     """Device names from the SoT's answer, or from its last good read in this process."""
     if sot.data:
-        return {state.device.id: state.device.name for state in sot.data}
+        return {device.id: device.name for device in intent_devices(sot.data)}
     return last_known
-
-
-def _page() -> str:
-    return resources.files("snapl_presentation.dashboard").joinpath("static/index.html").read_text(encoding="utf-8")
 
 
 def create_app(
@@ -461,10 +560,19 @@ def create_app(
     *,
     clock: Callable[[], datetime] = utcnow,
     repo: str | None = None,
+    archive: ArchiveInfo | None = None,
+    exported: ArchiveExports | None = None,
+    ui_dir: pathlib.Path | None = pages.BUILT_UI,
 ) -> FastAPI:
     """The dashboard for one use case, served from ``sources``.
 
     ``repo`` is the GitHub ``owner/name`` the CI view reads, for the links.
+    ``archive`` describes the history archive the sources read, when the
+    server is showing one and not the live stack (spec 011), and ``exported``
+    what that archive exported: the schedule, worker, topology, links and
+    metrics are shown as exported instead of being composed (research R13).
+    ``ui_dir`` is where the built UI is looked for. With none there, the root
+    serves the plain page (spec 011 research R2).
     """
     app = FastAPI(
         title="snapl dashboard",
@@ -484,15 +592,29 @@ def create_app(
             )
         return use_case
 
+    def _check_at(at: datetime | None) -> None:
+        if at is not None and at > clock():
+            raise HTTPException(status_code=422, detail="`at` is later than now: there is no state to show yet")
+
     @router.get("/devices", response_model=DevicesResponse)
-    async def devices(requested: UseCaseQuery = None) -> DevicesResponse:
+    async def devices(requested: UseCaseQuery = None, at: AtQuery = None) -> DevicesResponse:
         served = _check_use_case(requested)
+        _check_at(at)
         audit, sot = await reader.read_all(SourceName.AUDIT, SourceName.SOT)
         return DevicesResponse(
             use_case=served,
             generated_at=clock(),
-            devices=compose_devices(audit, sot, sources.sot.names),
+            devices=compose_devices(_as_of(audit, at), sot, sources.sot.names),
         )
+
+    @router.get("/topology", response_model=TopologyResponse)
+    async def topology(requested: UseCaseQuery = None) -> TopologyResponse:
+        """The use case's devices and the links intent declares (spec 011)."""
+        served = _check_use_case(requested)
+        if exported is not None:
+            return TopologyResponse(use_case=served, generated_at=clock(), topology=exported.topology)
+        sot = await reader.read(SourceName.SOT)
+        return TopologyResponse(use_case=served, generated_at=clock(), topology=compose_topology(sot))
 
     @router.get("/runs", response_model=RunsResponse)
     async def runs(
@@ -500,8 +622,10 @@ def create_app(
         limit: Annotated[int, Query(ge=1, le=500)] = 50,
         workflow_type: Annotated[list[str] | None, Query(description="Repeatable.")] = None,
         device: Annotated[str | None, Query(description="A device name.")] = None,
+        at: AtQuery = None,
     ) -> RunsResponse:
         served = _check_use_case(requested)
+        _check_at(at)
         audit, temporal, sot = await reader.read_all(SourceName.AUDIT, SourceName.TEMPORAL, SourceName.SOT)
         runs_view, running_view = compose_runs(
             audit,
@@ -511,15 +635,121 @@ def create_app(
             clock(),
             limit=limit,
             filters=RunFilters(workflow_types=frozenset(workflow_type or ()), device=device),
+            at=at,
         )
         return RunsResponse(use_case=served, generated_at=clock(), runs=runs_view, running=running_view)
+
+    @router.get("/runs/steps", response_model=RunStepsResponse)
+    async def run_steps(
+        workflow_id: Annotated[str, Query(description="The run's workflow id.")],
+        started_at: Annotated[AwareDatetime, Query(description="When the run started: one id can hold many runs.")],
+        requested: UseCaseQuery = None,
+    ) -> RunStepsResponse:
+        """What each NAF block did in one run, as far as the audit trail records it (spec 011)."""
+        served = _check_use_case(requested)
+        audit, temporal, sot = await reader.read_all(SourceName.AUDIT, SourceName.TEMPORAL, SourceName.SOT)
+        steps: RunSteps | None = None
+        of_run = run_events(audit.data or [], workflow_id, started_at)
+        if of_run:
+            snapshot = temporal.data if temporal.available else None
+            (run,) = project_runs(
+                of_run,
+                {info.workflow_id for info in snapshot.running} if snapshot else None,
+                clock(),
+                names=_device_names(sot, sources.sot.names),
+                ui_address=settings.temporal_ui_address,
+                namespace=settings.temporal_namespace,
+            )
+            # The trigger needs the whole trail: a deploy's parent is another run.
+            trigger = next(
+                (
+                    view.trigger
+                    for view in project_runs(
+                        audit.data or [],
+                        None,
+                        clock(),
+                        names={},
+                        ui_address=settings.temporal_ui_address,
+                        namespace=settings.temporal_namespace,
+                        limit=len(audit.data or []) or 1,
+                        filters=RunFilters(workflow_types=frozenset({run.workflow_type})),
+                    )
+                    if (view.workflow_id, view.started_at) == (run.workflow_id, run.started_at)
+                ),
+                run.trigger,
+            )
+            steps = project_steps(run.model_copy(update={"trigger": trigger}), of_run)
+        view: View[RunSteps] = View(
+            source=SourceName.AUDIT,
+            available=audit.available,
+            stale=audit.stale,
+            fetched_at=audit.fetched_at,
+            reason=audit.reason,
+            remedy=audit.remedy,
+            data=steps,
+        )
+        return RunStepsResponse(use_case=served, generated_at=clock(), steps=view)
+
+    @router.get("/drift-timeline", response_model=DriftTimelineResponse)
+    async def drift_timeline(
+        requested: UseCaseQuery = None,
+        start: Annotated[AwareDatetime | None, Query(description="Defaults to end - 24h.")] = None,
+        end: Annotated[AwareDatetime | None, Query(description="Defaults to now.")] = None,
+    ) -> DriftTimelineResponse:
+        """One lane of scan points per device, and the drift episodes over them (spec 011)."""
+        served = _check_use_case(requested)
+        range_end = end or clock()
+        range_start = start or range_end - timedelta(hours=24)
+        audit, sot = await reader.read_all(SourceName.AUDIT, SourceName.SOT)
+        timeline: DriftTimeline | None = None
+        if audit.data is not None:
+            try:
+                timeline = project_timeline(
+                    audit.data,
+                    sot.data if sot.available else None,
+                    _device_names(sot, sources.sot.names),
+                    range_start,
+                    range_end,
+                    max_points=MAX_SCAN_POINTS,
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+        elif range_start >= range_end:
+            raise HTTPException(status_code=422, detail="start must be before end")
+        view: View[DriftTimeline] = View(
+            source=SourceName.AUDIT,
+            available=audit.available,
+            stale=audit.stale,
+            fetched_at=audit.fetched_at,
+            reason=audit.reason,
+            remedy=audit.remedy,
+            data=timeline,
+        )
+        return DriftTimelineResponse(use_case=served, generated_at=clock(), timeline=view)
+
+    @router.get("/mode", response_model=ModeResponse)
+    async def mode(requested: UseCaseQuery = None) -> ModeResponse:
+        """Whether this server shows the live stack or a history archive (spec 011)."""
+        served = _check_use_case(requested)
+        now = clock()
+        return ModeResponse(
+            use_case=served,
+            generated_at=now,
+            mode="archive" if archive is not None else "live",
+            now=now,
+            archive=archive,
+        )
 
     @router.get("/schedule", response_model=ScheduleResponse)
     async def schedule(requested: UseCaseQuery = None) -> ScheduleResponse:
         served = _check_use_case(requested)
         audit, temporal, sot = await reader.read_all(SourceName.AUDIT, SourceName.TEMPORAL, SourceName.SOT)
-        schedule_view, worker_view = compose_schedule(
-            temporal, audit, _device_names(sot, sources.sot.names), use_case=served, task_queue=settings.task_queue
+        schedule_view, worker_view = (
+            (exported.schedule, exported.worker)
+            if exported is not None
+            else compose_schedule(
+                temporal, audit, _device_names(sot, sources.sot.names), use_case=served, task_queue=settings.task_queue
+            )
         )
         return ScheduleResponse(use_case=served, generated_at=clock(), schedule=schedule_view, worker=worker_view)
 
@@ -577,8 +807,10 @@ def create_app(
         names = _device_names(sot, sources.sot.names)
         now = clock()
         runs_view, running_view = compose_runs(audit, temporal, names, settings, now, limit=runs_limit)
-        schedule_view, worker_view = compose_schedule(
-            temporal, audit, names, use_case=served, task_queue=settings.task_queue
+        schedule_view, worker_view = (
+            (exported.schedule, exported.worker)
+            if exported is not None
+            else compose_schedule(temporal, audit, names, use_case=served, task_queue=settings.task_queue)
         )
         return Overview(
             use_case=served,
@@ -643,6 +875,10 @@ def create_app(
             name = MetricsViewName(view)
         except ValueError:
             raise HTTPException(status_code=404, detail=f"no metrics view named {view!r}") from None
+        exported_range = exported.metrics.exported_range(name) if exported is not None else None
+        if start is None and end is None and exported_range is not None:
+            # An archive's default is the one range it holds.
+            start, end = exported_range
         range_end = end or clock()
         range_start = start or range_end - _METRICS_DEFAULT_RANGE
         if range_start >= range_end:
@@ -664,6 +900,12 @@ def create_app(
     async def links(requested: UseCaseQuery = None) -> LinksResponse:
         """Where to look next: the stack's own UIs, GitHub, this API and the docs."""
         served = _check_use_case(requested)
+        if exported is not None:
+            if exported.links is None:
+                return LinksResponse(
+                    use_case=served, generated_at=clock(), links=[], reason=NOT_IN_ARCHIVE, remedy=ARCHIVE_REMEDY
+                )
+            return exported.links.model_copy(update={"use_case": served, "generated_at": clock()})
         return compose_links(settings, served, repo, generated_at=clock())
 
     app.include_router(router)
@@ -677,10 +919,39 @@ def create_app(
         """
         return PlainTextResponse(render_exposition(reader.outcomes), media_type=CONTENT_TYPE)
 
-    page = _page()
+    ui = pages.find_ui(ui_dir)
+    plain = pages.plain_page()
+    fallback = pages.fallback_page()
+    plain_headers = {"Content-Security-Policy": pages.PLAIN_POLICY, "Cache-Control": "no-cache"}
 
-    @app.get("/", response_class=HTMLResponse, include_in_schema=False)
-    async def index() -> HTMLResponse:
-        return HTMLResponse(page)
+    @app.middleware("http")
+    async def content_security_policy(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        """No response lets the browser reach another origin (FR-005). The
+        plain page sets its own, looser policy for its inline script."""
+        response = await call_next(request)
+        response.headers.setdefault("Content-Security-Policy", pages.UI_POLICY)
+        return response
+
+    @app.get("/", include_in_schema=False)
+    async def index() -> Response:
+        """The designed UI, or the plain page with a notice when it is not built."""
+        if ui is None:
+            return HTMLResponse(fallback, headers=plain_headers)
+        return FileResponse(ui / "index.html", media_type="text/html", headers={"Cache-Control": "no-cache"})
+
+    @app.get("/plain", response_class=HTMLResponse, include_in_schema=False)
+    async def plain_page() -> HTMLResponse:
+        """010's plain page, always."""
+        return HTMLResponse(plain, headers=plain_headers)
+
+    @app.get("/assets/{path:path}", include_in_schema=False)
+    async def asset(path: str) -> FileResponse:
+        """One built file of the UI. Its name carries a content hash, so it never changes."""
+        found = pages.asset_path(ui, path) if ui is not None else None
+        if found is None:
+            raise HTTPException(status_code=404)
+        return FileResponse(found, headers={"Cache-Control": pages.IMMUTABLE})
 
     return app

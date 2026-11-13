@@ -28,7 +28,7 @@ uv run invoke dashboard.types     # after a contract change, regenerate the UI's
 uv run snapl dashboard --archive .snapl/archives/snapl-history-<ts>.tar.gz
 uv run snapl dashboard --snapshot demo.html                    # from the running stack's sources
 uv run snapl dashboard --archive <file> --snapshot demo.html   # from an archive
-open demo.html                                                 # no server, no network
+open demo.html                                                 # no server needed
 ```
 
 ## Live evidence for the implementation PRs (Principle III)
@@ -50,11 +50,11 @@ Each item names what to run and what to observe. Paste the output or a screensho
 5. **A source down (SC-006)**:
    - Stop Temporal. **Observe**: the page is usable within 2 s, the schedule and running panels name Temporal with `uv run invoke dev.deps`, and the topology and lanes are unchanged. Start it again.
 6. **Archive (SC-008)**:
-   - `uv run invoke history.archive`, then `uv run invoke dev.stop`, then turn Wi-Fi off.
+   - `uv run invoke history.archive`, then `uv run invoke dev.stop`, and stop the worker and any dashboard.
    - `shasum -a 256 <archive>`, `uv run snapl dashboard --archive <archive>`.
    - **Observe**: the banner, the topology with its links, the lanes and the scrubber over the whole trail, the exported metrics, and "not in this archive" on the running panel. Stop it and check the checksum is unchanged and no temporary directory is left.
 7. **Snapshot (SC-009)**. No lab needed if an archive exists:
-   - `uv run snapl dashboard --archive <archive> --snapshot demo.html`, Wi-Fi off, open the file in Chromium, Firefox and Safari.
+   - `uv run snapl dashboard --archive <archive> --snapshot demo.html`, then open the file in Chromium, Firefox and Safari with the network panel open before loading it.
    - **Observe**: the recording banner, the topology, the scrubber replaying the arc, the browser's network panel showing zero requests, and the file's size.
 8. **No toolchain (SC-012)**:
    - In a fresh clone with `node` off the `PATH`: `uv sync && uv run snapl dashboard`.

@@ -33,6 +33,14 @@ dist/
 build/
 *.egg
 
+# Designed dashboard UI (spec 011): built files and the Node toolchain's own.
+# The source is in packages/presentation/ui; `invoke dashboard.build` builds it.
+packages/presentation/snapl_presentation/dashboard/static/ui/
+packages/presentation/ui/node_modules/
+packages/presentation/ui/coverage/
+packages/presentation/ui/playwright-report/
+packages/presentation/ui/test-results/
+
 # IDE
 .vscode/
 .idea/

@@ -1,6 +1,150 @@
 {
   "components": {
     "schemas": {
+      "ArchiveInfo": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "metrics_end": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metrics End"
+          },
+          "metrics_start": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metrics Start"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "parts": {
+            "items": {
+              "$ref": "#/components/schemas/ArchivePart"
+            },
+            "title": "Parts",
+            "type": "array"
+          },
+          "snapl_commit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapl Commit"
+          }
+        },
+        "required": [
+          "name",
+          "created_at",
+          "parts"
+        ],
+        "title": "ArchiveInfo",
+        "type": "object"
+      },
+      "ArchivePart": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "present": {
+            "title": "Present",
+            "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "name",
+          "present"
+        ],
+        "title": "ArchivePart",
+        "type": "object"
+      },
+      "BlockState": {
+        "additionalProperties": false,
+        "properties": {
+          "block": {
+            "$ref": "#/components/schemas/NafBlock"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "status": {
+            "$ref": "#/components/schemas/BlockStatus"
+          },
+          "t": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "T"
+          }
+        },
+        "required": [
+          "block",
+          "status"
+        ],
+        "title": "BlockState",
+        "type": "object"
+      },
+      "BlockStatus": {
+        "enum": [
+          "done",
+          "failed",
+          "not_reached",
+          "not_recorded",
+          "surface"
+        ],
+        "title": "BlockStatus",
+        "type": "string"
+      },
       "Bucket": {
         "enum": [
           "5m",
@@ -221,6 +365,39 @@
         "title": "DeployOutcome",
         "type": "object"
       },
+      "DeviceLane": {
+        "additionalProperties": false,
+        "properties": {
+          "device_id": {
+            "format": "uuid",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "in_intent": {
+            "title": "In Intent",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/ScanPoint"
+            },
+            "title": "Points",
+            "type": "array"
+          }
+        },
+        "required": [
+          "device_id",
+          "name",
+          "in_intent",
+          "points"
+        ],
+        "title": "DeviceLane",
+        "type": "object"
+      },
       "DeviceView": {
         "additionalProperties": false,
         "properties": {
@@ -379,6 +556,80 @@
         "title": "DevicesResponse",
         "type": "object"
       },
+      "DriftEpisode": {
+        "additionalProperties": false,
+        "description": "One device's drift, from the scan that first saw it to the scan that first saw it gone.",
+        "properties": {
+          "closed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closed At"
+          },
+          "closed_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EpisodeClose"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "device_id": {
+            "format": "uuid",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "duration_s": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration S"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "opened_at": {
+            "format": "date-time",
+            "title": "Opened At",
+            "type": "string"
+          },
+          "scans": {
+            "minimum": 1.0,
+            "title": "Scans",
+            "type": "integer"
+          },
+          "states": {
+            "items": {
+              "$ref": "#/components/schemas/DriftState"
+            },
+            "title": "States",
+            "type": "array"
+          }
+        },
+        "required": [
+          "device_id",
+          "name",
+          "opened_at",
+          "states",
+          "scans"
+        ],
+        "title": "DriftEpisode",
+        "type": "object"
+      },
       "DriftResponseMode": {
         "description": "What a scheduled run does with what its scan found (constitution VIII.2).\n\nThe third response, ``suppress``, is a paused schedule: nothing runs, so\nnothing carries a mode.",
         "enum": [
@@ -472,6 +723,144 @@
         ],
         "title": "DriftState",
         "type": "string"
+      },
+      "DriftTimeline": {
+        "additionalProperties": false,
+        "properties": {
+          "end": {
+            "format": "date-time",
+            "title": "End",
+            "type": "string"
+          },
+          "episodes": {
+            "items": {
+              "$ref": "#/components/schemas/DriftEpisode"
+            },
+            "title": "Episodes",
+            "type": "array"
+          },
+          "first_event_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Event At"
+          },
+          "lanes": {
+            "items": {
+              "$ref": "#/components/schemas/DeviceLane"
+            },
+            "title": "Lanes",
+            "type": "array"
+          },
+          "latest_closed": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DriftEpisode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "markers": {
+            "items": {
+              "$ref": "#/components/schemas/Marker"
+            },
+            "title": "Markers",
+            "type": "array"
+          },
+          "open_count": {
+            "minimum": 0.0,
+            "title": "Open Count",
+            "type": "integer"
+          },
+          "start": {
+            "format": "date-time",
+            "title": "Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start",
+          "end",
+          "lanes",
+          "episodes",
+          "markers",
+          "open_count"
+        ],
+        "title": "DriftTimeline",
+        "type": "object"
+      },
+      "DriftTimelineResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "contract_version": {
+            "const": "1",
+            "default": "1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "timeline": {
+            "$ref": "#/components/schemas/View_DriftTimeline_"
+          },
+          "use_case": {
+            "title": "Use Case",
+            "type": "string"
+          }
+        },
+        "required": [
+          "use_case",
+          "generated_at",
+          "timeline"
+        ],
+        "title": "DriftTimelineResponse",
+        "type": "object"
+      },
+      "EpisodeClose": {
+        "additionalProperties": false,
+        "description": "The deploy that repaired a drift episode.",
+        "properties": {
+          "ended_at": {
+            "format": "date-time",
+            "title": "Ended At",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "remediation",
+              "reconcile",
+              "deploy"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "trigger": {
+            "$ref": "#/components/schemas/Trigger"
+          },
+          "workflow_id": {
+            "title": "Workflow Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "workflow_id",
+          "trigger",
+          "ended_at"
+        ],
+        "title": "EpisodeClose",
+        "type": "object"
       },
       "HTTPValidationError": {
         "properties": {
@@ -842,6 +1231,25 @@
         "title": "Link",
         "type": "object"
       },
+      "LinkEnd": {
+        "additionalProperties": false,
+        "properties": {
+          "device": {
+            "title": "Device",
+            "type": "string"
+          },
+          "interface": {
+            "title": "Interface",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device",
+          "interface"
+        ],
+        "title": "LinkEnd",
+        "type": "object"
+      },
       "LinkGroup": {
         "enum": [
           "stack",
@@ -1095,6 +1503,69 @@
         "title": "MetricsViewName",
         "type": "string"
       },
+      "ModeResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "archive": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ArchiveInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "contract_version": {
+            "const": "1",
+            "default": "1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "live",
+              "archive"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "now": {
+            "format": "date-time",
+            "title": "Now",
+            "type": "string"
+          },
+          "use_case": {
+            "title": "Use Case",
+            "type": "string"
+          }
+        },
+        "required": [
+          "use_case",
+          "generated_at",
+          "mode",
+          "now"
+        ],
+        "title": "ModeResponse",
+        "type": "object"
+      },
+      "NafBlock": {
+        "enum": [
+          "intent",
+          "executor",
+          "collector",
+          "observability",
+          "orchestrator",
+          "presentation"
+        ],
+        "title": "NafBlock",
+        "type": "string"
+      },
       "Overview": {
         "additionalProperties": false,
         "properties": {
@@ -1243,6 +1714,123 @@
         ],
         "title": "RunState",
         "type": "string"
+      },
+      "RunStep": {
+        "additionalProperties": false,
+        "properties": {
+          "block": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NafBlock"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "outcome": {
+            "enum": [
+              "done",
+              "failed"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "t": {
+            "format": "date-time",
+            "title": "T",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "block",
+          "outcome",
+          "t"
+        ],
+        "title": "RunStep",
+        "type": "object"
+      },
+      "RunSteps": {
+        "additionalProperties": false,
+        "properties": {
+          "blocks": {
+            "items": {
+              "$ref": "#/components/schemas/BlockState"
+            },
+            "maxItems": 6,
+            "minItems": 6,
+            "title": "Blocks",
+            "type": "array"
+          },
+          "recorded": {
+            "title": "Recorded",
+            "type": "boolean"
+          },
+          "run": {
+            "$ref": "#/components/schemas/RunView"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/RunStep"
+            },
+            "title": "Steps",
+            "type": "array"
+          }
+        },
+        "required": [
+          "run",
+          "recorded",
+          "steps",
+          "blocks"
+        ],
+        "title": "RunSteps",
+        "type": "object"
+      },
+      "RunStepsResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "contract_version": {
+            "const": "1",
+            "default": "1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "steps": {
+            "$ref": "#/components/schemas/View_RunSteps_"
+          },
+          "use_case": {
+            "title": "Use Case",
+            "type": "string"
+          }
+        },
+        "required": [
+          "use_case",
+          "generated_at",
+          "steps"
+        ],
+        "title": "RunStepsResponse",
+        "type": "object"
       },
       "RunSummary": {
         "additionalProperties": false,
@@ -1422,6 +2010,63 @@
           "running"
         ],
         "title": "RunsResponse",
+        "type": "object"
+      },
+      "ScanPoint": {
+        "additionalProperties": false,
+        "description": "What one scan recorded for one device.",
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "missing_paths": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Paths",
+            "type": "array"
+          },
+          "scan_workflow_id": {
+            "title": "Scan Workflow Id",
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/DriftState"
+          },
+          "t": {
+            "format": "date-time",
+            "title": "T",
+            "type": "string"
+          },
+          "unclassified_paths": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unclassified Paths",
+            "type": "array"
+          },
+          "undesired_paths": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Undesired Paths",
+            "type": "array"
+          }
+        },
+        "required": [
+          "t",
+          "state",
+          "scan_workflow_id"
+        ],
+        "title": "ScanPoint",
         "type": "object"
       },
       "ScheduleResponse": {
@@ -1685,6 +2330,127 @@
         "title": "SourcesResponse",
         "type": "object"
       },
+      "Topology": {
+        "additionalProperties": false,
+        "properties": {
+          "links": {
+            "items": {
+              "$ref": "#/components/schemas/TopologyLink"
+            },
+            "title": "Links",
+            "type": "array"
+          },
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/TopologyNode"
+            },
+            "title": "Nodes",
+            "type": "array"
+          },
+          "unlinked": {
+            "items": {
+              "$ref": "#/components/schemas/UnlinkedInterface"
+            },
+            "title": "Unlinked",
+            "type": "array"
+          }
+        },
+        "required": [
+          "nodes",
+          "links",
+          "unlinked"
+        ],
+        "title": "Topology",
+        "type": "object"
+      },
+      "TopologyLink": {
+        "additionalProperties": false,
+        "description": "One link, as intent declares it. Its ends are ordered by (device,\ninterface), so a link declared from both ends has one identity.",
+        "properties": {
+          "a": {
+            "$ref": "#/components/schemas/LinkEnd"
+          },
+          "agreed": {
+            "title": "Agreed",
+            "type": "boolean"
+          },
+          "b": {
+            "$ref": "#/components/schemas/LinkEnd"
+          },
+          "declared_by": {
+            "enum": [
+              "both",
+              "a",
+              "b"
+            ],
+            "title": "Declared By",
+            "type": "string"
+          }
+        },
+        "required": [
+          "a",
+          "b",
+          "declared_by",
+          "agreed"
+        ],
+        "title": "TopologyLink",
+        "type": "object"
+      },
+      "TopologyNode": {
+        "additionalProperties": false,
+        "properties": {
+          "device_id": {
+            "format": "uuid",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_id",
+          "name",
+          "role"
+        ],
+        "title": "TopologyNode",
+        "type": "object"
+      },
+      "TopologyResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "contract_version": {
+            "const": "1",
+            "default": "1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "topology": {
+            "$ref": "#/components/schemas/View_Topology_"
+          },
+          "use_case": {
+            "title": "Use Case",
+            "type": "string"
+          }
+        },
+        "required": [
+          "use_case",
+          "generated_at",
+          "topology"
+        ],
+        "title": "TopologyResponse",
+        "type": "object"
+      },
       "Trigger": {
         "enum": [
           "schedule",
@@ -1693,6 +2459,41 @@
         ],
         "title": "Trigger",
         "type": "string"
+      },
+      "UnlinkedInterface": {
+        "additionalProperties": false,
+        "properties": {
+          "device": {
+            "title": "Device",
+            "type": "string"
+          },
+          "interface": {
+            "title": "Interface",
+            "type": "string"
+          },
+          "peer_device": {
+            "title": "Peer Device",
+            "type": "string"
+          },
+          "peer_interface": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peer Interface"
+          }
+        },
+        "required": [
+          "device",
+          "interface",
+          "peer_device"
+        ],
+        "title": "UnlinkedInterface",
+        "type": "object"
       },
       "ValidationError": {
         "properties": {
@@ -1799,6 +2600,73 @@
           "available"
         ],
         "title": "View[CiStatus]",
+        "type": "object"
+      },
+      "View_DriftTimeline_": {
+        "additionalProperties": false,
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DriftTimeline"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fetched_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fetched At"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "remedy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remedy"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SourceName"
+          },
+          "stale": {
+            "default": false,
+            "title": "Stale",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "source",
+          "available"
+        ],
+        "title": "View[DriftTimeline]",
         "type": "object"
       },
       "View_LabEvidence_": {
@@ -1996,6 +2864,73 @@
         "title": "View[NoneType]",
         "type": "object"
       },
+      "View_RunSteps_": {
+        "additionalProperties": false,
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunSteps"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fetched_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fetched At"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "remedy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remedy"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SourceName"
+          },
+          "stale": {
+            "default": false,
+            "title": "Stale",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "source",
+          "available"
+        ],
+        "title": "View[RunSteps]",
+        "type": "object"
+      },
       "View_ScheduleStatus_": {
         "additionalProperties": false,
         "properties": {
@@ -2061,6 +2996,73 @@
           "available"
         ],
         "title": "View[ScheduleStatus]",
+        "type": "object"
+      },
+      "View_Topology_": {
+        "additionalProperties": false,
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Topology"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fetched_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fetched At"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "remedy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remedy"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SourceName"
+          },
+          "stale": {
+            "default": false,
+            "title": "Stale",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "source",
+          "available"
+        ],
+        "title": "View[Topology]",
         "type": "object"
       },
       "View_WorkerStatus_": {
@@ -2385,6 +3387,25 @@
               "description": "Defaults to the server's --use-case.",
               "title": "Use Case"
             }
+          },
+          {
+            "description": "Show the state the audit trail recorded up to this time. Defaults to now.",
+            "in": "query",
+            "name": "at",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Show the state the audit trail recorded up to this time. Defaults to now.",
+              "title": "At"
+            }
           }
         ],
         "responses": {
@@ -2410,6 +3431,93 @@
           }
         },
         "summary": "Devices"
+      }
+    },
+    "/api/v1/drift-timeline": {
+      "get": {
+        "description": "One lane of scan points per device, and the drift episodes over them (spec 011).",
+        "operationId": "drift_timeline_api_v1_drift_timeline_get",
+        "parameters": [
+          {
+            "description": "Defaults to the server's --use-case.",
+            "in": "query",
+            "name": "use_case",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to the server's --use-case.",
+              "title": "Use Case"
+            }
+          },
+          {
+            "description": "Defaults to end - 24h.",
+            "in": "query",
+            "name": "start",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to end - 24h.",
+              "title": "Start"
+            }
+          },
+          {
+            "description": "Defaults to now.",
+            "in": "query",
+            "name": "end",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to now.",
+              "title": "End"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DriftTimelineResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Drift Timeline"
       }
     },
     "/api/v1/history": {
@@ -2754,6 +3862,55 @@
         "summary": "Metrics"
       }
     },
+    "/api/v1/mode": {
+      "get": {
+        "description": "Whether this server shows the live stack or a history archive (spec 011).",
+        "operationId": "mode_api_v1_mode_get",
+        "parameters": [
+          {
+            "description": "Defaults to the server's --use-case.",
+            "in": "query",
+            "name": "use_case",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to the server's --use-case.",
+              "title": "Use Case"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mode"
+      }
+    },
     "/api/v1/overview": {
       "get": {
         "description": "Everything the page needs, in one request (US5).\n\nEvery source is read at once, each within its timeout, so the slowest\nsource bounds the request and a failing one only marks its own views.",
@@ -2887,6 +4044,25 @@
               "description": "A device name.",
               "title": "Device"
             }
+          },
+          {
+            "description": "Show the state the audit trail recorded up to this time. Defaults to now.",
+            "in": "query",
+            "name": "at",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Show the state the audit trail recorded up to this time. Defaults to now.",
+              "title": "At"
+            }
           }
         ],
         "responses": {
@@ -2912,6 +4088,78 @@
           }
         },
         "summary": "Runs"
+      }
+    },
+    "/api/v1/runs/steps": {
+      "get": {
+        "description": "What each NAF block did in one run, as far as the audit trail records it (spec 011).",
+        "operationId": "run_steps_api_v1_runs_steps_get",
+        "parameters": [
+          {
+            "description": "The run's workflow id.",
+            "in": "query",
+            "name": "workflow_id",
+            "required": true,
+            "schema": {
+              "description": "The run's workflow id.",
+              "title": "Workflow Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "When the run started: one id can hold many runs.",
+            "in": "query",
+            "name": "started_at",
+            "required": true,
+            "schema": {
+              "description": "When the run started: one id can hold many runs.",
+              "format": "date-time",
+              "title": "Started At",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Defaults to the server's --use-case.",
+            "in": "query",
+            "name": "use_case",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to the server's --use-case.",
+              "title": "Use Case"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunStepsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run Steps"
       }
     },
     "/api/v1/schedule": {
@@ -3009,6 +4257,55 @@
           }
         },
         "summary": "Sources Status"
+      }
+    },
+    "/api/v1/topology": {
+      "get": {
+        "description": "The use case's devices and the links intent declares (spec 011).",
+        "operationId": "topology_api_v1_topology_get",
+        "parameters": [
+          {
+            "description": "Defaults to the server's --use-case.",
+            "in": "query",
+            "name": "use_case",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to the server's --use-case.",
+              "title": "Use Case"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TopologyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Topology"
       }
     }
   }

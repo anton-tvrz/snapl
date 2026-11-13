@@ -144,14 +144,17 @@ def _commits_since(run: LabRun, git: _Git, main: str) -> tuple[int | None, str]:
 
 def read_lab_evidence(
     runs_dir: Path,
-    repo: Path,
+    repo: Path | None,
     *,
     main: str = "main",
     is_alive: Callable[[int], bool] = pid_alive,
+    no_history: str = "there is no git history to count against",
 ) -> LabEvidence:
     """Every recorded run, the latest per suite, and the commits since each.
 
-    Counted against the local ``main`` ref, so "as of your last fetch".
+    Counted against the local ``main`` ref, so "as of your last fetch". With no
+    ``repo`` (an archive, spec 011 R13) git is not run: every count is unknown,
+    with ``no_history`` as the reason.
     """
     folders = (
         sorted(
@@ -169,10 +172,17 @@ def read_lab_evidence(
         if run.status is not LabRunStatus.UNREADABLE:
             latest.setdefault(run.suite, run)
 
-    git = _Git(repo)
     since: dict[Suite, int | None] = {}
     matched_by: dict[Suite, Any] = {}
     unknown: dict[Suite, str] = {}
+    if repo is None:
+        return LabEvidence(
+            latest=latest,
+            commits_on_main_since=dict.fromkeys(latest),
+            commits_unknown_reason=dict.fromkeys(latest, no_history),
+            runs=runs[:MAX_RUNS],
+        )
+    git = _Git(repo)
     for suite, run in latest.items():
         count, how = _commits_since(run, git, main)
         since[suite] = count
@@ -192,16 +202,24 @@ def read_lab_evidence(
 class LabRunSource:
     """The recorded runs, read from disk on every request: a directory scan is cheap."""
 
-    def __init__(self, runs_dir: Path, repo: Path, *, clock: Callable[[], datetime] | None = None) -> None:
+    def __init__(
+        self,
+        runs_dir: Path,
+        repo: Path | None,
+        *,
+        clock: Callable[[], datetime] | None = None,
+        no_history: str = "there is no git history to count against",
+    ) -> None:
         self._runs_dir = runs_dir
         self._repo = repo
         self._clock = clock or _utcnow
+        self._no_history = no_history
 
     async def refresh(self) -> View[LabEvidence]:
         import asyncio  # noqa: PLC0415
 
         now = self._clock()
-        evidence = await asyncio.to_thread(read_lab_evidence, self._runs_dir, self._repo)
+        evidence = await asyncio.to_thread(read_lab_evidence, self._runs_dir, self._repo, no_history=self._no_history)
         if not evidence.runs:
             # No runs yet is a fact, not a failure: say how to make one.
             return View(source=SourceName.LAB_RUNS, available=True, fetched_at=now, remedy=RUN_REMEDY, data=evidence)

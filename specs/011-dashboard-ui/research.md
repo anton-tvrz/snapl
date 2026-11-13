@@ -29,6 +29,12 @@ Latest versions on npm on 2026-11-09, looked up, not assumed:
 | eslint | 10.14.0 | the markup ban (R4) |
 | @fontsource-variable/inter | 5.3.0 | bundled font, no CDN |
 
+- **Amended in PR C, what installed and what did not**:
+  - **TypeScript is 5.9.3, not 7.0.2.** `openapi-typescript` 7.13.0 needs `typescript@^5` and `typescript-eslint` 8.72.2 needs `<6.1.0`. Move to 7 when both accept it.
+  - **No `eslint-plugin-react`.** Its latest release supports ESLint up to 9, and the pinned ESLint is 10. The one rule wanted from it, `react/no-danger`, is replaced by ESLint's own `no-restricted-syntax` with four selectors (`dangerouslySetInnerHTML` as an attribute or a property, `innerHTML`/`outerHTML`, `insertAdjacentHTML`). `reportUnusedDisableDirectives` is an error, and a unit test fails on any disable comment for the rule.
+  - **`@playwright/test` 1.65.0 came forward from Phase 4.** The policy header can only be proved in a real browser, and shipping it unproved would risk a blank page at `/`.
+  - **No shadcn/ui components yet.** The shell needs none. They are copied in by the slice that first uses one (the device drawer).
+  - Vite 8, Vitest 5, Tailwind 4 and ESLint 10 worked with the configuration in this PR, checked by running each.
 - **Pinning**: `package.json` pins exact versions, and `package-lock.json` is committed. `npm ci` is the only install command in CI and in `invoke dashboard.build`.
 - **Node**: 22 LTS, named in `packages/presentation/ui/.nvmrc`. The maintainer's machine has Node 26.8.1, which Vite's range also accepts.
 - **Several of these are new major versions.** The first implementation slice reads each tool's current documentation before configuring it, and does not rely on remembered configuration from older majors.
@@ -73,7 +79,7 @@ The UI keeps its state in the query string (R12), so there is no client-side pat
   - For `/plain` (and `/` when it falls back): the same, with `script-src 'unsafe-inline'` and `style-src 'unsafe-inline'`, because 010's page is one file with inline script and style. `connect-src 'self'` still holds, so it cannot reach another origin either.
 - **Snapshot file**: it has no server to send a header, so it carries `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:">`. The browser then refuses every request the page could make (SC-007, SC-009).
 - **Fonts**: bundled through `@fontsource-variable/inter`. Nothing loads from a CDN.
-- **Device text**: React renders strings as text. The one way around that is `dangerouslySetInnerHTML`, so ESLint's `react/no-danger` is an error, with no disable comments allowed in `src/` (a unit test greps for them). This replaces 010 R11's `textContent` rule.
+- **Device text**: React renders strings as text. The ways around that (`dangerouslySetInnerHTML`, `innerHTML`, `outerHTML`, `insertAdjacentHTML`) are an ESLint error (R1, amended), with no disable comments allowed in `src/` (a unit test greps for them). This replaces 010 R11's `textContent` rule.
 - **Tests**: a Python test asserts the header on `/`, `/plain`, an asset and an API route. The Playwright check records every request and fails on any whose origin is not the server's.
 
 **Rejected**: a nonce or hashes for the plain page's inline blocks. They add moving parts to protect a page whose `connect-src` already confines it.
@@ -214,8 +220,12 @@ Server-sent events stay out. Polling plus the audit-derived window meets SC-002 
 **Measured**: the fixture's eight deploys each have all four step records, with `outcome: success`. It has no failed deploy.
 
 **Decision**: `GET /api/v1/runs/steps?workflow_id=&started_at=`, built by a pure function `project_steps(run_events)`.
-- One table on the server, `STEP_BLOCKS`, maps the four activity names to `intent`, `executor`, `collector` and `observability`. A second, `FAILURE_BLOCKS`, maps the failure reasons to the block whose step failed.
-- For a `DeployIntent` run, `recorded` is true. Each block is `done` (its step record exists), `failed` (the run's failure reason maps to it), or `not_reached`.
+- One table on the server, `STEP_BLOCKS`, maps the four activity names to `intent`, `executor`, `collector` and `observability`.
+- For a `DeployIntent` run, `recorded` is true. Each block is `done` (its step record exists), `failed`, or `not_reached`.
+- **Which block failed** (*amended in PR B*): the first plan mapped each failure reason to a block. Reading `deploy_intent.py` again showed that is wrong for one case: `collect_failed` ends the run both when the collect fails and when the drift check itself fails, after the collect step was recorded. So the reason does not name the block. The rule is now:
+  - a run that ended with `intent_unavailable`, `device_not_found`, `apply_failed` or `collect_failed` failed at the first block with no step record;
+  - `verification_failed` fails Observability, whose check ran and found drift left on the device;
+  - `cancelled` and `audit_failed` blame no block. Blocks with no record are `not_reached`.
 - For any other run type, `recorded` is false, the four blocks are `not_recorded`, and the UI shows the outcome only (FR-028).
 - The Orchestrator block is `done` for any run with a start record. Presentation is `surface` (spec Assumptions).
 - An unknown activity name is returned as a step with `block: null`, never dropped.

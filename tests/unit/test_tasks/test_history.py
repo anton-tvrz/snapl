@@ -34,7 +34,8 @@ pytestmark = pytest.mark.unit
 SNAPSHOT_NAME = "20261108T203115Z-674e642f920efff4"
 # Read before any fixture points it at a temp dir.
 REAL_PROMETHEUS_DATA = getattr(history, "PROMETHEUS_DATA", None)
-EXPORTS = ("overview", "history", "links", "sources")
+# Spec 011 adds topology, devices, runs and drift-timeline, for archive mode.
+EXPORTS = ("overview", "history", "links", "sources", "topology", "devices", "runs", "drift-timeline")
 
 
 def _closed_port() -> int:
@@ -50,6 +51,8 @@ class Stub:
         self.data_dir = data_dir
         # Set to answer the snapshot POST the way a Prometheus without the admin API does.
         self.snapshot_refusal: tuple[int, dict] | None = None
+        # Dashboard routes that answer 404, as an older server would.
+        self.missing: set[str] = set()
         self.requests: list[tuple[str, str, dict[str, list[str]]]] = []
         stub = self
 
@@ -83,6 +86,8 @@ class Stub:
                 stub.requests.append(("GET", url.path, parse_qs(url.query)))
                 if url.path == "/-/ready":
                     self._answer(200, "Prometheus Server is Ready.")
+                elif url.path in stub.missing:
+                    self._answer(404, {"detail": "Not Found"})
                 elif url.path.startswith("/api/v1/"):
                     self._answer(200, {"contract_version": "1", "path": url.path})
                 else:
@@ -239,12 +244,29 @@ def test_the_export_covers_the_last_7_days(stub: Stub) -> None:
     before = datetime.now(UTC)
     history.archive(_ctx())
 
-    for path in ("/api/v1/history", *(f"/api/v1/metrics/{view.value}" for view in MetricsViewName)):
+    ranged = ("/api/v1/history", "/api/v1/drift-timeline", *(f"/api/v1/metrics/{v.value}" for v in MetricsViewName))
+    for path in ranged:
         [query] = stub.asked("GET", path)
         start = datetime.fromisoformat(query["start"][0])
         assert abs((before - timedelta(days=7)) - start) < timedelta(minutes=1), path
-    for name in ("overview", "links", "sources"):
+    for name in ("overview", "links", "sources", "topology", "devices", "runs"):
         assert stub.asked("GET", f"/api/v1/{name}")
+
+
+def test_a_dashboard_without_the_spec_011_routes_is_a_failed_export_part(stub: Stub, tmp_path: Path) -> None:
+    """An older dashboard answers 404 for /topology: the archive is still written, the part says why."""
+    stub.missing = {"/api/v1/topology"}
+    with pytest.raises(Exit):
+        history.archive(_ctx())
+
+    [archive] = (tmp_path / "archives").glob("*.tar.gz")
+    with tarfile.open(archive) as tar:
+        manifest = json.load(tar.extractfile("manifest.json"))  # type: ignore[arg-type]
+        assert "export/devices.json" in tar.getnames()
+    export = next(part for part in manifest["parts"] if part["name"] == "dashboard_export")
+    assert export["present"] is False
+    assert "/api/v1/topology (HTTP 404)" in export["reason"]
+    assert manifest["format"] == "snapl-history/1"
 
 
 def test_prometheus_down_still_writes_the_archive_and_exits_1(
