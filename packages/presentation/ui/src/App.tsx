@@ -374,8 +374,8 @@ export function App({ provider }: Props) {
                 </div>
                 {at && (
                   <p className="mb-3 text-xs text-muted">
-                    Its steps are shown as the audit trail records them now,
-                    which may be after the time shown.
+                    These are its steps as the audit trail records them now,
+                    which can include steps after the time shown.
                   </p>
                 )}
                 {loop?.data ? (

@@ -126,7 +126,7 @@ The maintainer has a `history.archive` file from three months ago, and nothing i
 
 **Why this priority**: 012 made history outlive the machine. This makes it readable again. P4 because it depends on everything above and serves an occasional need.
 
-**Independent Test**: Build an archive from fixtures, open it with every service stopped and the network disabled, and verify the audit-backed views, the lab evidence, the exported metrics and the banner. Verify the archive file's checksum is unchanged afterwards.
+**Independent Test**: Build an archive from fixtures, open it with every service stopped, and verify the audit-backed views, the lab evidence, the exported metrics and the banner. Verify the archive file's checksum is unchanged afterwards.
 
 **Acceptance Scenarios**:
 
@@ -142,16 +142,16 @@ The maintainer has a `history.archive` file from three months ago, and nothing i
 
 ### User Story 6 — Hand Someone a Snapshot (Priority: P4)
 
-The maintainer wants to show the loop to someone who will never run the lab. One command writes a single file. Opened from disk in a browser, with no server and no network, it shows the same topology, lanes, scrubber, loop strip and runs over the exported range, and says plainly that it is a recording.
+The maintainer wants to show the loop to someone who will never run the lab. One command writes a single file. Opened from disk in a browser, with no server and without fetching anything, it shows the same topology, lanes, scrubber, loop strip and runs over the exported range, and says plainly that it is a recording.
 
 **Why this priority**: This is what a demo post links to. P4 because it is a way of delivering US1 to US3, not a new view.
 
-**Independent Test**: Write a snapshot from fixtures, open the file directly from disk with the network disabled, and verify the views, the scrubber, the recording notice, and that no request leaves the page.
+**Independent Test**: Write a snapshot from fixtures, open the file directly from disk with no server running, and verify the views, the scrubber, the recording notice, and that no request leaves the page.
 
 **Acceptance Scenarios**:
 
 1. **Given** a running dashboard, or an archive, **When** the maintainer runs the snapshot command, **Then** one file is written, and the command prints its path, its size, the time range it covers, and the kinds of data it contains.
-2. **Given** the snapshot file, **When** it is opened from disk with no server and no network, **Then** the topology, lanes, scrubber, loop strip, device detail and runs work over its range.
+2. **Given** the snapshot file, **When** it is opened from disk with no server, **Then** the topology, lanes, scrubber, loop strip, device detail and runs work over its range, and no request leaves the page.
 3. **Given** a snapshot is open, **When** any view is shown, **Then** a notice says it is a recording, when it was made and from which commit, and no view is labelled live.
 4. **Given** a snapshot is open, **When** a suggested command would be shown, **Then** it is shown as what the operator ran or could have run, with nothing implying the viewer can act on this fabric.
 5. **Given** a snapshot, **When** it is inspected, **Then** it holds no credentials, no tokens and no environment values. Free text recorded from devices (error reasons) is included as recorded, and the command's output says so.
@@ -241,7 +241,7 @@ The maintainer wants to show the loop to someone who will never run the lab. One
 - **FR-038**: In archive mode, the metrics panels MUST show only the exported ranges and say that other ranges need the live stack.
 - **FR-039**: An archive with a part missing MUST open, with the views that need the part saying it is absent. A file that is not a snapl archive, or whose format is newer than the server knows, MUST be refused before any server starts, with a message that says which.
 - **FR-040**: One command MUST write a snapshot: a single file holding the UI and the bundle's data for a stated range (default the last 7 days), from a running dashboard or from an archive. It MUST print the file's path, size, range and the kinds of data included, and MUST say that device-supplied text is included as recorded.
-- **FR-041**: A snapshot MUST open from disk with no server and no network, and MUST provide the topology, lanes, "as of" control, loop strip, device detail and runs over its range. It MUST carry a notice that it is a recording, with its creation time and commit, and MUST NOT label any view live.
+- **FR-041**: A snapshot MUST open from disk with no server, MUST make no network request, and MUST provide the topology, lanes, "as of" control, loop strip, device detail and runs over its range. It MUST carry a notice that it is a recording, with its creation time and commit, and MUST NOT label any view live.
 - **FR-042**: A snapshot MUST NOT contain credentials, tokens or environment values.
 
 #### Quality
@@ -272,8 +272,8 @@ The maintainer wants to show the loop to someone who will never run the lab. One
 - **SC-005**: Every episode in a fixture with repeated drift, an error scan, a hand repair and a weeks-long gap is reported with the right opening, closing and closing cause, and the hand repair's cause is `unknown`.
 - **SC-006**: With each source stopped in turn, the page is usable within 2 seconds, every other panel is unchanged, and the stopped source's panels name it and give a remedy. This is 010's SC-003, kept.
 - **SC-007**: In live, archive and snapshot mode, the page makes zero requests to another origin. A test fails on the first one.
-- **SC-008**: On a machine with nothing running and the network disabled, an archive of 100,000 audit events opens to a usable page within 10 seconds, and the archive file is byte-for-byte unchanged afterwards.
-- **SC-009**: A snapshot opened from disk, with no server and the network disabled, shows the topology and replays the demo arc.
+- **SC-008**: On a machine with every snapl service stopped, an archive of 100,000 audit events opens to a usable page within 10 seconds, and the archive file is byte-for-byte unchanged afterwards. *Amended 2026-11-13*: the network no longer has to be disabled for this check. SC-007 already fails on any request to another origin, and the browser's network panel shows the same thing by hand.
+- **SC-009**: A snapshot opened from disk, with no server, shows the topology and replays the demo arc, and the browser's network panel shows zero requests. *Amended 2026-11-13*: the network no longer has to be disabled for this check. SC-007 already fails on any request to another origin, and the browser's network panel shows the same thing by hand.
 - **SC-010**: Each of the seven drift states can be told from the others in greyscale and under simulated red-green and blue-yellow colour-vision deficiency, in light and dark mode.
 - **SC-011**: For the same fixtures, the designed page, the plain page and `snapl status --json` agree on every device's state and on the schedule.
 - **SC-012**: A fresh checkout with no build toolchain still serves a working dashboard at the root.

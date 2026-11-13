@@ -210,7 +210,7 @@ Each PR says `Closes` a task issue under #146 and carries `changelog/146.added.m
 - [x] T043 [US1] packages/presentation/ui/src/lib/layout.ts, paths.ts, activity.ts, urlState.ts.
 - [x] T044 [US1] packages/presentation/ui/src/components/topology/Topology.tsx, Node.tsx, Link.tsx, Legend.tsx, DeviceList.tsx.
 - [x] T045 [US1] packages/presentation/ui/src/components/DeviceDrawer.tsx, and App.tsx wiring: the overview every 5 s, the topology every 30 s, selection in the URL. *As built*: also `src/lib/linkNotes.ts` (link disagreements in words, for the drawer). The page reads device states from `/overview`, not `/devices`, to save a request. Its test and code were written in the same step and not seen failing first.
-- [ ] T046 [US1] **Needs the lab**: quickstart item 1 (the demo arc on the topology, SC-001 and SC-002) and item 5 (a source down, SC-006).
+- [x] T046 [US1] **Needs the lab**: quickstart item 1 (the demo arc on the topology, SC-001 and SC-002) and item 5 (a source down, SC-006). Done 2026-11-12 in #234; SC-002 held in 20 of 20 deploys.
 
 **Checkpoint**: the designed page replaces the device table. US1 is complete and demoable live.
 
@@ -254,8 +254,8 @@ Each PR says `Closes` a task issue under #146 and carries `changelog/146.added.m
 - [x] T053 [US2] packages/presentation/ui/src/components/timeline/Lanes.tsx, Scrubber.tsx, Headline.tsx.
 - [x] T054 [US2] App.tsx: the "as of" state, the past-time banner, present-only labels through `ViewFrame`, and the refetch rules of research R11.
 - [x] T055 [US3] packages/presentation/ui/src/components/LoopStrip.tsx, shown for the latest run and for a run selected in the drawer or the lanes' markers.
-- [ ] T056 [US2] **Needs the lab**: quickstart items 2 and 3 (replay and the headline against `snapl audit`).
-- [ ] T057 [US3] **Needs the lab**: quickstart item 4. Capture a failed deploy, replace the hand-built failed-deploy events in tests/unit/test_presentation/test_dashboard_steps.py with the captured rows, and update tests/unit/test_presentation/fixtures/README.md.
+- [x] T056 [US2] **Needs the lab**: quickstart items 2 and 3 (replay and the headline against `snapl audit`). Done 2026-11-12 in #234.
+- [x] T057 [US3] **Needs the lab**: quickstart item 4. Capture a failed deploy, replace the hand-built failed-deploy events in tests/unit/test_presentation/test_dashboard_steps.py with the captured rows, and update tests/unit/test_presentation/fixtures/README.md. Done 2026-11-12: `fixtures/audit_failed_deploy.sqlite` replaces the hand-built `apply_failed` case; the other failure reasons stay hand-built.
 
 **Checkpoint**: the demo arc can be replayed on the page. US1 to US3 are enough for the demo.
 
@@ -341,7 +341,7 @@ Each PR says `Closes` a task issue under #146 and carries `changelog/146.added.m
 - [x] T075 [US5] packages/presentation/snapl_presentation/cli.py: `--archive`, building `Sources` from the archive, the fixed clock, and the start lines. No settings are read from the environment in this mode.
 - [x] T076 [US5] tasks/history.py: `_EXPORTS` gains the four routes. Amend specs/012-measured-metrics/contracts/history-tasks.md "Contents" to list them, with a link to this spec.
 - [x] T077 [US5] packages/presentation/ui/src/components/ModeBanner.tsx, and the mode read once at load and passed to `ViewFrame`, the range picker and `usePolling`.
-- [ ] T078 [US5] **Needs the lab**: quickstart item 6 (a real archive, the stack stopped, Wi-Fi off, the checksum).
+- [ ] T078 [US5] **Needs the lab**: quickstart item 6 (a real archive, the stack stopped, the checksum). Amended 2026-11-13: Wi-Fi no longer has to be off (spec SC-008).
 
 **Checkpoint**: history can be read months later on a machine with nothing running.
 
@@ -387,14 +387,15 @@ Each PR says `Closes` a task issue under #146 and carries `changelog/146.added.m
 
 ## Phase 9: Docs and Governance
 
-- [ ] T089 [P] README.md: the dashboard section describes the designed UI, `dashboard.build`, `/plain`, `--archive` and `--snapshot`, with one screenshot taken from the fixture server (dark mode). Known limitations gain: the loop strip shows completed steps only; a past time shows today's devices and links; an archive's metrics are the exported range only.
-- [ ] T090 [P] AGENTS.md and CLAUDE.md: the UI directory, the `dashboard.*` tasks, and the TypeScript test rule (spec FR-046). Add CLAUDE.md's "Recent Changes" line for 011 by hand: in planning, `update-agent-context.sh` named the entry after the working branch and dropped older entries, so its output was discarded.
-- [ ] T091 [P] docs/demo-scenarios.md: a scenario that runs the arc with the dashboard open, replays it, and writes a snapshot. Plain claims only (ADR-0004).
-- [ ] T092 [P] dev/adr/0005-dashboard-and-metrics-stack.md: Decision 2 to Accepted, with the PR numbers, and its diagram's browser node updated. `dev/guides/running-tests.md`: the UI tests and the browser check.
-- [ ] T093 Run the humanizer skill over the UI's visible strings (empty states, reasons the UI words itself, banners) and the README section, and apply what it finds. Device- and server-supplied text is not touched.
-- [ ] T094 Open a **draft** PR, from a branch that is not `overnight/` (`docs/146-constitution-ui-stack`), amending `.specify/memory/constitution.md` (research R18): the Technology Stack gains FastAPI and uvicorn, Prometheus and the UI toolchain; Principle III says it applies to UI code; minor version bump. Tick this task when the draft is open. Merging it is the maintainer's decision, and an unattended run never merges it.
+- [x] T089 [P] README.md: the dashboard section describes the designed UI, `dashboard.build`, `/plain`, `--archive` and `--snapshot`, with one screenshot taken from the fixture server (dark mode). Known limitations gain: the loop strip shows completed steps only; a past time shows today's devices and links; an archive's metrics are the exported range only.
+- [x] T090 [P] AGENTS.md and CLAUDE.md: the UI directory, the `dashboard.*` tasks, and the TypeScript test rule (spec FR-046). Add CLAUDE.md's "Recent Changes" line for 011 by hand: in planning, `update-agent-context.sh` named the entry after the working branch and dropped older entries, so its output was discarded.
+- [x] T091 [P] docs/demo-scenarios.md: a scenario that runs the arc with the dashboard open, replays it, and writes a snapshot. Plain claims only (ADR-0004).
+- [x] T092 [P] dev/adr/0005-dashboard-and-metrics-stack.md: Decision 2 to Accepted, with the PR numbers, and its diagram's browser node updated. `dev/guides/running-tests.md`: the UI tests and the browser check.
+- [x] T093 Run the humanizer skill over the UI's visible strings (empty states, reasons the UI words itself, banners) and the README section, and apply what it finds. Device- and server-supplied text is not touched.
+- [x] T094 Open a **draft** PR, from a branch that is not `overnight/` (`docs/146-constitution-ui-stack`), amending `.specify/memory/constitution.md` (research R18): the Technology Stack gains FastAPI and uvicorn, Prometheus and the UI toolchain; Principle III says it applies to UI code; minor version bump. Tick this task when the draft is open. Merging it is the maintainer's decision, and an unattended run never merges it.
+  - Draft opened: #232 (issue #231). Not merged by the run.
 - [ ] T095 **Needs the maintainer**: quickstart item 13 (try the design skill locally), and decide whether a snapshot is published for the demo post.
-- [ ] T096 **Needs the lab**: quickstart item 8 (a fresh clone with no Node serves the plain page).
+- [x] T096 **Needs the lab**: quickstart item 8 (a fresh clone with no Node serves the plain page). Done 2026-11-12 in #234.
 
 ---
 
@@ -417,7 +418,7 @@ Within a phase, tasks marked [P] touch different files and can be done in any or
 | T056 | replay and the headline against `snapl audit` | lab |
 | T057 | capture a real failed deploy as a fixture | lab |
 | T068 | time the three questions | maintainer |
-| T078 | a real archive, offline | lab |
+| T078 | a real archive, nothing running | lab |
 | T087 | the snapshot in three browsers | lab |
 | T088 | a first-time viewer; read a snapshot before publishing | maintainer |
 | T094 | merging the constitution amendment (the draft PR is opened by the run) | maintainer |

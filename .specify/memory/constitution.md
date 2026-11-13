@@ -143,8 +143,8 @@ SD-WAN (hub/spoke overlay) and WAN backbone (IS-IS/MPLS-style underlay, traffic 
 - pygnmi for gNMI operations
 - Pydantic v2 for all data models
 - Jinja2 for config template rendering
-- FastAPI and uvicorn for the local, read-only dashboard server (ADR-0005 Decision 1)
-- Prometheus in the dev stack for measured metrics, without Grafana (ADR-0005 Decision 3)
+- FastAPI and uvicorn for the read-only operator dashboard (`snapl dashboard`, ADR-0005)
+- Prometheus for measured metrics, scraping the worker and the dashboard (ADR-0005)
 - For the dashboard's UI only: Node 22.12 or later, needed to build it and never to run snapl, with React, Vite, TypeScript, Tailwind and Recharts, tested with Vitest and Playwright (ADR-0005 Decision 2)
 
 ### Development Tooling
@@ -193,4 +193,4 @@ Amendments require:
 2. A version bump here (major for removed or redefined principles, minor for added ones, patch for wording)
 3. A PR the maintainer merges
 
-**Version**: 2.1.0 | **Ratified**: 2026-04-14 | **Last Amended**: 2026-11-10 (ADR-0005: the dashboard and metrics stack; Principle III covers UI code)
+**Version**: 2.2.0 | **Ratified**: 2026-04-14 | **Last Amended**: 2026-11-13 (ADR-0005 Decision 2: the dashboard UI toolchain; Principle III covers UI code)
