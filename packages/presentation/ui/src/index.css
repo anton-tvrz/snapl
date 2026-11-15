@@ -22,6 +22,7 @@
   /* A panel is lifted from the page by a shadow tinted with the page's own
      warm grey, blur twice the offset (spec 014 FR-014). Dark keeps its border. */
   --panel-shadow: 0 8px 16px rgb(40 38 30 / 0.08);
+  --panel-line: transparent;
   /* Metrics series, in fixed order (dataviz reference palette, validated on --surface). */
   --series-1: #2a78d6;
   --series-2: #eb6834;
@@ -35,6 +36,7 @@
   :root:not([data-theme="light"]) {
     --page: #111316;
     --panel-shadow: none;
+    --panel-line: var(--line);
     --surface: #1a1d21;
     --sunken: #24282d;
     --ink: #eceef0;
@@ -60,6 +62,7 @@
   color-scheme: dark;
   --page: #111316;
   --panel-shadow: none;
+  --panel-line: var(--line);
   --surface: #1a1d21;
   --sunken: #24282d;
   --ink: #eceef0;
@@ -98,6 +101,7 @@
   --color-warn-surface: var(--warn-surface);
   --color-warn-line: var(--warn-line);
   --shadow-panel: var(--panel-shadow);
+  --color-panel-line: var(--panel-line);
   /* The type scale: a 14 px base stepping by 1.25 (spec 014 FR-012). These are
      the only sizes; src/look.test.ts fails on any other. 12 px is for metadata. */
   --text-meta: 0.75rem;

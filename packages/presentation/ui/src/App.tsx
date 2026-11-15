@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { DeviceView, TopologyNode } from "./api/types";
 import { Command, Recording } from "./components/Command";
 import { DeviceDrawer } from "./components/DeviceDrawer";
+import { GroupLabel } from "./components/GroupLabel";
 import { ModeBanner } from "./components/ModeBanner";
 import { LoopStrip } from "./components/LoopStrip";
 import { Ci } from "./components/panels/Ci";
@@ -260,10 +261,10 @@ export function App({ provider }: Props) {
           {unreachable && (
             <div
               role="alert"
-              className="mb-4 rounded-lg border border-warn-line bg-warn-surface p-3 text-sm"
+              className="mb-4 flex flex-col gap-2 rounded-lg border border-warn-line bg-warn-surface p-4 text-body"
             >
-              <p className="font-medium">{unreachable.message}</p>
-              <p className="mt-2">
+              <p className="max-w-prose font-medium">{unreachable.message}</p>
+              <p>
                 <Command text="uv run snapl dashboard" />
               </p>
             </div>
@@ -272,7 +273,7 @@ export function App({ provider }: Props) {
           {at && (
             <section
               aria-label="Past time"
-              className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border-2 border-ink bg-sunken p-3 text-sm"
+              className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border-2 border-ink bg-sunken p-4 text-body"
             >
               <div className="min-w-0 flex-1">
                 <p className="font-semibold">
@@ -280,7 +281,7 @@ export function App({ provider }: Props) {
                   time)
                 </p>
                 {domain?.history && at < domain.history && (
-                  <p className="mt-1">
+                  <p>
                     History starts at {utcText(domain.history)}: nothing was
                     recorded before it.
                   </p>
@@ -289,7 +290,7 @@ export function App({ provider }: Props) {
               <button
                 type="button"
                 onClick={() => setAt(undefined)}
-                className="rounded border border-ink bg-surface px-3 py-1 font-medium"
+                className="chip rounded border border-ink bg-surface px-4 py-1 font-medium"
               >
                 Return to now
               </button>
@@ -300,7 +301,7 @@ export function App({ provider }: Props) {
             <div className="min-w-0">
               <ViewFrame title="Fabric" view={graph} now={now}>
                 {at && (
-                  <p className="mb-3 text-xs text-muted">
+                  <p className="mb-4 text-meta text-muted">
                     Devices and links are today's: the Source of Truth keeps no
                     history. Their states are as of the time shown.
                   </p>
@@ -317,13 +318,13 @@ export function App({ provider }: Props) {
                   />
                 )}
                 {!fabricReady && (
-                  <p className="text-sm text-muted">
+                  <p className="text-body text-muted">
                     Loading the fabric at that time…
                   </p>
                 )}
               </ViewFrame>
               {graph && !graph.data && devicesView && (
-                <div className="mt-3">
+                <div className="mt-4">
                   <DeviceList
                     devices={devices}
                     selected={selected}
@@ -354,7 +355,7 @@ export function App({ provider }: Props) {
                 now={now}
                 error={steps.error}
               >
-                <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
+                <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-meta text-muted">
                   <span>
                     {chosenRun
                       ? "Chosen run"
@@ -366,14 +367,14 @@ export function App({ provider }: Props) {
                     <button
                       type="button"
                       onClick={() => setChosenRun(undefined)}
-                      className="rounded border border-line px-2 py-0.5 text-ink"
+                      className="chip rounded border border-line px-2 py-0.5 text-ink"
                     >
                       Show the latest run
                     </button>
                   )}
                 </div>
                 {at && (
-                  <p className="mb-3 text-xs text-muted">
+                  <p className="mb-4 text-meta text-muted">
                     These are its steps as the audit trail records them now,
                     which can include steps after the time shown.
                   </p>
@@ -381,7 +382,7 @@ export function App({ provider }: Props) {
                 {loop?.data ? (
                   <LoopStrip steps={loop.data} />
                 ) : (
-                  <p className="text-sm text-muted">
+                  <p className="text-body text-muted">
                     The audit trail holds no record of this run.
                   </p>
                 )}
@@ -481,7 +482,7 @@ export function App({ provider }: Props) {
           </div>
 
           <section aria-label="Metrics" className="mt-6">
-            <h2 className="mb-3 text-sm font-semibold">Metrics</h2>
+            <GroupLabel>Metrics</GroupLabel>
             <div className="grid gap-4 lg:grid-cols-2">
               {METRIC_VIEWS.map((view) => (
                 <MetricView
@@ -497,10 +498,10 @@ export function App({ provider }: Props) {
             </div>
           </section>
 
-          <section aria-label="Sources">
-            <h2 className="mt-6 mb-3 text-sm font-semibold">Sources</h2>
+          <section aria-label="Sources" className="mt-6">
+            <GroupLabel>Sources</GroupLabel>
             {at && (
-              <p className="mb-3 text-xs text-muted">
+              <p className="mb-4 text-meta text-muted">
                 Shows only the present: these are the sources' states now.
               </p>
             )}

@@ -1,6 +1,7 @@
 import type { HistoryResponse } from "../../api/types";
 import { type Counts, historyRows, markerText } from "../../lib/history";
 import { ageText, utcText } from "../../lib/time";
+import { PanelFrame } from "../ViewFrame";
 
 interface Props {
   history: HistoryResponse | undefined;
@@ -25,51 +26,47 @@ export function History({ history, now, error }: Props) {
   const markers = deploys?.markers ?? [];
 
   return (
-    <section aria-label={title} className="rounded-lg border border-line bg-surface p-4 text-sm">
-      <header className="mb-3 flex flex-wrap items-baseline justify-between gap-x-4">
-        <h2 className="text-sm font-semibold">{title}</h2>
-        <p className="text-xs text-muted">Audit trail</p>
-      </header>
+    <PanelFrame title={title} footer="Audit trail">
       {error && (
-        <p role="alert" className="mb-2 break-words">
+        <p role="alert" className="mb-4 max-w-prose text-body break-words">
           History unavailable: {error.message}
         </p>
       )}
-      {!history && !error && <p className="text-muted">Loading…</p>}
+      {!history && !error && <p className="text-body text-muted">Loading…</p>}
       {history && (
         <>
-          <p className="mb-2 text-xs text-muted">
+          <p className="mb-2 text-meta text-muted">
             {deploys?.first_event_at
               ? `The audit trail starts ${ageText(deploys.first_event_at, now)}.`
               : "No audit events read."}
           </p>
           <div className="max-h-80 overflow-auto">
-            <table aria-label={title} className="w-full text-left text-xs">
-              <thead className="sticky top-0 bg-surface text-muted">
+            <table aria-label={title} className="w-full text-left text-body">
+              <thead className="sticky top-0 bg-surface text-meta text-muted">
                 <tr>
-                  <th className="py-1 pr-3 font-medium">Start (UTC)</th>
-                  <th className="py-1 pr-3 font-medium">Scans</th>
-                  <th className="py-1 pr-3 font-medium">Most drifted devices</th>
-                  <th className="py-1 pr-3 font-medium">Most undesired paths</th>
-                  <th className="py-1 pr-3 font-medium">Deploys ok / failed</th>
-                  <th className="py-1 font-medium">Repairs ok / failed</th>
+                  <th className="cell py-1 pr-4 font-medium">Start (UTC)</th>
+                  <th className="cell py-1 pr-4 font-medium">Scans</th>
+                  <th className="cell py-1 pr-4 font-medium">Most drifted devices</th>
+                  <th className="cell py-1 pr-4 font-medium">Most undesired paths</th>
+                  <th className="cell py-1 pr-4 font-medium">Deploys ok / failed</th>
+                  <th className="cell py-1 font-medium">Repairs ok / failed</th>
                 </tr>
               </thead>
               <tbody className="tabular-nums">
                 {rows.map((row) => (
                   <tr key={row.start} className="border-t border-line">
-                    <td className="py-0.5 pr-3 whitespace-nowrap">{utcText(new Date(row.start)).slice(0, 16)}</td>
+                    <td className="py-2 pr-4 whitespace-nowrap">{utcText(new Date(row.start)).slice(0, 16)}</td>
                     {row.quiet ? (
-                      <td colSpan={5} className="py-0.5 text-muted">
+                      <td colSpan={5} className="py-2 text-muted">
                         no scans
                       </td>
                     ) : (
                       <>
-                        <td className="py-0.5 pr-3">{row.scans}</td>
-                        <td className="py-0.5 pr-3">{row.mostDrifted ?? ""}</td>
-                        <td className="py-0.5 pr-3">{row.mostUndesired ?? ""}</td>
-                        <td className="py-0.5 pr-3">{pair(row.deploys)}</td>
-                        <td className="py-0.5">{pair(row.repairs)}</td>
+                        <td className="py-2 pr-4">{row.scans}</td>
+                        <td className="py-2 pr-4">{row.mostDrifted ?? ""}</td>
+                        <td className="py-2 pr-4">{row.mostUndesired ?? ""}</td>
+                        <td className="py-2 pr-4">{pair(row.deploys)}</td>
+                        <td className="py-2">{pair(row.repairs)}</td>
                       </>
                     )}
                   </tr>
@@ -78,7 +75,7 @@ export function History({ history, now, error }: Props) {
             </table>
           </div>
           {markers.length > 0 && (
-            <ul aria-label="Repair runs in this range" className="mt-2 space-y-0.5 text-xs text-muted">
+            <ul aria-label="Repair runs in this range" className="mt-4 flex flex-col gap-2 text-meta text-muted">
               {markers.map((marker) => (
                 <li key={`${marker.workflow_id}@${marker.t}`}>{markerText(marker, now)}</li>
               ))}
@@ -86,6 +83,6 @@ export function History({ history, now, error }: Props) {
           )}
         </>
       )}
-    </section>
+    </PanelFrame>
   );
 }
