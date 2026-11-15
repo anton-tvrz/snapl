@@ -169,6 +169,7 @@ The maintainer wants to show the loop to someone who will never run the lab. One
 - **The "as of" time is before the first audit event**: every device is shown as never scanned, and the page says where history starts.
 - **The devices or links were different at the "as of" time**: the Source of Truth keeps no history here, so the topology draws today's devices and links, and says so whenever a past time is shown.
 - **An episode still open**: it has no duration. The headline counts open episodes separately and shows how long each has been open as of the "as of" time.
+- **An open episode on a device no longer in intent** (added for #236): a re-seed gives every device a new ID, and the old IDs are never scanned again, so an episode open at that point can never close. It stays an open episode in the contract, because no scan saw the device in sync. The headline does not count it as drift open. It says, apart, how many episodes never closed on devices no longer in intent.
 - **A device repaired and drifted again**: two episodes, not one.
 - **Audit rows written late** (010 research R3): a past state can change when a late row lands. The page shows what the trail holds now.
 - **A drift state, run state or source name the UI does not know** (a newer server): shown as its raw text with a neutral mark, never hidden.

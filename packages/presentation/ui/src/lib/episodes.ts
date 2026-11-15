@@ -40,10 +40,19 @@ export function headline(timeline: DriftTimeline, asOf: Date): Headline {
     };
   }
 
-  const open = timeline.episodes.filter((e) => !e.closed_at);
-  const count = timeline.open_count;
-  if (count === 0) return { latest, open: "No drift open." };
+  // A device that left intent is not scanned any more, so its last drifted scan
+  // leaves an episode that can never close. It stays in the data, and is counted
+  // apart from drift an operator can still act on (#236).
+  const gone = new Set(timeline.lanes.filter((lane) => !lane.in_intent).map((lane) => lane.device_id));
+  const unclosed = timeline.episodes.filter((e) => !e.closed_at);
+  const open = unclosed.filter((e) => !gone.has(e.device_id));
+  const left = unclosed.length - open.length;
+  const count = Math.max(timeline.open_count - left, 0);
+
   const each = open.map((e) => `${e.name} for ${durationText(seconds(e.opened_at, asOf))}`).join(", ");
   const noun = count === 1 ? "drift" : "drifts";
-  return { latest, open: each ? `${count} ${noun} open: ${each}.` : `${count} ${noun} open.` };
+  const still = count === 0 ? "No drift open." : each ? `${count} ${noun} open: ${each}.` : `${count} ${noun} open.`;
+  if (left === 0) return { latest, open: still };
+  const where = left === 1 ? "1 episode never closed on a device" : `${left} episodes never closed on devices`;
+  return { latest, open: `${still} ${where} no longer in intent.` };
 }
