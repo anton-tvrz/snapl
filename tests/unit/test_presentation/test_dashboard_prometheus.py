@@ -92,21 +92,30 @@ def an_hour() -> RangePlan:
 
 # --- named views (FR-011) --------------------------------------------------------
 
+
+def _rate(selector: str, window: str = "60s", seconds: int = 60) -> str:
+    """A rate that also counts a series' first observation (#191), as data-model.md gives it."""
+    return (
+        f'((({selector} unless {selector} offset {window}) and on() (up{{job="snapl-worker"}} offset {window}))'
+        f" / {seconds} or rate({selector}[{window}]))"
+    )
+
+
 EXPECTED_QUERIES = {
     MetricsViewName.WORKFLOW_DURATION: (
         "histogram_quantile(0.95, sum by (le, workflow_type) "
-        '(rate(temporal_workflow_endtoend_latency_bucket{namespace="default"}[60s])))'
+        f"({_rate('temporal_workflow_endtoend_latency_bucket{namespace="default"}')}))"
     ),
     MetricsViewName.GNMI_DURATION: (
         "histogram_quantile(0.95, sum by (le, device, operation) "
-        '(rate(snapl_gnmi_call_duration_bucket{use_case="dcfabric"}[60s])))'
+        f"({_rate('snapl_gnmi_call_duration_bucket{use_case="dcfabric"}')}))"
     ),
     MetricsViewName.GNMI_ERRORS: (
-        'sum by (device) (rate(snapl_gnmi_call_duration_count{use_case="dcfabric",outcome="error"}[60s]))'
+        f"sum by (device) ({_rate('snapl_gnmi_call_duration_count{use_case="dcfabric",outcome="error"}')})"
     ),
     MetricsViewName.WORKER_LAG: (
         "histogram_quantile(0.95, sum by (le) "
-        '(rate(temporal_activity_schedule_to_start_latency_bucket{namespace="default"}[60s])))'
+        f"({_rate('temporal_activity_schedule_to_start_latency_bucket{namespace="default"}')}))"
     ),
     MetricsViewName.WORKER_UP: 'up{job="snapl-worker"}',
     MetricsViewName.SOURCE_HEALTH: "snapl_dashboard_source_up",
@@ -122,6 +131,16 @@ def test_every_view_has_exactly_the_documented_query() -> None:
 def test_the_rate_window_spans_at_least_four_scrapes_and_one_step() -> None:
     assert "[60s]" in render_query(MetricsViewName.GNMI_ERRORS, namespace="n", use_case="u", window_s=60)
     assert "[300s]" in render_query(MetricsViewName.GNMI_ERRORS, namespace="n", use_case="u", window_s=300)
+
+
+def test_a_first_observation_is_divided_by_the_window_in_seconds() -> None:
+    """A series with no sample one window ago started from zero inside it, so its
+    value is its increase over the window (#191)."""
+    query = render_query(MetricsViewName.GNMI_ERRORS, namespace="n", use_case="u", window_s=300)
+
+    assert "offset 300s" in query
+    assert "/ 300 or rate(" in query
+    assert "$" not in query
 
 
 def test_a_quote_in_a_setting_cannot_break_out_of_the_matcher() -> None:
