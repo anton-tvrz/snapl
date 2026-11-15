@@ -187,6 +187,7 @@ uv run invoke dashboard.test && uv run invoke dashboard.e2e
 - [ ] T055 [P] Update the dashboard's description in `README.md` and `docs/demo-scenarios.md` where they describe the page's layout or name a panel that moved. Claim only what the page shows.
 - [ ] T056 [P] Add a short "Look" note to ADR-0005 Decision 2 in `dev/adr/0005-dashboard-and-metrics-stack.md` pointing to the dashboard skill, and add spec 014 to `CLAUDE.md` "Recent Changes".
 - [ ] T057 Finish `changelog/246.changed.md` as one readable paragraph.
+- [ ] T061 Last task of this slice: point `.specify/feature.json` at `specs/015-more-metrics`, so the next overnight pass carries on with spec 015. Do it only when every task of this spec that doesn't need the lab is ticked.
 - [ ] T058 **Needs the lab**: quickstart item 7, the four cards, the ring and the ranked bars against `snapl status` on the live fabric with one induced drift.
 - [ ] T059 **Needs the lab**: quickstart item 8, retake `docs/images/dashboard-dark.png` and spec 011's screenshots from the live demo, after reseeding the Source of Truth so the integration tests' `query-*` devices are gone.
 - [ ] T060 **Needs the lab**: decide from the morning's pictures whether the look is right, and file what isn't as issues under #246.
@@ -198,7 +199,7 @@ uv run invoke dashboard.test && uv run invoke dashboard.e2e
 - PR A before all others. PR B before C to H. PR G after C (the summary sits under the row). PR H last of the UI slices, because it empties the allowlist. PR I last.
 - D, E and F touch different components and may land in any order after B.
 
-## Deferred to a later spec
+## Deferred to spec 015 (more metrics)
 
 - Recording scan steps so the loop strip has six blocks to show for a scheduled scan.
 - A runs-in-24-hours count, more metrics views, new worker instruments and device telemetry.
