@@ -2,7 +2,7 @@
 
 **Feature Branch**: drafted on `ccr-a14a9b05-ogrz9i`; give it its own branch (`013-remove-undesired-config`) when it moves to a PR
 **Created**: 2026-11-15
-**Status**: Draft, with three questions for the maintainer (marked `[NEEDS CLARIFICATION]`)
+**Status**: Draft, clarified 2026-11-15. The plan waits for live captures C1 to C5.
 **Input**: Issue #65: "apply is merge-only gNMI update at '/' — config removed from intent never leaves the device". Spec 007's deferred User Story 3 ("Converge by removal").
 
 ## Context
@@ -16,6 +16,14 @@ This spec covers the execution half: an operator previews what would be removed 
 ### Why a spec and not a patch
 
 It is a new kind of write to a device (the constitution's test for a spec), the first one that deletes. A wrong path in a delete can take a device's interfaces or its management session with it. The exact gNMI delete paths SR Linux accepts, and what each leaves behind, are not yet known from the lab.
+
+## Clarifications
+
+### Session 2026-11-15
+
+- Q: The removal entry point: a new command, or an option on reconcile? → A: A new command, `snapl remove <device>`, previewing by default, with `--apply` to execute (FR-013).
+- Q: The first cut's scope: whole undesired entities and extra addresses only, or also undesired fields on intent-managed entities? → A: Whole entities and extra addresses only (FR-014).
+- Q: All of a device's plan or a chosen subset? → A: All or nothing per device (FR-015).
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -96,9 +104,9 @@ Every removal shows in `snapl audit`, the dashboard's run list and the device's 
 - **FR-010**: A removal MUST be serialized with deploys to the same device (the per-device workflow id family) and MUST NOT run while a deploy to it is in flight.
 - **FR-011**: A removal MUST be recorded in the audit trail as its own workflow type, with the actor, the planned paths, the device's response and the verification result.
 - **FR-012**: Scheduled runs (spec 009) MUST NOT remove config, in any response mode.
-- **FR-013**: The removal entry point is [NEEDS CLARIFICATION: Q1. A new command (`snapl remove <device>`, preview by default and `--apply` to execute), or an option on reconcile (`snapl reconcile <device> --remove-undesired`) that heals forward drift and removes undesired config in one confirmed operation?]
-- **FR-014**: The first cut removes [NEEDS CLARIFICATION: Q2. (a) whole undesired entities only (an interface entry outside intent, a BGP neighbour outside intent), plus extra addresses on intent-managed interfaces (#193); or (b) also individual undesired fields on intent-managed entities once the renderer omits them, such as a description removed from intent?]
-- **FR-015**: A removal of several undesired entities on one device MUST be [NEEDS CLARIFICATION: Q3. all of the device's undesired entities or nothing, or may the operator pick a subset of the plan?]
+- **FR-013**: The removal entry point MUST be a command of its own, `snapl remove <device>`, which previews by default and executes only with `--apply`. `snapl reconcile` stays a merge and never deletes.
+- **FR-014**: The first cut MUST remove whole undesired entities (an interface entry outside intent, a BGP neighbour outside intent) and extra addresses on intent-managed interfaces (#193). Individual undesired fields on an entity intent still manages (a description removed from intent, for example) are out of scope for this cut.
+- **FR-015**: A removal MUST apply a device's whole plan or nothing. The operator confirms the plan as shown and cannot pick a subset of it in this cut.
 
 ### Key Entities
 

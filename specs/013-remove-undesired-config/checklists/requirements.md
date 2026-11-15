@@ -13,7 +13,7 @@
 
 ## Requirement Completeness
 
-- [ ] No [NEEDS CLARIFICATION] markers remain
+- [x] No [NEEDS CLARIFICATION] markers remain
 - [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable
 - [ ] Success criteria are technology-agnostic (no implementation details)
@@ -32,7 +32,7 @@
 ## Notes
 
 - **gNMI paths are named on purpose.** The spec names gNMI `delete`, Set requests and entity paths. That is deliberate, as in spec 007: the safety of this feature is about which paths are written, and the constitution (VIII.5) and spec 007 FR-011 already state the rule in those terms. The three unchecked "no implementation details" items fail for that reason only.
-- **Three clarifications are open: Q1 to Q3 (FR-013 to FR-015).** Each has a proposed default below. `/speckit-plan` waits for the answers.
+- **Q1 to Q3 were answered on 2026-11-15: the proposed default for each** (see the spec's Clarifications). The reasons are kept below.
   - **Q1, the entry point. Proposed: a new command.** `snapl remove <device>` previews by default, and `--apply` executes. Reconcile stays a pure merge. It is idempotent and safe to retry (VIII.4), and the scheduler uses it; folding deletes into it would change both.
   - **Q2, the first cut's scope. Proposed: (a).** Whole undesired entities, plus extra addresses on intent-managed interfaces. Fields removed from intent on an entity that intent still manages need the renderer and the diff to agree on "unset means remove", which today they deliberately do not (spec 007 `skip_when_none`, #84).
   - **Q3, the granularity. Proposed: all or nothing per device.** It matches FR-008's single Set request and keeps the confirmed plan equal to the executed one. Picking a subset can come later, as a filter on the plan.
