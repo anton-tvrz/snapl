@@ -378,7 +378,7 @@ Each PR says `Closes` a task issue under #146 and carries `changelog/146.added.m
 - [x] T084 [US6] packages/presentation/ui/snapshot.html and vite.snapshot.config.ts (`vite-plugin-singlefile`, the `<meta>` policy of research R4, the empty bundle element), built by the same `npm run build` into `static/ui/snapshot.html`.
 - [x] T085 [US6] packages/presentation/ui/src/data/inline.ts, and `main.tsx` choosing `InlineProvider` when the bundle element is present and not empty.
 - [x] T086 [US6] packages/presentation/snapl_presentation/dashboard/snapshot.py: `collect_bundle`, `render`, `write`. cli.py: `--snapshot`, `--days`, `--force`, alone or with `--archive`, printing the contract's summary.
-- [ ] T087 [US6] **Needs the lab**: quickstart item 7 in Chromium, Firefox and Safari, with the file's size recorded in the PR.
+- [x] T087 [US6] **Needs the lab**: quickstart item 7 in Chromium, Firefox and Safari, with the file's size recorded in the PR. Done 2026-11-13 (#244) in Safari, by the maintainer, and in headless Chromium on 2026-11-12. Both showed zero requests beyond the file, the recording banner and the topology, and replayed both arcs. Firefox was not checked; the maintainer accepted that. The 7-day snapshot is 2,819 kB.
 - [ ] T088 [US6] **Needs the maintainer**: quickstart items 10 (a first-time viewer, SC-003) and 12 (read a snapshot before publishing one).
 
 **Checkpoint**: `demo.html` can be attached to a post.
