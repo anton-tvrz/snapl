@@ -9,6 +9,7 @@ the thing that is wrong. Every mutating function appends exactly one
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 import logging
 from datetime import UTC, datetime, timedelta
@@ -263,10 +264,12 @@ async def trigger_drift_schedule(
     wrong. A run starting between this check and the trigger still makes it a
     no-op; the window is one round trip.
     """
-    view = await describe_drift_schedule(client, use_case_id=use_case_id)
-    if view.running:
+    # Not describe_drift_schedule: that also reads the last five runs (#139).
+    description, request = await _read_schedule(client, use_case_id)
+    running = [execution.workflow_id for execution in description.info.running_actions]
+    if running:
         raise ScheduleRunInProgressError(
-            f"a run of {view.schedule_id} is already in progress ({', '.join(view.running)}); nothing was triggered"
+            f"a run of {description.id} is already in progress ({', '.join(running)}); nothing was triggered"
         )
     try:
         await _handle(client, use_case_id).trigger()
@@ -274,9 +277,9 @@ async def trigger_drift_schedule(
         _raise_if_not_found(use_case_id, exc)
         raise
     await _record_change(
-        audit_log, use_case_id=use_case_id, actor=actor, change=ScheduleChange.TRIGGERED, mode=view.mode.value
+        audit_log, use_case_id=use_case_id, actor=actor, change=ScheduleChange.TRIGGERED, mode=request.mode.value
     )
-    return view.mode
+    return request.mode
 
 
 async def delete_drift_schedule(client: Client, *, use_case_id: str, audit_log: AuditLog, actor: str) -> None:
@@ -289,18 +292,25 @@ async def delete_drift_schedule(client: Client, *, use_case_id: str, audit_log: 
     await _record_change(audit_log, use_case_id=use_case_id, actor=actor, change=ScheduleChange.DELETED)
 
 
-async def describe_drift_schedule(client: Client, *, use_case_id: str) -> DriftScheduleView:
-    """Read-only projection of the schedule, with status and summary for recent runs."""
+async def _read_schedule(client: Client, use_case_id: str) -> tuple[Any, DriftResponseRequest]:
+    """The schedule's description and its decoded request: one round trip."""
     try:
         description = await _handle(client, use_case_id).describe()
     except RPCError as exc:
         _raise_if_not_found(use_case_id, exc)
         raise
-    schedule = description.schedule
-    if not schedule.spec.intervals:
+    if not description.schedule.spec.intervals:
         raise UnreadableScheduleError(f"drift schedule {description.id} has no interval; it was changed outside snapl")
-    request = await _decode_request(client, schedule.action)
+    return description, await _decode_request(client, description.schedule.action)
+
+
+async def describe_drift_schedule(client: Client, *, use_case_id: str) -> DriftScheduleView:
+    """Read-only projection of the schedule, with status and summary for recent runs."""
+    description, request = await _read_schedule(client, use_case_id)
+    schedule = description.schedule
     info = description.info
+    # Up to two round trips per run, and the runs are independent (#139).
+    recent_runs = await asyncio.gather(*(_run_info(client, action) for action in info.recent_actions[-_RECENT_RUNS:]))
     return DriftScheduleView(
         schedule_id=description.id,
         use_case_id=request.use_case_id,
@@ -309,7 +319,7 @@ async def describe_drift_schedule(client: Client, *, use_case_id: str) -> DriftS
         paused=schedule.state.paused,
         note=schedule.state.note or None,
         next_runs=list(info.next_action_times[:_NEXT_RUNS]),
-        recent_runs=[await _run_info(client, action) for action in info.recent_actions[-_RECENT_RUNS:]],
+        recent_runs=list(recent_runs),
         running=[execution.workflow_id for execution in info.running_actions],
         skipped_overlap=info.num_actions_skipped_overlap,
     )

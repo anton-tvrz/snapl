@@ -701,3 +701,53 @@ def test_no_public_function_creates_a_remediate_schedule() -> None:
         params = inspect.signature(fn).parameters
         if name.startswith(("ensure", "create")):
             assert "mode" not in params, f"{name} must not take a mode (FR-003)"
+
+
+# ---------------------------------------------------------------------------
+# #139: no serial round trips for the recent runs, and none at all to trigger
+# ---------------------------------------------------------------------------
+
+
+async def test_describe_reads_the_recent_runs_at_the_same_time() -> None:
+    """Each run's describe waits until every run's describe has started, so
+    lookups made one after another never finish."""
+    import asyncio
+
+    client, audit = FakeClient(), InMemoryAuditLog()
+    await _ensure(client, audit)
+    runs = [f"drift-response-dcfabric-2026-10-28T03:{m:02d}:00Z" for m in range(0, 25, 5)]
+    client.schedules["drift-response-dcfabric"]["info"] = _info(
+        recent=[_action_result(w, _T0 + timedelta(minutes=5 * i)) for i, w in enumerate(runs)]
+    )
+    started = 0
+    all_started = asyncio.Event()
+
+    class Overlapping(FakeWorkflowHandle):
+        async def describe(self):
+            nonlocal started
+            started += 1
+            if started == len(runs):
+                all_started.set()
+            await asyncio.wait_for(all_started.wait(), timeout=2)
+            return await super().describe()
+
+    for w in runs:
+        client.runs[w] = Overlapping(WorkflowExecutionStatus.COMPLETED, _response_result(w, clean=6, drifted=0))
+
+    view = await describe_drift_schedule(client, use_case_id="dcfabric")
+
+    assert [r.workflow_id for r in view.recent_runs] == runs
+    assert [r.status for r in view.recent_runs] == ["completed"] * 5
+
+
+async def test_trigger_does_not_look_up_the_recent_runs() -> None:
+    """It needs the mode and whether a run is in progress, not the last five results."""
+    client, audit = await _created()
+    done = "drift-response-dcfabric-2026-10-28T03:00:00Z"
+    client.schedules["drift-response-dcfabric"]["info"] = _info(recent=[_action_result(done, _T0)])
+    # No handle is registered for the run: looking it up would raise KeyError.
+
+    mode = await trigger_drift_schedule(client, use_case_id="dcfabric", audit_log=audit, actor="anton")
+
+    assert mode is DriftResponseMode.REPORT
+    assert client.runs == {}

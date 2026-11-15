@@ -9,17 +9,13 @@ whole run (FR-016).
 from __future__ import annotations
 
 import asyncio
-from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 from temporalio import workflow
-from temporalio.common import RetryPolicy
 from temporalio.exceptions import ApplicationError, ChildWorkflowError, is_cancelled_exception
 
 with workflow.unsafe.imports_passed_through():
-    from snapl_orchestrator.activities.audit import record_audit_event
     from snapl_orchestrator.models import (
-        AuditEvent,
         AuditEventType,
         DriftResponseMode,
         DriftResponseRequest,
@@ -30,6 +26,7 @@ with workflow.unsafe.imports_passed_through():
         WorkflowReason,
     )
     from snapl_orchestrator.remediation import select_remediation
+    from snapl_orchestrator.workflows.audit import record_event
     from snapl_orchestrator.workflows.reconcile_devices import ReconcileDevicesWorkflow
     from snapl_orchestrator.workflows.scan_drift import ScanDriftWorkflow
 
@@ -38,8 +35,6 @@ if TYPE_CHECKING:
     from uuid import UUID
 
 _WORKFLOW_TYPE = "DriftResponse"
-
-_AUDIT_RETRY = RetryPolicy(initial_interval=timedelta(seconds=1), maximum_attempts=5)
 
 # Patch id for starting the reconcile child with ABANDON (#144). Runs already in
 # flight when this shipped replay their original start command without it.
@@ -55,24 +50,15 @@ async def _record(
     reason: WorkflowReason | None = None,
     payload: dict | None = None,
 ) -> None:
-    event = AuditEvent(
-        event_id=workflow.uuid4(),
-        workflow_id=workflow.info().workflow_id,
+    await record_event(
         workflow_type=_WORKFLOW_TYPE,
         target_id=target_id,
         event_type=event_type,
         outcome=outcome,
         reason=reason,
-        payload=payload or {},
-        timestamp=workflow.now(),
+        payload=payload,
         # Unattended actions must be told apart from human ones in `snapl audit`.
         actor=f"schedule:{request.schedule_id}",
-    )
-    await workflow.execute_activity(
-        record_audit_event,
-        event,
-        start_to_close_timeout=timedelta(seconds=10),
-        retry_policy=_AUDIT_RETRY,
     )
 
 

@@ -12,7 +12,6 @@ from temporalio.exceptions import ActivityError, is_cancelled_exception
 with workflow.unsafe.imports_passed_through():
     from snapl_collector.models import CollectResult
     from snapl_observability.models import DriftReport, DriftStatus
-    from snapl_orchestrator.activities.audit import record_audit_event
     from snapl_orchestrator.activities.collector import collect_drift_state
     from snapl_orchestrator.activities.intent import (
         fetch_desired_state,
@@ -20,16 +19,15 @@ with workflow.unsafe.imports_passed_through():
     )
     from snapl_orchestrator.activities.observability import detect_drift
     from snapl_orchestrator.models import (
-        AuditEvent,
         AuditEventType,
         DriftScanResult,
         WorkflowReason,
     )
+    from snapl_orchestrator.workflows.audit import record_event
 
 
 _WORKFLOW_TYPE = "ScanDrift"
 
-_AUDIT_RETRY = RetryPolicy(initial_interval=timedelta(seconds=1), maximum_attempts=5)
 _INTENT_RETRY = RetryPolicy(initial_interval=timedelta(seconds=2), maximum_attempts=3)
 _COLLECT_RETRY = RetryPolicy(initial_interval=timedelta(seconds=2), maximum_attempts=3)
 _DETECT_RETRY = RetryPolicy(maximum_attempts=1)
@@ -44,43 +42,14 @@ async def _audit(
     reason: WorkflowReason | None = None,
     payload: dict | None = None,
 ) -> None:
-    await _record(
+    await record_event(
+        workflow_type=_WORKFLOW_TYPE,
         workflow_id=workflow_id,
         target_id=use_case_id,
         event_type=event_type,
         outcome=outcome,
         reason=reason,
         payload=payload,
-    )
-
-
-async def _record(
-    *,
-    workflow_id: str,
-    target_id,
-    event_type: AuditEventType,
-    activity_name: str | None = None,
-    outcome: str | None = None,
-    reason: WorkflowReason | None = None,
-    payload: dict | None = None,
-) -> None:
-    event = AuditEvent(
-        event_id=workflow.uuid4(),
-        workflow_id=workflow_id,
-        workflow_type=_WORKFLOW_TYPE,
-        target_id=target_id,
-        event_type=event_type,
-        activity_name=activity_name,
-        outcome=outcome,
-        reason=reason,
-        payload=payload or {},
-        timestamp=workflow.now(),
-    )
-    await workflow.execute_activity(
-        record_audit_event,
-        event,
-        start_to_close_timeout=timedelta(seconds=10),
-        retry_policy=_AUDIT_RETRY,
     )
 
 
@@ -103,7 +72,8 @@ async def _audit_device(*, workflow_id: str, report: DriftReport) -> None:
     if report.error:
         payload["error"] = report.error
 
-    await _record(
+    await record_event(
+        workflow_type=_WORKFLOW_TYPE,
         workflow_id=workflow_id,
         target_id=report.device_id,
         event_type=AuditEventType.ACTIVITY_FAILED if errored else AuditEventType.ACTIVITY_COMPLETED,

@@ -17,24 +17,19 @@ with workflow.unsafe.imports_passed_through():
         IntentValidationError,
     )
     from snapl_observability.models import DriftStatus
-    from snapl_orchestrator.activities.audit import record_audit_event
     from snapl_orchestrator.activities.collector import collect_drift_state
     from snapl_orchestrator.activities.executor import apply_config
     from snapl_orchestrator.activities.intent import fetch_desired_state
     from snapl_orchestrator.activities.observability import detect_drift
     from snapl_orchestrator.models import (
-        AuditEvent,
         AuditEventType,
         WorkflowReason,
         WorkflowResult,
     )
+    from snapl_orchestrator.workflows.audit import record_event
 
 _WORKFLOW_TYPE = "DeployIntent"
 
-_AUDIT_RETRY = RetryPolicy(
-    initial_interval=timedelta(seconds=1),
-    maximum_attempts=5,
-)
 _INTENT_RETRY = RetryPolicy(
     initial_interval=timedelta(seconds=2),
     maximum_attempts=3,
@@ -64,23 +59,15 @@ async def _record_event(
     reason: WorkflowReason | None = None,
     payload: dict | None = None,
 ) -> None:
-    event = AuditEvent(
-        event_id=workflow.uuid4(),
-        workflow_id=workflow_id,
+    await record_event(
         workflow_type=_WORKFLOW_TYPE,
+        workflow_id=workflow_id,
         target_id=device_id,
         event_type=event_type,
         activity_name=activity_name,
         outcome=outcome,
         reason=reason,
-        payload=payload or {},
-        timestamp=workflow.now(),
-    )
-    await workflow.execute_activity(
-        record_audit_event,
-        event,
-        start_to_close_timeout=timedelta(seconds=10),
-        retry_policy=_AUDIT_RETRY,
+        payload=payload,
     )
 
 
