@@ -6,6 +6,7 @@ is never touched here.
 
 from __future__ import annotations
 
+import itertools
 import logging
 import socket
 
@@ -108,3 +109,65 @@ class TestBuildRuntime:
         assert runtime is None
         [record] = [r for r in caplog.records if r.levelno == logging.WARNING]
         assert record.getMessage().startswith("metrics off: could not serve on not-an-ip:")
+
+
+class TestHistogramBuckets:
+    """The runtime's default buckets are too coarse for a lab (#192).
+
+    gNMI calls take 300 to 400 ms on dcfabric. With the defaults (50, 100, 500,
+    1000, ...) they all land between 100 and 500, and the p95 reads 480 ms
+    whatever the calls took.
+    """
+
+    @staticmethod
+    def _bounds(exposition: str, metric: str) -> list[float]:
+        bounds = []
+        for line in exposition.splitlines():
+            if line.startswith(f"{metric}_bucket{{") and 'le="+Inf"' not in line:
+                bounds.append(float(line.split('le="', 1)[1].split('"', 1)[0]))
+        return bounds
+
+    def test_the_gnmi_histogram_separates_calls_in_the_range_the_lab_sees(self) -> None:
+        from snapl_orchestrator.metrics import GNMI_CALL_DURATION
+        from snapl_orchestrator.worker.metrics import HISTOGRAM_BUCKETS_MS
+
+        bounds = HISTOGRAM_BUCKETS_MS[GNMI_CALL_DURATION]
+
+        assert list(bounds) == sorted(set(bounds))
+        # 297 ms and 387 ms, the two means measured in #192, land in different buckets.
+        assert any(297 < bound < 387 for bound in bounds)
+        # No step wider than 100 ms below one second.
+        below_a_second = [0, *[bound for bound in bounds if bound <= 1000]]
+        assert max(b - a for a, b in itertools.pairwise(below_a_second)) <= 100
+
+    def test_the_runtime_serves_the_gnmi_histogram_with_those_buckets(self) -> None:
+        import urllib.request
+        from datetime import timedelta
+
+        from snapl_orchestrator.metrics import GNMI_CALL_DURATION
+        from snapl_orchestrator.worker.metrics import HISTOGRAM_BUCKETS_MS
+
+        port = _free_port()
+        runtime = build_runtime(port=port, bind="127.0.0.1")
+        assert runtime is not None
+        histogram = runtime.metric_meter.create_histogram_timedelta(GNMI_CALL_DURATION, "test", "ms")
+        histogram.record(timedelta(milliseconds=350), {"device": "leaf-01"})
+
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/metrics", timeout=5) as response:
+            exposition = response.read().decode()
+
+        assert self._bounds(exposition, GNMI_CALL_DURATION) == [
+            float(b) for b in HISTOGRAM_BUCKETS_MS[GNMI_CALL_DURATION]
+        ]
+
+    @pytest.mark.parametrize(
+        "metric",
+        ["temporal_workflow_endtoend_latency", "temporal_activity_schedule_to_start_latency"],
+    )
+    def test_the_sdk_histograms_the_dashboard_charts_are_overridden_too(self, metric: str) -> None:
+        from snapl_orchestrator.worker.metrics import HISTOGRAM_BUCKETS_MS
+
+        bounds = HISTOGRAM_BUCKETS_MS[metric]
+
+        assert list(bounds) == sorted(set(bounds))
+        assert len(bounds) >= 12
