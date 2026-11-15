@@ -1,8 +1,8 @@
 # Overnight Runs
 
-An unattended agent works through the active spec's `tasks.md` one PR slice at a time. For each slice it implements the tasks, opens the PR, merges it once CI is green, and starts the next. The maintainer reads the report in the morning.
+An unattended agent works through the active spec's `tasks.md` one PR slice at a time. For each slice it implements the tasks, opens the PR, merges it once CI is green, and starts the next. When the run stops it posts one morning digest on the spec's umbrella issue, so the maintainer is told the outcome instead of going to look for it.
 
-**Authorization**: the maintainer has authorized overnight runs to merge their own PRs once CI is green (2026-11-07). This covers PRs on `overnight/` branches only.
+**Authorization**: the maintainer has authorized overnight runs to merge their own PRs once CI is green (2026-11-07). This covers PRs on `overnight/` branches only. The maintainer has also authorized one digest comment per run on the active spec's umbrella issue (2026-11-15). Every other comment still needs asking for.
 
 ## Starting a run (maintainer)
 
@@ -33,8 +33,9 @@ Each loop iteration reads the state, runs exactly one branch below, and then sch
 - **Worktree**: if `../snapl-overnight` is missing, run `git worktree add --detach ../snapl-overnight origin/main`, then `uv sync --all-groups` inside it. Then `git -C ../snapl-overnight fetch -q origin`.
 - **Open overnight PR**: `gh pr list --state open --json number,headRefName,headRefOid --jq '.[] | select(.headRefName | startswith("overnight/"))'`.
 - **Report**: `.snapl/overnight/<UTC date>.md` in the main checkout. The folder is git-ignored. Create the file if it is missing.
+- **Undelivered digest**: if a report from an earlier date has entries but no `Digest posted:` line, that run died before it could tell the maintainer. Post its digest first (see The morning digest), and say in the digest's first line that the run ended without stopping cleanly.
 
-Done when you know whether an overnight PR is open and, if so, the state of its CI.
+Done when you know whether an overnight PR is open and, if so, the state of its CI, and no earlier report is waiting for its digest.
 
 ### 2a. An overnight PR is open
 
@@ -47,7 +48,7 @@ Done when the PR is merged, a fix is pushed, or the wakeup is scheduled.
 
 ### 2b. No overnight PR is open: build the next slice
 
-1. **Find the slice**: `.specify/feature.json` names the spec. In its `tasks.md`, take the first slice in the "PR slicing" list that still has an unticked task not marked **Needs the lab**. If there is none, write the final report and stop.
+1. **Find the slice**: `.specify/feature.json` names the spec. In its `tasks.md`, take the first slice in the "PR slicing" list that still has an unticked task not marked **Needs the lab**. If there is none, stop (see Stopping).
 2. **Issue**: create it per `dev/guides/tracking-work.md`, with labels and the board. Title it `feat(<block>): spec <NNN> PR <X>, <goal>`, and say it is part of the spec's umbrella issue.
 3. **Branch**: `overnight/<NNN>-<x>-<slug>`, from a fresh `origin/main` in the worktree.
 4. **Implement** the slice's tasks in order, tests first. Tick each task in `tasks.md` once its tests pass.
@@ -74,6 +75,43 @@ Done when every task in the slice that doesn't need the lab is ticked, the local
 
 At every merge, deferral, question or stop, append to `.snapl/overnight/<UTC date>.md`: the time, the PR, what happened, and any deferred lab tasks. The last entry says why the run stopped.
 
+The report is the run's working log. It records every attempt, and the maintainer does not need to read it unless the digest sends them there.
+
+## The morning digest
+
+The digest is the one message a run sends. Post it once, when the run stops, as a comment on the spec's umbrella issue. The spec's `spec.md` names that issue on its **Input** line, and `tasks.md` repeats it where it says which issue each PR closes under. GitHub notifies the maintainer of the comment, which is the delivery.
+
+Write it for someone reading on a phone before they open a terminal. Give outcomes and what needs them, and leave the step-by-step in the report:
+
+```markdown
+## Overnight run, <UTC date>
+
+**Stopped because**: <one sentence: every slice is done / a question needs you / a check went red three times / a guardrail>
+
+**Needs you**
+- <each question, with the draft PR it blocks, phrased so it can be answered in a reply>
+- <each PR left open, and what it is waiting for>
+
+**Merged**
+- #<pr> <title>
+
+**Deferred to the lab**
+- <task id> <what to run>, from #<pr>
+
+**Spec amendments**
+- <what changed in the spec, and the PR that changed it>
+
+Report: `.snapl/overnight/<UTC date>.md`
+```
+
+Rules:
+
+- **Order**: "Needs you" comes first, because it is the part the maintainer acts on. Omit any section that is empty, except "Stopped because".
+- **Length**: one line per item. CI fix attempts, wakeups and retries stay in the report. Mention a red check only if it is why the run stopped.
+- **One per run**: never a comment per merge or per question. A run that spans midnight UTC still posts one digest, covering both report files.
+- **Nothing to say**: if the run stopped on its first pass with nothing merged, opened, deferred or asked, post nothing. Write `Digest posted: none, nothing to report` in the report.
+- **Posting**: write the body to `.snapl/overnight/<UTC date>.digest.md`, then `gh issue comment <umbrella> --body-file <that file>`. Append `Digest posted: <comment URL>` to the report. If the post fails, log the error in the report and leave the body file in place; the next run's first pass delivers it.
+
 ## Stopping
 
 End the loop when:
@@ -82,4 +120,4 @@ End the loop when:
 - a product decision is needed
 - continuing would cross a guardrail
 
-The report is the last thing written.
+Write the last report entry, then post the digest. The `Digest posted:` line is the last thing written.
