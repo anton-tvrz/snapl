@@ -351,7 +351,7 @@ _CONFIRMATION = (
     "  Every 5m, devices whose scan shows drift a deploy can fix will be redeployed\n"
     "  without asking — including devices whose intent was changed in the Source of\n"
     "  Truth. Undesired config is never removed. Devices: 3.\n"
-    "  A failed repair is retried every run until you switch back to report.\n"
+    "  If a repair fails, the schedule switches itself back to report and says why.\n"
     "Continue? [y/N]"
 )
 

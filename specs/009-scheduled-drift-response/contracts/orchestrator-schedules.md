@@ -57,9 +57,16 @@ class DriftResponseWorkflow:
 
 ---
 
-## Deferred: stand_down_schedule
+## Activity: stand_down_schedule (#136)
 
-The stand-down activity (former US4, FR-018) is deferred to a follow-up issue. Research R8 records its design. In this cut, `DriftResponse` returns a failed reconcile in its result and audit trail, and the schedule stays in `remediate`.
+Deferred in the first cut (former US4, FR-018), then built as research R8 designed it.
+
+- `stand_down_schedule(StandDownRequest(use_case_id, reason)) -> bool`, in `snapl_orchestrator/activities/schedule.py`. It calls `schedules.stand_down_drift_schedule` with the worker's own client (`activity.client()`) and the worker's audit log.
+- `DriftResponse` runs it after a reconcile child returns `failed > 0`, behind the patch `drift-response-stand-down-after-failed-repair`, so a run in flight at upgrade replays without it. The result's `stood_down` says whether the schedule changed.
+- `stand_down_drift_schedule` rebuilds the action with `report`, sets `state.note` to the reason unless the schedule is paused (a pause keeps its own reason), leaves `paused` alone, and appends a `SCHEDULE_CHANGED` event with `change: stood_down` and `actor: snapl:stand-down`. On a schedule already in `report` it changes and records nothing.
+- If the schedule was deleted during the run, the activity returns False. If the activity fails after its retries, the run still ends as before and the schedule stays in `remediate`.
+
+Not built: a proportional blast-radius guard, and a Temporal identity check (both listed in #136).
 
 ---
 

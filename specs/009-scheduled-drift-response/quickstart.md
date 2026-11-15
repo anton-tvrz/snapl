@@ -101,7 +101,7 @@ snapl schedule mode report
 
 ## 4. A repair that fails
 
-Stand-down is deferred. In this cut, a failed scheduled repair shows as `failed` in `snapl schedule show`, and the schedule stays in `remediate`. The next run tries again. The workflow unit test covers this. A live check is optional: switch to `report` or pause to stop the retries.
+A failed scheduled repair shows as `failed` in `snapl schedule show`, and the run switches the schedule back to `report` (#136). `snapl schedule show` then gives `report` with the reason as the note, and `snapl audit --workflow drift-response-dcfabric` has a `stood_down remediate→report` record from `snapl:stand-down`. The workflow, activity and schedule unit tests cover this, and it was run once against a local Temporal dev server with stand-in blocks. It has not been run against the lab.
 
 ## Live evidence the implementation PR must state (Principle III)
 

@@ -37,7 +37,7 @@ Single vendor: Nokia SR Linux. Vendor-specific code is confined to a few named p
 ## Known limitations
 
 - **Removal is not implemented (#65).** Apply is a merge, so config deleted from intent stays on the device. snapl *detects* that undesired config and reports it, but does not remove it. Convergence is true for additions and changes.
-- **Self-healing is opt-in, per use case.** `demo.up` creates a report-only drift schedule (every 5 minutes); scheduled repairs happen only after `snapl schedule mode remediate`. A scheduled repair never removes config (#65), and a failed repair is retried every run until an operator switches back to report (#136).
+- **Self-healing is opt-in, per use case.** `demo.up` creates a report-only drift schedule (every 5 minutes); scheduled repairs happen only after `snapl schedule mode remediate`. A scheduled repair never removes config (#65). If a repair fails on any device, the run switches its schedule back to report, with the reason in the schedule's note and the audit trail; scans keep running. There is no guard against many devices drifting at once (#136).
 - **A local, read-only dashboard, with no authentication.** `snapl dashboard` serves on 127.0.0.1 (specs 010 to 012). Some limits of what it shows:
   - The loop strip shows steps the audit trail recorded as finished. It never shows a step in progress, and scans and reconciles record no steps one by one.
   - At a past time, the drawing shows today's devices and links, because the Source of Truth keeps no history. Only their states are from the past.

@@ -59,6 +59,7 @@ __all__ = [
     "DEFAULT_SCAN_INTERVAL",
     "MIN_SCAN_INTERVAL",
     "RUN_TIMEOUT",
+    "STAND_DOWN_ACTOR",
     "build_drift_schedule",
     "delete_drift_schedule",
     "describe_drift_schedule",
@@ -68,6 +69,7 @@ __all__ = [
     "resume_drift_schedule",
     "schedule_id_for",
     "set_drift_response",
+    "stand_down_drift_schedule",
     "trigger_drift_schedule",
 ]
 
@@ -223,6 +225,56 @@ async def set_drift_response(
             **{"from": previous[0].value, "to": mode.value},
         )
     return await describe_drift_schedule(client, use_case_id=use_case_id)
+
+
+# Who a stand-down is recorded as. Not a person and not the schedule's own
+# runs ("schedule:<id>"): the one change snapl makes to a schedule unasked.
+STAND_DOWN_ACTOR = "snapl:stand-down"
+
+
+async def stand_down_drift_schedule(client: Client, *, use_case_id: str, reason: str, audit_log: AuditLog) -> bool:
+    """Return a remediate schedule to report after a failed repair (#136, FR-018).
+
+    Called from inside the run whose repair failed, so the next run does not
+    try the same repair again. The schedule is not paused: detection keeps
+    running and the drift that could not be healed stays visible. ``reason``
+    becomes the schedule's note, unless the schedule is paused, where the note
+    is the pause's reason and is kept. Returns False, changing and recording
+    nothing, when the schedule is already in report.
+    """
+    stood_down = False
+
+    async def _updater(update_input) -> ScheduleUpdate | None:
+        nonlocal stood_down
+        schedule = update_input.description.schedule
+        if (await _decode_request(client, schedule.action)).mode is not DriftResponseMode.REMEDIATE:
+            return None
+        stood_down = True
+        state = schedule.state if schedule.state.paused else dataclasses.replace(schedule.state, note=reason)
+        return ScheduleUpdate(
+            schedule=dataclasses.replace(
+                schedule,
+                action=_action(
+                    use_case_id=use_case_id, mode=DriftResponseMode.REPORT, task_queue=schedule.action.task_queue
+                ),
+                state=state,
+            )
+        )
+
+    try:
+        await _handle(client, use_case_id).update(_updater)
+    except RPCError as exc:
+        _raise_if_not_found(use_case_id, exc)
+        raise
+    if stood_down:
+        await _record_change(
+            audit_log,
+            use_case_id=use_case_id,
+            actor=STAND_DOWN_ACTOR,
+            change=ScheduleChange.STOOD_DOWN,
+            **{"from": DriftResponseMode.REMEDIATE.value, "to": DriftResponseMode.REPORT.value, "reason": reason},
+        )
+    return stood_down
 
 
 async def pause_drift_schedule(

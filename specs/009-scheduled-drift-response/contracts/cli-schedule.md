@@ -39,7 +39,7 @@ Switch dcfabric to remediate?
   Every 5m, devices whose scan shows drift a deploy can fix will be redeployed
   without asking — including devices whose intent was changed in the Source of
   Truth. Undesired config is never removed. Devices: 6.
-  A failed repair is retried every run until you switch back to report.
+  If a repair fails, the schedule switches itself back to report and says why.
 Continue? [y/N]
 ```
 

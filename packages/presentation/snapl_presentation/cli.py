@@ -551,7 +551,7 @@ async def _remediate_authorization(settings: CliSettings, use_case: str, interva
         f"  Every {format_interval(interval)}, devices whose scan shows drift a deploy can fix will be redeployed\n"
         "  without asking — including devices whose intent was changed in the Source of\n"
         f"  Truth. Undesired config is never removed. Devices: {devices}.\n"
-        "  A failed repair is retried every run until you switch back to report.\n"
+        "  If a repair fails, the schedule switches itself back to report and says why.\n"
         "Continue?"
     )
 
