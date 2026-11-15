@@ -12,6 +12,7 @@ typically create one via :func:`snapl_intent.infrahub.client.build_client` or
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -277,8 +278,11 @@ class InfrahubIntentStore(IntentStore):
             "prefetch_relationships": True,
             "populate_store": True,
         }
-        iface_nodes = await self._filters(kind=INTERFACE_KIND, **relation_kwargs)
-        session_nodes = await self._filters(kind=SESSION_KIND, **relation_kwargs)
+        # Independent round-trips, so they overlap (#49).
+        iface_nodes, session_nodes = await asyncio.gather(
+            self._filters(kind=INTERFACE_KIND, **relation_kwargs),
+            self._filters(kind=SESSION_KIND, **relation_kwargs),
+        )
 
         ifaces_by_device = _group_by_device(iface_nodes, device_ids, kind=INTERFACE_KIND)
         sessions_by_device = _group_by_device(session_nodes, device_ids, kind=SESSION_KIND)
@@ -323,10 +327,9 @@ class InfrahubIntentStore(IntentStore):
     # satisfy the ABC so the class is instantiable in Phase 3 unit tests.
 
     async def get_schema(self, use_case: str) -> Schema:
-        # A use case is "known" iff its seed directory exists in the package.
-        if not (_SEED_ROOT / use_case).is_dir():
-            raise IntentSchemaError(f"Unknown use case: {use_case}")
-
+        # One schema serves every use case (``use_case`` is a text attribute on
+        # the device), so there is no per-use-case schema to be missing. Whether
+        # seed data ships for a use case says nothing about its schema (#68).
         try:
             registry = await self._client.schema.all(branch=self._default_branch)
         except (OSError, TimeoutError) as exc:
@@ -345,10 +348,21 @@ class InfrahubIntentStore(IntentStore):
 
         return Schema(
             use_case=use_case,
-            version="1.0",
+            version=self._schema_hash(),
             entities=project_kinds,
             source_files=source_files,
         )
+
+    def _schema_hash(self) -> str:
+        """The hash of the branch's live schema, as the SDK holds it after ``schema.all``.
+
+        This is the schema's revision: it changes when the schema does (#68).
+        ``"unknown"`` when the SDK's cache carries none.
+        """
+        cache = getattr(self._client.schema, "cache", None)
+        entry = cache.get(self._default_branch) if isinstance(cache, dict) else None
+        value = getattr(entry, "hash", None)
+        return value if isinstance(value, str) and value else "unknown"
 
     async def provision_schema(self, use_case: str) -> ProvisionResult:
         loader = SchemaLoader(
@@ -375,14 +389,7 @@ class InfrahubIntentStore(IntentStore):
         )
 
     async def delete_device(self, device_id: UUID) -> DeleteResult:
-        try:
-            nodes = await self._client.filters(
-                kind=DEVICE_KIND,
-                ids=[str(device_id)],
-                prefetch_relationships=True,
-            )
-        except (OSError, TimeoutError) as exc:
-            raise IntentConnectionError(f"Infrahub unreachable: {exc}") from exc
+        nodes = await self._filters(kind=DEVICE_KIND, ids=[str(device_id)], prefetch_relationships=True)
 
         if not nodes:
             raise IntentNotFoundError(f"Device {device_id} not found")
@@ -415,7 +422,7 @@ class InfrahubIntentStore(IntentStore):
         return Device(
             id=UUID(str(node.id)),
             name=_value(node, "name"),
-            management_address=str(management_ip).split("/", 1)[0],
+            management_address=_split_cidr(management_ip)[0] or "",
             role=_value(node, "role", default=""),
             use_case=_value(node, "use_case", default=""),
             platform=_value(node, "platform"),

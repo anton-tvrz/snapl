@@ -125,6 +125,17 @@ def _extract_errors(response: Any) -> str | None:
     return str(errors)
 
 
+def _schema_updated(response: Any) -> bool:
+    """Whether one ``schema.load`` call changed the schema (#68).
+
+    The SDK's response compares the schema hash before and after the load. A
+    response that doesn't say (an older SDK, a bare dict) counts as changed:
+    not knowing must not read as "nothing changed".
+    """
+    updated = getattr(response, "schema_updated", None)
+    return updated if isinstance(updated, bool) else True
+
+
 class SchemaLoader:
     """Load schema YAML files into Infrahub in dependency order."""
 
@@ -148,6 +159,7 @@ class SchemaLoader:
     async def load(self) -> ProvisionResult:
         batches = discover_schema_batches(self._schemas_root)
         total_loaded = 0
+        changed = False
         parsed: list[dict[str, Any]] = []
 
         for batch in batches:
@@ -168,6 +180,7 @@ class SchemaLoader:
                 raise IntentSchemaError(f"Schema validation failed: {error_text}")
 
             total_loaded += len(batch)
+            changed = changed or _schema_updated(response)
 
         # Infrahub applies the schema asynchronously; block until the extension
         # attributes we just loaded are visible so a following seed doesn't race
@@ -177,7 +190,7 @@ class SchemaLoader:
         return ProvisionResult(
             use_case=self._use_case,
             schemas_loaded=total_loaded,
-            changed=True,
+            changed=changed,
         )
 
     async def _await_schema_ready(self, expected: dict[str, set[str]]) -> None:
