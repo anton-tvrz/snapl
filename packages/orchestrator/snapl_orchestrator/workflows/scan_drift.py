@@ -121,6 +121,9 @@ class ScanDriftWorkflow:
     async def run(self, use_case_id: str) -> DriftScanResult:
         wf_id = workflow.info().workflow_id
         started_at = workflow.now()
+        # Filled as each device's report resolves, so a cancelled scan can
+        # return what it had finished (#36).
+        self._completed: dict = {}
 
         await _audit(
             workflow_id=wf_id,
@@ -156,7 +159,7 @@ class ScanDriftWorkflow:
                     wf_id=wf_id,
                     use_case_id=use_case_id,
                     started_at=started_at,
-                    partial_reports={},
+                    partial_reports=dict(self._completed),
                 )
             raise
         reports_map = {r.device_id: r for r in reports}
@@ -193,6 +196,7 @@ class ScanDriftWorkflow:
 
     async def _evaluate_device(self, device) -> DriftReport:
         report = await self._evaluate(device)
+        self._completed[report.device_id] = report
         # After the report resolves, never on the cancellation path: a
         # cancelled scan is recorded once at the workflow level.
         await _audit_device(workflow_id=workflow.info().workflow_id, report=report)
@@ -275,9 +279,9 @@ class ScanDriftWorkflow:
             use_case_id=use_case_id,
             reports=partial_reports,
             total=len(partial_reports),
-            clean=0,
-            drifted=0,
-            errored=len(partial_reports),
+            clean=sum(1 for r in partial_reports.values() if r.status == DriftStatus.CLEAN),
+            drifted=sum(1 for r in partial_reports.values() if r.status == DriftStatus.DRIFTED),
+            errored=sum(1 for r in partial_reports.values() if r.status == DriftStatus.ERROR),
             started_at=started_at,
             ended_at=workflow.now(),
             cancelled=True,

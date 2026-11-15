@@ -131,8 +131,8 @@ class DriftScanResult(BaseModel):
     errored: int
     started_at: datetime
     ended_at: datetime
-    # A cancelled scan returns what it has (nothing), which must not read as
-    # a clean scan of zero devices.
+    # A cancelled scan returns the reports that had completed (#36), possibly
+    # none, which must not read as a full scan of the use case.
     cancelled: bool = False
 
     @model_validator(mode="after")
