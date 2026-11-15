@@ -225,6 +225,13 @@ async def reconcile(
             id=f"scan-drift-{use_case}-{uuid4()}",
             task_queue=settings.task_queue,
         )
+        if scan_result.cancelled:
+            # It returns only the devices it finished (#36): reconciling those
+            # would treat part of the fabric as all of it.
+            raise CliError(
+                f"the scan of {use_case} was cancelled before it finished; nothing was reconciled",
+                hint="run `snapl reconcile --drifted` again, or name the devices",
+            )
         target_ids: list[UUID] = [
             report.device_id for report in scan_result.reports.values() if report.status is DriftStatus.DRIFTED
         ]

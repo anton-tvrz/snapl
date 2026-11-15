@@ -779,7 +779,7 @@ async def test_stand_down_returns_a_remediate_schedule_to_report_and_says_why() 
     assert changed is True
     view = await describe_drift_schedule(client, use_case_id="dcfabric")
     assert view.mode is DriftResponseMode.REPORT
-    assert view.note == _REASON
+    assert view.note == f"stood down: {_REASON}"
     # Detection keeps running: the schedule is not paused.
     assert view.paused is False
     record = (await _changes(audit))[-1]
@@ -821,3 +821,33 @@ async def test_stand_down_on_a_deleted_schedule_is_not_found() -> None:
         await stand_down_drift_schedule(
             FakeClient(), use_case_id="dcfabric", reason=_REASON, audit_log=InMemoryAuditLog()
         )
+
+
+async def test_switching_back_to_remediate_clears_the_stand_down_note() -> None:
+    """The note says the schedule was switched to report; once an operator
+    switches it back, that note describes a state the schedule is no longer in."""
+    from snapl_orchestrator.schedules import stand_down_drift_schedule
+
+    client, audit = await _remediating()
+    await stand_down_drift_schedule(client, use_case_id="dcfabric", reason=_REASON, audit_log=audit)
+
+    view = await set_drift_response(
+        client, use_case_id="dcfabric", mode=DriftResponseMode.REMEDIATE, audit_log=audit, actor="anton"
+    )
+
+    assert view.mode is DriftResponseMode.REMEDIATE
+    assert view.note is None
+
+
+async def test_switching_response_keeps_a_note_that_is_not_a_stand_down() -> None:
+    from snapl_orchestrator.schedules import stand_down_drift_schedule
+
+    client, audit = await _remediating()
+    await pause_drift_schedule(client, use_case_id="dcfabric", reason="maintenance", audit_log=audit, actor="anton")
+    await stand_down_drift_schedule(client, use_case_id="dcfabric", reason=_REASON, audit_log=audit)
+
+    view = await set_drift_response(
+        client, use_case_id="dcfabric", mode=DriftResponseMode.REMEDIATE, audit_log=audit, actor="anton"
+    )
+
+    assert (view.paused, view.note) == (True, "maintenance")

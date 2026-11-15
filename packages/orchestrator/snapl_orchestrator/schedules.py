@@ -60,6 +60,7 @@ __all__ = [
     "MIN_SCAN_INTERVAL",
     "RUN_TIMEOUT",
     "STAND_DOWN_ACTOR",
+    "STAND_DOWN_NOTE_PREFIX",
     "build_drift_schedule",
     "delete_drift_schedule",
     "describe_drift_schedule",
@@ -204,10 +205,14 @@ async def set_drift_response(
         previous[:] = [(await _decode_request(client, schedule.action)).mode]
         if previous[0] is mode:
             return None
+        state = schedule.state
+        if (state.note or "").startswith(STAND_DOWN_NOTE_PREFIX):
+            state = dataclasses.replace(state, note=None)
         return ScheduleUpdate(
             schedule=dataclasses.replace(
                 schedule,
                 action=_action(use_case_id=use_case_id, mode=mode, task_queue=schedule.action.task_queue),
+                state=state,
             )
         )
 
@@ -230,6 +235,9 @@ async def set_drift_response(
 # Who a stand-down is recorded as. Not a person and not the schedule's own
 # runs ("schedule:<id>"): the one change snapl makes to a schedule unasked.
 STAND_DOWN_ACTOR = "snapl:stand-down"
+# Starts the note a stand-down leaves, so a later switch of response can tell
+# it from an operator's note and clear it: it describes a state that is gone.
+STAND_DOWN_NOTE_PREFIX = "stood down: "
 
 
 async def stand_down_drift_schedule(client: Client, *, use_case_id: str, reason: str, audit_log: AuditLog) -> bool:
@@ -250,7 +258,8 @@ async def stand_down_drift_schedule(client: Client, *, use_case_id: str, reason:
         if (await _decode_request(client, schedule.action)).mode is not DriftResponseMode.REMEDIATE:
             return None
         stood_down = True
-        state = schedule.state if schedule.state.paused else dataclasses.replace(schedule.state, note=reason)
+        note = f"{STAND_DOWN_NOTE_PREFIX}{reason}"
+        state = schedule.state if schedule.state.paused else dataclasses.replace(schedule.state, note=note)
         return ScheduleUpdate(
             schedule=dataclasses.replace(
                 schedule,

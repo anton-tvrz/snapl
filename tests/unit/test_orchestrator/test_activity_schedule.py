@@ -54,7 +54,7 @@ async def test_it_stands_the_schedule_down_with_the_workers_client_and_audit_log
 
     assert changed is True
     view = await describe_drift_schedule(client, use_case_id="dcfabric")
-    assert (view.mode, view.note) == (DriftResponseMode.REPORT, _REQUEST.reason)
+    assert (view.mode, view.note) == (DriftResponseMode.REPORT, f"stood down: {_REQUEST.reason}")
     last = (await audit.query_by_workflow("drift-response-dcfabric"))[-1]
     assert last.payload["change"] == "stood_down"
 
