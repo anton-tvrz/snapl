@@ -18,6 +18,11 @@ if TYPE_CHECKING:
     from snapl_intent.models import Device
 
 
+# How many devices one batch dials at once (#55). Each collect holds a gRPC
+# connection, so an uncapped batch over a large fabric would open one per device.
+DEFAULT_MAX_CONCURRENCY = 16
+
+
 class GnmiCollector(Collector):
     """Nokia SR Linux Collector implementation using gNMI (pygnmi).
 
@@ -33,6 +38,7 @@ class GnmiCollector(Collector):
         password: gNMI password.
         insecure: Skip TLS verification (default True for lab environments).
         timeout: gNMI operation timeout in seconds (default 30).
+        max_concurrency: How many devices ``collect_batch`` dials at once (default 16).
 
     Raises:
         CollectorConfigError: If ``password`` is empty or missing.
@@ -47,9 +53,13 @@ class GnmiCollector(Collector):
         password: str,
         insecure: bool = True,
         timeout: int = 30,
+        max_concurrency: int = DEFAULT_MAX_CONCURRENCY,
     ) -> None:
         if not password:
             raise CollectorConfigError("password is required")
+        if max_concurrency < 1:
+            raise CollectorConfigError(f"max_concurrency must be at least 1, got {max_concurrency}")
+        self._max_concurrency = max_concurrency
         self._host = host
         self._port = port
         self._username = username
@@ -251,9 +261,13 @@ class GnmiCollector(Collector):
         if len(ids) != len(set(ids)):
             raise ValueError("duplicate device IDs in devices list")
 
+        # Created per batch: a semaphore belongs to the event loop it is first used on.
+        slots = asyncio.Semaphore(self._max_concurrency)
+
         async def _collect_one(device: Device) -> CollectResult:
             try:
-                return await self.collect(device, paths)
+                async with slots:
+                    return await self.collect(device, paths)
             except Exception as exc:
                 host = self._dial_host(device)
                 return CollectResult(

@@ -754,3 +754,45 @@ class TestErrorReasonIsNeverBlank:
             batch = await collector.collect_batch([device], ["/interface"])
 
         assert "_SilentError" in batch.results[device.id].error
+
+
+class TestCollectBatchConcurrencyCap:
+    """A cap on how many devices a batch dials at once (#55)."""
+
+    @pytest.mark.asyncio
+    async def test_no_more_than_the_cap_are_dialed_at_once(self, make_device):
+        import asyncio
+
+        from snapl_collector.gnmi.collector import GnmiCollector
+
+        collector = GnmiCollector(password="test", max_concurrency=2)  # pragma: allowlist secret
+        devices = [make_device(f"d-{i}", address=f"10.0.0.{i}") for i in range(1, 7)]
+        in_flight = 0
+        max_in_flight = 0
+
+        async def slow_get(*_args, **_kwargs):
+            nonlocal in_flight, max_in_flight
+            in_flight += 1
+            max_in_flight = max(max_in_flight, in_flight)
+            await asyncio.sleep(0.02)
+            in_flight -= 1
+            return _NOTIFICATION_ROOT
+
+        with patch("snapl_collector.gnmi.collector.gnmi_get", side_effect=slow_get):
+            batch = await collector.collect_batch(devices, paths=["/"])
+
+        assert batch.succeeded == 6
+        assert max_in_flight == 2
+
+    def test_the_default_cap_is_documented(self):
+        from snapl_collector.gnmi.collector import DEFAULT_MAX_CONCURRENCY
+
+        assert DEFAULT_MAX_CONCURRENCY == 16
+
+    @pytest.mark.parametrize("bad", [0, -1])
+    def test_a_cap_below_one_is_a_config_error(self, bad):
+        from snapl_collector.exceptions import CollectorConfigError
+        from snapl_collector.gnmi.collector import GnmiCollector
+
+        with pytest.raises(CollectorConfigError, match="max_concurrency"):
+            GnmiCollector(password="test", max_concurrency=bad)  # pragma: allowlist secret

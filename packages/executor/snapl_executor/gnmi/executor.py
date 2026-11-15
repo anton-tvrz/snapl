@@ -34,6 +34,12 @@ def _render(desired: DesiredState) -> tuple[dict[str, Any] | None, str | None]:
         return None, f"render failed for use case {use_case!r}: {type(exc).__name__}: {exc}"
 
 
+# How many devices one batch dials at once (#55). Each apply holds a gRPC
+# connection and a thread, so an uncapped batch over a large fabric would open
+# one of each per device.
+DEFAULT_MAX_CONCURRENCY = 16
+
+
 class GnmiExecutor(Executor):
     """Nokia SR Linux Executor using gNMI (pygnmi) + Jinja2 templates.
 
@@ -59,9 +65,13 @@ class GnmiExecutor(Executor):
         password: str,
         insecure: bool = True,
         timeout: int = 30,
+        max_concurrency: int = DEFAULT_MAX_CONCURRENCY,
     ) -> None:
         if not password:
             raise ExecutorConfigError("password is required")
+        if max_concurrency < 1:
+            raise ExecutorConfigError(f"max_concurrency must be at least 1, got {max_concurrency}")
+        self._max_concurrency = max_concurrency
         self._host = host
         self._port = port
         self._username = username
@@ -124,8 +134,14 @@ class GnmiExecutor(Executor):
         if len(ids) != len(set(ids)):
             raise ValueError("states contains duplicate device IDs")
 
-        tasks = [self._deploy(ds, is_rollback=False) for ds in states]
-        results_list: list[ApplyResult] = await asyncio.gather(*tasks)
+        # Created per batch: a semaphore belongs to the event loop it is first used on.
+        slots = asyncio.Semaphore(self._max_concurrency)
+
+        async def _deploy_one(ds: DesiredState) -> ApplyResult:
+            async with slots:
+                return await self._deploy(ds, is_rollback=False)
+
+        results_list: list[ApplyResult] = await asyncio.gather(*[_deploy_one(ds) for ds in states])
 
         results: dict[UUID, ApplyResult] = {r.device_id: r for r in results_list}
         succeeded = sum(1 for r in results_list if r.success)
