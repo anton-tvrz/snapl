@@ -579,6 +579,52 @@ async def test_a_report_run_never_stands_down(make_desired) -> None:
 
 
 @pytest.mark.asyncio
+async def test_a_reconcile_that_fails_as_a_whole_stands_the_schedule_down_too(mixed: Fabric) -> None:
+    """Its deploys may have written and nothing reported per device. Retrying
+    that every interval is the same loop #136 stops for one failed device."""
+    with pytest.raises(WorkflowFailureError):
+        await _run(mixed.activities(RefusingAuditLog("ReconcileDevices")), DriftResponseMode.REMEDIATE)
+
+    [request] = STAND_DOWNS
+    assert request.use_case_id == USE_CASE
+    assert RUN_ID in request.reason
+    assert "did not complete" in request.reason
+
+
+@pytest.mark.asyncio
+async def test_an_operator_cancel_during_the_repair_does_not_stand_down(mixed: Fabric) -> None:
+    """A cancel is the operator stopping the run, not a failed repair."""
+    deps = mixed.activities(InMemoryAuditLog())
+    applying = asyncio.Event()
+
+    async def _blocking_apply(_desired):
+        applying.set()
+        await asyncio.sleep(30)  # released by cancellation / worker shutdown
+
+    deps.executor.apply = AsyncMock(side_effect=_blocking_apply)
+    set_activities(deps)
+    async with (
+        await WorkflowEnvironment.start_time_skipping(data_converter=pydantic_data_converter) as env,
+        Worker(
+            env.client,
+            task_queue=TASK_QUEUE,
+            workflows=_WORKFLOWS,
+            workflow_runner=build_workflow_runner(),
+            activities=_ACTIVITIES,
+        ),
+    ):
+        handle = await env.client.start_workflow(
+            DriftResponseWorkflow.run, _request(DriftResponseMode.REMEDIATE), id=RUN_ID, task_queue=TASK_QUEUE
+        )
+        await asyncio.wait_for(applying.wait(), timeout=10)
+        await handle.cancel()
+        with pytest.raises(WorkflowFailureError):
+            await handle.result()
+
+    assert STAND_DOWNS == []
+
+
+@pytest.mark.asyncio
 async def test_a_failed_reconcile_records_each_decision_and_fails_the_run(mixed: Fabric) -> None:
     """The deploys ran (and wrote) before ReconcileDevices itself failed.
 

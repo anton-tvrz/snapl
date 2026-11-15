@@ -72,6 +72,27 @@ async def _record(
     )
 
 
+async def _stand_down(request: DriftResponseRequest, reason: str) -> bool:
+    """Return the schedule to report after a failed repair (#136). Whether it changed.
+
+    If the activity fails after its retries, the schedule stays in remediate
+    and the next run tries again, as before #136: the repair's outcome is
+    already recorded, so the run carries on.
+    """
+    try:
+        return await workflow.execute_activity(
+            stand_down_schedule,
+            StandDownRequest(use_case_id=request.use_case_id, reason=reason),
+            start_to_close_timeout=timedelta(seconds=30),
+            retry_policy=_STAND_DOWN_RETRY,
+        )
+    except ActivityError as exc:
+        if is_cancelled_exception(exc):
+            raise
+        workflow.logger.warning("could not stand down %s: %s", request.schedule_id, exc)
+        return False
+
+
 async def _record_end(request: DriftResponseRequest, exc: BaseException, *, reason: WorkflowReason) -> None:
     """The run's last record when a child it waited on did not complete."""
     if is_cancelled_exception(exc):
@@ -275,6 +296,13 @@ class DriftResponseWorkflow:
             ),
         )
         if reconcile_failure is not None:
+            # The repair did not complete: its deploys may have written, and no
+            # per-device result came back. Retrying it every interval is the
+            # same loop as a failed device, so the schedule stands down too.
+            # An operator's cancel is not a failed repair (#136).
+            if not is_cancelled_exception(reconcile_failure) and workflow.patched(_STAND_DOWN_PATCH):
+                cause = getattr(reconcile_failure, "cause", None) or reconcile_failure
+                await _stand_down(request, f"{wf_id}: the repair did not complete ({cause})")
             await _record_end(request, reconcile_failure, reason=WorkflowReason.REMEDIATION_FAILED)
             raise reconcile_failure
         stood_down = False
@@ -288,22 +316,7 @@ class DriftResponseWorkflow:
                 for device_id, outcome in reconcile.device_results.items()
                 if not outcome.success
             )
-            try:
-                stood_down = await workflow.execute_activity(
-                    stand_down_schedule,
-                    StandDownRequest(
-                        use_case_id=request.use_case_id,
-                        reason=f"{wf_id}: the repair failed on {', '.join(failed)}; switched to report",
-                    ),
-                    start_to_close_timeout=timedelta(seconds=30),
-                    retry_policy=_STAND_DOWN_RETRY,
-                )
-            except ActivityError as exc:
-                if is_cancelled_exception(exc):
-                    raise
-                # The repair's outcome is already recorded. The schedule stays in
-                # remediate and the next run tries again, as before #136.
-                workflow.logger.warning("could not stand down %s: %s", request.schedule_id, exc)
+            stood_down = await _stand_down(request, f"{wf_id}: the repair failed on {', '.join(failed)}")
         result = DriftResponseResult(
             workflow_id=wf_id,
             schedule_id=request.schedule_id,
