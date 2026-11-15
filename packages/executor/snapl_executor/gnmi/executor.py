@@ -155,6 +155,7 @@ class GnmiExecutor(Executor):
 
     async def _gnmi_set(self, desired: DesiredState, payload: dict[str, Any], *, is_rollback: bool) -> ApplyResult:
         start = time.monotonic()
+        host: str | None = None
         try:
             host = self._dial_host(desired.device)
             async with self._set_locks.setdefault(host, asyncio.Lock()):
@@ -176,10 +177,22 @@ class GnmiExecutor(Executor):
                 device_name=desired.device.name,
                 success=False,
                 payload=payload,
-                error=str(exc),
+                error=self._error_reason(exc, host),
                 is_rollback=is_rollback,
                 duration_ms=duration_ms,
             )
+
+    def _error_reason(self, exc: Exception, host: str | None) -> str:
+        """The exception's message, or its class and the dial target when it has none.
+
+        A dial that never connects raises an exception whose ``str()`` is empty,
+        which left the apply error blank (#194).
+        """
+        reason = str(exc)
+        if reason:
+            return reason
+        where = f", dialing {host}:{self._port}" if host else ""
+        return f"{type(exc).__name__}{where}"
 
     def _blocking_set(self, host: str, payload: dict[str, Any]) -> Any:
         with gNMIclient(

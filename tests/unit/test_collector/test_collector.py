@@ -700,3 +700,57 @@ class TestConstructorValidation:
 
         with pytest.raises(CollectorConfigError, match="password is required"):
             GnmiCollector(host="127.0.0.1", password=password)
+
+
+class _SilentError(Exception):
+    """An exception whose ``str()`` is empty, like a dial that never connects (#194)."""
+
+    def __str__(self) -> str:
+        return ""
+
+
+class TestErrorReasonIsNeverBlank:
+    """An operator must be able to act on the reason (#194)."""
+
+    @pytest.mark.asyncio
+    async def test_an_exception_with_no_message_is_named_by_its_class(self, make_device):
+        device = make_device("spine-01")
+        collector = _make_collector()
+        with patch("snapl_collector.gnmi.collector.gnmi_get", new_callable=AsyncMock, side_effect=_SilentError()):
+            result = await collector.get_running_config(device)
+
+        assert result.success is False
+        assert "_SilentError" in result.error
+
+    @pytest.mark.asyncio
+    async def test_a_connectivity_error_names_the_dial_target(self, make_device):
+        device = make_device("spine-01")
+        collector = _make_collector()
+        target = f"{collector._dial_host(device)}:57400"
+        with patch("snapl_collector.gnmi.collector.gnmi_get", new_callable=AsyncMock, side_effect=_SilentError()):
+            result = await collector.get_running_config(device)
+
+        assert result.error == f"connectivity error: _SilentError, dialing {target}"
+
+    @pytest.mark.asyncio
+    async def test_a_message_is_kept_and_the_dial_target_added(self, make_device):
+        device = make_device("spine-01")
+        collector = _make_collector()
+        target = f"{collector._dial_host(device)}:57400"
+        with patch(
+            "snapl_collector.gnmi.collector.gnmi_get",
+            new_callable=AsyncMock,
+            side_effect=OSError("connection refused"),
+        ):
+            result = await collector.get_running_config(device)
+
+        assert result.error == f"connectivity error: connection refused, dialing {target}"
+
+    @pytest.mark.asyncio
+    async def test_a_batch_failure_is_not_blank_either(self, make_device):
+        device = make_device("spine-01")
+        collector = _make_collector()
+        with patch.object(collector, "collect", new_callable=AsyncMock, side_effect=_SilentError()):
+            batch = await collector.collect_batch([device], ["/interface"])
+
+        assert "_SilentError" in batch.results[device.id].error

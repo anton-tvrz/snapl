@@ -161,20 +161,26 @@ class GnmiCollector(Collector):
         stripped = [re.sub(r"^[\w.-]+:", "", el, count=1) for el in elements if el]
         return "/" + "/".join(stripped)
 
-    def _classify_error(self, exc: Exception, timeout: int) -> str:
+    def _classify_error(self, exc: Exception, timeout: int, target: str | None = None) -> str:
+        """Turn an exception into a reason an operator can act on.
+
+        A dial that never connects raises an exception whose ``str()`` is empty,
+        so the reason falls back to the exception's class name, and a
+        connectivity error names the ``host:port`` that was dialed (#194).
+        """
+        where = f", dialing {target}" if target else ""
         if isinstance(exc, grpc.RpcError):
             code = exc.code()
             detail = exc.details() or ""
             if code == grpc.StatusCode.UNAUTHENTICATED:
-                return f"auth error: {detail}"
+                return f"auth error: {detail or type(exc).__name__}"
             if code == grpc.StatusCode.DEADLINE_EXCEEDED:
-                return f"timeout after {timeout}s"
-            return f"connectivity error: {detail}"
-        if isinstance(exc, OSError):
-            return f"connectivity error: {exc}"
+                return f"timeout after {timeout}s{where}"
+            return f"connectivity error: {detail or type(exc).__name__}{where}"
+        reason = str(exc) or type(exc).__name__
         if isinstance(exc, KeyError | TypeError | ValueError):
-            return f"parse error: {exc}"
-        return f"connectivity error: {exc}"
+            return f"parse error: {reason}"
+        return f"connectivity error: {reason}{where}"
 
     # ── Core operations ───────────────────────────────────────────────────
 
@@ -225,7 +231,7 @@ class GnmiCollector(Collector):
                 device_name=device.name,
                 success=False,
                 paths=paths,
-                error=self._classify_error(exc, self._timeout),
+                error=self._classify_error(exc, self._timeout, f"{host}:{self._port}"),
                 duration_ms=duration_ms,
             )
 
@@ -249,12 +255,13 @@ class GnmiCollector(Collector):
             try:
                 return await self.collect(device, paths)
             except Exception as exc:
+                host = self._dial_host(device)
                 return CollectResult(
                     device_id=device.id,
                     device_name=device.name,
                     success=False,
                     paths=paths,
-                    error=self._classify_error(exc, self._timeout),
+                    error=self._classify_error(exc, self._timeout, f"{host}:{self._port}" if host else None),
                 )
 
         results_list = await asyncio.gather(*[_collect_one(d) for d in devices])

@@ -400,3 +400,32 @@ class TestRenderFailureContract:
         _assert_render_error(failed.error, use_case, cause)
         assert result.results[healthy.device.id].success is True
         assert mock_cls.call_count == 1  # only the healthy device was dialled
+
+
+class _SilentError(Exception):
+    """An exception whose ``str()`` is empty, like a dial that never connects (#194)."""
+
+    def __str__(self) -> str:
+        return ""
+
+
+class TestApplyErrorIsNeverBlank:
+    @pytest.mark.asyncio
+    async def test_an_exception_with_no_message_is_named_with_the_dial_target(self, dcfabric_desired_state):
+        executor = _make_executor()
+        target = f"{executor._dial_host(dcfabric_desired_state.device)}:{executor._port}"
+        with patch("snapl_executor.gnmi.executor.gNMIclient") as mock_cls:
+            mock_cls.return_value.__enter__.side_effect = _SilentError()
+            result = await executor.apply(dcfabric_desired_state)
+
+        assert result.success is False
+        assert result.error == f"_SilentError, dialing {target}"
+
+    @pytest.mark.asyncio
+    async def test_a_message_is_kept_as_it_was(self, dcfabric_desired_state, mock_gnmi_client):
+        mock_gnmi_client.set.side_effect = Exception("gRPC status INVALID_ARGUMENT")
+        executor = _make_executor()
+        with patch("snapl_executor.gnmi.executor.gNMIclient", return_value=mock_gnmi_client):
+            result = await executor.apply(dcfabric_desired_state)
+
+        assert result.error == "gRPC status INVALID_ARGUMENT"
