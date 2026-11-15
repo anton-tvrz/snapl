@@ -972,3 +972,134 @@ class TestRepoSeedContent:
         mtu_attr = next(a for a in generic["attributes"] if a["name"] == "mtu")
         assert mtu_attr.get("optional") is True, "mtu must be optional — loopbacks cannot carry one (#78)"
         assert "default_value" not in mtu_attr, "an mtu default poisons mtu-less seed rows in the SoT (#78)"
+
+
+# ---------------------------------------------------------------------------
+# #62: branch on every lookup, domain errors only, no silent skips
+# ---------------------------------------------------------------------------
+
+
+class _SdkError(Exception):
+    """Stands in for an exception raised from inside the Infrahub SDK."""
+
+
+_SdkError.__module__ = "infrahub_sdk.exceptions"
+
+
+def _bgp_file(tmp_path: Path, dataset: dict[str, Any] | None = None) -> Path:
+    path = tmp_path / "t.yml"
+    path.write_text(yaml.safe_dump(dataset or _minimal_bgp_dataset(num_spines=1)))
+    return path
+
+
+class TestSeedBranchIsUsedForEveryLookup:
+    async def test_lookups_read_the_branch_the_seed_writes(self, tmp_path: Path):
+        """Lookups read main while creates wrote the branch, so a node that
+        existed only on main was updated there and branch nodes were wired to
+        main's peers."""
+        dataset = _minimal_bgp_dataset(num_spines=1)
+        dataset["organization"] = {"name": "Test Org"}
+        dataset["vrfs"] = [{"name": "default"}]
+        client = _make_bgp_client()
+
+        await SeedIngester(client=client).seed(
+            use_case="dcfabric", data_path=_bgp_file(tmp_path, dataset), branch="feature"
+        )
+
+        lookups = client.filters.await_args_list
+        assert lookups, "the seed made no lookups"
+        without = [call.kwargs.get("kind") for call in lookups if call.kwargs.get("branch") != "feature"]
+        assert without == [], f"lookups that did not read the branch: {without}"
+        assert all(call.kwargs.get("branch") == "feature" for call in client.create.await_args_list)
+
+
+class TestSeedRaisesOnlyDomainErrors:
+    async def test_an_unreachable_sot_during_the_namespace_lookup(self, tmp_path: Path):
+        """The first lookup ran before the try block and escaped as a raw OSError."""
+        client = _make_bgp_client()
+        client.filters = AsyncMock(side_effect=OSError("connection refused"))
+        path = tmp_path / "t.yml"
+        path.write_text(yaml.safe_dump({"vrfs": [{"name": "default"}]}))
+
+        with pytest.raises(IntentConnectionError, match="connection refused"):
+            await SeedIngester(client=client).seed(use_case="dcfabric", data_path=path)
+
+    async def test_an_sdk_error_from_a_lookup(self, tmp_path: Path):
+        client = _make_bgp_client()
+        client.filters = AsyncMock(side_effect=_SdkError("graphql error"))
+
+        with pytest.raises(IntentConnectionError, match="graphql error"):
+            await SeedIngester(client=client).seed(use_case="dcfabric", data_path=_bgp_file(tmp_path))
+
+    async def test_an_sdk_error_from_a_write(self, tmp_path: Path):
+        client = _make_bgp_client()
+        client.create = AsyncMock(side_effect=_SdkError("node rejected"))
+
+        with pytest.raises(IntentConnectionError, match="node rejected"):
+            await SeedIngester(client=client).seed(use_case="dcfabric", data_path=_bgp_file(tmp_path))
+
+    async def test_a_validation_error_is_not_rewrapped(self, tmp_path: Path):
+        dataset = _minimal_bgp_dataset(num_spines=1)
+        dataset["bgp_sessions"][0]["local_device"] = "no-such-device"
+
+        with pytest.raises(IntentValidationError, match="no-such-device"):
+            await SeedIngester(client=_make_bgp_client()).seed(
+                use_case="dcfabric", data_path=_bgp_file(tmp_path, dataset)
+            )
+
+
+class TestSeedDoesNotSkipSilently:
+    @pytest.mark.parametrize("field", ["local_ip", "remote_ip"])
+    async def test_a_session_address_that_was_never_seeded_is_a_data_error(self, tmp_path: Path, field: str):
+        """It was left out of the session, which then rendered a neighbor with
+        an empty peer-address that the device rejected at deploy time."""
+        dataset = _minimal_bgp_dataset(num_spines=1)
+        dataset["bgp_sessions"][0][field] = "10.10.1.1/31"
+
+        with pytest.raises(IntentValidationError, match=r"10\.10\.1\.1/31") as raised:
+            await SeedIngester(client=_make_bgp_client()).seed(
+                use_case="dcfabric", data_path=_bgp_file(tmp_path, dataset)
+            )
+
+        assert raised.value.field == field
+
+    async def test_a_session_naming_an_undeclared_peer_group_is_a_data_error(self, tmp_path: Path):
+        dataset = _minimal_bgp_dataset(num_spines=1)
+        dataset["bgp_sessions"][0]["peer_group"] = "overlay-evpn"
+
+        with pytest.raises(IntentValidationError, match="overlay-evpn") as raised:
+            await SeedIngester(client=_make_bgp_client()).seed(
+                use_case="dcfabric", data_path=_bgp_file(tmp_path, dataset)
+            )
+
+        assert raised.value.field == "peer_group"
+
+    async def test_a_declared_peer_group_no_session_uses_is_warned_about(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ):
+        dataset = _minimal_bgp_dataset(num_spines=1)
+        dataset["bgp_peer_groups"].append({"name": "overlay-evpn"})
+
+        with caplog.at_level("WARNING", logger="snapl_intent.infrahub.seed"):
+            await SeedIngester(client=_make_bgp_client()).seed(
+                use_case="dcfabric", data_path=_bgp_file(tmp_path, dataset)
+            )
+
+        assert "overlay-evpn" in caplog.text
+        assert "no session" in caplog.text
+
+    def test_the_shipped_seeds_resolve_every_session_address_and_peer_group(self):
+        """The stricter rules must not break the seeds snapl ships."""
+        import snapl_intent
+
+        root = pathlib.Path(snapl_intent.__file__).resolve().parent
+        for topo in sorted(root.glob("seed/*/topology.yml")):
+            data = yaml.safe_load(topo.read_text())
+            addresses = {row["ip_address"] for row in data.get("interfaces", []) if row.get("ip_address")}
+            groups = {group["name"] for group in data.get("bgp_peer_groups", [])}
+            for session in data.get("bgp_sessions", []):
+                for field in ("local_ip", "remote_ip"):
+                    if field in session:
+                        assert session[field] in addresses, f"{topo.parent.name}: {session['description']} {field}"
+                if "peer_group" in session:
+                    assert session["peer_group"] in groups, f"{topo.parent.name}: {session['description']}"
