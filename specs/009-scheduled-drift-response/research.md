@@ -46,7 +46,7 @@ The dev server snapl runs (`temporalio/temporal:latest`, `server start-dev`, `de
 
 1. runs `ScanDriftWorkflow` as a **child** (`id=f"{wf_id}-scan"`);
 2. in `report`, records the outcome and stops;
-3. in `remediate`, selects eligible devices (R5) and runs `ReconcileDevicesWorkflow` as a child (`id=f"{wf_id}-reconcile"`) for them. (Standing the schedule down after a failed repair is deferred, R8.)
+3. in `remediate`, selects eligible devices (R5) and runs `ReconcileDevicesWorkflow` as a child (`id=f"{wf_id}-reconcile"`) for them. (Standing the schedule down after a failed repair is deferred, R8.) *(2026-11-15: implemented for #136, see research R8 and contracts/orchestrator-schedules.md.)*
 
 **Rationale**:
 - **`ScanDrift.run(use_case_id)` stays untouched** (FR-028). The CLI's `snapl scan` and `reconcile --drifted` call that signature. Adding a mode argument would touch workflow code that has in-flight histories, which raises replay concerns, for a capability the manual path does not need.
@@ -81,7 +81,7 @@ The dev server snapl runs (`temporalio/temporal:latest`, `server start-dev`, `de
 **Rationale**:
 - `SKIP` is the SDK default. It is stated explicitly anyway, because it is load-bearing for FR-006 and SC-006: a run that outlasts its interval makes the next firing a no-op, and nothing is buffered. `BUFFER_ONE` would run a stale scan straight after a slow one, and `ALLOW_ALL` would run two repairs of the same fabric at once.
 - **The SDK's default catch-up window is 365 days** (`SchedulePolicy.catchup_window: timedelta = timedelta(days=365)`). After a laptop sleeps or Temporal is down, the server would try to start the firings it missed. For a report scan that is waste. For a remediate run it would be a write "for" a moment that has passed. Setting the window to one interval means a firing more than one interval late is dropped, and the next regular firing is the next run (FR-007).
-- `pause_on_failure=False`. A failed scan (SoT unreachable) must not stop detection. A failed repair does not pause the schedule either. Stand-down is deferred (R8), and pausing would stop detection.
+- `pause_on_failure=False`. A failed scan (SoT unreachable) must not stop detection. A failed repair does not pause the schedule either. Stand-down is deferred (R8), and pausing would stop detection. *(2026-11-15: implemented for #136, see research R8 and contracts/orchestrator-schedules.md.)*
 
 **Alternatives considered**: `pause_on_failure=True` as the failure breaker. See R8.
 
@@ -140,7 +140,7 @@ Two callers, both explicit acts: `snapl schedule create`, and `invoke demo.up` a
 
 **Decision**:
 - **Operator control** (`create`, `set_response`, `pause`, `resume`, `trigger`, `delete`, `describe`) is plain async functions in `snapl_orchestrator/schedules.py`. Each takes a connected `Client` (from `worker.client.build_client`, so the pydantic converter encodes `DriftResponseRequest`) and an `AuditLog`, makes the Temporal call, and appends a `SCHEDULE_CHANGED` `AuditEvent`. The `actor` is passed in by the caller. The CLI passes the OS user (`getpass.getuser()`). The CLI is a thin client over these functions, as it is over workflows today.
-- **Stand-down (former FR-018) is deferred** to #136 (decided 2026-10-28). The design below is recorded so the follow-up doesn't have to rediscover it. It would be an activity, `stand_down_schedule(schedule_id, reason)`. It would use `temporalio.activity.client()`, the worker's own client, to update the schedule's action to `report` and set `state.note` to the reason. It would leave `paused` alone, then append a `SCHEDULE_CHANGED` event with `actor="snapl:stand-down"`. `DriftResponse` would call it after a reconcile child returns `failed > 0`. Until then, a failed repair is attempted again on the next run (spec Edge Cases).
+- **Stand-down (former FR-018) is deferred** to #136 (decided 2026-10-28). *(2026-11-15: implemented for #136, see research R8 and contracts/orchestrator-schedules.md.)* The design below is recorded so the follow-up doesn't have to rediscover it. It would be an activity, `stand_down_schedule(schedule_id, reason)`. It would use `temporalio.activity.client()`, the worker's own client, to update the schedule's action to `report` and set `state.note` to the reason. It would leave `paused` alone, then append a `SCHEDULE_CHANGED` event with `actor="snapl:stand-down"`. `DriftResponse` would call it after a reconcile child returns `failed > 0`. Until then, a failed repair is attempted again on the next run (spec Edge Cases).
 
 **Rationale**:
 - **FR-022: control must work with the worker down.** "Stop the automatic writes now" is the command most likely to be needed when something is wrong, and that is also when the worker may be the thing that is wrong. Routing control through a workflow would make pause depend on a worker.
@@ -150,7 +150,7 @@ Two callers, both explicit acts: `snapl schedule create`, and `invoke demo.up` a
 
 **Alternatives considered**:
 - **`pause_on_failure=True` plus a deliberately failing `DriftResponse`.** It is native and needs no activity. But it pauses detection along with repair, and it would equally pause report-mode schedules whenever the SoT blips. It also relies on a workflow failing on purpose, whereas every snapl workflow today returns structured results. Rejected.
-- **No breaker; failed repairs simply retry next interval.** Idempotent applies make that harmless to the device, but it rewrites a device that rejects its intent every interval and buries the audit trail in identical failures. **This is the chosen behaviour for this cut**, until the stand-down follow-up lands.
+- **No breaker; failed repairs simply retry next interval.** Idempotent applies make that harmless to the device, but it rewrites a device that rejects its intent every interval and buries the audit trail in identical failures. **This is the chosen behaviour for this cut**, until the stand-down follow-up lands. *(2026-11-15: implemented for #136, see research R8 and contracts/orchestrator-schedules.md.)*
 - **A `ConfigureSchedule` workflow for operator changes.** Fails FR-022. Rejected.
 
 ## R9: Suppress is pause with a note; calendar windows are expressible later

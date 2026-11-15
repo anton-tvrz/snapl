@@ -13,7 +13,7 @@ The design:
 - The schedule starts a new **`DriftResponse`** workflow. It runs the existing `ScanDrift` as a child, then applies the response carried in its own arguments:
   - **`report`**: record and stop. Every schedule is born in this mode.
   - **`remediate`**: run the existing `ReconcileDevices` as a child for the devices with drift a deploy can fix. Undesired-only and errored devices are excluded.
-- A failed repair is attempted again on the next run. Automatic stand-down to `report` is deferred to a follow-up (research R8).
+- A failed repair is attempted again on the next run. Automatic stand-down to `report` is deferred to a follow-up (research R8). *(2026-11-15: implemented for #136, see research R8 and contracts/orchestrator-schedules.md.)*
 - Suppress is a pause with a required reason.
 - Operators steer schedules through a new `snapl schedule` command group, a thin client over a new `snapl_orchestrator.schedules` module. Every change lands in the durable audit log with its actor.
 - Nothing in `DeployIntent`, `ScanDrift`, `ReconcileDevices`, any block ABC, or the existing CLI commands changes. No schedule ever removes config (VIII.5, #65).
@@ -25,7 +25,7 @@ Research decisions are in [research.md](research.md), types in [data-model.md](d
 1. Remediate opt-in is per use case.
 2. Suppress is pause-only, with no calendar windows.
 3. Schedules are created by `snapl schedule create` or `invoke demo.up`, never by the worker. `demo.check` fails on a missing or paused schedule.
-4. Stand-down (the former US4) is deferred.
+4. Stand-down (the former US4) is deferred. *(2026-11-15: implemented for #136, see research R8 and contracts/orchestrator-schedules.md.)*
 5. Carried over from the 008 draft (#129): the SoT identity refusal on create (FR-031), a one-line summary per recent run (FR-024), and the 30-second trigger target (SC-012).
 
 ## Technical Context
@@ -73,7 +73,7 @@ Research decisions are in [research.md](research.md), types in [data-model.md](d
 | IV. Modularity | PASS | No new package. The new modules (`schedules.py`, `remediation.py`, one workflow) are unit-testable in isolation. |
 | V. Contract-First | PASS | `contracts/orchestrator-schedules.md` and `contracts/cli-schedule.md` are defined before code. No block ABC changes. `DriftResponse` composes existing workflows only. |
 | VI. Single Vendor, Named Seams | PASS | `DriftResponse` imports only orchestrator models, activities and workflows. `test_vendor_seams.py` picks up the new workflow file automatically. No template, adapter or field-map change. |
-| VII. Simplicity | PASS | Temporal-native Schedules are used instead of a hand-rolled loop, along with native pause, trigger and overlap. There is one new workflow, no new activity, no new environment variable, and no new store. Stand-down was deferred to keep it that way. |
+| VII. Simplicity | PASS | Temporal-native Schedules are used instead of a hand-rolled loop, along with native pause, trigger and overlap. There is one new workflow, no new activity, no new environment variable, and no new store. Stand-down was deferred to keep it that way. | *(2026-11-15: #136 added one activity, `stand_down_schedule`.)*
 | VIII.1 Authority split | PASS | The response policy is operational policy on the schedule, not intent in the SoT. Nothing promotes device state into intent. |
 | VIII.2 Drift response | PASS | `report` is the default and is the only mode a schedule can be created in (FR-003). `remediate` takes an explicit, confirmed, audited command (FR-012). `suppress` is a paused schedule with a required reason (FR-017). Every run records its response (FR-010). |
 | VIII.4 Executor idempotency | PASS | Repairs go through `ReconcileDevices` → `DeployIntent`, which are idempotent merge applies. Repeated runs against a converged device write the same state. |

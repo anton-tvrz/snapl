@@ -49,7 +49,7 @@ The operator confirms the preview. snapl issues exactly the deletes it showed, t
 1. **Given** a confirmed preview, **When** the removal runs, **Then** snapl issues the planned deletes and nothing else, then verifies with a fresh scan of that device.
 2. **Given** the device's config changed between the preview and the confirmation (a new scan's plan differs from the one shown), **When** the removal would run, **Then** snapl refuses, shows the new plan, and writes nothing.
 3. **Given** a delete the device rejects, **When** the removal runs, **Then** snapl stops, reports which delete failed with the device's reason, and records what was and was not removed.
-4. **Given** a deploy to the same device in progress, **When** the operator starts a removal, **Then** the removal waits for it or refuses (per-device writes stay serialized, as for deploys), and never runs alongside it.
+4. **Given** a deploy to the same device in progress, **When** the operator starts a removal, **Then** the removal never runs alongside it: per-device writes stay serialized, as for deploys. Whether it waits or refuses is a planning decision (reconcile skips a device with a deploy in flight, #35).
 5. **Given** an operator without a terminal (scripted use), **When** the removal is started without an explicit confirmation flag, **Then** snapl refuses and writes nothing.
 
 ---
@@ -72,7 +72,7 @@ Every removal shows in `snapl audit`, the dashboard's run list and the device's 
 ### Edge Cases
 
 - **The protected set.** `mgmt0` and `system0` are never planned for removal, whatever the scan says, and the preview says so. The list is the one spec 007 defined next to the entity field map, not a copy.
-- **An undesired port that only carries `enabled: true`.** Deleting the interface entry returns the port to its unconfigured default (disabled), which is what "not in intent" means for a port. A leaf-level delete of the listed fields would leave `enabled` and the port would still read as undesired. See Q2.
+- **An undesired port that only carries `enabled: true`.** A leaf-level delete of the listed fields would leave `enabled`, and the port would still read as undesired, so the delete targets the interface entry. Whether deleting the entry returns the port to the unconfigured state the scan ignores (disabled, no config) is capture C2. If SR Linux leaves defaults behind that the diff reads as config, this edge case needs another answer before User Story 2 can pass. See Q2.
 - **An extra address on an intent-managed interface (#193).** The interface is wanted; only the address is not. The delete targets the address under its subinterface, never the interface.
 - **A neighbour outside intent that is the BGP session the operator is logged in over.** The management session uses `mgmt0`, not BGP, so removing a BGP neighbour cannot cut snapl off. A neighbour removal can still drop traffic; the preview says that removing a neighbour tears its session down.
 - **The device is unreachable at confirmation time.** Nothing is removed; the error says which dial failed (#194).
