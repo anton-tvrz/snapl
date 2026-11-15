@@ -67,6 +67,6 @@ Built from `historyRows` (unchanged), oldest first.
 | rule | allowed |
 | --- | --- |
 | spacing between blocks (`m*`, `p*`, `gap*`, `space-*`) | 0, 2, 4, 6, 8, and `px` |
-| spacing inside a chip, badge, mark or table cell | also 0.5, 1, 1.5, on an element or parent carrying the `chip` or `cell` marker class |
+| spacing inside a chip, badge, mark or table cell | also 0.5, 1, 1.5, when the same class string carries the `chip` or `cell` marker class |
 | type | `text-meta`, `text-body`, `text-title`, `text-heading`, `text-number`, `text-number-lg` |
 | allowlist | file paths still to be restyled; empty when the feature is complete |
