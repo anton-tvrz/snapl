@@ -22,9 +22,11 @@ from snapl_presentation.dashboard.models import Bucket, DriftState, RunState, Se
 from snapl_presentation.dashboard.projections import (
     IntentDevice,
     RunFilters,
+    TimelineTooLongError,
     intent_devices,
     latest_pause,
     project_devices,
+    project_drift_summary,
     project_repeated_failures,
     project_running,
     project_runs,
@@ -1295,6 +1297,80 @@ def test_runs_are_counted_by_start_bucket_trigger_and_outcome():
         # No run started: no data, not zero.
         (H0 + timedelta(hours=2), None, {}),
     ]
+
+
+# --- the drift summary (spec 015 T006) ----------------------------------------------
+
+
+def _summary(events, start=H0, end=H0 + timedelta(hours=6), **kwargs):
+    kwargs.setdefault("states", INTENT)
+    kwargs.setdefault("names", {GONE: "old-leaf"})
+    return project_drift_summary(events, kwargs.pop("states"), kwargs.pop("names"), start, end, **kwargs)
+
+
+def _rows(summary):
+    return [(d.name, d.in_intent, d.episodes, d.open, d.drifted_s) for d in summary.devices]
+
+
+def test_drift_summary_counts_each_devices_episodes_most_first_then_longest_then_name():
+    summary = _summary(_drift_arc())
+
+    assert (summary.start, summary.end) == (H0, H0 + timedelta(hours=6))
+    assert _rows(summary) == [
+        ("leaf-01", True, 1, 0, 7200),
+        ("old-leaf", False, 1, 0, 7200),
+        ("spine-01", True, 1, 0, 3600),
+    ]
+
+
+def test_drift_summary_clips_episodes_to_the_range_and_counts_the_open_ones_at_its_end():
+    start, end = H0 + timedelta(hours=1), H0 + timedelta(hours=2, minutes=30)
+
+    summary = _summary(_drift_arc(), start, end)
+
+    # leaf-01 drifted before the range and closed in it; spine-01 opened at
+    # 2 h and is open at the range's end, drifted scan to scan: one scan, 0 s.
+    assert _rows(summary) == [
+        ("leaf-01", True, 1, 0, 3601),
+        ("old-leaf", False, 1, 0, 3601),
+        ("spine-01", True, 1, 1, 0),
+    ]
+
+
+def test_drift_summary_leaves_out_devices_with_no_episode_in_the_range():
+    later = H0 + timedelta(hours=3, minutes=30)
+
+    assert _summary(_drift_arc(), later, later + timedelta(hours=2)).devices == []
+
+
+def test_drift_summary_gives_the_most_paths_missing_and_undesired_in_the_range():
+    events = [
+        _scan(LEAF, H0, status="drifted", paths=["/a", "/b", "/c"], undesired=["/c"], workflow_id="s1"),
+        _scan(LEAF, H0 + timedelta(hours=1), status="drifted", paths=["/a", "/u", "/v"], undesired=["/u", "/v"]),
+        _scan(LEAF, H0 + timedelta(hours=2)),
+    ]
+
+    [leaf] = _summary(events).devices
+
+    assert (leaf.most_missing, leaf.most_undesired) == (2, 2)
+
+
+def test_drift_summary_undesired_is_unknown_for_scans_before_the_split():
+    events = [
+        _scan(LEAF, H0, status="drifted", paths=["/a", "/b"], undesired=None),
+        _scan(LEAF, H0 + timedelta(hours=1)),
+    ]
+
+    [leaf] = _summary(events).devices
+
+    assert (leaf.most_missing, leaf.most_undesired) == (0, None)
+
+
+def test_drift_summary_refuses_a_range_over_the_timelines_limit():
+    with pytest.raises(TimelineTooLongError):
+        _summary(_drift_arc(), max_points=5)
+    with pytest.raises(ValueError, match="before"):
+        _summary(_drift_arc(), H0, H0)
 
 
 # --- intent devices (spec 011 research R6) -----------------------------------------

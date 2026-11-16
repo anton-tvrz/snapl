@@ -26,7 +26,7 @@ from invoke import Context, Exit
 
 from snapl_orchestrator.audit.sqlite import SqliteAuditLog
 from snapl_orchestrator.models import AuditEvent, AuditEventType
-from snapl_presentation.dashboard.models import MetricsViewName
+from snapl_presentation.dashboard.models import MetricsViewName, SeriesName
 from tasks import history, ns
 
 pytestmark = pytest.mark.unit
@@ -35,7 +35,8 @@ SNAPSHOT_NAME = "20261108T203115Z-674e642f920efff4"
 # Read before any fixture points it at a temp dir.
 REAL_PROMETHEUS_DATA = getattr(history, "PROMETHEUS_DATA", None)
 # Spec 011 adds topology, devices, runs and drift-timeline, for archive mode.
-EXPORTS = ("overview", "history", "links", "sources", "topology", "devices", "runs", "drift-timeline")
+# Spec 015 adds drift-summary.
+EXPORTS = ("overview", "history", "links", "sources", "topology", "devices", "runs", "drift-timeline", "drift-summary")
 
 
 def _closed_port() -> int:
@@ -244,13 +245,21 @@ def test_the_export_covers_the_last_7_days(stub: Stub) -> None:
     before = datetime.now(UTC)
     history.archive(_ctx())
 
-    ranged = ("/api/v1/history", "/api/v1/drift-timeline", *(f"/api/v1/metrics/{v.value}" for v in MetricsViewName))
+    ranged = (
+        "/api/v1/history",
+        "/api/v1/drift-timeline",
+        "/api/v1/drift-summary",
+        *(f"/api/v1/metrics/{v.value}" for v in MetricsViewName),
+    )
     for path in ranged:
         [query] = stub.asked("GET", path)
         start = datetime.fromisoformat(query["start"][0])
         assert abs((before - timedelta(days=7)) - start) < timedelta(minutes=1), path
     for name in ("overview", "links", "sources", "topology", "devices", "runs"):
         assert stub.asked("GET", f"/api/v1/{name}")
+    # Every series, the ones spec 015 added included, not only the default four.
+    [query] = stub.asked("GET", "/api/v1/history")
+    assert query["series"] == [name.value for name in SeriesName]
 
 
 def test_a_dashboard_without_the_spec_011_routes_is_a_failed_export_part(stub: Stub, tmp_path: Path) -> None:

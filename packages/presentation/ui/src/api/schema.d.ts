@@ -41,6 +41,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/drift-summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Drift Summary
+         * @description Each device's drift episodes over a range, as the timeline finds them (spec 015).
+         */
+        get: operations["drift_summary_api_v1_drift_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/drift-timeline": {
         parameters: {
             query?: never;
@@ -414,6 +434,31 @@ export interface components {
             /** Workflow Id */
             workflow_id: string;
         };
+        /**
+         * DeviceDriftSummary
+         * @description One device's drift over a range (spec 015 FR-006).
+         */
+        DeviceDriftSummary: {
+            /**
+             * Device Id
+             * Format: uuid
+             */
+            device_id: string;
+            /** Drifted S */
+            drifted_s: number;
+            /** Episodes */
+            episodes: number;
+            /** In Intent */
+            in_intent: boolean;
+            /** Most Missing */
+            most_missing: number;
+            /** Most Undesired */
+            most_undesired?: number | null;
+            /** Name */
+            name: string;
+            /** Open */
+            open: number;
+        };
         /** DeviceLane */
         DeviceLane: {
             /**
@@ -546,6 +591,38 @@ export interface components {
          * @enum {string}
          */
         DriftState: "in_sync" | "missing" | "undesired" | "missing_and_undesired" | "drifted" | "error" | "never_scanned";
+        /** DriftSummary */
+        DriftSummary: {
+            /** Devices */
+            devices: components["schemas"]["DeviceDriftSummary"][];
+            /**
+             * End
+             * Format: date-time
+             */
+            end: string;
+            /**
+             * Start
+             * Format: date-time
+             */
+            start: string;
+        };
+        /** DriftSummaryResponse */
+        DriftSummaryResponse: {
+            /**
+             * Contract Version
+             * @default 1
+             * @constant
+             */
+            contract_version: "1";
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            summary: components["schemas"]["View_DriftSummary_"];
+            /** Use Case */
+            use_case: string;
+        };
         /** DriftTimeline */
         DriftTimeline: {
             /**
@@ -1270,6 +1347,24 @@ export interface components {
              */
             stale: boolean;
         };
+        /** View[DriftSummary] */
+        View_DriftSummary_: {
+            /** Available */
+            available: boolean;
+            data?: components["schemas"]["DriftSummary"] | null;
+            /** Fetched At */
+            fetched_at?: string | null;
+            /** Reason */
+            reason?: string | null;
+            /** Remedy */
+            remedy?: string | null;
+            source: components["schemas"]["SourceName"];
+            /**
+             * Stale
+             * @default false
+             */
+            stale: boolean;
+        };
         /** View[DriftTimeline] */
         View_DriftTimeline_: {
             /** Available */
@@ -1528,6 +1623,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DevicesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    drift_summary_api_v1_drift_summary_get: {
+        parameters: {
+            query?: {
+                /** @description Defaults to the server's --use-case. */
+                use_case?: string | null;
+                /** @description Defaults to end - 24h. */
+                start?: string | null;
+                /** @description Defaults to now. */
+                end?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DriftSummaryResponse"];
                 };
             };
             /** @description Validation Error */

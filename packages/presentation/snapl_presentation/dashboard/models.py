@@ -536,6 +536,37 @@ class DriftTimelineResponse(Envelope):
     timeline: View[DriftTimeline]
 
 
+class DeviceDriftSummary(_Model):
+    """One device's drift over a range (spec 015 FR-006)."""
+
+    device_id: UUID
+    name: str
+    in_intent: bool
+    # Drift episodes that overlap the range.
+    episodes: int = Field(ge=1)
+    # Of those, still open at the range's end.
+    open: int = Field(ge=0)
+    # Time drifted inside the range, scan to scan: an open episode counts up
+    # to its latest scan, not to the range's end.
+    drifted_s: int = Field(ge=0)
+    # The most missing paths any scan in the range saw.
+    most_missing: int = Field(ge=0)
+    # None when a drifted scan in the range predates the undesired split (010 FR-012a).
+    most_undesired: int | None = Field(default=None, ge=0)
+
+
+class DriftSummary(_Model):
+    start: UtcDatetime
+    end: UtcDatetime
+    # Most episodes first, then longest drifted, then name. A device with no
+    # episode in the range is left out.
+    devices: list[DeviceDriftSummary]
+
+
+class DriftSummaryResponse(Envelope):
+    summary: View[DriftSummary]
+
+
 # --- Run steps (spec 011) -----------------------------------------------------------
 
 

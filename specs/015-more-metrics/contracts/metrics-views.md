@@ -77,6 +77,12 @@ Settled in PR A (#270):
 
 A device with no episode in the range is left out.
 
+Settled in PR B (#272):
+- **`drifted_s` for an episode still open at `end`** runs to its latest scan, not to `end`: scan to scan, like every duration from the trail. An episode seen by one scan has `drifted_s: 0` and `open: 1`.
+- **Scans before the undesired split** (010 FR-012a) make `most_undesired` `None` and add nothing to `most_missing`, since their paths have no direction.
+- **`in_intent`** follows `project_timeline`: the SoT's devices, or with the SoT down the devices it last named.
+- **Archives**: the summary and the series of PR A come from the archived audit trail, so an archive made before spec 015 answers them too. "Not in this archive" applies to the metrics views of PR D, which come from the exported Prometheus data.
+
 ## Worker metrics (new families)
 
 | family | type | labels |
