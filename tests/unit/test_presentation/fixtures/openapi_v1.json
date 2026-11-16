@@ -2279,7 +2279,11 @@
           "drifted_devices",
           "undesired_paths",
           "deploys",
-          "repairs"
+          "repairs",
+          "in_sync_devices",
+          "open_drifts",
+          "runs",
+          "repair_duration"
         ],
         "title": "SeriesName",
         "type": "string"
@@ -3544,7 +3548,7 @@
             }
           },
           {
-            "description": "Repeatable. Defaults to all four.",
+            "description": "Repeatable. Defaults to drifted_devices, undesired_paths, deploys and repairs; the series added by spec 015 are returned only when named.",
             "in": "query",
             "name": "series",
             "required": false,
@@ -3560,7 +3564,7 @@
                   "type": "null"
                 }
               ],
-              "description": "Repeatable. Defaults to all four.",
+              "description": "Repeatable. Defaults to drifted_devices, undesired_paths, deploys and repairs; the series added by spec 015 are returned only when named.",
               "title": "Series"
             }
           },

@@ -28,6 +28,7 @@ from snapl_presentation.dashboard.archive import ARCHIVE_REMEDY, NOT_IN_ARCHIVE
 from snapl_presentation.dashboard.ci import REPO_REMEDY
 from snapl_presentation.dashboard.exposition import CONTENT_TYPE, SourceOutcome, render_exposition
 from snapl_presentation.dashboard.models import (
+    DEFAULT_SERIES,
     ArchiveInfo,
     Bucket,
     CiStatus,
@@ -151,6 +152,8 @@ _FETCH_BOUND_S = {SourceName.CI: 60.0}
 _METRICS_DEFAULT_RANGE = timedelta(hours=1)
 _METRICS_MAX_RANGE = timedelta(days=400)
 _METRICS_DEFAULT_POINTS = 240
+# History series that count devices in intent, so `/history` reads the SoT for them.
+_NEEDS_INTENT = frozenset({SeriesName.IN_SYNC_DEVICES, SeriesName.OPEN_DRIFTS})
 
 
 class _Reader:
@@ -756,7 +759,15 @@ def create_app(
     @router.get("/history", response_model=HistoryResponse)
     async def history(
         requested: UseCaseQuery = None,
-        series: Annotated[list[SeriesName] | None, Query(description="Repeatable. Defaults to all four.")] = None,
+        series: Annotated[
+            list[SeriesName] | None,
+            Query(
+                description=(
+                    "Repeatable. Defaults to drifted_devices, undesired_paths, deploys and repairs; "
+                    "the series added by spec 015 are returned only when named."
+                )
+            ),
+        ] = None,
         start: Annotated[AwareDatetime | None, Query(description="Defaults to end - 24h.")] = None,
         end: Annotated[AwareDatetime | None, Query(description="Defaults to now.")] = None,
         bucket: Annotated[Bucket, Query(description="Ignored for per-scan series.")] = Bucket.HOUR,
@@ -770,10 +781,21 @@ def create_app(
         served = _check_use_case(requested)
         range_end = end or clock()
         range_start = start or range_end - timedelta(hours=24)
-        names = series or list(SeriesName)
-        audit = await reader.read(SourceName.AUDIT)
+        names = series or list(DEFAULT_SERIES)
+        if _NEEDS_INTENT.isdisjoint(names):
+            audit = await reader.read(SourceName.AUDIT)
+            states, device_names = None, {}
+        else:
+            audit, sot = await reader.read_all(SourceName.AUDIT, SourceName.SOT)
+            states = sot.data if sot.available else None
+            device_names = _device_names(sot, sources.sot.names)
         try:
-            projected = [project_series(audit.data or [], name, range_start, range_end, bucket) for name in names]
+            projected = [
+                project_series(
+                    audit.data or [], name, range_start, range_end, bucket, states=states, names=device_names
+                )
+                for name in names
+            ]
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         return HistoryResponse(use_case=served, generated_at=clock(), series=projected)

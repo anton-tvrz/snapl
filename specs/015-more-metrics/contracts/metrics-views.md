@@ -38,6 +38,12 @@ The label sets of the SDK families were read from the live metrics store on 2026
 
 `GET /api/v1/history` keeps its default of the original four series, so existing callers get the same answer. The new series are returned when named with `series=`.
 
+Settled in PR A (#270):
+- **`runs` outcomes.** The history reads no Temporal, so `succeeded` is a run that recorded success, `running` is a run with no recorded end, and `failed` is everything else: a failure, a cancellation, and a run that a later start under its id shows never finished. A bucket where no run started has `value: null` and `by_outcome: {}`. `bucket` is the requested bucket.
+- **`bucket` is `null`** for `in_sync_devices`, `open_drifts` and `repair_duration`.
+- **Devices in intent** for `in_sync_devices` and `open_drifts` follow `project_devices`: the SoT's devices, or with the SoT down the devices it last named. A server that has never read the SoT counts every device the trail mentions. `/history` reads the SoT only when one of these two is asked for.
+- **`repair_duration` is not limited to devices in intent**, like the timeline's episodes: a device that has left intent keeps the repairs it had.
+
 ## `GET /api/v1/drift-summary`
 
 | query | default | |

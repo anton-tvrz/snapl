@@ -12,7 +12,7 @@ inserted well after its timestamp (research R3).
 from __future__ import annotations
 
 import re
-from bisect import bisect_left
+from bisect import bisect_left, bisect_right
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from operator import attrgetter
@@ -53,7 +53,7 @@ from snapl_presentation.dashboard.models import (
 from snapl_presentation.exceptions import first_line
 
 if TYPE_CHECKING:
-    from collections.abc import Collection, Mapping, Sequence
+    from collections.abc import Collection, Iterator, Mapping, Sequence
 
     from snapl_intent.models import DesiredState
     from snapl_orchestrator.models import AuditEvent
@@ -597,6 +597,8 @@ _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 _WEEK_ORIGIN = datetime(1970, 1, 5, tzinfo=UTC)
 
 _PER_SCAN = {SeriesName.DRIFTED_DEVICES, SeriesName.UNDESIRED_PATHS}
+# Series whose points are not buckets: one per scan, or one per closed episode.
+_UNBUCKETED = _PER_SCAN | {SeriesName.IN_SYNC_DEVICES, SeriesName.OPEN_DRIFTS, SeriesName.REPAIR_DURATION}
 
 
 def bucket_starts(start: datetime, end: datetime, bucket: Bucket) -> list[datetime]:
@@ -710,19 +712,152 @@ def _markers_of(runs: Sequence[_Run], scheduled: set[str], start: datetime, end:
     return sorted(markers, key=lambda marker: marker.t)
 
 
+def _intent_ids(states: Sequence[DesiredState | IntentDevice] | None, names: Mapping[UUID, str]) -> set[UUID] | None:
+    """The devices in intent, by `project_devices`' rule; None when nothing says.
+
+    With the Source of Truth down, the devices it last named are in intent. A
+    server that has never read it knows no intent at all, and then every device
+    the trail mentions counts rather than none.
+    """
+    if states is not None:
+        return {device.id for device in intent_devices(states)}
+    return set(names) or None
+
+
+def _in_sync_points(
+    events: Sequence[AuditEvent], intent: set[UUID] | None, start: datetime, end: datetime
+) -> list[Point]:
+    """Per successful scan, the devices in intent its own records found in sync.
+
+    A scan's records are paired with its end in time order, so a workflow id
+    used twice is two scans. A record with an error is not in sync.
+    """
+    pending: dict[str, dict[UUID, str]] = {}
+    points = []
+    for event in sorted(events, key=_BY_TIME):
+        if _is_scan_record(event) and event.event_type in _SCAN_RECORDS and isinstance(event.target_id, UUID):
+            pending.setdefault(event.workflow_id, {})[event.target_id] = _scan_code(event)
+        elif _is_scan_end(event):
+            codes = pending.pop(event.workflow_id, {})
+            if event.outcome == "success" and start <= event.timestamp < end:
+                value = sum(1 for d, code in codes.items() if code == "c" and (intent is None or d in intent))
+                points.append(Point(t=event.timestamp, value=value))
+    return points
+
+
+def _successful_scan_ends(events: Sequence[AuditEvent], start: datetime, end: datetime) -> list[datetime]:
+    return sorted(
+        e.timestamp for e in events if _is_scan_end(e) and e.outcome == "success" and start <= e.timestamp < end
+    )
+
+
+def _open_drift_points(
+    events: Sequence[AuditEvent], intent: set[UUID] | None, start: datetime, end: datetime
+) -> list[Point]:
+    """Per successful scan, the drift episodes open after it on devices in intent."""
+    by_device = _scans_by_device(sorted(events_until(events, end), key=_BY_TIME))
+    opened: list[datetime] = []
+    closed: list[datetime] = []
+    for device_id, of_device in by_device.items():
+        if intent is not None and device_id not in intent:
+            continue
+        for span, is_closed in _episode_spans(of_device):
+            opened.append(span[0].timestamp)
+            if is_closed:
+                closed.append(span[-1].timestamp)
+    opened.sort()
+    closed.sort()
+    return [
+        Point(t=t, value=bisect_right(opened, t) - bisect_right(closed, t))
+        for t in _successful_scan_ends(events, start, end)
+    ]
+
+
+def _repair_points(events: Sequence[AuditEvent], start: datetime, end: datetime) -> list[Point]:
+    """One point per episode closed in the range, at its close, scan to scan.
+
+    Like the timeline's episodes, a device that has left intent keeps its
+    repairs: they happened.
+    """
+    by_device = _scans_by_device(sorted(events_until(events, end), key=_BY_TIME))
+    points = []
+    for of_device in by_device.values():
+        for span, is_closed in _episode_spans(of_device):
+            closed_at = span[-1].timestamp
+            if is_closed and start <= closed_at < end:
+                duration = int((closed_at - span[0].timestamp).total_seconds())
+                points.append(Point(t=closed_at, value=duration))
+    return sorted(points, key=lambda point: point.t)
+
+
+def _run_outcome(run: _Run) -> str:
+    """``succeeded``, ``failed`` or ``running``.
+
+    The history has no view of Temporal, so a run with no recorded end is
+    ``running``, unless a later start under its id shows it never finished. A
+    cancelled run and one that never finished did not succeed: ``failed``.
+    """
+    state = _state(run, None)
+    if state is RunState.SUCCEEDED:
+        return "succeeded"
+    if run.end is None and not run.superseded:
+        return "running"
+    return "failed"
+
+
+def _run_points(events: Sequence[AuditEvent], starts: list[datetime], bucket: Bucket) -> list[Point]:
+    """Runs by the bucket of their start, keyed ``<trigger>.<outcome>``.
+
+    A bucket where no run started has no data: its value is None and its
+    counts are empty.
+    """
+    if not starts:
+        return []
+    flow = [e for e in events if e.activity_name is None]
+    runs = _split_runs(flow)
+    scheduled = _scheduled_ids(runs, flow)
+    first, size = starts[0], _BUCKET_SIZE[bucket]
+    counts: dict[int, dict[str, int]] = {}
+    for run in runs:
+        index = (run.start.timestamp - first) // size
+        if 0 <= index < len(starts):
+            key = f"{_trigger(run, scheduled).value}.{_run_outcome(run)}"
+            per_bucket = counts.setdefault(index, {})
+            per_bucket[key] = per_bucket.get(key, 0) + 1
+    points = []
+    for index, bucket_start in enumerate(starts):
+        in_bucket = counts.get(index)
+        if in_bucket is None:
+            points.append(Point(t=bucket_start, value=None, by_outcome={}))
+        else:
+            points.append(Point(t=bucket_start, value=sum(in_bucket.values()), by_outcome=dict(in_bucket)))
+    return points
+
+
 def project_series(
     events: Sequence[AuditEvent],
     name: SeriesName,
     start: datetime,
     end: datetime,
     bucket: Bucket,
+    *,
+    states: Sequence[DesiredState | IntentDevice] | None = None,
+    names: Mapping[UUID, str] | None = None,
 ) -> Series:
-    """One history series over ``[start, end)`` (research R8).
+    """One history series over ``[start, end)`` (research R8; spec 015 R5).
 
-    ``drifted_devices`` and ``undesired_paths`` have a point per scan and
-    ignore ``bucket``. ``deploys`` and ``repairs`` count per UTC-aligned
+    ``drifted_devices``, ``undesired_paths``, ``in_sync_devices`` and
+    ``open_drifts`` have a point per successful scan, and
+    ``repair_duration`` one per drift episode closed in the range; they ignore
+    ``bucket``. ``deploys``, ``repairs`` and ``runs`` count per UTC-aligned
     bucket. The range is never clamped to the data: before the first event
     there are simply no points.
+
+    Args:
+        states: the devices in intent, for ``in_sync_devices`` and
+            ``open_drifts``; None when the Source of Truth could not be read.
+        names: device names from the last successful SoT read, which stand
+            for intent when ``states`` is None.
 
     Raises:
         ValueError: ``start >= end``, or more than 2,000 buckets.
@@ -732,13 +867,21 @@ def project_series(
     starts = bucket_starts(start, end, bucket)
     if name in _PER_SCAN:
         points = _scan_points(events, name, start, end)
+    elif name is SeriesName.IN_SYNC_DEVICES:
+        points = _in_sync_points(events, _intent_ids(states, names or {}), start, end)
+    elif name is SeriesName.OPEN_DRIFTS:
+        points = _open_drift_points(events, _intent_ids(states, names or {}), start, end)
+    elif name is SeriesName.REPAIR_DURATION:
+        points = _repair_points(events, start, end)
+    elif name is SeriesName.RUNS:
+        points = _run_points(events, starts, bucket)
     else:
         points = _counted_points(events, name, starts, bucket)
     return Series(
         name=name,
         start=start,
         end=end,
-        bucket=None if name in _PER_SCAN else bucket,
+        bucket=None if name in _UNBUCKETED else bucket,
         points=points,
         markers=_markers(events, start, end),
         first_event_at=min((event.timestamp for event in events), default=None),
@@ -790,6 +933,31 @@ def _scan_code(event: AuditEvent) -> str:
     if event.event_type is AuditEventType.ACTIVITY_FAILED:
         return "e"
     return "d" if event.payload.get("paths") else "c"
+
+
+def _scans_by_device(known: Sequence[AuditEvent]) -> dict[UUID, list[AuditEvent]]:
+    """Each device's scan records, in the order of ``known``, which is sorted by time."""
+    by_device: dict[UUID, list[AuditEvent]] = {}
+    for e in known:
+        # The same test as `_is_scan_record`, on one line: it runs for every event.
+        if (
+            e.activity_name == "detect_drift"
+            and e.workflow_type == "ScanDrift"
+            and e.event_type in _SCAN_RECORDS
+            and isinstance(e.target_id, UUID)
+        ):
+            by_device.setdefault(e.target_id, []).append(e)
+    return by_device
+
+
+def _episode_spans(of_device: Sequence[AuditEvent]) -> Iterator[tuple[Sequence[AuditEvent], bool]]:
+    """Each drift episode in one device's scans: its scans, and whether it closed.
+
+    The one definition of an episode: the timeline and the history both use it.
+    """
+    codes = "".join([_scan_code(scan) for scan in of_device])
+    for match in _EPISODE.finditer(codes):
+        yield of_device[match.start() : match.end()], codes[match.end() - 1] == "c"
 
 
 def _scan_state(event: AuditEvent) -> DriftState:
@@ -861,12 +1029,7 @@ def project_timeline(
     if start >= end:
         raise ValueError("start must be before end")
     known = sorted(events_until(events, end), key=_BY_TIME)
-    # The same test as `_is_scan_record`, on one line: it runs for every event.
-    scans = [e for e in known if e.activity_name == "detect_drift" and e.workflow_type == "ScanDrift"]
-    by_device: dict[UUID, list[AuditEvent]] = {}
-    for scan in scans:
-        if scan.event_type in _SCAN_RECORDS and isinstance(scan.target_id, UUID):
-            by_device.setdefault(scan.target_id, []).append(scan)
+    by_device = _scans_by_device(known)
 
     # Each device's scans are in time order, so the range's points are a tail.
     first_in_range = {d: bisect_left(of_device, start, key=_BY_TIME) for d, of_device in by_device.items()}
@@ -915,11 +1078,8 @@ def project_timeline(
                 points=[_scan_point(scan) for scan in of_device[first_in_range.get(device_id, 0) :]],
             )
         )
-        codes = "".join([_scan_code(scan) for scan in of_device])
-        for match in _EPISODE.finditer(codes):
-            span = of_device[match.start() : match.end()]
-            closed = span[-1].timestamp if codes[match.end() - 1] == "c" else None
-            spans.append((span[0].timestamp, closed, device_id, name, span))
+        for span, is_closed in _episode_spans(of_device):
+            spans.append((span[0].timestamp, span[-1].timestamp if is_closed else None, device_id, name, list(span)))
 
     def build(span: tuple[datetime, datetime | None, UUID, str, list[AuditEvent]]) -> DriftEpisode:
         _, _, device_id, name, of_episode = span
