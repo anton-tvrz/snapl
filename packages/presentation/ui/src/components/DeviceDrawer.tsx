@@ -27,12 +27,12 @@ function Paths({ title, paths }: { title: string; paths: readonly string[] }) {
   if (paths.length === 0) return null;
   return (
     <section aria-label={title} className="mt-4">
-      <h3 className="text-xs font-semibold text-muted">
+      <h3 className="text-meta font-semibold text-muted">
         {title} ({paths.length})
       </h3>
-      <ul className="mt-1 space-y-1">
+      <ul className="mt-2 space-y-2">
         {paths.map((path) => (
-          <li key={path} className="rounded bg-sunken px-2 py-1 font-mono text-xs break-all">
+          <li key={path} className="chip rounded bg-sunken px-2 py-1 font-mono text-meta break-all">
             {path}
           </li>
         ))}
@@ -70,13 +70,13 @@ export function DeviceDrawer({ device, runs, linkNotes, now, onClose, copy = tru
   }, [onClose]);
 
   return (
-    <aside role="dialog" aria-label={device.name} className="rounded-lg border border-line bg-surface p-4 text-sm">
-      <header className="flex items-start gap-3">
+    <aside role="dialog" aria-label={device.name} className="rounded-lg border border-panel-line bg-surface p-6 text-body shadow-panel">
+      <header className="flex items-start gap-4">
         <svg width="36" height="36" viewBox="-22 -22 44 44" aria-hidden="true" className="shrink-0">
           <StateMark encoding={encoding} r={18} />
         </svg>
         <div className="min-w-0">
-          <p className="font-mono text-base font-semibold">{device.name}</p>
+          <p className="font-mono text-title font-semibold">{device.name}</p>
           <p className="text-muted">
             <span>{device.role ?? "role unknown"}</span> · <span className="text-ink">{encoding.label}</span>
           </p>
@@ -86,29 +86,29 @@ export function DeviceDrawer({ device, runs, linkNotes, now, onClose, copy = tru
           type="button"
           onClick={onClose}
           aria-label="Close"
-          className="ml-auto rounded border border-line px-2 py-0.5 text-muted hover:text-ink"
+          className="chip ml-auto rounded border border-line px-2 py-0.5 text-muted hover:text-ink"
         >
           ✕
         </button>
       </header>
 
-      {!device.in_intent && <p className="mt-3 text-muted">No longer in intent.</p>}
+      {!device.in_intent && <p className="mt-4 text-muted">No longer in intent.</p>}
       {device.error && (
-        <p className="mt-3 rounded border border-warn-line bg-warn-surface p-2 break-words">{device.error}</p>
+        <p className="mt-4 max-w-prose rounded border border-warn-line bg-warn-surface p-2 break-words">{device.error}</p>
       )}
 
       <Paths title="In intent, missing from the device" paths={device.missing_paths ?? []} />
       <Paths title="On the device, not in intent" paths={device.undesired_paths ?? []} />
       <Paths title="Differs from intent (direction not recorded)" paths={device.unclassified_paths ?? []} />
 
-      {device.note && <p className="mt-3 text-muted">{device.note}</p>}
+      {device.note && <p className="mt-4 text-muted">{device.note}</p>}
       {device.suggested_command && (
-        <p className="mt-3">
+        <p className="mt-4">
           <Command text={device.suggested_command} copy={copy} />
         </p>
       )}
 
-      <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
+      <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
         <dt className="text-muted">Last scan</dt>
         <dd>{ageText(device.last_scanned_at, now)}</dd>
         <dt className="text-muted">Last deploy</dt>
@@ -120,11 +120,11 @@ export function DeviceDrawer({ device, runs, linkNotes, now, onClose, copy = tru
       </dl>
 
       <section className="mt-4">
-        <h3 className="text-xs font-semibold text-muted">Recent runs</h3>
+        <h3 className="text-meta font-semibold text-muted">Recent runs</h3>
         {own.length === 0 ? (
-          <p className="mt-1 text-muted">No runs recorded for this device.</p>
+          <p className="mt-2 text-muted">No runs recorded for this device.</p>
         ) : (
-          <ul aria-label={`Recent runs for ${device.name}`} className="mt-1 space-y-1">
+          <ul aria-label={`Recent runs for ${device.name}`} className="mt-2 space-y-2">
             {own.map((run) => {
               const outcome = runEncoding(run.state);
               return (
@@ -133,7 +133,7 @@ export function DeviceDrawer({ device, runs, linkNotes, now, onClose, copy = tru
                   <span>{run.workflow_type}</span>
                   <span>{outcome.label}</span>
                   {run.reason && <span className="break-words text-muted">{run.reason}</span>}
-                  <span className="ml-auto text-xs text-muted">
+                  <span className="ml-auto text-meta text-muted">
                     {run.trigger} · {ageText(run.started_at, now)}
                   </span>
                   {onSelectRun && (
@@ -144,7 +144,7 @@ export function DeviceDrawer({ device, runs, linkNotes, now, onClose, copy = tru
                       }
                       aria-label={`Show the loop for ${run.workflow_type} started ${utcText(new Date(run.started_at))}`}
                       onClick={() => onSelectRun({ workflow_id: run.workflow_id, started_at: run.started_at })}
-                      className="rounded border border-line px-1.5 text-xs aria-pressed:border-ink aria-pressed:font-semibold"
+                      className="chip rounded border border-line px-1.5 text-meta aria-pressed:border-ink aria-pressed:font-semibold"
                     >
                       Loop
                     </button>
@@ -158,8 +158,8 @@ export function DeviceDrawer({ device, runs, linkNotes, now, onClose, copy = tru
 
       {linkNotes.length > 0 && (
         <section className="mt-4">
-          <h3 className="text-xs font-semibold text-muted">Links in intent</h3>
-          <ul className="mt-1 space-y-1 text-muted">
+          <h3 className="text-meta font-semibold text-muted">Links in intent</h3>
+          <ul className="mt-2 space-y-2 text-muted">
             {linkNotes.map((note) => (
               <li key={note}>{note}</li>
             ))}

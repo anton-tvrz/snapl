@@ -34,7 +34,7 @@ export function PanelFrame({ title, action, footer, id, children }: FrameProps) 
     <section
       id={id}
       aria-labelledby={heading}
-      className="flex flex-col gap-4 rounded-lg border border-panel-line bg-surface p-6 shadow-panel"
+      className="flex min-w-0 flex-col gap-4 rounded-lg border border-panel-line bg-surface p-6 shadow-panel"
     >
       <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <h2 id={heading} className="text-title font-semibold">

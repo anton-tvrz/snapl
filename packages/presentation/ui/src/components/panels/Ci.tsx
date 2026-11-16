@@ -20,16 +20,16 @@ export function Ci({ ci, now, presentOnly = false }: Props) {
   return (
     <ViewFrame title="CI" view={ci} now={now} presentOnly={presentOnly}>
       {status && (
-        <div className="text-sm">
-          <p className="mb-2 text-xs text-muted">{status.repo}</p>
+        <div className="text-body">
+          <p className="mb-2 text-meta text-muted">{status.repo}</p>
           <div className="overflow-x-auto">
             <table aria-label="CI" className="w-full text-left">
-              <thead className="text-xs text-muted">
+              <thead className="text-meta text-muted">
                 <tr>
-                  <th className="py-1 pr-3 font-medium">Target</th>
-                  <th className="py-1 pr-3 font-medium">Gate</th>
-                  <th className="py-1 pr-3 font-medium">Failed jobs</th>
-                  <th className="py-1 font-medium">Coverage</th>
+                  <th className="cell py-1 pr-4 font-medium">Target</th>
+                  <th className="cell py-1 pr-4 font-medium">Gate</th>
+                  <th className="cell py-1 pr-4 font-medium">Failed jobs</th>
+                  <th className="cell py-1 font-medium">Coverage</th>
                 </tr>
               </thead>
               <tbody>
@@ -39,21 +39,21 @@ export function Ci({ ci, now, presentOnly = false }: Props) {
                   const failed = target.jobs.filter((job) => job.result === "failure");
                   return (
                     <tr key={`${target.kind}-${target.number ?? target.head_sha}`} className="border-t border-line align-top">
-                      <td className="py-1 pr-3">
+                      <td className="py-2 pr-4">
                         {target.run_url ? <ExternalLink href={target.run_url}>{label}</ExternalLink> : label}
                       </td>
-                      <td className="py-1 pr-3 whitespace-nowrap">
+                      <td className="py-2 pr-4 whitespace-nowrap">
                         <span aria-hidden="true">{gate.glyph} </span>
                         {gate.label}
                       </td>
-                      <td className="py-1 pr-3">
+                      <td className="py-2 pr-4">
                         {failed.map((job) => (
                           <span key={job.url} className="mr-2 inline-block">
                             <ExternalLink href={job.url}>{job.name}</ExternalLink>
                           </span>
                         ))}
                       </td>
-                      <td className="py-1 whitespace-nowrap">
+                      <td className="py-2 whitespace-nowrap">
                         {target.kind === "main" &&
                           (target.coverage_pct == null ? "none reported" : `${target.coverage_pct.toFixed(1)}%`)}
                       </td>
@@ -64,9 +64,9 @@ export function Ci({ ci, now, presentOnly = false }: Props) {
             </table>
           </div>
           {(status.omitted_prs ?? 0) > 0 && (
-            <div className="mt-3">
+            <div className="mt-4">
               <p>{status.omitted_prs} more PRs were not checked without a token.</p>
-              <p className="mt-1">
+              <p className="mt-2">
                 <Command text={TOKEN_REMEDY} />
               </p>
             </div>

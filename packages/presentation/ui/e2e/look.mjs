@@ -30,6 +30,7 @@ const shots = [
 
 const browser = await chromium.launch();
 let measured;
+let narrowOverflow = null;
 try {
   for (const shot of shots) {
     const page = await browser.newPage({ viewport: shot.viewport, colorScheme: shot.scheme });
@@ -46,10 +47,14 @@ try {
         };
       });
     }
+    if (shot.viewport === NARROW) {
+      narrowOverflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    }
     await page.screenshot({ path: `${out}/${shot.file}.png`, fullPage: shot.fullPage });
     await page.close();
   }
 } finally {
   await browser.close();
 }
-console.log(JSON.stringify({ viewport: WIDE, scheme: "light", ...measured }));
+// narrowOverflow: how many pixels the page is wider than a 360 px window. It must be 0.
+console.log(JSON.stringify({ viewport: WIDE, scheme: "light", ...measured, narrowOverflow }));

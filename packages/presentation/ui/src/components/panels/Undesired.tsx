@@ -14,17 +14,17 @@ export function Undesired({ devices, now }: Props) {
   const found = (devices?.data ?? []).filter((device) => (device.undesired_paths ?? []).length > 0);
   return (
     <ViewFrame title="Undesired config" view={devices} now={now}>
-      <div className="text-sm">
+      <div className="text-body">
         {found.length === 0 ? (
           <p className="text-muted">No undesired config on any device.</p>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-4">
             {found.map((device) => (
               <div key={device.device_id} role="group" aria-label={device.name}>
-                <p className="font-mono text-xs font-semibold">{device.name}</p>
-                <ul className="mt-1 space-y-1">
+                <p className="font-mono text-meta font-semibold">{device.name}</p>
+                <ul className="mt-2 space-y-2">
                   {(device.undesired_paths ?? []).map((path) => (
-                    <li key={path} className="rounded bg-sunken px-2 py-1 font-mono text-xs break-all">
+                    <li key={path} className="chip rounded bg-sunken px-2 py-1 font-mono text-meta break-all">
                       {path}
                     </li>
                   ))}
@@ -33,7 +33,7 @@ export function Undesired({ devices, now }: Props) {
             ))}
           </div>
         )}
-        <p className="mt-3 text-xs text-muted">
+        <p className="mt-4 text-meta text-muted">
           Config on a device but not in intent is not removed automatically (#65).
         </p>
       </div>

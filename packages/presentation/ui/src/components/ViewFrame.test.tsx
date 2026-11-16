@@ -215,6 +215,17 @@ describe("PanelFrame", () => {
     expect(within(region).getByText("the table")).toBeInTheDocument();
   });
 
+  it("can shrink inside a grid, so wide content scrolls inside it and never widens the page", () => {
+    // Found at 360 px (spec 014 T062): a grid item is as wide as its content unless it may shrink.
+    render(
+      <PanelFrame title="CI">
+        <p>content</p>
+      </PanelFrame>,
+    );
+
+    expect(screen.getByRole("region", { name: "CI" })).toHaveClass("min-w-0");
+  });
+
   it("has no footer when it is given none", () => {
     render(
       <PanelFrame title="Links">

@@ -249,7 +249,8 @@ test("the runs panel lists the fixture's 12 runs, and each unavailable source's 
   }
 });
 
-for (const width of [1280, 1024]) {
+// 360 is a phone: nothing may scroll sideways there either (spec 014 T062).
+for (const width of [1280, 1024, 360]) {
   test(`the page fits ${width} pixels with no sideways scroll`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
     await page.goto("/?device=leaf-01");

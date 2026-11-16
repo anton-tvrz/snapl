@@ -30,7 +30,7 @@ function stateOf(view: View<null>): State {
 /** Every source the dashboard reads: whether it answered, and when. */
 export function SourceStrip({ sources, now }: Props) {
   const archived = useContext(ArchiveMode);
-  if (sources === undefined) return <p className="text-sm text-muted">Loading sources…</p>;
+  if (sources === undefined) return <p className="text-body text-muted">Loading sources…</p>;
 
   return (
     <ul aria-label="Sources" className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -38,10 +38,10 @@ export function SourceStrip({ sources, now }: Props) {
         const notHeld = archived && !view.available && !!view.reason?.startsWith(NOT_IN_ARCHIVE);
         const state: State = notHeld ? NOT_IN_ARCHIVE : stateOf(view);
         return (
-          <li key={view.source} className="rounded-lg border border-line bg-surface p-3 text-sm">
+          <li key={view.source} className="rounded-lg border border-panel-line bg-surface p-4 text-body shadow-panel">
             <p className="flex items-baseline justify-between gap-2">
               <span className="font-medium">{sourceLabel(view.source)}</span>
-              <span className="text-xs whitespace-nowrap">
+              <span className="text-meta whitespace-nowrap">
                 <span aria-hidden="true" className={MARKS[state].className}>
                   {MARKS[state].mark}
                 </span>{" "}
@@ -49,10 +49,10 @@ export function SourceStrip({ sources, now }: Props) {
               </span>
             </p>
             {!notHeld && !view.available && view.reason && (
-              <p className="mt-1 break-words text-muted">{view.reason}</p>
+              <p className="mt-2 max-w-prose break-words text-muted">{view.reason}</p>
             )}
             {notHeld && view.remedy && (
-              <p className="mt-1 text-xs text-muted">
+              <p className="mt-2 text-meta text-muted">
                 To see it live: <code className="font-mono">{view.remedy}</code>
               </p>
             )}

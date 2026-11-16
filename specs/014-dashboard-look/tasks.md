@@ -170,12 +170,12 @@ uv run invoke dashboard.test && uv run invoke dashboard.e2e
 
 **Goal**: the empty loop reads as one line, and no file is left on the allowlist.
 
-- [ ] T050 [US6] Tests first in `components/LoopStrip.test.tsx`: a run whose steps are not recorded shows one row with the run, its outcome, the FR-028 sentence and the six block names as a plain list, and no block boxes; a recorded run shows six rows or tiles in loop order, each with an icon tile, status glyph and word, reason and time; an unknown block or status is shown raw.
-- [ ] T051 [US6] Implement both forms in `LoopStrip.tsx`. The takeaway (run, outcome, started) is a pill-shaped callout.
-- [ ] T052 [US2] Restyle the remaining files on the allowlist to the scale: `DeviceDrawer.tsx` (device facts as value chips), `panels/Runs.tsx`, `Schedule.tsx`, `Undesired.tsx`, `Ci.tsx`, `LabEvidence.tsx`, `Links.tsx`, `SourceStrip.tsx`, `ModeBanner.tsx`, `Command.tsx`, the topology components. Table rows use `py-2`. Failure reasons, error messages and schedule notes get `max-w-prose`. Each file's tests keep passing; change a test only where it asserted a class.
-- [ ] T062 [US2] Found by slice C's look check: at 360 px wide the page is 388 px wide, so it scrolls sideways (it was 372 px before spec 014). Find what overflows (`narrow-light.png`), fix it, and add 360 to the widths `e2e/smoke.spec.ts` checks for sideways scroll, test first.
-- [ ] T053 [US2] Empty the allowlist in `look.test.ts` and make the test fail if it is ever non-empty again (SC-006).
-- [ ] T054 [US6] Run the look check on the default view and on the `loop` view of `screenshot.mjs`. Check the snapshot's size against SC-008 with `e2e/snapshot.spec.ts`'s fixtures and record it. Append to the changelog.
+- [x] T050 [US6] Tests first in `components/LoopStrip.test.tsx`: a run whose steps are not recorded shows one row with the run, its outcome, the FR-028 sentence and the six block names as a plain list, and no block boxes; a recorded run shows six rows or tiles in loop order, each with an icon tile, status glyph and word, reason and time; an unknown block or status is shown raw.
+- [x] T051 [US6] Implement both forms in `LoopStrip.tsx`. The takeaway (run, outcome, started) is a pill-shaped callout.
+- [x] T052 [US2] Restyle the remaining files on the allowlist to the scale: `DeviceDrawer.tsx` (device facts as value chips), `panels/Runs.tsx`, `Schedule.tsx`, `Undesired.tsx`, `Ci.tsx`, `LabEvidence.tsx`, `Links.tsx`, `SourceStrip.tsx`, `ModeBanner.tsx`, `Command.tsx`, the topology components. Table rows use `py-2`. Failure reasons, error messages and schedule notes get `max-w-prose`. Each file's tests keep passing; change a test only where it asserted a class.
+- [x] T062 [US2] Found by slice C's look check: at 360 px wide the page is 388 px wide, so it scrolls sideways (it was 372 px before spec 014). Find what overflows (`narrow-light.png`), fix it, and add 360 to the widths `e2e/smoke.spec.ts` checks for sideways scroll, test first.
+- [x] T053 [US2] Empty the allowlist in `look.test.ts` and make the test fail if it is ever non-empty again (SC-006).
+- [x] T054 [US6] Run the look check on the default view and on the `loop` view of `screenshot.mjs`. Check the snapshot's size against SC-008 with `e2e/snapshot.spec.ts`'s fixtures and record it. Append to the changelog.
 
 **Checkpoint**: `look.test.ts` passes with no allowlist.
 
