@@ -54,7 +54,7 @@ describe("App", () => {
     const row = await screen.findByRole("list", { name: "The fabric in numbers" });
     expect(await within(row).findByText("5 of 6")).toBeInTheDocument();
     expect(within(row).getByText("5 s")).toBeInTheDocument();
-    expect(await within(row).findByText("8 ok · 0 failed")).toBeInTheDocument();
+    expect(await within(row).findByText("None failed.")).toBeInTheDocument();
     const fabric = screen.getByRole("region", { name: "Fabric" });
     expect(row.compareDocumentPosition(fabric) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     for (const link of within(row).getAllByRole("link")) {
@@ -413,6 +413,25 @@ describe("App", () => {
     await userEvent.click(screen.getByRole("button", { name: "7 d" }));
 
     expect(history).toHaveBeenCalledWith({ start: new Date(NOW.getTime() - 7 * 86_400_000), end: NOW }, "1d", named);
+  });
+
+  it("counts the runs of the last 24 hours in the fourth card, whatever range is chosen", async () => {
+    const history = vi.fn(async (_range?: unknown, _bucket?: unknown, series?: unknown) => (series ? FABRIC_HISTORY : HISTORY));
+    render(<App provider={provider({ history })} />);
+
+    const row = await screen.findByRole("list", { name: "The fabric in numbers" });
+    const card = within(row).getByRole("heading", { name: "Runs, 24 h" }).closest("li")!;
+    expect(await within(card).findByText("12")).toBeInTheDocument();
+    expect(card).toHaveTextContent("None failed.");
+    expect(within(card).getByRole("link", { name: "Runs, 24 h: view more" })).toHaveAttribute("href", "#fabric-history");
+
+    await userEvent.click(screen.getByRole("button", { name: "7 d" }));
+
+    // The page's history follows the range; the card's runs never do.
+    expect(history).toHaveBeenCalledWith(expect.objectContaining({ end: NOW }), "1d");
+    const forCard = history.mock.calls.filter((call) => JSON.stringify(call[2]) === '["runs"]');
+    expect(forCard.length).toBeGreaterThan(0);
+    for (const call of forCard) expect(call.slice(0, 2)).toEqual([undefined, undefined]);
   });
 
   it("draws the devices in intent now over the devices in sync", async () => {

@@ -1,16 +1,15 @@
 import { describe, expect, it } from "vitest";
 
 import type { DeviceView, DriftEpisode, DriftTimeline, HistoryResponse, View } from "../api/types";
-import { HISTORY, NOW, OVERVIEW, TIMELINE } from "../test/fixtures";
+import { FABRIC_HISTORY, NOW, OVERVIEW, TIMELINE } from "../test/fixtures";
 import { type NumberCard, type NumberCardId, numberCards } from "./numbers";
 
-const DAY = 86_400_000;
 const devicesView = OVERVIEW.devices as View<DeviceView[]>;
 const timelineView = TIMELINE.timeline as View<DriftTimeline>;
 const timeline = timelineView.data!;
 
 function cards(over: Partial<Parameters<typeof numberCards>[0]> = {}) {
-  const all = numberCards({ devices: devicesView, timeline: timelineView, history: HISTORY, now: NOW, past: false, ...over });
+  const all = numberCards({ devices: devicesView, timeline: timelineView, runs: FABRIC_HISTORY, now: NOW, past: false, ...over });
   return Object.fromEntries(all.map((card) => [card.id, card])) as Record<NumberCardId, NumberCard>;
 }
 
@@ -24,11 +23,11 @@ function withTimeline(change: Partial<DriftTimeline>): View<DriftTimeline> {
 
 describe("numberCards", () => {
   it("gives four cards in order, each with a label and a panel to link to", () => {
-    const all = numberCards({ devices: devicesView, timeline: timelineView, history: HISTORY, now: NOW, past: false });
+    const all = numberCards({ devices: devicesView, timeline: timelineView, runs: FABRIC_HISTORY, now: NOW, past: false });
 
-    expect(all.map((card) => card.id)).toEqual(["in_sync", "open_drifts", "latest_repair", "deploys_repairs"]);
-    expect(all.map((card) => card.label)).toEqual(["Devices in sync", "Open drifts", "Latest repair", "Deploys, 24 h"]);
-    expect(all.map((card) => card.target)).toEqual(["fabric", "drift-over-time", "drift-over-time", "history"]);
+    expect(all.map((card) => card.id)).toEqual(["in_sync", "open_drifts", "latest_repair", "runs"]);
+    expect(all.map((card) => card.label)).toEqual(["Devices in sync", "Open drifts", "Latest repair", "Runs, 24 h"]);
+    expect(all.map((card) => card.target)).toEqual(["fabric", "drift-over-time", "drift-over-time", "fabric-history"]);
   });
 
   describe("devices in sync", () => {
@@ -145,52 +144,53 @@ describe("numberCards", () => {
     });
   });
 
-  describe("deploys and repairs", () => {
-    it("sums the last 24 hours by outcome, with the scheduled repairs in the context", () => {
-      const card = cards().deploys_repairs;
+  describe("runs", () => {
+    function runs(points: { t: string; value: number | null; by_outcome: Record<string, number> }[]): HistoryResponse {
+      const [runsSeries] = FABRIC_HISTORY.series.filter((series) => series.name === "runs");
+      return { ...FABRIC_HISTORY, series: [{ ...runsSeries!, points }] } as HistoryResponse;
+    }
+    const hourAgo = (hours: number) => new Date(NOW.getTime() - hours * 3_600_000).toISOString();
 
-      expect(card.value).toBe("8 ok · 0 failed");
-      expect(card.context).toBe("Deploys. Scheduled repairs: 0 ok · 0 failed.");
+    it("counts the runs of the last 24 hours and says none failed, on the demo arc", () => {
+      const card = cards().runs;
+
+      expect(card).toMatchObject({ state: "known", value: "12", context: "None failed.", target: "fabric-history" });
     });
 
-    it("skips buckets with no count and buckets older than 24 hours", () => {
-      const bucket = (ago: number, succeeded: number | null, failed: number | null) => ({
-        t: new Date(NOW.getTime() - ago).toISOString(),
-        value: null,
-        by_outcome: succeeded === null ? null : { succeeded, failed },
-      });
-      const series = (name: string, points: unknown[]) => ({ ...HISTORY.series[2]!, name, points });
-      const history = {
-        ...HISTORY,
-        series: [
-          series("deploys", [bucket(2 * DAY, 9, 9), bucket(3_600_000, 2, 1), bucket(60_000, null, null), bucket(30_000, 1, 0)]),
-          series("repairs", [bucket(3_600_000, 1, 2)]),
-        ],
-      } as unknown as HistoryResponse;
+    it("names the failures and the runs still running", () => {
+      const answer = runs([
+        { t: hourAgo(20), value: 41, by_outcome: { "schedule.succeeded": 38, "operator.succeeded": 2, "schedule.failed": 1 } },
+        { t: hourAgo(1), value: 1, by_outcome: { "operator.running": 1 } },
+      ]);
 
-      const card = cards({ history }).deploys_repairs;
-
-      expect(card.value).toBe("3 ok · 1 failed");
-      expect(card.context).toBe("Deploys. Scheduled repairs: 1 ok · 2 failed.");
+      expect(cards({ runs: answer }).runs).toMatchObject({ value: "42", context: "1 failed, 1 running." });
     });
 
-    it("is unavailable when no bucket has a count", () => {
-      const history = {
-        ...HISTORY,
-        series: HISTORY.series.map((s) => ({ ...s, points: s.points.map((p) => ({ ...p, by_outcome: null })) })),
-      } as unknown as HistoryResponse;
+    it("counts every bucket of the 24-hour answer, the first one too, whatever range the page shows", () => {
+      // The first bucket starts on the hour before the range does.
+      const answer = runs([{ t: hourAgo(24.5), value: 3, by_outcome: { "schedule.failed": 3 } }]);
 
-      expect(cards({ history }).deploys_repairs).toMatchObject({ state: "unavailable", value: null });
+      expect(cards({ runs: answer }).runs).toMatchObject({ value: "3", context: "3 failed." });
     });
 
-    it("is unavailable before the history answers", () => {
-      expect(cards({ history: undefined }).deploys_repairs).toMatchObject({ state: "unavailable", value: null, context: "Not read yet." });
+    it("says no run started, with a count of 0, when the trail was read and no bucket has a run", () => {
+      const answer = runs([{ t: hourAgo(2), value: null, by_outcome: {} }]);
+
+      expect(cards({ runs: answer }).runs).toMatchObject({ state: "known", value: "0", context: "No run started in the last 24 h." });
+    });
+
+    it("is unavailable when the answer holds no runs series, as in a snapshot made before them", () => {
+      const answer = { ...FABRIC_HISTORY, series: [] } as HistoryResponse;
+
+      expect(cards({ runs: answer }).runs).toMatchObject({ state: "unavailable", value: null, context: "Not in this recording." });
+    });
+
+    it("is unavailable before the runs answer", () => {
+      expect(cards({ runs: undefined }).runs).toMatchObject({ state: "unavailable", value: null, context: "Not read yet." });
     });
 
     it("shows only the present at a past time", () => {
-      const card = cards({ past: true }).deploys_repairs;
-
-      expect(card).toMatchObject({ state: "present_only", value: null, context: "Shows only the present." });
+      expect(cards({ past: true }).runs).toMatchObject({ state: "present_only", value: null, context: "Shows only the present." });
     });
   });
 });

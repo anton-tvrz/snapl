@@ -126,15 +126,16 @@ test("the number row leads the page, and a card's link moves to its panel", asyn
   await page.goto("/");
   const row = page.getByRole("list", { name: "The fabric in numbers" });
 
-  // The fixture arc: leaf-01 undesired, spine-01 repaired in 5 s, eight deploys.
+  // The fixture arc: leaf-01 undesired, spine-01 repaired in 5 s, twelve runs started by the operator.
   await expect(row.getByText("5 of 6")).toBeVisible();
   await expect(row.getByText("5 s", { exact: true })).toBeVisible();
-  await expect(row.getByText("8 ok · 0 failed")).toBeVisible();
+  await expect(row.getByText("12", { exact: true })).toBeVisible();
+  await expect(row.getByText("None failed.")).toBeVisible();
   await expect(row.getByRole("listitem")).toHaveCount(4);
 
-  await row.getByRole("link", { name: "Deploys, 24 h: view more" }).click();
-  await expect(page).toHaveURL(/#history$/);
-  await expect(page.locator("#history")).toBeInViewport();
+  await row.getByRole("link", { name: "Runs, 24 h: view more" }).click();
+  await expect(page).toHaveURL(/#fabric-history$/);
+  await expect(page.locator("#fabric-history")).toBeInViewport();
 });
 
 test("the range toolbar stays on screen over the lanes, the history and the metrics", async ({ page }) => {

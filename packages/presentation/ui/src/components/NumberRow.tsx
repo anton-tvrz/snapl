@@ -16,7 +16,7 @@ const ICONS: Record<NumberCardId, ReactNode> = {
   // A clock.
   latest_repair: <path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zm0-14v5l3 2" />,
   // Round again.
-  deploys_repairs: <path d="M4 12a8 8 0 0 1 13.7-5.7L20 8m0-4v4h-4m4 4a8 8 0 0 1-13.7 5.7L4 16m0 4v-4h4" />,
+  runs: <path d="M4 12a8 8 0 0 1 13.7-5.7L20 8m0-4v4h-4m4 4a8 8 0 0 1-13.7 5.7L4 16m0 4v-4h4" />,
 };
 
 /**
