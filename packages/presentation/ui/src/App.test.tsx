@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { ApiError } from "./data/http";
 import type { DataProvider } from "./data/provider";
-import { DRIFT_SUMMARY, HISTORY, LINKS, METRICS, MODE, NOW, OVERVIEW, OVERVIEW_UP, SOURCES, STEPS_DEPLOY, TIMELINE, TOPOLOGY } from "./test/fixtures";
+import { DRIFT_SUMMARY, FABRIC_HISTORY, HISTORY, LINKS, METRICS, MODE, NOW, OVERVIEW, OVERVIEW_UP, SOURCES, STEPS_DEPLOY, TIMELINE, TOPOLOGY } from "./test/fixtures";
 
 function provider(overrides: Partial<DataProvider> = {}): DataProvider {
   const unused = async () => {
@@ -20,7 +20,7 @@ function provider(overrides: Partial<DataProvider> = {}): DataProvider {
     devices: unused,
     runs: unused,
     timeline: async () => TIMELINE,
-    history: async () => HISTORY,
+    history: async (_range?: unknown, _bucket?: unknown, series?: unknown) => (series ? FABRIC_HISTORY : HISTORY),
     driftSummary: async () => DRIFT_SUMMARY,
     steps: async () => STEPS_DEPLOY,
     metrics: async (view: keyof typeof METRICS) => METRICS[view],
@@ -97,6 +97,7 @@ describe("App", () => {
       "Drift and history",
       "Drift over time",
       "Drift and deploys by hour",
+      "Fabric history",
       "Drift by device",
       "Metrics",
       "Workflow duration (95th percentile)",
@@ -203,7 +204,8 @@ describe("App", () => {
   it("still shows each source's state", async () => {
     render(<App provider={provider()} />);
 
-    expect(await screen.findByText("Audit trail")).toBeInTheDocument();
+    // The sources panel names it; the history panels name it in their footers too.
+    expect((await screen.findAllByText("Audit trail")).length).toBeGreaterThan(0);
     expect(screen.getAllByText("uv run invoke dev.deps").length).toBeGreaterThan(0);
   });
 
@@ -392,11 +394,32 @@ describe("App", () => {
     render(<App provider={provider({ history })} />);
 
     expect(await screen.findByRole("region", { name: "Drift and deploys by hour" })).toBeInTheDocument();
-    expect(history).toHaveBeenLastCalledWith(undefined, undefined);
+    expect(history).toHaveBeenCalledWith(undefined, undefined);
 
     await userEvent.click(screen.getByRole("button", { name: "7 d" }));
 
-    expect(history).toHaveBeenLastCalledWith({ start: new Date(NOW.getTime() - 7 * 86_400_000), end: NOW }, "1d");
+    expect(history).toHaveBeenCalledWith({ start: new Date(NOW.getTime() - 7 * 86_400_000), end: NOW }, "1d");
+  });
+
+  it("has the fabric history, its four series named and asked over the chosen range", async () => {
+    const history = vi.fn(async (_range?: unknown, _bucket?: unknown, series?: unknown) => (series ? FABRIC_HISTORY : HISTORY));
+    render(<App provider={provider({ history })} />);
+
+    const panel = await screen.findByRole("region", { name: "Fabric history" });
+    expect(await within(panel).findByRole("img", { name: /^Devices in sync at each scan, as a chart: 3 scans/ })).toBeInTheDocument();
+    const named = ["in_sync_devices", "open_drifts", "runs", "repair_duration"];
+    expect(history).toHaveBeenCalledWith(undefined, undefined, named);
+
+    await userEvent.click(screen.getByRole("button", { name: "7 d" }));
+
+    expect(history).toHaveBeenCalledWith({ start: new Date(NOW.getTime() - 7 * 86_400_000), end: NOW }, "1d", named);
+  });
+
+  it("draws the devices in intent now over the devices in sync", async () => {
+    render(<App provider={provider()} />);
+
+    const panel = await screen.findByRole("region", { name: "Fabric history" });
+    expect(await within(panel).findByRole("img", { name: /, against \d+ in intent now\./ })).toBeInTheDocument();
   });
 
   it("has drift by device, asked over the chosen range, and opens a device from it", async () => {

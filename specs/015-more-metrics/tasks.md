@@ -86,12 +86,12 @@ A slice that changes the contract also regenerates the OpenAPI snapshot and the 
 **Goal**: the fabric's history and the drift by device are on the designed page, and the fourth card is runs.
 
 - [x] T013 [US2] Tests first, then add `driftSummary(range)` and the `series` argument for `history` to `packages/presentation/ui/src/data/provider.ts`, `http.ts` and `inline.ts`, with fixtures in `src/test/fixtures/`.
-- [ ] T014 [US2] Tests first in `components/panels/FabricHistory.test.tsx`: four small charts in one frame (devices in sync as a stepped line against the devices in intent, open drifts as a stepped line, runs as stacked bars by trigger with failures marked by shape and word, repair durations as points labelled scan to scan); each has a text alternative and a table behind a toggle; "no scans in this range" when empty; the present-only and archive states.
-- [ ] T015 [US2] Implement `FabricHistory.tsx` in spec 014's frame and scale. No animation.
+- [x] T014 [US2] Tests first in `components/panels/FabricHistory.test.tsx`: four small charts in one frame (devices in sync as a stepped line against the devices in intent, open drifts as a stepped line, runs as stacked bars by trigger with failures marked by shape and word, repair durations as points labelled scan to scan); each has a text alternative and a table behind a toggle; "no scans in this range" when empty; the present-only and archive states.
+- [x] T015 [US2] Implement `FabricHistory.tsx` in spec 014's frame and scale. No animation.
 - [x] T016 [US2] Tests first in `components/panels/DriftByDevice.test.tsx`, then implement `DriftByDevice.tsx`: ranked horizontal bars of total drifted time per device with its episode count, open count and most paths, each row opening the device; "No drift in this range." when empty.
 - [ ] T017 [US2] Tests first in `lib/numbers.test.ts`, then change the fourth card in `lib/numbers.ts` to `runs` (data-model.md): the runs in the last 24 hours, with the failures in its context.
-- [ ] T018 [US2] Put both panels in `App.tsx` after the history panel, asked for on the history interval and with the page's range. Add them to the App tests for live, past, archive and snapshot modes, and to `parity.test.ts` only if the plain page shows the same fact. (PR C1 did this for drift by device; the fabric history follows in PR C2.)
-- [ ] T019 [US2] Add a browser check to `e2e/smoke.spec.ts` for the two panels on the fixtures. Run the look check. Append to the changelog. (PR C1 did this for drift by device; the fabric history follows in PR C2.)
+- [x] T018 [US2] Put both panels in `App.tsx` after the history panel, asked for on the history interval and with the page's range. Add them to the App tests for live, past, archive and snapshot modes, and to `parity.test.ts` only if the plain page shows the same fact. (PR C1: drift by device. PR C2: the fabric history.)
+- [x] T019 [US2] Add a browser check to `e2e/smoke.spec.ts` for the two panels on the fixtures. Run the look check. Append to the changelog. (PR C1: drift by device. PR C2: the fabric history.)
 
 **Checkpoint**: SC-002: the fabric's history renders with the fixture server's other sources down.
 

@@ -6,6 +6,7 @@ import { App } from "./App";
 import type { DataProvider } from "./data/provider";
 import {
   DRIFT_SUMMARY,
+  FABRIC_HISTORY,
   HISTORY,
   LINKS,
   METRICS,
@@ -38,7 +39,7 @@ function provider() {
       throw new Error("not asked");
     },
     timeline: calls.timeline,
-    history: async () => HISTORY,
+    history: async (_range?: unknown, _bucket?: unknown, series?: unknown) => (series ? FABRIC_HISTORY : HISTORY),
     driftSummary: async () => DRIFT_SUMMARY,
     steps: async () => STEPS_DEPLOY,
     metrics: calls.metrics,
@@ -79,6 +80,14 @@ describe("App on an archive", () => {
     const row = await screen.findByRole("list", { name: "The fabric in numbers" });
     expect(within(row).getAllByRole("listitem")).toHaveLength(4);
     expect(await within(row).findByText(/of \d+$/)).toBeInTheDocument();
+  });
+
+  it("has the fabric history, from the archive's trail", async () => {
+    render(<App provider={provider().p} />);
+    await settle();
+
+    const panel = await screen.findByRole("region", { name: "Fabric history" });
+    expect(await within(panel).findByRole("img", { name: /^Runs started in each hour/ })).toBeInTheDocument();
   });
 
   it("has drift by device, from the archive's trail", async () => {

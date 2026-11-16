@@ -16,7 +16,7 @@ interface Props {
   error?: Error | null;
 }
 
-const BUCKET_WORDS: Record<string, string> = { "1h": "hour", "1d": "day", "1w": "week", "5m": "5 minutes" };
+export const BUCKET_WORDS: Record<string, string> = { "1h": "hour", "1d": "day", "1w": "week", "5m": "5 minutes" };
 
 const pair = (c: Counts) => (c.succeeded === null ? "" : `${c.succeeded} / ${c.failed ?? 0}`);
 
