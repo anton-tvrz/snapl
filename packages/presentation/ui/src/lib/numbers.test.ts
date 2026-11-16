@@ -179,6 +179,18 @@ describe("numberCards", () => {
       expect(cards({ runs: answer }).runs).toMatchObject({ state: "known", value: "0", context: "No run started in the last 24 h." });
     });
 
+    it("leaves the count out when its answer covers more than 24 hours, as a seven-day snapshot's does", () => {
+      const week = runs([{ t: hourAgo(30), value: 40, by_outcome: { "schedule.succeeded": 40 } }]);
+      const [series] = week.series;
+      week.series = [{ ...series!, start: new Date(NOW.getTime() - 7 * 86_400_000).toISOString(), end: NOW.toISOString(), bucket: "1d" }];
+
+      expect(cards({ runs: week }).runs).toMatchObject({
+        state: "unavailable",
+        value: null,
+        context: "This answer covers 7 d, not 24 h: see the fabric history.",
+      });
+    });
+
     it("is unavailable when the answer holds no runs series, as in a snapshot made before them", () => {
       const answer = { ...FABRIC_HISTORY, series: [] } as HistoryResponse;
 

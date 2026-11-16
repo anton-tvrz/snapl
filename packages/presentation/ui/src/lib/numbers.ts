@@ -114,6 +114,12 @@ function runs(input: NumbersInput): NumberCard {
   if (!input.runs) return { ...base, state: "unavailable", value: null, context: NOT_READ };
   const series = input.runs.series.find((one) => one.name === "runs");
   if (!series) return { ...base, state: "unavailable", value: null, context: "Not in this recording." };
+  // A snapshot answers with its own range, which may be days: those runs are not the last 24 hours.
+  const span = Date.parse(series.end) - Date.parse(series.start);
+  if (Math.abs(span - DAY_MS) > 5 * 60_000) {
+    const covers = durationText(span / 1000);
+    return { ...base, state: "unavailable", value: null, context: `This answer covers ${covers}, not 24 h: see the fabric history.` };
+  }
   let total = 0;
   let failed = 0;
   let running = 0;
