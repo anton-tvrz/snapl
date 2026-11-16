@@ -26,10 +26,12 @@ from snapl_presentation.dashboard.models import (
     BlockStatus,
     Bucket,
     DeployOutcome,
+    DeviceDriftSummary,
     DeviceLane,
     DeviceView,
     DriftEpisode,
     DriftState,
+    DriftSummary,
     DriftTimeline,
     EpisodeClose,
     LinkEnd,
@@ -1098,6 +1100,77 @@ def project_timeline(
         open_count=len(spans) - len(closed_spans),
         first_event_at=min(map(_BY_TIME, events), default=None),
     )
+
+
+def _directions(scan: AuditEvent) -> tuple[int, int | None]:
+    """A scan's missing and undesired path counts; undesired is None before the split (FR-012a)."""
+    paths = scan.payload.get("paths") or []
+    if "undesired_paths" not in scan.payload:
+        return 0, None if paths else 0
+    undesired = set(scan.payload["undesired_paths"])
+    return sum(1 for path in paths if path not in undesired), len(undesired)
+
+
+def project_drift_summary(
+    events: Sequence[AuditEvent],
+    states: Sequence[DesiredState | IntentDevice] | None,
+    names: Mapping[UUID, str],
+    start: datetime,
+    end: datetime,
+    *,
+    max_points: int = MAX_SCAN_POINTS,
+) -> DriftSummary:
+    """Each device's drift episodes over ``[start, end]``, as the timeline finds them (spec 015 FR-006).
+
+    An episode counts when it overlaps the range. Its drifted time is clipped
+    to the range and runs scan to scan: an episode still open at ``end`` counts
+    up to its latest scan. Devices in intent follow `project_timeline`.
+
+    Raises:
+        ValueError: ``start >= end``.
+        TimelineTooLongError: more than ``max_points`` scan points in the range,
+            the timeline's own limit.
+    """
+    if start >= end:
+        raise ValueError("start must be before end")
+    by_device = _scans_by_device(sorted(events_until(events, end), key=_BY_TIME))
+    in_range = sum(len(of) - bisect_left(of, start, key=_BY_TIME) for of in by_device.values())
+    if in_range > max_points:
+        raise TimelineTooLongError(
+            f"the range holds {in_range} scan points; one answer carries at most {max_points}. Ask for a shorter range."
+        )
+    if states is not None:
+        intent = {device.id: device.name for device in intent_devices(states)}
+    else:
+        intent = {d: name for d, name in names.items() if d in by_device}
+    rows = []
+    for device_id, of_device in by_device.items():
+        episodes = opened = drifted = 0
+        for span, is_closed in _episode_spans(of_device):
+            last = span[-1].timestamp
+            if is_closed and last < start:
+                continue
+            episodes += 1
+            opened += 0 if is_closed else 1
+            drifted += max(0, int((min(last, end) - max(span[0].timestamp, start)).total_seconds()))
+        if not episodes:
+            continue
+        counts = [_directions(scan) for scan in of_device[bisect_left(of_device, start, key=_BY_TIME) :]]
+        undesired = [count for _, count in counts]
+        rows.append(
+            DeviceDriftSummary(
+                device_id=device_id,
+                name=intent.get(device_id) or names.get(device_id, str(device_id)),
+                in_intent=device_id in intent,
+                episodes=episodes,
+                open=opened,
+                drifted_s=drifted,
+                most_missing=max((missing for missing, _ in counts), default=0),
+                most_undesired=None if None in undesired else max((u for u in undesired if u is not None), default=0),
+            )
+        )
+    rows.sort(key=lambda row: (-row.episodes, -row.drifted_s, row.name))
+    return DriftSummary(start=start, end=end, devices=rows)
 
 
 # --- run steps (spec 011 research R15) --------------------------------------------

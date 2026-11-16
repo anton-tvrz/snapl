@@ -72,6 +72,8 @@ CONTRACT_ROUTES = {
     ("/api/v1/drift-timeline", "GET"),
     ("/api/v1/runs/steps", "GET"),
     ("/api/v1/mode", "GET"),
+    # Spec 015 (contracts/metrics-views.md).
+    ("/api/v1/drift-summary", "GET"),
     ("/api/v1/openapi.json", "GET"),
     ("/api/v1/openapi.json", "HEAD"),
     # Prometheus text format for scrapers, outside /api/v1 (spec 012 R8).
@@ -1482,6 +1484,74 @@ def test_drift_timeline_with_the_sot_down_still_draws_lanes_from_the_trail():
 
     assert view["available"] is True
     assert [(lane["name"], lane["in_intent"]) for lane in view["data"]["lanes"]] == [("leaf-01", True)]
+
+
+# --- /api/v1/drift-summary (spec 015 T008) -----------------------------------------
+
+
+def test_drift_summary_defaults_to_the_24_hours_before_now():
+    body = _fabric_history_client().get("/api/v1/drift-summary").json()
+
+    view = body["summary"]
+    assert (view["source"], view["available"]) == ("audit", True)
+    summary = view["data"]
+    assert (summary["start"], summary["end"]) == ("2026-11-06T21:00:05Z", "2026-11-07T21:00:05Z")
+    assert summary["devices"] == [
+        {
+            "device_id": str(SPINE.device.id),
+            "name": "spine-01",
+            "in_intent": True,
+            "episodes": 1,
+            "open": 1,
+            "drifted_s": 0,
+            "most_missing": 1,
+            "most_undesired": 0,
+        }
+    ]
+
+
+def test_drift_summary_takes_a_range():
+    params = {"start": "2026-11-07T20:00:00Z", "end": "2026-11-07T20:30:00Z"}
+
+    summary = _fabric_history_client().get("/api/v1/drift-summary", params=params).json()["summary"]["data"]
+
+    # The only scan is at 20:51, after this range ends.
+    assert (summary["start"], summary["devices"]) == ("2026-11-07T20:00:00Z", [])
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"start": "2026-11-07T21:00:00Z", "end": "2026-11-07T21:00:00Z"},
+        {"start": "2026-11-07T22:00:00Z", "end": "2026-11-07T21:00:00Z"},
+        {"start": "2026-11-07T21:00:00"},
+        {"use_case": "site_edge"},
+    ],
+)
+def test_drift_summary_rejects_a_bad_request(params: dict[str, str]):
+    assert _client().get("/api/v1/drift-summary", params=params).status_code == 422
+
+
+def test_drift_summary_refuses_a_range_over_the_timelines_limit(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr("snapl_presentation.dashboard.app.MAX_SCAN_POINTS", 0)
+
+    response = _client().get("/api/v1/drift-summary")
+
+    assert response.status_code == 422
+    assert response.json()["detail"].startswith("the range holds 1 scan points")
+
+
+def test_drift_summary_with_the_audit_trail_down_is_unavailable():
+    down = View(source=SourceName.AUDIT, available=False, reason="unable to open database file", remedy="snapl scan")
+
+    view = _client(audit=down).get("/api/v1/drift-summary").json()["summary"]
+
+    assert (view["available"], view["reason"], view["remedy"]) == (False, "unable to open database file", "snapl scan")
+    assert view["data"] is None
+
+
+def test_drift_summary_answers_no_head():
+    assert _client().head("/api/v1/drift-summary").status_code == 405
 
 
 # --- /api/v1/runs/steps (spec 011) -------------------------------------------------

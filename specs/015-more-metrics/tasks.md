@@ -69,13 +69,13 @@ A slice that changes the contract also regenerates the OpenAPI snapshot and the 
 
 **Goal**: drift by device is one request, and the archive, the snapshot and the fixture server have everything from Phases 1 and 2.
 
-- [ ] T006 [US2] Tests first for `project_drift_summary` in the projections tests: episodes counted per device and clipped to the range; `open` at the range's end; `drifted_s` scan to scan inside the range; `most_missing` and `most_undesired`, with `None` for scans before the undesired split; the order (most episodes, then longest, then name); a device with no episode is left out.
-- [ ] T007 [US2] Add `DeviceDriftSummary`, `DriftSummary` and `DriftSummaryResponse` to `models.py` and `project_drift_summary` to `projections.py` (contracts/metrics-views.md).
-- [ ] T008 [US2] Tests first in `test_dashboard_app.py`: `GET /api/v1/drift-summary` defaults to 24 h, honours `start` and `end`, answers `422` for `start >= end` and for a range over the timeline's limit, and is an unavailable view when the audit trail is; HEAD is `405`.
-- [ ] T009 [US2] Add the route to `app.py`.
-- [ ] T010 [US2] Tests first in `test_dashboard_archive.py`, `test_dashboard_snapshot.py` and `tests/unit/test_tasks/test_history.py`: the archive export, the archive reader and the snapshot bundle carry the drift summary and the four new series; an archive made without them answers "not in this archive".
-- [ ] T011 [US2] Implement T010 in `tasks/history.py`, `archive.py` and `snapshot.py`.
-- [ ] T012 [US2] Regenerate the OpenAPI snapshot and the UI's types. Append to the changelog.
+- [x] T006 [US2] Tests first for `project_drift_summary` in the projections tests: episodes counted per device and clipped to the range; `open` at the range's end; `drifted_s` scan to scan inside the range; `most_missing` and `most_undesired`, with `None` for scans before the undesired split; the order (most episodes, then longest, then name); a device with no episode is left out.
+- [x] T007 [US2] Add `DeviceDriftSummary`, `DriftSummary` and `DriftSummaryResponse` to `models.py` and `project_drift_summary` to `projections.py` (contracts/metrics-views.md).
+- [x] T008 [US2] Tests first in `test_dashboard_app.py`: `GET /api/v1/drift-summary` defaults to 24 h, honours `start` and `end`, answers `422` for `start >= end` and for a range over the timeline's limit, and is an unavailable view when the audit trail is; HEAD is `405`.
+- [x] T009 [US2] Add the route to `app.py`.
+- [x] T010 [US2] Tests first in `test_dashboard_archive.py`, `test_dashboard_snapshot.py` and `tests/unit/test_tasks/test_history.py`: the archive export, the archive reader and the snapshot bundle carry the drift summary and the four new series; an archive made without them answers "not in this archive".
+- [x] T011 [US2] Implement T010 in `tasks/history.py`, `archive.py` and `snapshot.py`.
+- [x] T012 [US2] Regenerate the OpenAPI snapshot and the UI's types. Append to the changelog.
 
 **Checkpoint**: the fixture server answers `/api/v1/drift-summary` with spine-01 and leaf-01.
 

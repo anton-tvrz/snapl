@@ -32,7 +32,7 @@ from pathlib import Path
 import httpx
 from invoke import Exit, task
 
-from snapl_presentation.dashboard.models import MetricsViewName
+from snapl_presentation.dashboard.models import MetricsViewName, SeriesName
 from snapl_presentation.settings import CliSettings
 
 from .dev import PROMETHEUS_DATA
@@ -45,9 +45,9 @@ DEFAULT_ARCHIVE_DIR = PROJECT_ROOT / ".snapl" / "archives"
 PROMETHEUS_IMAGE = "prom/prometheus:v3.10.0"
 EXPORT_DAYS = 7
 # Spec 011 adds the views archive mode reads (its research R13); older archives
-# lack them and still open.
-_EXPORTS = ("overview", "history", "links", "sources", "topology", "devices", "runs", "drift-timeline")
-_RANGED = ("history", "drift-timeline")
+# lack them and still open. Spec 015 adds drift-summary.
+_EXPORTS = ("overview", "history", "links", "sources", "topology", "devices", "runs", "drift-timeline", "drift-summary")
+_RANGED = ("history", "drift-timeline", "drift-summary")
 
 
 @dataclass
@@ -154,9 +154,11 @@ def _dashboard_export(dashboard: str, staging: Path, now: datetime) -> Part:
     """The dashboard's JSON for the last 7 days, as the API serves it (R9)."""
     part = Part("dashboard_export", "export", False, dashboard)
     start = (now - timedelta(days=EXPORT_DAYS)).isoformat()
-    wanted: list[tuple[str, str, dict[str, str]]] = [
+    wanted: list[tuple[str, str, dict[str, str | list[str]]]] = [
         (f"{name}.json", f"/api/v1/{name}", {"start": start} if name in _RANGED else {}) for name in _EXPORTS
     ]
+    # Every series, not only `/history`'s default four (spec 015).
+    wanted[_EXPORTS.index("history")][2]["series"] = [name.value for name in SeriesName]
     wanted += [(f"metrics/{v.value}.json", f"/api/v1/metrics/{v.value}", {"start": start}) for v in MetricsViewName]
     out = staging / "export"
     failed: list[str] = []

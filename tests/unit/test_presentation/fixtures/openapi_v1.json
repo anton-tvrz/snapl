@@ -365,6 +365,68 @@
         "title": "DeployOutcome",
         "type": "object"
       },
+      "DeviceDriftSummary": {
+        "additionalProperties": false,
+        "description": "One device's drift over a range (spec 015 FR-006).",
+        "properties": {
+          "device_id": {
+            "format": "uuid",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "drifted_s": {
+            "minimum": 0.0,
+            "title": "Drifted S",
+            "type": "integer"
+          },
+          "episodes": {
+            "minimum": 1.0,
+            "title": "Episodes",
+            "type": "integer"
+          },
+          "in_intent": {
+            "title": "In Intent",
+            "type": "boolean"
+          },
+          "most_missing": {
+            "minimum": 0.0,
+            "title": "Most Missing",
+            "type": "integer"
+          },
+          "most_undesired": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Most Undesired"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "open": {
+            "minimum": 0.0,
+            "title": "Open",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "device_id",
+          "name",
+          "in_intent",
+          "episodes",
+          "open",
+          "drifted_s",
+          "most_missing"
+        ],
+        "title": "DeviceDriftSummary",
+        "type": "object"
+      },
       "DeviceLane": {
         "additionalProperties": false,
         "properties": {
@@ -723,6 +785,65 @@
         ],
         "title": "DriftState",
         "type": "string"
+      },
+      "DriftSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "devices": {
+            "items": {
+              "$ref": "#/components/schemas/DeviceDriftSummary"
+            },
+            "title": "Devices",
+            "type": "array"
+          },
+          "end": {
+            "format": "date-time",
+            "title": "End",
+            "type": "string"
+          },
+          "start": {
+            "format": "date-time",
+            "title": "Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start",
+          "end",
+          "devices"
+        ],
+        "title": "DriftSummary",
+        "type": "object"
+      },
+      "DriftSummaryResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "contract_version": {
+            "const": "1",
+            "default": "1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/View_DriftSummary_"
+          },
+          "use_case": {
+            "title": "Use Case",
+            "type": "string"
+          }
+        },
+        "required": [
+          "use_case",
+          "generated_at",
+          "summary"
+        ],
+        "title": "DriftSummaryResponse",
+        "type": "object"
       },
       "DriftTimeline": {
         "additionalProperties": false,
@@ -2606,6 +2727,73 @@
         "title": "View[CiStatus]",
         "type": "object"
       },
+      "View_DriftSummary_": {
+        "additionalProperties": false,
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DriftSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fetched_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fetched At"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "remedy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remedy"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SourceName"
+          },
+          "stale": {
+            "default": false,
+            "title": "Stale",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "source",
+          "available"
+        ],
+        "title": "View[DriftSummary]",
+        "type": "object"
+      },
       "View_DriftTimeline_": {
         "additionalProperties": false,
         "properties": {
@@ -3435,6 +3623,93 @@
           }
         },
         "summary": "Devices"
+      }
+    },
+    "/api/v1/drift-summary": {
+      "get": {
+        "description": "Each device's drift episodes over a range, as the timeline finds them (spec 015).",
+        "operationId": "drift_summary_api_v1_drift_summary_get",
+        "parameters": [
+          {
+            "description": "Defaults to the server's --use-case.",
+            "in": "query",
+            "name": "use_case",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to the server's --use-case.",
+              "title": "Use Case"
+            }
+          },
+          {
+            "description": "Defaults to end - 24h.",
+            "in": "query",
+            "name": "start",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to end - 24h.",
+              "title": "Start"
+            }
+          },
+          {
+            "description": "Defaults to now.",
+            "in": "query",
+            "name": "end",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to now.",
+              "title": "End"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DriftSummaryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Drift Summary"
       }
     },
     "/api/v1/drift-timeline": {

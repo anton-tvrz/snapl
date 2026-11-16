@@ -33,6 +33,8 @@ from snapl_presentation.dashboard.models import (
     Bucket,
     CiStatus,
     DeviceView,
+    DriftSummary,
+    DriftSummaryResponse,
     DriftTimeline,
     DriftTimelineResponse,
     Envelope,
@@ -64,6 +66,7 @@ from snapl_presentation.dashboard.projections import (
     intent_devices,
     latest_pause,
     project_devices,
+    project_drift_summary,
     project_repeated_failures,
     project_running,
     project_runs,
@@ -729,6 +732,43 @@ def create_app(
             data=timeline,
         )
         return DriftTimelineResponse(use_case=served, generated_at=clock(), timeline=view)
+
+    @router.get("/drift-summary", response_model=DriftSummaryResponse)
+    async def drift_summary(
+        requested: UseCaseQuery = None,
+        start: Annotated[AwareDatetime | None, Query(description="Defaults to end - 24h.")] = None,
+        end: Annotated[AwareDatetime | None, Query(description="Defaults to now.")] = None,
+    ) -> DriftSummaryResponse:
+        """Each device's drift episodes over a range, as the timeline finds them (spec 015)."""
+        served = _check_use_case(requested)
+        range_end = end or clock()
+        range_start = start or range_end - timedelta(hours=24)
+        audit, sot = await reader.read_all(SourceName.AUDIT, SourceName.SOT)
+        summary: DriftSummary | None = None
+        if audit.data is not None:
+            try:
+                summary = project_drift_summary(
+                    audit.data,
+                    sot.data if sot.available else None,
+                    _device_names(sot, sources.sot.names),
+                    range_start,
+                    range_end,
+                    max_points=MAX_SCAN_POINTS,
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+        elif range_start >= range_end:
+            raise HTTPException(status_code=422, detail="start must be before end")
+        view: View[DriftSummary] = View(
+            source=SourceName.AUDIT,
+            available=audit.available,
+            stale=audit.stale,
+            fetched_at=audit.fetched_at,
+            reason=audit.reason,
+            remedy=audit.remedy,
+            data=summary,
+        )
+        return DriftSummaryResponse(use_case=served, generated_at=clock(), summary=view)
 
     @router.get("/mode", response_model=ModeResponse)
     async def mode(requested: UseCaseQuery = None) -> ModeResponse:
