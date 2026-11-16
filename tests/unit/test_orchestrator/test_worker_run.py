@@ -208,7 +208,9 @@ class TestWorkerRegistration:
         await run_mod.run_worker(activities=MagicMock())
 
         assert DriftResponseWorkflow in captured["workflows"]
-        assert len(captured["activities"]) == 6
+        # The six block activities and the schedule stand-down (#136).
+        assert len(captured["activities"]) == 7
+        assert "stand_down_schedule" in {a.__name__ for a in captured["activities"]}
         client.create_schedule.assert_not_called()
         client.get_schedule_handle.assert_not_called()
 

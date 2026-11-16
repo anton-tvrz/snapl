@@ -79,6 +79,8 @@ class ScheduleChange(StrEnum):
     RESUMED = "resumed"
     TRIGGERED = "triggered"
     DELETED = "deleted"
+    # A run returned its own schedule to report after a failed repair (#136).
+    STOOD_DOWN = "stood_down"
 
 
 _VALID_OUTCOMES = frozenset({"success", "failure", "cancelled"})
@@ -131,8 +133,8 @@ class DriftScanResult(BaseModel):
     errored: int
     started_at: datetime
     ended_at: datetime
-    # A cancelled scan returns what it has (nothing), which must not read as
-    # a clean scan of zero devices.
+    # A cancelled scan returns the reports that had completed (#36), possibly
+    # none, which must not read as a full scan of the use case.
     cancelled: bool = False
 
     @model_validator(mode="after")
@@ -265,6 +267,17 @@ class DriftResponseRequest(BaseModel):
         return self
 
 
+class StandDownRequest(BaseModel):
+    """What a run hands the stand-down activity (#136)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    use_case_id: str = Field(min_length=1)
+    # Becomes the schedule's note and the audit record's reason: the run and
+    # the devices whose repair failed.
+    reason: str = Field(min_length=1)
+
+
 class DriftResponseResult(BaseModel):
     """The terminal outcome of one scheduled run."""
 
@@ -279,11 +292,15 @@ class DriftResponseResult(BaseModel):
     remediated: list[UUID] = Field(default_factory=list)
     excluded: dict[UUID, ExclusionReason] = Field(default_factory=dict)
     reconcile: ReconcileResult | None = None
+    # The run returned its schedule to report because a repair failed (#136).
+    stood_down: bool = False
     started_at: datetime
     ended_at: datetime
 
     @model_validator(mode="after")
     def _check_invariants(self) -> DriftResponseResult:
+        if self.stood_down and not (self.reconcile is not None and self.reconcile.failed > 0):
+            raise ValueError("a run stands its schedule down only after a failed repair")
         if self.mode == DriftResponseMode.REPORT and (self.remediated or self.excluded or self.reconcile):
             raise ValueError("a REPORT run must not remediate, exclude or reconcile")
         if (self.reconcile is None) != (not self.remediated):

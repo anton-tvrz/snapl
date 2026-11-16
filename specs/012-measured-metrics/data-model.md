@@ -42,17 +42,18 @@ A source that hasn't been fetched yet is omitted, not reported as 0.
 
 `workflow-duration`, `gnmi-duration`, `gnmi-errors`, `worker-lag`, `worker-up`, `source-health`
 
-| view | query (template; `[$w]` is the rate window) | unit | series labels |
+| view | query (template; `R(x)` is the rate over the window, defined below) | unit | series labels |
 | --- | --- | --- | --- |
-| `workflow-duration` | `histogram_quantile(0.95, sum by (le, workflow_type) (rate(temporal_workflow_endtoend_latency_bucket{namespace="$ns"}[$w])))` | ms | `workflow_type` |
-| `gnmi-duration` | `histogram_quantile(0.95, sum by (le, device, operation) (rate(snapl_gnmi_call_duration_bucket{use_case="$uc"}[$w])))` | ms | `device`, `operation` |
-| `gnmi-errors` | `sum by (device) (rate(snapl_gnmi_call_duration_count{use_case="$uc",outcome="error"}[$w]))` | calls/s | `device` |
-| `worker-lag` | `histogram_quantile(0.95, sum by (le) (rate(temporal_activity_schedule_to_start_latency_bucket{namespace="$ns"}[$w])))` | ms | — |
+| `workflow-duration` | `histogram_quantile(0.95, sum by (le, workflow_type) (R(temporal_workflow_endtoend_latency_bucket{namespace="$ns"})))` | ms | `workflow_type` |
+| `gnmi-duration` | `histogram_quantile(0.95, sum by (le, device, operation) (R(snapl_gnmi_call_duration_bucket{use_case="$uc"})))` | ms | `device`, `operation` |
+| `gnmi-errors` | `sum by (device) (R(snapl_gnmi_call_duration_count{use_case="$uc",outcome="error"}))` | calls/s | `device` |
+| `worker-lag` | `histogram_quantile(0.95, sum by (le) (R(temporal_activity_schedule_to_start_latency_bucket{namespace="$ns"})))` | ms | — |
 | `worker-up` | `up{job="snapl-worker"}` | 0/1 | — |
 | `source-health` | `snapl_dashboard_source_up` | 0/1 | `source` |
 
 - `$ns` is the dashboard's namespace and `$uc` its use case, both from settings and never from the request.
 - `$w` is `max(4 × scrape interval, step)`, so a rate always spans at least four scrapes.
+- `R(x)` is `(((x unless x offset $w) and on() (up{job="snapl-worker"} offset $w)) / $sec or rate(x[$w]))`, with `$sec` the window in seconds (#191). A series is created by its first observation, and `rate()` alone sees no increase there. A series with no sample one window ago started from zero inside the window, so its value divided by the window is its rate. The `up` term limits this to times when Prometheus was already scraping the worker, so a counter that grew while Prometheus was down does not show as a burst.
 
 ### `MetricPoint`
 

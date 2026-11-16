@@ -37,10 +37,16 @@ class Executor(ABC):
 
     @abstractmethod
     async def rollback(self, desired: DesiredState) -> ApplyResult:
-        """Re-apply a prior known-good desired state.
+        """Re-apply a desired state, marked as a rollback. It does not restore.
 
         Identical to apply() but sets ApplyResult.is_rollback=True, including
-        on a render failure.
+        on a render failure. Nothing is read from the device first and no
+        earlier device config is kept, so this cannot put a device back the
+        way it was: it renders ``desired`` and merges it, as apply() does
+        (#36). Rolling back means converging again on a desired state the
+        caller holds, usually the Source of Truth's current one. Config the
+        failed change added and ``desired`` does not mention stays on the
+        device (#65).
 
         Raises:
             ValueError: desired is None (programming error).

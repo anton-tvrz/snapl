@@ -12,11 +12,12 @@ from __future__ import annotations
 import json
 import socket
 import sqlite3
+import subprocess
 import tarfile
 import threading
 from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path  # noqa: TC003 — fixture annotations
+from pathlib import Path
 from unittest.mock import MagicMock
 from urllib.parse import parse_qs, urlsplit
 from uuid import uuid4
@@ -239,6 +240,73 @@ def test_the_snapshot_is_removed_from_the_live_store(stub: Stub, tmp_path: Path,
 
     assert stub.asked("POST", "/api/v1/admin/tsdb/snapshot")
     assert not (checkout / ".snapl" / "prometheus" / "snapshots" / SNAPSHOT_NAME).exists()
+
+
+# --- a Prometheus whose data lives in another checkout (#237) -----------------------
+
+
+@pytest.fixture
+def other_checkout_store(stub: Stub, tmp_path: Path) -> Path:
+    """Prometheus writes its snapshot where it was started from, not under this checkout."""
+    other = tmp_path / "main-checkout" / ".snapl" / "prometheus"
+    other.mkdir(parents=True)
+    stub.data_dir = other
+    return other
+
+
+def test_a_snapshot_in_the_containers_own_data_dir_is_archived_and_removed(
+    stub: Stub, other_checkout_store: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(history, "_mounted_data_dirs", lambda: [tmp_path / "unrelated", other_checkout_store])
+
+    history.archive(_ctx())
+
+    assert f"prometheus/{SNAPSHOT_NAME}/01HBLOCK/chunks" in _members(_the_archive(tmp_path / "archives"))
+    assert not (other_checkout_store / "snapshots" / SNAPSHOT_NAME).exists()
+
+
+def test_a_snapshot_that_cannot_be_found_says_where_it_looked(
+    stub: Stub, other_checkout_store: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, checkout: Path
+) -> None:
+    monkeypatch.setattr(history, "_mounted_data_dirs", list)
+
+    with pytest.raises(Exit) as failed:
+        history.archive(_ctx())
+
+    assert failed.value.code == 1
+    manifest = json.loads(_members(_the_archive(tmp_path / "archives"))["manifest.json"])
+    metrics = next(part for part in manifest["parts"] if part["name"] == "metrics_snapshot")
+    assert metrics["present"] is False
+    assert SNAPSHOT_NAME in metrics["reason"]
+    assert str(checkout / ".snapl" / "prometheus") in metrics["reason"]
+    assert "left behind" in metrics["reason"]
+
+
+def test_the_mounted_data_dirs_come_from_the_running_prometheus_containers(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **_kwargs: object) -> MagicMock:
+        calls.append(command)
+        if command[:2] == ["docker", "ps"]:
+            return MagicMock(returncode=0, stdout="abc123\ndef456\n")
+        source = {"abc123": "/home/me/snapl/.snapl/prometheus\n", "def456": "\n"}[command[-1]]
+        return MagicMock(returncode=0, stdout=source)
+
+    monkeypatch.setattr(history.subprocess, "run", fake_run)
+
+    assert history._mounted_data_dirs() == [Path("/home/me/snapl/.snapl/prometheus")]
+    assert "label=com.docker.compose.service=prometheus" in calls[0]
+    assert all(command[0] == "docker" for command in calls)
+
+
+@pytest.mark.parametrize("failure", [FileNotFoundError("docker"), subprocess.TimeoutExpired("docker", 10)])
+def test_no_docker_means_no_mounted_data_dirs(monkeypatch: pytest.MonkeyPatch, failure: Exception) -> None:
+    def broken_run(*_args: object, **_kwargs: object) -> None:
+        raise failure
+
+    monkeypatch.setattr(history.subprocess, "run", broken_run)
+
+    assert history._mounted_data_dirs() == []
 
 
 def test_the_export_covers_the_last_7_days(stub: Stub) -> None:

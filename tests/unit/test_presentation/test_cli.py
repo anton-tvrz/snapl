@@ -179,6 +179,18 @@ class TestReconcile:
         assert result.exit_code == ExitCode.OK
         assert client.execute_workflow.call_count == 1, "scanned, then stopped — no reconcile workflow"
 
+    def test_drifted_flag_refuses_a_cancelled_scan(self, scan_result, temporal_client) -> None:
+        """A cancelled scan returns the reports it finished (#36). Reconciling
+        those would act on part of the fabric as if it were all of it."""
+        cancelled = scan_result(drifted=1).model_copy(update={"cancelled": True})
+        client = temporal_client(cancelled)
+        with patch.object(cli, "_connect", new=AsyncMock(return_value=client)):
+            result = _invoke(["reconcile", "--drifted", "--yes"])
+
+        assert result.exit_code == ExitCode.ERROR
+        assert "cancelled" in result.output
+        assert client.execute_workflow.call_count == 1, "scanned, then stopped: no reconcile workflow"
+
     def test_naming_devices_and_drifted_together_is_refused(self, sot) -> None:
         result = _invoke(["reconcile", "spine-01", "--drifted", "--yes"])
         assert result.exit_code == ExitCode.ERROR

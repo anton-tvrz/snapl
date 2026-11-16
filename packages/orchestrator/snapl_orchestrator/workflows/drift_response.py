@@ -14,12 +14,11 @@ from typing import TYPE_CHECKING, Any
 
 from temporalio import workflow
 from temporalio.common import RetryPolicy
-from temporalio.exceptions import ApplicationError, ChildWorkflowError, is_cancelled_exception
+from temporalio.exceptions import ActivityError, ApplicationError, ChildWorkflowError, is_cancelled_exception
 
 with workflow.unsafe.imports_passed_through():
-    from snapl_orchestrator.activities.audit import record_audit_event
+    from snapl_orchestrator.activities.schedule import stand_down_schedule
     from snapl_orchestrator.models import (
-        AuditEvent,
         AuditEventType,
         DriftResponseMode,
         DriftResponseRequest,
@@ -27,9 +26,11 @@ with workflow.unsafe.imports_passed_through():
         DriftScanResult,
         ExclusionReason,
         ReconcileResult,
+        StandDownRequest,
         WorkflowReason,
     )
     from snapl_orchestrator.remediation import select_remediation
+    from snapl_orchestrator.workflows.audit import record_event
     from snapl_orchestrator.workflows.reconcile_devices import ReconcileDevicesWorkflow
     from snapl_orchestrator.workflows.scan_drift import ScanDriftWorkflow
 
@@ -39,11 +40,15 @@ if TYPE_CHECKING:
 
 _WORKFLOW_TYPE = "DriftResponse"
 
-_AUDIT_RETRY = RetryPolicy(initial_interval=timedelta(seconds=1), maximum_attempts=5)
-
 # Patch id for starting the reconcile child with ABANDON (#144). Runs already in
 # flight when this shipped replay their original start command without it.
 _ABANDON_REPAIR_PATCH = "drift-response-abandon-repair-on-close"
+
+
+# Patch id for standing the schedule down after a failed repair (#136). A run
+# in flight when this shipped replays without the extra activity.
+_STAND_DOWN_PATCH = "drift-response-stand-down-after-failed-repair"
+_STAND_DOWN_RETRY = RetryPolicy(initial_interval=timedelta(seconds=1), maximum_attempts=3)
 
 
 async def _record(
@@ -55,25 +60,37 @@ async def _record(
     reason: WorkflowReason | None = None,
     payload: dict | None = None,
 ) -> None:
-    event = AuditEvent(
-        event_id=workflow.uuid4(),
-        workflow_id=workflow.info().workflow_id,
+    await record_event(
         workflow_type=_WORKFLOW_TYPE,
         target_id=target_id,
         event_type=event_type,
         outcome=outcome,
         reason=reason,
-        payload=payload or {},
-        timestamp=workflow.now(),
+        payload=payload,
         # Unattended actions must be told apart from human ones in `snapl audit`.
         actor=f"schedule:{request.schedule_id}",
     )
-    await workflow.execute_activity(
-        record_audit_event,
-        event,
-        start_to_close_timeout=timedelta(seconds=10),
-        retry_policy=_AUDIT_RETRY,
-    )
+
+
+async def _stand_down(request: DriftResponseRequest, reason: str) -> bool:
+    """Return the schedule to report after a failed repair (#136). Whether it changed.
+
+    If the activity fails after its retries, the schedule stays in remediate
+    and the next run tries again, as before #136: the repair's outcome is
+    already recorded, so the run carries on.
+    """
+    try:
+        return await workflow.execute_activity(
+            stand_down_schedule,
+            StandDownRequest(use_case_id=request.use_case_id, reason=reason),
+            start_to_close_timeout=timedelta(seconds=30),
+            retry_policy=_STAND_DOWN_RETRY,
+        )
+    except ActivityError as exc:
+        if is_cancelled_exception(exc):
+            raise
+        workflow.logger.warning("could not stand down %s: %s", request.schedule_id, exc)
+        return False
 
 
 async def _record_end(request: DriftResponseRequest, exc: BaseException, *, reason: WorkflowReason) -> None:
@@ -279,8 +296,27 @@ class DriftResponseWorkflow:
             ),
         )
         if reconcile_failure is not None:
+            # The repair did not complete: its deploys may have written, and no
+            # per-device result came back. Retrying it every interval is the
+            # same loop as a failed device, so the schedule stands down too.
+            # An operator's cancel is not a failed repair (#136).
+            if not is_cancelled_exception(reconcile_failure) and workflow.patched(_STAND_DOWN_PATCH):
+                cause = getattr(reconcile_failure, "cause", None) or reconcile_failure
+                await _stand_down(request, f"{wf_id}: the repair did not complete ({cause})")
             await _record_end(request, reconcile_failure, reason=WorkflowReason.REMEDIATION_FAILED)
             raise reconcile_failure
+        stood_down = False
+        if reconcile is not None and reconcile.failed > 0 and workflow.patched(_STAND_DOWN_PATCH):
+            # A device that rejects its intent would otherwise get one failed
+            # repair per interval, indefinitely (#136, FR-018). A device skipped
+            # because a deploy was in flight is not a failure. Detection keeps
+            # running: the schedule goes back to report, it is not paused.
+            failed = sorted(
+                scan.reports[device_id].device_name
+                for device_id, outcome in reconcile.device_results.items()
+                if not outcome.success
+            )
+            stood_down = await _stand_down(request, f"{wf_id}: the repair failed on {', '.join(failed)}")
         result = DriftResponseResult(
             workflow_id=wf_id,
             schedule_id=request.schedule_id,
@@ -290,6 +326,7 @@ class DriftResponseWorkflow:
             remediated=remediated,
             excluded=excluded,
             reconcile=reconcile,
+            stood_down=stood_down,
             started_at=started_at,
             ended_at=workflow.now(),
         )

@@ -26,6 +26,7 @@ from snapl_orchestrator.activities.intent import (
     fetch_devices_for_use_case,
 )
 from snapl_orchestrator.activities.observability import detect_drift
+from snapl_orchestrator.activities.schedule import stand_down_schedule
 from snapl_orchestrator.audit.sqlite import SqliteAuditLog
 from snapl_orchestrator.exceptions import OrchestratorConfigError
 from snapl_orchestrator.worker.client import DEFAULT_NAMESPACE, DEFAULT_TEMPORAL_HOST
@@ -117,6 +118,7 @@ async def run_worker(*, activities: Activities | None = None) -> None:
             collect_drift_state,
             detect_drift,
             record_audit_event,
+            stand_down_schedule,
         ],
     )
 

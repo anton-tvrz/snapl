@@ -91,6 +91,37 @@ def _commit() -> str | None:
     return result.stdout.strip() if result.returncode == 0 else None
 
 
+def _mounted_data_dirs() -> list[Path]:
+    """Where each running Prometheus container's ``/prometheus`` comes from on this host.
+
+    Read from Docker, because the stack may have been started from another
+    checkout (#237). Empty when Docker can't be asked.
+    """
+    template = '{{range .Mounts}}{{if eq .Destination "/prometheus"}}{{.Source}}{{end}}{{end}}'
+    try:
+        # Bandit: fixed docker commands, no shell; the ids come from docker itself.
+        listed = subprocess.run(  # nosec B603 B607
+            ["docker", "ps", "-q", "--filter", "label=com.docker.compose.service=prometheus"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        sources = [
+            subprocess.run(  # nosec B603 B607
+                ["docker", "inspect", "--format", template, container],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            ).stdout.strip()
+            for container in (listed.stdout.split() if listed.returncode == 0 else [])
+        ]
+    except (OSError, subprocess.SubprocessError):
+        return []
+    return [Path(source) for source in sources if source]
+
+
 # --- the parts ---------------------------------------------------------------------
 
 
@@ -133,9 +164,19 @@ def _metrics_snapshot(prometheus: str, data: Path) -> tuple[Part, Path | None]:
         error = body.get("error") or f"HTTP {response.status_code}"
         part.reason = f"Prometheus refused the snapshot: {error}"
         return part, None
+    # The data dir is bind-mounted from the checkout that started the stack. From
+    # another worktree the snapshot is under that checkout, not this one (#237).
+    looked = [data]
     snapshot = data / "snapshots" / name
     if not snapshot.is_dir():
-        part.reason = f"Prometheus made snapshot {name}, but it isn't under {data}"
+        looked += [mounted for mounted in _mounted_data_dirs() if mounted != data]
+        snapshot = next((d / "snapshots" / name for d in looked if (d / "snapshots" / name).is_dir()), snapshot)
+    if not snapshot.is_dir():
+        where = ", ".join(str(d) for d in looked)
+        part.reason = (
+            f"Prometheus made snapshot {name}, but it isn't under {where}. It is left behind in the data"
+            " directory of the checkout that started Prometheus: delete its snapshots/ entry by hand"
+        )
         return part, None
     part.path, part.present, part.bytes = f"prometheus/{name}", True, _size(snapshot)
     return part, snapshot

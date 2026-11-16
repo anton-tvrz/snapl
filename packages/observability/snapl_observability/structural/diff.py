@@ -105,8 +105,21 @@ def diff_desired_vs_actual(
 
     # interfaces
     iface_spec = ENTITY_FIELD_MAP["interface"]
+    extra_addresses: list[DriftItem] = []
     for iface in desired.interfaces:
-        items.extend(_diff_entity(iface, iface_spec, actual_data, kind="interface"))
+        path = iface_spec["path_template"].format(name=iface.name)
+        entry, extras = _address_view(iface, actual_data.get(path))
+        items.extend(_diff_entity(iface, iface_spec, {path: entry}, kind="interface"))
+        extra_addresses.extend(
+            DriftItem(
+                path=f"{path}/{address['path']}",
+                desired=None,
+                actual=address["prefix"],
+                entity_kind="interface",
+                undesired=True,
+            )
+            for address in extras
+        )
 
     # bgp sessions
     bgp_spec = ENTITY_FIELD_MAP["bgp_session"]
@@ -116,6 +129,7 @@ def diff_desired_vs_actual(
     # The reverse direction: entities the device carries that intent never
     # asked for (#54). Runs after the desired-driven pass so a report reads
     # "what is missing or wrong" before "what should not be here".
+    items.extend(extra_addresses)
     items.extend(
         _undesired_entities(
             iface_spec,
@@ -134,6 +148,37 @@ def diff_desired_vs_actual(
     )
 
     return items
+
+
+def _address_view(iface: Any, entry: Any) -> tuple[Any, list[dict[str, str]]]:
+    """Match an intent interface's one address against every address on the device (#193).
+
+    Intent gives an interface one address. The device may carry more, in an
+    order it chooses, so comparing against "the first" either hides the extras
+    or reports the intended address as wrong. When the entry carries
+    ``ipv4_addresses`` (``{"prefix", "path"}`` dicts, ``path`` relative to the
+    interface), this returns:
+
+    - the entry to compare: if the intended address is on the device, its
+      ``ip_address`` and ``prefix_length`` are the intended ones, wherever the
+      device lists it. If it is not, the entry is unchanged, so the first
+      address is reported against the intended one as before.
+    - the addresses left over, which intent never asked for.
+
+    An entry without the list is returned unchanged, with nothing left over.
+    """
+    addresses = entry.get("ipv4_addresses") if isinstance(entry, dict) else None
+    if not isinstance(addresses, list) or not addresses:
+        return entry, []
+
+    if iface.ip_address is not None and iface.prefix_length is not None:
+        wanted = f"{iface.ip_address}/{iface.prefix_length}"
+        for index, address in enumerate(addresses):
+            if address.get("prefix") == wanted:
+                view = {**entry, "ip_address": iface.ip_address, "prefix_length": iface.prefix_length}
+                return view, addresses[:index] + addresses[index + 1 :]
+
+    return entry, addresses[1:]
 
 
 @cache

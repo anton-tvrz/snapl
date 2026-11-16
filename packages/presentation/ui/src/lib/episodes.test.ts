@@ -92,6 +92,37 @@ describe("headline", () => {
     expect(JSON.stringify(text.open)).not.toContain(id);
   });
 
+  describe("devices no longer in intent (#236)", () => {
+    // leaf-01's episode is the open one. A re-seed gave the fabric new ids, so
+    // nothing scans this leaf-01 any more and its episode can never close.
+    const leaf = timeline.episodes.find((e) => !e.closed_at)!;
+    const gone = {
+      ...timeline,
+      lanes: timeline.lanes.map((lane) => (lane.device_id === leaf.device_id ? { ...lane, in_intent: false } : lane)),
+    };
+
+    it("does not count their open episodes as drift open", () => {
+      const text = headline(gone, NOW);
+
+      expect(text.open).toEqual({ count: 0, devices: [], others: 1 });
+    });
+
+    it("counts them apart from drift on devices still in intent", () => {
+      const other = { ...leaf, device_id: "00000000-0000-0000-0000-00000000aaaa", name: "leaf-09" };
+      const text = headline({ ...gone, open_count: 2, episodes: [...gone.episodes, other] }, NOW);
+
+      expect(text.open).toEqual({ count: 1, devices: [{ name: "leaf-09", duration: "35 s" }], others: 1 });
+    });
+
+    it("says episodes for several", () => {
+      const second = { ...leaf, device_id: "00000000-0000-0000-0000-00000000bbbb", name: "leaf-08" };
+      const lanes = [...gone.lanes, { ...gone.lanes[0]!, device_id: second.device_id, name: "leaf-08", in_intent: false }];
+      const text = headline({ ...gone, lanes, open_count: 2, episodes: [...gone.episodes, second] }, NOW);
+
+      expect(text.open).toEqual({ count: 0, devices: [], others: 2 });
+    });
+  });
+
   it("never calls the duration detection", () => {
     const text = headline(timeline, NOW);
     expect(JSON.stringify(text)).not.toMatch(/detect/i);

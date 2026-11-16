@@ -15,6 +15,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pydantic_core  # noqa: F401 — pre-import to keep workflow sandbox quiet
 import pytest
+from temporalio import activity
 from temporalio.client import WorkflowFailureError
 from temporalio.contrib.pydantic import pydantic_data_converter
 from temporalio.testing import WorkflowEnvironment
@@ -36,6 +37,7 @@ from snapl_orchestrator.models import (
     DriftResponseMode,
     DriftResponseRequest,
     ExclusionReason,
+    StandDownRequest,
     WorkflowReason,
 )
 from snapl_orchestrator.worker.sandbox import build_workflow_runner
@@ -178,6 +180,23 @@ def teardown_function() -> None:
     a._activities = None
 
 
+# What the run asked the schedule to do. The real activity changes a Temporal
+# schedule through the worker's client (tested in test_activity_schedule.py);
+# here a stand-in with the same name records the request.
+STAND_DOWNS: list[StandDownRequest] = []
+
+
+@activity.defn(name="stand_down_schedule")
+async def _recording_stand_down(request: StandDownRequest) -> bool:
+    STAND_DOWNS.append(request)
+    return True
+
+
+@pytest.fixture(autouse=True)
+def _no_stand_downs_yet() -> None:
+    STAND_DOWNS.clear()
+
+
 _WORKFLOWS = [DriftResponseWorkflow, ScanDriftWorkflow, ReconcileDevicesWorkflow, DeployIntentWorkflow]
 _ACTIVITIES = [
     fetch_devices_for_use_case,
@@ -186,6 +205,7 @@ _ACTIVITIES = [
     collect_drift_state,
     detect_drift,
     record_audit_event,
+    _recording_stand_down,
 ]
 
 
@@ -507,13 +527,101 @@ async def test_a_failed_repair_is_reported_and_the_run_still_succeeds(make_desir
 
     result = await _run(fabric.activities(audit), DriftResponseMode.REMEDIATE)
 
-    # Stand-down is deferred (#136): the failure is recorded, the schedule is not touched.
     assert (result.reconcile.succeeded, result.reconcile.failed) == (1, 1)
     [failed] = await _response_events(audit, target=rejecting)
     assert failed.payload["result"] == "failed"
     terminal = (await audit.query_by_workflow(RUN_ID))[-1]
     assert terminal.event_type is AuditEventType.WORKFLOW_TERMINATED
     assert terminal.reason is WorkflowReason.SUCCEEDED
+
+
+@pytest.mark.asyncio
+async def test_a_failed_repair_stands_the_schedule_down(make_desired) -> None:
+    """The next run must not try the same repair again (#136, FR-018). The
+    reason names the run and the device, so the schedule's note explains itself."""
+    fabric = Fabric([make_desired("rejecting-01"), make_desired("forward-02")])
+    rejecting, forward = (s.device.id for s in fabric.states)
+    fabric.drift[rejecting] = [FORWARD]
+    fabric.drift[forward] = [FORWARD]
+    fabric.rejecting.add(rejecting)
+
+    result = await _run(fabric.activities(InMemoryAuditLog()), DriftResponseMode.REMEDIATE)
+
+    [request] = STAND_DOWNS
+    assert request.use_case_id == USE_CASE
+    assert RUN_ID in request.reason
+    assert "rejecting-01" in request.reason
+    assert "forward-02" not in request.reason
+    assert result.stood_down is True
+
+
+@pytest.mark.asyncio
+async def test_a_repair_that_succeeds_leaves_the_schedule_in_remediate(make_desired) -> None:
+    fabric = Fabric([make_desired("forward-01")])
+    fabric.drift[fabric.states[0].device.id] = [FORWARD]
+
+    result = await _run(fabric.activities(InMemoryAuditLog()), DriftResponseMode.REMEDIATE)
+
+    assert (result.reconcile.succeeded, result.reconcile.failed) == (1, 0)
+    assert STAND_DOWNS == []
+    assert result.stood_down is False
+
+
+@pytest.mark.asyncio
+async def test_a_report_run_never_stands_down(make_desired) -> None:
+    fabric = Fabric([make_desired("forward-01")])
+    fabric.drift[fabric.states[0].device.id] = [FORWARD]
+
+    result = await _run(fabric.activities(InMemoryAuditLog()), DriftResponseMode.REPORT)
+
+    assert STAND_DOWNS == []
+    assert result.stood_down is False
+
+
+@pytest.mark.asyncio
+async def test_a_reconcile_that_fails_as_a_whole_stands_the_schedule_down_too(mixed: Fabric) -> None:
+    """Its deploys may have written and nothing reported per device. Retrying
+    that every interval is the same loop #136 stops for one failed device."""
+    with pytest.raises(WorkflowFailureError):
+        await _run(mixed.activities(RefusingAuditLog("ReconcileDevices")), DriftResponseMode.REMEDIATE)
+
+    [request] = STAND_DOWNS
+    assert request.use_case_id == USE_CASE
+    assert RUN_ID in request.reason
+    assert "did not complete" in request.reason
+
+
+@pytest.mark.asyncio
+async def test_an_operator_cancel_during_the_repair_does_not_stand_down(mixed: Fabric) -> None:
+    """A cancel is the operator stopping the run, not a failed repair."""
+    deps = mixed.activities(InMemoryAuditLog())
+    applying = asyncio.Event()
+
+    async def _blocking_apply(_desired):
+        applying.set()
+        await asyncio.sleep(30)  # released by cancellation / worker shutdown
+
+    deps.executor.apply = AsyncMock(side_effect=_blocking_apply)
+    set_activities(deps)
+    async with (
+        await WorkflowEnvironment.start_time_skipping(data_converter=pydantic_data_converter) as env,
+        Worker(
+            env.client,
+            task_queue=TASK_QUEUE,
+            workflows=_WORKFLOWS,
+            workflow_runner=build_workflow_runner(),
+            activities=_ACTIVITIES,
+        ),
+    ):
+        handle = await env.client.start_workflow(
+            DriftResponseWorkflow.run, _request(DriftResponseMode.REMEDIATE), id=RUN_ID, task_queue=TASK_QUEUE
+        )
+        await asyncio.wait_for(applying.wait(), timeout=10)
+        await handle.cancel()
+        with pytest.raises(WorkflowFailureError):
+            await handle.result()
+
+    assert STAND_DOWNS == []
 
 
 @pytest.mark.asyncio

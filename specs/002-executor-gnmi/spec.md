@@ -43,6 +43,8 @@ Before pushing configuration to a production network, an operator or orchestrati
 
 If an `apply()` partially succeeds — for example, interfaces are configured but the BGP session fails — an operator or orchestration workflow needs to restore the device to a known-good state. The Executor accepts a rollback configuration (typically the last known-good desired state) and applies it, overwriting the partial change.
 
+**What rollback does and does not do (noted for #36)**: it is a re-apply, not a restore. The Executor keeps no copy of the device's earlier config and reads nothing from the device first. It renders the desired state it is given and merges it, exactly as `apply()` does, with the result marked as a rollback. Values the failed change set are overwritten where the rollback state sets them too. Config the failed change added and the rollback state does not mention stays on the device, because apply is a merge (#65). A restore of the device's earlier config would be a different operation with a different name.
+
 **Why this priority**: Rollback is essential for safe automation but is implemented as a targeted re-apply to the prior known-good state. It is lower priority because the basic apply/dry-run loop must be solid first, and because Temporal-based orchestration (a later NAF block) is the primary recovery coordinator.
 
 **Independent Test**: Can be tested by applying a desired state, then calling `rollback()` with an alternate desired state, and verifying the gNMI SET payload corresponds to the rollback configuration, not the failed one.

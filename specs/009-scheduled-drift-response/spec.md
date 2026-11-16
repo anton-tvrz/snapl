@@ -96,6 +96,8 @@ Once report mode has been trusted, an operator decides a use case should heal it
 
 ### Deferred: Self-Healing Stands Down When a Repair Fails (was User Story 4, P3)
 
+**Implemented for #136** (FR-018, SC-009), as designed in research R8. The text below is the deferral as it was written.
+
 Deferred to #136 on 2026-10-28. In the deferred behaviour, a failed scheduled repair would switch the schedule back to `report` by itself. It is the only part of this feature where a run changes its own schedule, which needs an activity holding a Temporal client and its own audit path. Deferring it does not break the constitution, because US3 already satisfies VIII.2.
 
 Until it lands, a device whose repair fails is attempted again on the next run. Applies are idempotent (VIII.4), so the device is not harmed. The cost is one failed repair record per interval in the audit trail until an operator switches the schedule to `report` or pauses it. The follow-up issue should also consider a proportional blast-radius guard (see Assumptions).
@@ -107,7 +109,7 @@ Until it lands, a device whose repair fails is attempted again on the next run. 
 - **No worker is running when a run falls due.** The run waits until a worker picks it up. Because overlapping runs are skipped, firings that fall due while it waits do not pile up behind it. When the worker returns, one run executes, not a backlog.
 - **The workflow engine or the host was down or asleep across several intervals.** Missed firings are not replayed once it is back. The next regular firing is the next run. A repair must never fire for a moment that has already passed.
 - **The Source of Truth is unreachable.** The scheduled scan fails and is recorded as failed, and in remediate mode nothing is written. The next firing tries again.
-- **A scheduled repair fails** (the deploy errors, or verification still shows forward drift). The run records the failure. The schedule stays in `remediate`, so the next run tries again. Stand-down is deferred (see "Deferred" above).
+- **A scheduled repair fails** (the deploy errors, or verification still shows forward drift). The run records the failure and switches the schedule back to `report` (FR-018), so the next run scans and writes nothing. If the switch itself fails, the schedule stays in `remediate` and the next run tries again.
 - **`invoke demo.up` runs before any worker has started.** The schedule is created anyway. Its first run waits in the task queue until a worker starts. Because overlap is `SKIP`, the firings due in the meantime do not pile up behind it.
 - **An operator edits intent in the Source of Truth while the schedule is in remediate mode.** The next run sees devices lacking the new intent and deploys it. In remediate mode, a SoT edit therefore reaches the fabric within one interval without anyone running `deploy`. The confirmation in US3 scenario 1 must say so.
 - **An operator makes a deliberate hand change on a remediate-mode use case.** The next run reverts it. This is the designed behaviour, since a manual change that "works" is still drift (VIII.1). The way to make a planned hand change is to pause (suppress) first, and the pause reason is the record of why.
@@ -144,7 +146,7 @@ Until it lands, a device whose repair fails is attempted again on the next run. 
 - **FR-015**: A scheduled run MUST NOT remove device configuration under any response. Removal of undesired config (spec 007 User Story 3, #65) is outside this feature, and stays outside any schedule once it exists (VIII.5).
 - **FR-016**: A scheduled run's response MUST be fixed when the run starts. A response change MUST take effect from the next run.
 - **FR-017**: Suppress MUST be available as an operator pause carrying a reason, and resumable by the operator. In this cut, the pause is the only form of suppress. Calendar maintenance windows are not built.
-- **FR-018**: *(Deferred with the stand-down story. The number is kept so later references stay stable.)*
+- **FR-018**: *(Deferred on 2026-10-28, implemented for #136.)* After a scheduled repair in which at least one device's repair failed, or the repair did not complete at all (the reconcile itself failed), the run MUST switch its schedule back to `report`, record the change in the audit trail with the reason (the run and the failed devices) under an actor that is neither a person nor the schedule's runs, and put the reason in the schedule's note. It MUST NOT pause the schedule. A device skipped because a deploy was in flight is not a failure, and neither is an operator cancelling the run. A schedule an operator already switched to `report` is left as it is.
 
 **Audit and visibility**
 
@@ -189,7 +191,7 @@ Until it lands, a device whose repair fails is attempted again on the next run. 
 - **SC-006**: At most one scheduled run per use case is ever in progress, including when a run outlasts its interval and when the worker returns after downtime.
 - **SC-007**: A paused schedule starts zero runs until resumed. Pause, resume, response change, trigger and delete each leave one audit record with actor and time.
 - **SC-008**: After the workflow engine and the worker restart, 100% of schedules keep their interval, response and paused state.
-- **SC-009**: *(Deferred with the stand-down story.)*
+- **SC-009**: *(Deferred on 2026-10-28, implemented for #136.)* After one scheduled run whose repair fails on a device, the schedule shows `report` with the reason, and the next run writes nothing.
 - **SC-010**: An operator can create, inspect, pause, resume, trigger and switch a schedule using only `snapl` commands. The Temporal Web UI is optional.
 - **SC-011**: Unit tests achieve ≥80% line coverage of the new code without a live workflow-engine cluster, SoT or devices.
 - **SC-012**: On the six-device fabric, a triggered report-mode run appears as completed, with its summary, in `snapl schedule show` within 30 seconds.
@@ -205,7 +207,7 @@ Until it lands, a device whose repair fails is attempted again on the next run. 
 - **The response lives on the schedule, not in worker configuration.** #99 suggested a worker environment variable (`SNAPL_AUTO_RECONCILE`). An environment variable is invisible from the CLI and the Web UI, applies to every use case at once, needs a worker restart to change, and silently enables writes when a shell with a stale export restarts the worker. Keeping the response on the schedule makes it visible, per use case, switchable live and audited.
 - **A repair is a reconcile.** The scheduled repair goes through the existing reconcile path, so it inherits per-device serialization, skip-on-in-flight (#35) and the dedupe and failure handling from #66, unchanged.
 - **No proportional blast-radius guard in this cut.** A scheduled repair of N devices carries the same risk as `snapl reconcile --drifted --yes` on the same fabric. The remediate confirmation says so. A guard such as "stand down when more than half the fabric drifts at once" is a candidate follow-up, not part of this feature.
-- **Stand-down is deferred.** If the follow-up builds it, it should return the schedule to `report`, not pause it, so detection keeps running.
+- **Stand-down returns the schedule to `report`, it does not pause it**, so detection keeps running (implemented for #136).
 - **The audit trail is the existing durable audit log.** Schedule changes are written to it by the Orchestrator's schedule functions, which the CLI and `invoke demo.up` call. All of them, and the worker, resolve one audit database path (`SNAPL_AUDIT_DB`, default `./snapl-audit.sqlite`), as `snapl audit` already assumes.
 - **Temporal history persists across restarts** (#81, fixed in #112), so schedules survive a container restart. `invoke demo.reset` wipes them, along with everything else.
 - **Only `dcfabric` is exercised.** Schedules take a use case and must not hard-code `dcfabric`.

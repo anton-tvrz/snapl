@@ -165,3 +165,70 @@ def test_a_description_only_port_reports_its_description_and_enabled_as_undesire
         ("/interface[name=ethernet-1/7]/description", "hand-added-by-operator"),
         ("/interface[name=ethernet-1/7]/enabled", True),
     ]
+
+
+# ---------------------------------------------------------------------------
+# Every IPv4 address, not only the first (#193)
+# ---------------------------------------------------------------------------
+
+
+def _with_extra_address(collected: dict, name: str, prefix: str, *, first: bool = False) -> dict:
+    """The captured payload with one more address on ``name``'s subinterface 0.
+
+    The entry copies the shape the device returned for the address already
+    there (``ip-prefix`` and ``origin``). The payload with a hand-added address
+    has not been captured from the lab yet.
+    """
+    for iface in collected["/interface"]["srl_nokia-interfaces:interface"]:
+        if iface["name"] == name:
+            addresses = iface["subinterface"][0]["ipv4"]["address"]
+            entry = {"ip-prefix": prefix, "origin": "static"}
+            addresses.insert(0, entry) if first else addresses.append(entry)
+            return collected
+    raise AssertionError(f"{name} is not in the fixture")
+
+
+def test_every_ipv4_address_is_normalized_with_its_path(collected: dict) -> None:
+    out = normalize_srlinux_state(_with_extra_address(collected, "ethernet-1/1", "10.99.0.1/31"))
+
+    eth1 = out["/interface[name=ethernet-1/1]"]
+    assert eth1["ipv4_addresses"] == [
+        {"prefix": "10.10.1.0/31", "path": "subinterface[index=0]/ipv4/address[ip-prefix=10.10.1.0/31]"},
+        {"prefix": "10.99.0.1/31", "path": "subinterface[index=0]/ipv4/address[ip-prefix=10.99.0.1/31]"},
+    ]
+    # The single-address fields still carry the first address.
+    assert eth1["ip_address"] == "10.10.1.0"
+    assert eth1["prefix_length"] == 31
+
+
+def test_an_interface_without_addresses_normalizes_to_an_empty_list() -> None:
+    out = normalize_srlinux_state({"/interface": {"srl_nokia-interfaces:interface": [{"name": "ethernet-1/9"}]}})
+
+    assert out["/interface[name=ethernet-1/9]"]["ipv4_addresses"] == []
+
+
+def test_an_extra_address_on_an_intent_managed_interface_is_undesired(collected: dict) -> None:
+    normalized = normalize_srlinux_state(_with_extra_address(collected, "ethernet-1/1", "10.99.0.1/31"))
+
+    items = diff_desired_vs_actual(_desired_matching_fixture(), normalized)
+
+    assert [(item.path, item.desired, item.actual, item.undesired) for item in items] == [
+        (
+            "/interface[name=ethernet-1/1]/subinterface[index=0]/ipv4/address[ip-prefix=10.99.0.1/31]",
+            None,
+            "10.99.0.1/31",
+            True,
+        )
+    ]
+
+
+def test_an_extra_address_listed_first_does_not_read_as_a_wrong_intended_address(collected: dict) -> None:
+    """The device decides the order. The intended address is still there, so
+    only the extra one is reported."""
+    normalized = normalize_srlinux_state(_with_extra_address(collected, "ethernet-1/1", "10.1.0.1/31", first=True))
+
+    items = diff_desired_vs_actual(_desired_matching_fixture(), normalized)
+
+    assert [(item.path, item.undesired) for item in items] == [
+        ("/interface[name=ethernet-1/1]/subinterface[index=0]/ipv4/address[ip-prefix=10.1.0.1/31]", True)
+    ]
