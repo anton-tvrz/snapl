@@ -1085,6 +1085,218 @@ def test_empty_trail_has_no_first_event():
     assert series.points == []
 
 
+# --- the four series of spec 015 (T001, research R5) --------------------------------
+
+GONE = UUID("00000000-0000-0000-0000-000000000003")
+INTENT = [IntentDevice(SPINE, "spine-01", "spine"), IntentDevice(LEAF, "leaf-01", "leaf")]
+
+
+def _full_scan(workflow_id: str, at: datetime, results: dict[UUID, str], *, ok: bool = True) -> list[AuditEvent]:
+    """A ScanDrift run with one record per device, as `scan_drift._audit_device`
+    writes them: "c" for clean, "d" for drifted, "e" for an error."""
+    events = [_wf(workflow_id, "ScanDrift", AuditEventType.WORKFLOW_STARTED, at, target="dcfabric")]
+    for device_id, code in results.items():
+        record_at = at + timedelta(seconds=1)
+        if code == "c":
+            events.append(_scan(device_id, record_at, workflow_id=workflow_id))
+        elif code == "d":
+            events.append(
+                _scan(device_id, record_at, status="drifted", paths=["/a"], undesired=[], workflow_id=workflow_id)
+            )
+        else:
+            events.append(_scan(device_id, record_at, status="error", error="collect failed", workflow_id=workflow_id))
+    events.append(
+        _wf(
+            workflow_id,
+            "ScanDrift",
+            AuditEventType.WORKFLOW_TERMINATED,
+            at + timedelta(seconds=2),
+            target="dcfabric",
+            outcome="success" if ok else "failure",
+            reason=WorkflowReason.SUCCEEDED if ok else WorkflowReason.INTENT_UNAVAILABLE,
+        )
+    )
+    return events
+
+
+def _drift_arc() -> list[AuditEvent]:
+    """Four hourly scans and a failed one. GONE has left intent.
+
+    spine-01: clean, error, drifted, clean. leaf-01: drifted, drifted, clean,
+    clean. GONE: drifted, drifted, clean.
+    """
+    return [
+        *_full_scan("scan-1", H0, {SPINE: "c", LEAF: "d", GONE: "d"}),
+        *_full_scan("scan-2", H0 + timedelta(hours=1), {SPINE: "e", LEAF: "d", GONE: "d"}),
+        *_full_scan("scan-3", H0 + timedelta(hours=2), {SPINE: "d", LEAF: "c", GONE: "c"}),
+        *_full_scan("scan-4", H0 + timedelta(hours=3), {SPINE: "c", LEAF: "c"}),
+        *_full_scan("scan-5", H0 + timedelta(hours=4), {SPINE: "c", LEAF: "c"}, ok=False),
+    ]
+
+
+def _scan_ends(*hours: int) -> list[datetime]:
+    return [H0 + timedelta(hours=hour, seconds=2) for hour in hours]
+
+
+def _values(series) -> list[tuple[datetime, int | None]]:
+    return [(point.t, point.value) for point in series.points]
+
+
+def test_in_sync_devices_counts_devices_in_intent_that_each_scan_found_in_sync():
+    series = project_series(
+        _drift_arc(), SeriesName.IN_SYNC_DEVICES, H0, H0 + timedelta(hours=6), Bucket.HOUR, states=INTENT
+    )
+
+    assert series.bucket is None
+    # A scan error is not in sync, GONE is never counted, and the failed scan is no point.
+    assert _values(series) == list(zip(_scan_ends(0, 1, 2, 3), [1, 0, 1, 2], strict=True))
+
+
+def test_open_drifts_follows_the_episodes_on_devices_in_intent():
+    series = project_series(
+        _drift_arc(), SeriesName.OPEN_DRIFTS, H0, H0 + timedelta(hours=6), Bucket.HOUR, states=INTENT
+    )
+
+    assert series.bucket is None
+    # leaf-01's episode stays open through scan 2 and closes at scan 3, as
+    # spine-01's opens there. spine-01's error at scan 2 opens nothing.
+    assert _values(series) == list(zip(_scan_ends(0, 1, 2, 3), [1, 1, 1, 0], strict=True))
+
+
+def test_open_drifts_counts_an_episode_opened_before_the_range():
+    start = H0 + timedelta(hours=1)
+
+    series = project_series(
+        _drift_arc(), SeriesName.OPEN_DRIFTS, start, start + timedelta(hours=1), Bucket.HOUR, states=INTENT
+    )
+
+    assert _values(series) == [(_scan_ends(1)[0], 1)]
+
+
+def test_with_the_sot_down_devices_in_intent_are_the_ones_last_named():
+    """The degraded rule of `project_devices`: in intent means named by the last SoT read."""
+    events = _drift_arc()
+    end = H0 + timedelta(hours=6)
+
+    in_sync = project_series(events, SeriesName.IN_SYNC_DEVICES, H0, end, Bucket.HOUR, names={LEAF: "leaf-01"})
+    open_drifts = project_series(events, SeriesName.OPEN_DRIFTS, H0, end, Bucket.HOUR, names={LEAF: "leaf-01"})
+
+    assert [value for _, value in _values(in_sync)] == [0, 0, 1, 1]
+    assert [value for _, value in _values(open_drifts)] == [1, 1, 0, 0]
+
+
+def test_with_nothing_known_about_intent_every_device_in_the_trail_counts():
+    series = project_series(_drift_arc(), SeriesName.IN_SYNC_DEVICES, H0, H0 + timedelta(hours=6), Bucket.HOUR)
+
+    assert [value for _, value in _values(series)] == [1, 0, 2, 2]
+
+
+def test_repair_duration_is_one_point_per_closed_episode_at_its_close():
+    series = project_series(
+        _drift_arc(), SeriesName.REPAIR_DURATION, H0, H0 + timedelta(hours=6), Bucket.HOUR, states=INTENT
+    )
+
+    assert series.bucket is None
+    closed_at = H0 + timedelta(hours=2, seconds=1)
+    # Scan to scan: from the record that first saw the drift to the one that first saw it gone.
+    assert _values(series) == [
+        (closed_at, 7200),
+        (closed_at, 7200),
+        (H0 + timedelta(hours=3, seconds=1), 3600),
+    ]
+
+
+def test_repair_duration_keeps_only_episodes_closed_in_the_range():
+    start = H0 + timedelta(hours=2, minutes=30)
+
+    series = project_series(_drift_arc(), SeriesName.REPAIR_DURATION, start, start + timedelta(hours=1), Bucket.HOUR)
+
+    assert _values(series) == [(H0 + timedelta(hours=3, seconds=1), 3600)]
+
+
+@pytest.mark.parametrize(
+    "name", [SeriesName.IN_SYNC_DEVICES, SeriesName.OPEN_DRIFTS, SeriesName.REPAIR_DURATION, SeriesName.RUNS]
+)
+def test_a_range_with_nothing_in_it_has_no_points(name):
+    later = H0 + timedelta(days=1)
+
+    series = project_series(_drift_arc(), name, later, later + timedelta(minutes=10), Bucket.FIVE_MINUTES)
+
+    assert [point for point in series.points if point.value is not None] == []
+    assert series.first_event_at == H0
+
+
+def test_runs_are_counted_by_start_bucket_trigger_and_outcome():
+    operator = {"parent_workflow_id": None}
+    events = [
+        # The first hour.
+        *_run(
+            DEPLOY_LEAF,
+            "DeployIntent",
+            H0 + timedelta(minutes=10),
+            H0 + timedelta(minutes=11),
+            target=LEAF,
+            start_payload=operator,
+        ),
+        *_run(
+            DEPLOY_LEAF,
+            "DeployIntent",
+            H0 + timedelta(minutes=20),
+            H0 + timedelta(minutes=21),
+            target=LEAF,
+            ok=False,
+            start_payload=operator,
+        ),
+        *_run(
+            SCHEDULED,
+            "DriftResponse",
+            H0 + timedelta(minutes=30),
+            H0 + timedelta(minutes=33),
+            target="dcfabric",
+            start_payload={"mode": "report"},
+        ),
+        *_run(
+            f"{SCHEDULED}-scan", "ScanDrift", H0 + timedelta(minutes=31), H0 + timedelta(minutes=32), target="dcfabric"
+        ),
+        # The second hour: one still open, one cancelled, one superseded by a
+        # new start under its id, and one recorded before FR-016a.
+        *_run("reconcile-1", "ReconcileDevices", H0 + timedelta(hours=1, minutes=5)),
+        _wf("reconcile-2", "ReconcileDevices", AuditEventType.WORKFLOW_STARTED, H0 + timedelta(hours=1, minutes=30)),
+        _wf("reconcile-2", "ReconcileDevices", AuditEventType.WORKFLOW_CANCELLED, H0 + timedelta(hours=1, minutes=31)),
+        *_run(DEPLOY_LEAF, "DeployIntent", H0 + timedelta(hours=1, minutes=10), target=LEAF, start_payload=operator),
+        *_run(
+            DEPLOY_LEAF,
+            "DeployIntent",
+            H0 + timedelta(hours=1, minutes=20),
+            H0 + timedelta(hours=1, minutes=21),
+            target=LEAF,
+            start_payload=operator,
+        ),
+        *_run(
+            f"deploy-intent-{SPINE}",
+            "DeployIntent",
+            H0 + timedelta(hours=1, minutes=40),
+            H0 + timedelta(hours=1, minutes=41),
+            target=SPINE,
+        ),
+    ]
+
+    series = project_series(events, SeriesName.RUNS, H0, H0 + timedelta(hours=3), Bucket.HOUR)
+
+    assert series.bucket is Bucket.HOUR
+    assert [(point.t, point.value, point.by_outcome) for point in series.points] == [
+        (H0, 4, {"operator.succeeded": 1, "operator.failed": 1, "schedule.succeeded": 2}),
+        (
+            H0 + timedelta(hours=1),
+            5,
+            # Cancelled and superseded runs did not succeed: they count as failed.
+            {"operator.running": 1, "operator.failed": 2, "operator.succeeded": 1, "unknown.succeeded": 1},
+        ),
+        # No run started: no data, not zero.
+        (H0 + timedelta(hours=2), None, {}),
+    ]
+
+
 # --- intent devices (spec 011 research R6) -----------------------------------------
 
 

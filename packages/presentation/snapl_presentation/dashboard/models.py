@@ -221,14 +221,26 @@ class SeriesName(StrEnum):
     UNDESIRED_PATHS = "undesired_paths"
     DEPLOYS = "deploys"
     REPAIRS = "repairs"
+    # Spec 015. Not in `/history`'s default, so older callers get the same answer.
+    IN_SYNC_DEVICES = "in_sync_devices"
+    OPEN_DRIFTS = "open_drifts"
+    RUNS = "runs"
+    REPAIR_DURATION = "repair_duration"
+
+
+# What `/history` answers when no series is named: the series of spec 010.
+DEFAULT_SERIES = (SeriesName.DRIFTED_DEVICES, SeriesName.UNDESIRED_PATHS, SeriesName.DEPLOYS, SeriesName.REPAIRS)
 
 
 class Point(_Model):
-    # The scan time for per-scan series, the bucket start for counted series.
+    # The scan time for per-scan series, the close for `repair_duration`, the
+    # bucket start for counted series.
     t: UtcDatetime
-    # Per-scan series.
+    # Per-scan series; seconds for `repair_duration`; for `runs`, the runs that
+    # started in the bucket, None when none did.
     value: int | None = None
     # Counted series: `succeeded` and `failed`, each None in an empty bucket.
+    # `runs`: `<trigger>.<outcome>` keys, empty when no run started.
     by_outcome: dict[str, int | None] | None = None
 
 

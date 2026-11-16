@@ -1145,7 +1145,7 @@ export interface components {
          * SeriesName
          * @enum {string}
          */
-        SeriesName: "drifted_devices" | "undesired_paths" | "deploys" | "repairs";
+        SeriesName: "drifted_devices" | "undesired_paths" | "deploys" | "repairs" | "in_sync_devices" | "open_drifts" | "runs" | "repair_duration";
         /**
          * SourceName
          * @enum {string}
@@ -1582,7 +1582,7 @@ export interface operations {
             query?: {
                 /** @description Defaults to the server's --use-case. */
                 use_case?: string | null;
-                /** @description Repeatable. Defaults to all four. */
+                /** @description Repeatable. Defaults to drifted_devices, undesired_paths, deploys and repairs; the series added by spec 015 are returned only when named. */
                 series?: components["schemas"]["SeriesName"][] | null;
                 /** @description Defaults to end - 24h. */
                 start?: string | null;

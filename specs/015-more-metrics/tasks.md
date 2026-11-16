@@ -55,11 +55,11 @@ A slice that changes the contract also regenerates the OpenAPI snapshot and the 
 
 **Goal**: the history API answers devices in sync, open drifts, runs and repair durations from the audit trail.
 
-- [ ] T001 [US2] Tests first in `tests/unit/test_presentation/test_dashboard_projections.py` (or the file that holds `project_series`' tests), on the captured trail and on built events: `in_sync_devices` has one point per scan with the count of in-intent devices in sync, and a device with a scan error is not in sync; `open_drifts` follows the episodes; `runs` buckets by start time with `by_outcome` keys `<trigger>.<outcome>`; `repair_duration` has one point per closed episode at `closed_at` with `duration_s`; a range with no scan gives no points; a device removed from intent is not counted.
-- [ ] T002 [US2] Add the four values to `SeriesName` in `packages/presentation/snapl_presentation/dashboard/models.py` and implement them in `project_series` in `projections.py` (research R5), reusing the timeline's episodes and `_split_runs`. `value` stays an `int`.
-- [ ] T003 [US2] Tests first in `tests/unit/test_presentation/test_dashboard_app.py`: `/api/v1/history` with no `series=` returns exactly the original four; with `series=runs&series=in_sync_devices` it returns those; an unknown name is `422`; the `at`-style past range still works.
-- [ ] T004 [US2] In `app.py`, make the default the original four (today it is "all"), and update the parameter's description. Check `archive.py` and `snapshot.py` still ask for what they need.
-- [ ] T005 [US2] Regenerate the OpenAPI snapshot and `packages/presentation/ui/src/api/schema.d.ts`. Start `changelog/249.added.md`.
+- [x] T001 [US2] Tests first in `tests/unit/test_presentation/test_dashboard_projections.py` (or the file that holds `project_series`' tests), on the captured trail and on built events: `in_sync_devices` has one point per scan with the count of in-intent devices in sync, and a device with a scan error is not in sync; `open_drifts` follows the episodes; `runs` buckets by start time with `by_outcome` keys `<trigger>.<outcome>`; `repair_duration` has one point per closed episode at `closed_at` with `duration_s`; a range with no scan gives no points; a device removed from intent is not counted.
+- [x] T002 [US2] Add the four values to `SeriesName` in `packages/presentation/snapl_presentation/dashboard/models.py` and implement them in `project_series` in `projections.py` (research R5), reusing the timeline's episodes and `_split_runs`. `value` stays an `int`.
+- [x] T003 [US2] Tests first in `tests/unit/test_presentation/test_dashboard_app.py`: `/api/v1/history` with no `series=` returns exactly the original four; with `series=runs&series=in_sync_devices` it returns those; an unknown name is `422`; the `at`-style past range still works.
+- [x] T004 [US2] In `app.py`, make the default the original four (today it is "all"), and update the parameter's description. Check `archive.py` and `snapshot.py` still ask for what they need.
+- [x] T005 [US2] Regenerate the OpenAPI snapshot and `packages/presentation/ui/src/api/schema.d.ts`. Start `changelog/249.added.md`.
 
 **Checkpoint**: `curl '/api/v1/history?series=runs'` on the fixture server shows the arc's runs by trigger.
 

@@ -647,6 +647,85 @@ def test_history_range_is_never_clamped_to_the_data():
     assert all(p["by_outcome"] == {"succeeded": None, "failed": None} for p in series["points"])
 
 
+def _full_scan(results: dict[Any, str]) -> list[AuditEvent]:
+    """A finished ScanDrift run with a record per device: "c" clean, "d" drifted."""
+    common = {"workflow_id": "scan-drift-dcfabric-3", "workflow_type": "ScanDrift"}
+    events = [
+        AuditEvent(
+            event_id=uuid4(),
+            event_type=AuditEventType.WORKFLOW_STARTED,
+            target_id="dcfabric",
+            timestamp=T0 - timedelta(minutes=10),
+            **common,
+        )
+    ]
+    for device_id, code in results.items():
+        payload: dict = {"status": "clean", "drift_items": 0}
+        if code == "d":
+            payload = {"status": "drifted", "drift_items": 1, "paths": ["/a"], "undesired_paths": []}
+        events.append(
+            AuditEvent(
+                event_id=uuid4(),
+                event_type=AuditEventType.ACTIVITY_COMPLETED,
+                target_id=device_id,
+                activity_name="detect_drift",
+                outcome="success",
+                payload=payload,
+                timestamp=T0 - timedelta(minutes=9),
+                **common,
+            )
+        )
+    events.append(
+        AuditEvent(
+            event_id=uuid4(),
+            event_type=AuditEventType.WORKFLOW_TERMINATED,
+            target_id="dcfabric",
+            outcome="success",
+            reason=WorkflowReason.SUCCEEDED,
+            timestamp=T0 - timedelta(minutes=8),
+            **common,
+        )
+    )
+    return events
+
+
+def _fabric_history_client(**kwargs: Any) -> TestClient:
+    events = [*_full_scan({LEAF.device.id: "c", SPINE.device.id: "d"}), *_deploy_run()]
+    return _client(audit=View(source=SourceName.AUDIT, available=True, fetched_at=T0, data=events), **kwargs)
+
+
+def test_history_answers_the_new_series_only_when_named():
+    params = [("series", "runs"), ("series", "in_sync_devices"), ("series", "open_drifts")]
+
+    body = _fabric_history_client().get("/api/v1/history", params=params).json()
+
+    runs, in_sync, open_drifts = body["series"]
+    assert [s["name"] for s in body["series"]] == ["runs", "in_sync_devices", "open_drifts"]
+    assert runs["bucket"] == "1h"
+    assert runs["points"][-1]["by_outcome"] == {"operator.succeeded": 1}
+    assert in_sync["bucket"] is None
+    assert [(p["t"], p["value"]) for p in in_sync["points"]] == [("2026-11-07T20:52:00Z", 1)]
+    assert [p["value"] for p in open_drifts["points"]] == [1]
+
+
+def test_history_new_series_with_the_sot_down_count_the_devices_it_last_named():
+    down = View(source=SourceName.SOT, available=False, reason="Infrahub is unreachable", remedy=STACK_REMEDY)
+    client = _fabric_history_client(sot=down, names={SPINE.device.id: "spine-01"})
+
+    [in_sync] = client.get("/api/v1/history", params={"series": "in_sync_devices"}).json()["series"]
+
+    # leaf-01 was in sync, but only spine-01 is known to be in intent, and it drifted.
+    assert [p["value"] for p in in_sync["points"]] == [0]
+
+
+def test_history_new_series_answer_a_past_range():
+    params = {"series": "repair_duration", "start": "2020-01-01T00:00:00Z", "end": "2020-01-02T00:00:00Z"}
+
+    [series] = _fabric_history_client().get("/api/v1/history", params=params).json()["series"]
+
+    assert (series["start"], series["bucket"], series["points"]) == ("2020-01-01T00:00:00Z", None, [])
+
+
 @pytest.mark.parametrize(
     "params",
     [
