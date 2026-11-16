@@ -121,12 +121,12 @@ uv run invoke dashboard.test && uv run invoke dashboard.e2e
 
 **Goal**: the history is a picture, with its table one click away.
 
-- [ ] T028 [US3] Tests first in `lib/historyBars.test.ts`: bars are oldest first; a quiet bucket has `null` counts and `quiet: true`; counts by outcome are carried; an empty history gives no bars.
-- [ ] T029 [US3] Implement `lib/historyBars.ts` over `historyRows`.
-- [ ] T030 [US3] Tests first in `components/panels/History.test.tsx`: a chart with an `aria-label` that points to the table; the table inside a closed `<details>` named "Show the table" with every column it had; the "no scans in this range" sentence when every bucket is quiet; the repair-run list is unchanged; the audit trail's start sentence is unchanged.
-- [ ] T031 [US3] Implement the chart in `History.tsx` (research R5): bars for scans, a stepped line for the most drifted devices, deploy and repair marks by outcome in the ok and fail tones with a legend that gives each its glyph and word. No animation (`isAnimationActive={false}`). Gridlines faint and horizontal, no axis lines.
-- [ ] T032 [US3] Remove `History.tsx` from the allowlist if it is still there. Check `parity.test.ts` still passes without loosening it.
-- [ ] T033 [US3] Run the look check. Append to the changelog.
+- [x] T028 [US3] Tests first in `lib/historyBars.test.ts`: bars are oldest first; a quiet bucket has `null` counts and `quiet: true`; counts by outcome are carried; an empty history gives no bars.
+- [x] T029 [US3] Implement `lib/historyBars.ts` over `historyRows`.
+- [x] T030 [US3] Tests first in `components/panels/History.test.tsx`: a chart with an `aria-label` that points to the table; the table inside a closed `<details>` named "Show the table" with every column it had; the "no scans in this range" sentence when every bucket is quiet; the repair-run list is unchanged; the audit trail's start sentence is unchanged.
+- [x] T031 [US3] Implement the chart in `History.tsx` (research R5): bars for scans, a stepped line for the most drifted devices, deploy and repair marks by outcome in the ok and fail tones with a legend that gives each its glyph and word. No animation (`isAnimationActive={false}`). Gridlines faint and horizontal, no axis lines.
+- [x] T032 [US3] Remove `History.tsx` from the allowlist if it is still there. Check `parity.test.ts` still passes without loosening it.
+- [x] T033 [US3] Run the look check. Append to the changelog.
 
 **Checkpoint**: the history panel is a chart about 240 px tall.
 
