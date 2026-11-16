@@ -85,11 +85,56 @@ describe("Lanes", () => {
     expect(left(cursor)).toBeLessThan(left(scans[2]!));
   });
 
-  it("labels a device no longer in intent", () => {
-    const gone = { ...timeline, lanes: [{ ...timeline.lanes[0]!, name: "old-leaf", in_intent: false }] };
-    render(<Lanes timeline={gone} domain={domain} now={NOW} />);
+  // spec 014 FR-018: devices that left intent do not take the panel over.
+  const withGone = (count: number) => ({
+    ...timeline,
+    lanes: [
+      ...timeline.lanes,
+      ...Array.from({ length: count }, (_, n) => ({
+        ...timeline.lanes[0]!,
+        device_id: `1111111${n}-1111-1111-1111-111111111111`,
+        name: `old-leaf-${n}`,
+        in_intent: false,
+      })),
+    ],
+  });
+  const folded = () => screen.getByRole("group", { name: /no longer in intent/ });
 
-    expect(lanes()[0]).toHaveTextContent("no longer in intent");
+  it("draws only the devices in intent, and folds the others into one closed row with their count", () => {
+    render(<Lanes timeline={withGone(18)} domain={domain} now={NOW} />);
+
+    expect(lanes().map((lane) => lane.getAttribute("aria-label"))).toEqual(timeline.lanes.map((lane) => lane.name));
+    expect(folded()).not.toHaveAttribute("open");
+    expect(within(folded()).getByText("18 devices no longer in intent")).toBeInTheDocument();
+  });
+
+  it("shows every folded lane, labelled, when the row is opened", async () => {
+    render(<Lanes timeline={withGone(2)} domain={domain} now={NOW} />);
+
+    await userEvent.click(within(folded()).getByText("2 devices no longer in intent"));
+
+    expect(folded()).toHaveAttribute("open");
+    const gone = within(screen.getByRole("list", { name: "Drift lanes of devices no longer in intent" })).getAllByRole("listitem");
+    expect(gone.map((lane) => lane.getAttribute("aria-label"))).toEqual(["old-leaf-0", "old-leaf-1"]);
+    expect(gone[0]).toHaveTextContent("no longer in intent");
+  });
+
+  it("opens the row when the selected device is one of them", () => {
+    render(<Lanes timeline={withGone(2)} domain={domain} now={NOW} selected="old-leaf-1" />);
+
+    expect(folded()).toHaveAttribute("open");
+  });
+
+  it("says one device in the singular", () => {
+    render(<Lanes timeline={withGone(1)} domain={domain} now={NOW} />);
+
+    expect(within(folded()).getByText("1 device no longer in intent")).toBeInTheDocument();
+  });
+
+  it("has no folded row when every device is in intent", () => {
+    render(<Lanes timeline={timeline} domain={domain} now={NOW} />);
+
+    expect(screen.queryByRole("group", { name: /no longer in intent/ })).not.toBeInTheDocument();
   });
 
   it("gives the command that fills empty lanes", () => {
