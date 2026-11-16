@@ -307,11 +307,12 @@ Open the page, then run beats 1 to 3 of the demo arc in another terminal.
 Build the page once with `uv run invoke dashboard.build` (Node 22.12 or later). Without it, the dashboard serves the plain page of spec 010, which shows the same facts as tables, and the points below read the same there.
 
 **Point at:**
-- The fabric: spines above leaves, with the links intent declares. Each device's drift state has its own shape and glyph, not just a colour. Select a device for its detail.
+- The four numbers at the top: devices in sync, open drifts, the latest repair from scan to scan, and the last 24 hours' deploys. Each one links to the panel with its detail. A number the page can't know is said in words, never shown as zero.
+- The fabric: spines above leaves, with the links intent declares. Each device's drift state has its own shape and glyph, not just a colour. Select a device for its detail. With none selected, the ring next to it gives the share of devices in sync, and the devices that differ are listed below it, most paths first.
 - Devices: each device's drift state and its direction. A few seconds after `snapl scan`, the device you changed by hand shows `undesired` or `missing`, with the exact paths and the command that fixes it. Undesired-only drift gets a note and no command, because removal isn't automatic (#65).
 - Recent runs: the deploy, scan and reconcile appear as each finishes, with its trigger (`operator` or `schedule`) and a link to the Temporal Web UI.
 - Schedule: the report-only schedule that `demo.up` created, its next run, and who paused it, if anyone did.
-- Last 24 hours: the number of drifted devices at each scan, with the reconcile marked. An hour with no scans reads "no scans".
+- Last 24 hours: a chart of scans, the most drifted devices, deploys and scheduled repairs per hour. Failures are hatched and repairs outlined, so nothing depends on colour. An hour with no scans is left empty, and "Show the table" gives every number.
 - The source strip: stop the worker or Temporal, and the strip names what is down and what to run. Only the views that depend on that source change.
 
 **Expect:** the page keeps loading whatever is down. `curl -s localhost:18030/api/v1/overview | jq` returns the data the page shows.
@@ -324,7 +325,7 @@ The dashboard is local and read-only, and has no authentication, so keep it on 1
 
 **Story:** "Every deploy and scan leaves a timing behind, and the dashboard charts it."
 
-Prometheus starts with the stack (`demo.up`). Keep the worker and `snapl dashboard` running, and open the dashboard's Metrics section with the range at 1 h.
+Prometheus starts with the stack (`demo.up`). Keep the worker and `snapl dashboard` running, and open the dashboard's Metrics section with the range at 1 h. The range is a toolbar that stays on screen while the history and the metrics scroll. Each panel leads with its latest value, and a rate under one a second reads per minute.
 
 ```bash
 uv run snapl deploy spine-01

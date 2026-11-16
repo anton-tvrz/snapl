@@ -48,6 +48,8 @@ The UI uses React, Vite, TypeScript, Tailwind and Recharts.
 **As built** (2026-11-10):
 - **TypeScript 5.9, not 7.** openapi-typescript 7.13 needs TypeScript 5 (#204).
 - **No shadcn/ui components.** The panels needed none of them; Tailwind alone covers them (#204).
+
+**Look** (2026-11-16, spec 014, #246): the page's spacing, type scale and panel frame are rules in the "Look" section of `dev/skills/dashboard/SKILL.md`, and `packages/presentation/ui/src/look.test.ts` fails on code that breaks them. Spec 014 restyled the page to them with no new dependency.
 - **One more build output**: `static/ui/snapshot.html`, built with `vite-plugin-singlefile`, a whole page in one file for `--snapshot` (#228).
 
 ### 3. Prometheus, without Grafana (spec 012)

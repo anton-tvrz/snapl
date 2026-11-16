@@ -185,10 +185,10 @@ uv run invoke dashboard.test && uv run invoke dashboard.e2e
 
 **Goal**: the words match the page.
 
-- [ ] T055 [P] Update the dashboard's description in `README.md` and `docs/demo-scenarios.md` where they describe the page's layout or name a panel that moved. Claim only what the page shows.
-- [ ] T056 [P] Add a short "Look" note to ADR-0005 Decision 2 in `dev/adr/0005-dashboard-and-metrics-stack.md` pointing to the dashboard skill, and add spec 014 to `CLAUDE.md` "Recent Changes".
-- [ ] T057 Finish `changelog/246.changed.md` as one readable paragraph.
-- [ ] T061 Last task of this slice: point `.specify/feature.json` at `specs/015-more-metrics`, so the next overnight pass carries on with spec 015. Do it only when every task of this spec that doesn't need the lab is ticked.
+- [x] T055 [P] Update the dashboard's description in `README.md` and `docs/demo-scenarios.md` where they describe the page's layout or name a panel that moved. Claim only what the page shows.
+- [x] T056 [P] Add a short "Look" note to ADR-0005 Decision 2 in `dev/adr/0005-dashboard-and-metrics-stack.md` pointing to the dashboard skill, and add spec 014 to `CLAUDE.md` "Recent Changes".
+- [x] T057 Finish `changelog/246.changed.md` as one readable paragraph.
+- [x] T061 Last task of this slice: point `.specify/feature.json` at `specs/015-more-metrics`, so the next overnight pass carries on with spec 015. Do it only when every task of this spec that doesn't need the lab is ticked.
 - [ ] T063 **Needs the lab**: SC-002 on the live page. Measure the full page at 1280 px wide on the lab that measured 4083 px on 2026-11-15 (26 lanes, 18 no longer in intent) and compare. On the fixtures, which have no device outside intent, the page is longer than before (slice G: 5191 px against 4169 px), so the fixtures cannot show this criterion.
 - [ ] T058 **Needs the lab**: quickstart item 7, the four cards, the ring and the ranked bars against `snapl status` on the live fabric with one induced drift.
 - [ ] T059 **Needs the lab**: quickstart item 8, retake `docs/images/dashboard-dark.png` and spec 011's screenshots from the live demo, after reseeding the Source of Truth so the integration tests' `query-*` devices are gone.
