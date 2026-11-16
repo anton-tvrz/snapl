@@ -69,6 +69,30 @@ describe("HttpProvider", () => {
     ]);
   });
 
+  it("names each history series it wants, one parameter per series", async () => {
+    const { http, fetchFn } = provider();
+
+    await http.history(undefined, undefined, ["in_sync_devices", "runs"]);
+    await http.history({ start: new Date("2026-11-01T00:00:00Z"), end: new Date("2026-11-02T00:00:00Z") }, "1h", ["open_drifts"]);
+
+    expect(requested(fetchFn)).toEqual([
+      "/api/v1/history?series=in_sync_devices&series=runs",
+      "/api/v1/history?start=2026-11-01T00%3A00%3A00.000Z&end=2026-11-02T00%3A00%3A00.000Z&bucket=1h&series=open_drifts",
+    ]);
+  });
+
+  it("asks for the drift summary over the server's default range or a given one", async () => {
+    const { http, fetchFn } = provider();
+
+    await http.driftSummary();
+    await http.driftSummary({ start: new Date("2026-11-01T00:00:00Z"), end: new Date("2026-11-02T00:00:00Z") });
+
+    expect(requested(fetchFn)).toEqual([
+      "/api/v1/drift-summary",
+      "/api/v1/drift-summary?start=2026-11-01T00%3A00%3A00.000Z&end=2026-11-02T00%3A00%3A00.000Z",
+    ]);
+  });
+
   it("leaves the metrics range to the server when none is given", async () => {
     const { http, fetchFn } = provider();
 

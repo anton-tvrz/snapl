@@ -28,10 +28,13 @@ from snapl_presentation.dashboard.archive import ARCHIVE_REMEDY, NOT_IN_ARCHIVE
 from snapl_presentation.dashboard.ci import REPO_REMEDY
 from snapl_presentation.dashboard.exposition import CONTENT_TYPE, SourceOutcome, render_exposition
 from snapl_presentation.dashboard.models import (
+    DEFAULT_SERIES,
     ArchiveInfo,
     Bucket,
     CiStatus,
     DeviceView,
+    DriftSummary,
+    DriftSummaryResponse,
     DriftTimeline,
     DriftTimelineResponse,
     Envelope,
@@ -63,6 +66,7 @@ from snapl_presentation.dashboard.projections import (
     intent_devices,
     latest_pause,
     project_devices,
+    project_drift_summary,
     project_repeated_failures,
     project_running,
     project_runs,
@@ -151,6 +155,8 @@ _FETCH_BOUND_S = {SourceName.CI: 60.0}
 _METRICS_DEFAULT_RANGE = timedelta(hours=1)
 _METRICS_MAX_RANGE = timedelta(days=400)
 _METRICS_DEFAULT_POINTS = 240
+# History series that count devices in intent, so `/history` reads the SoT for them.
+_NEEDS_INTENT = frozenset({SeriesName.IN_SYNC_DEVICES, SeriesName.OPEN_DRIFTS})
 
 
 class _Reader:
@@ -727,6 +733,43 @@ def create_app(
         )
         return DriftTimelineResponse(use_case=served, generated_at=clock(), timeline=view)
 
+    @router.get("/drift-summary", response_model=DriftSummaryResponse)
+    async def drift_summary(
+        requested: UseCaseQuery = None,
+        start: Annotated[AwareDatetime | None, Query(description="Defaults to end - 24h.")] = None,
+        end: Annotated[AwareDatetime | None, Query(description="Defaults to now.")] = None,
+    ) -> DriftSummaryResponse:
+        """Each device's drift episodes over a range, as the timeline finds them (spec 015)."""
+        served = _check_use_case(requested)
+        range_end = end or clock()
+        range_start = start or range_end - timedelta(hours=24)
+        audit, sot = await reader.read_all(SourceName.AUDIT, SourceName.SOT)
+        summary: DriftSummary | None = None
+        if audit.data is not None:
+            try:
+                summary = project_drift_summary(
+                    audit.data,
+                    sot.data if sot.available else None,
+                    _device_names(sot, sources.sot.names),
+                    range_start,
+                    range_end,
+                    max_points=MAX_SCAN_POINTS,
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+        elif range_start >= range_end:
+            raise HTTPException(status_code=422, detail="start must be before end")
+        view: View[DriftSummary] = View(
+            source=SourceName.AUDIT,
+            available=audit.available,
+            stale=audit.stale,
+            fetched_at=audit.fetched_at,
+            reason=audit.reason,
+            remedy=audit.remedy,
+            data=summary,
+        )
+        return DriftSummaryResponse(use_case=served, generated_at=clock(), summary=view)
+
     @router.get("/mode", response_model=ModeResponse)
     async def mode(requested: UseCaseQuery = None) -> ModeResponse:
         """Whether this server shows the live stack or a history archive (spec 011)."""
@@ -756,7 +799,15 @@ def create_app(
     @router.get("/history", response_model=HistoryResponse)
     async def history(
         requested: UseCaseQuery = None,
-        series: Annotated[list[SeriesName] | None, Query(description="Repeatable. Defaults to all four.")] = None,
+        series: Annotated[
+            list[SeriesName] | None,
+            Query(
+                description=(
+                    "Repeatable. Defaults to drifted_devices, undesired_paths, deploys and repairs; "
+                    "the series added by spec 015 are returned only when named."
+                )
+            ),
+        ] = None,
         start: Annotated[AwareDatetime | None, Query(description="Defaults to end - 24h.")] = None,
         end: Annotated[AwareDatetime | None, Query(description="Defaults to now.")] = None,
         bucket: Annotated[Bucket, Query(description="Ignored for per-scan series.")] = Bucket.HOUR,
@@ -770,10 +821,21 @@ def create_app(
         served = _check_use_case(requested)
         range_end = end or clock()
         range_start = start or range_end - timedelta(hours=24)
-        names = series or list(SeriesName)
-        audit = await reader.read(SourceName.AUDIT)
+        names = series or list(DEFAULT_SERIES)
+        if _NEEDS_INTENT.isdisjoint(names):
+            audit = await reader.read(SourceName.AUDIT)
+            states, device_names = None, {}
+        else:
+            audit, sot = await reader.read_all(SourceName.AUDIT, SourceName.SOT)
+            states = sot.data if sot.available else None
+            device_names = _device_names(sot, sources.sot.names)
         try:
-            projected = [project_series(audit.data or [], name, range_start, range_end, bucket) for name in names]
+            projected = [
+                project_series(
+                    audit.data or [], name, range_start, range_end, bucket, states=states, names=device_names
+                )
+                for name in names
+            ]
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         return HistoryResponse(use_case=served, generated_at=clock(), series=projected)

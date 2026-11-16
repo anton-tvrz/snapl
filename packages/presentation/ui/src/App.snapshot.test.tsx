@@ -44,6 +44,50 @@ describe("App in a snapshot", () => {
     expect(screen.queryByText("Live")).not.toBeInTheDocument();
   });
 
+  it("has the number row, from the bundle and with no request of its own", async () => {
+    render(<App provider={provider().p} />);
+
+    const row = await screen.findByRole("list", { name: "The fabric in numbers" });
+    expect(within(row).getAllByRole("listitem")).toHaveLength(4);
+    expect(await within(row).findByText(/of \d+$/)).toBeInTheDocument();
+  });
+
+  it("has the fabric history, from the bundle", async () => {
+    render(<App provider={provider().p} />);
+
+    const panel = await screen.findByRole("region", { name: "Fabric history" });
+    expect(await within(panel).findByRole("img", { name: /^Devices in sync at each scan, as a chart/ })).toBeInTheDocument();
+    expect(within(panel).getByRole("img", { name: /^Runs started in each hour/ })).toBeInTheDocument();
+  });
+
+  it("has drift by device, from the bundle", async () => {
+    render(<App provider={provider().p} />);
+
+    const panel = await screen.findByRole("region", { name: "Drift by device" });
+    expect(await within(panel).findByRole("button", { name: /^Open leaf-01:/ })).toBeInTheDocument();
+    expect(within(panel).getByRole("button", { name: /^Open spine-01:/ })).toBeInTheDocument();
+  });
+
+  it("counts the runs in the fourth card from a one-day bundle", async () => {
+    render(<App provider={provider().p} />);
+
+    const row = await screen.findByRole("list", { name: "The fabric in numbers" });
+    const card = within(row).getByRole("heading", { name: "Runs, 24 h" }).closest("li")!;
+    expect(await within(card).findByText("12")).toBeInTheDocument();
+    expect(card).toHaveTextContent("None failed.");
+  });
+
+  it("leaves the runs count out of a bundle that covers a week, rather than showing the week as 24 hours", async () => {
+    const week = new Date(Date.parse(bundle.manifest.end) - 7 * 86_400_000).toISOString();
+    const fabric = bundle.fabric_history!;
+    const weekly = { ...bundle, fabric_history: { ...fabric, series: fabric.series.map((one) => ({ ...one, start: week })) } };
+    render(<App provider={new InlineProvider(weekly)} />);
+
+    const row = await screen.findByRole("list", { name: "The fabric in numbers" });
+    const card = within(row).getByRole("heading", { name: "Runs, 24 h" }).closest("li")!;
+    expect(await within(card).findByText("This answer covers 7 d, not 24 h: see the fabric history.")).toBeInTheDocument();
+  });
+
   it("asks nothing twice", async () => {
     const { p, overview, metrics } = provider();
     render(<App provider={p} />);

@@ -43,7 +43,7 @@ describe("headline", () => {
   it("counts the drift still open, with how long each has been open as of the shown time", () => {
     const text = headline(timeline, NOW);
 
-    expect(text.open).toBe("1 drift open: leaf-01 for 35 s.");
+    expect(text.open).toEqual({ count: 1, devices: [{ name: "leaf-01", duration: "35 s" }], others: 0 });
   });
 
   it("says nothing has been repaired yet, as of a past time", () => {
@@ -51,13 +51,20 @@ describe("headline", () => {
     const text = headline(past, new Date(past.end));
 
     expect(text.latest).toBeNull();
-    expect(text.open).toBe("2 drifts open: leaf-01 for 1 s, spine-01 for 1 s.");
+    expect(text.open).toEqual({
+      count: 2,
+      devices: [
+        { name: "leaf-01", duration: "1 s" },
+        { name: "spine-01", duration: "1 s" },
+      ],
+      others: 0,
+    });
   });
 
   it("says when no drift is open", () => {
     const text = headline({ ...timeline, open_count: 0, episodes: [spine] }, NOW);
 
-    expect(text.open).toBe("No drift open.");
+    expect(text.open).toEqual({ count: 0, devices: [], others: 0 });
   });
 
   it("measures the duration from the scan times when the server gave none", () => {
@@ -69,7 +76,20 @@ describe("headline", () => {
   it("counts open drift it has no episode for", () => {
     const text = headline({ ...timeline, open_count: 1, episodes: [] }, NOW);
 
-    expect(text.open).toBe("1 drift open.");
+    expect(text.open).toEqual({ count: 1, devices: [], others: 0 });
+  });
+
+  it("counts drift on devices no longer in intent apart, and does not name them", () => {
+    // spec 014 FR-019: a device that left intent is known only by its id.
+    const open = timeline.episodes.find((e) => !e.closed_at)!;
+    const id = "11111111-1111-1111-1111-111111111111";
+    const gone = { ...open, device_id: id, name: id };
+    const lanes = [...timeline.lanes, { device_id: id, name: id, in_intent: false, points: [] }];
+
+    const text = headline({ ...timeline, lanes, episodes: [...timeline.episodes, gone, { ...gone }], open_count: 3 }, NOW);
+
+    expect(text.open).toEqual({ count: 1, devices: [{ name: "leaf-01", duration: "35 s" }], others: 2 });
+    expect(JSON.stringify(text.open)).not.toContain(id);
   });
 
   describe("devices no longer in intent (#236)", () => {
@@ -84,16 +104,14 @@ describe("headline", () => {
     it("does not count their open episodes as drift open", () => {
       const text = headline(gone, NOW);
 
-      expect(text.open).toBe("No drift open. 1 episode never closed on a device no longer in intent.");
+      expect(text.open).toEqual({ count: 0, devices: [], others: 1 });
     });
 
     it("counts them apart from drift on devices still in intent", () => {
       const other = { ...leaf, device_id: "00000000-0000-0000-0000-00000000aaaa", name: "leaf-09" };
       const text = headline({ ...gone, open_count: 2, episodes: [...gone.episodes, other] }, NOW);
 
-      expect(text.open).toBe(
-        "1 drift open: leaf-09 for 35 s. 1 episode never closed on a device no longer in intent.",
-      );
+      expect(text.open).toEqual({ count: 1, devices: [{ name: "leaf-09", duration: "35 s" }], others: 1 });
     });
 
     it("says episodes for several", () => {
@@ -101,7 +119,7 @@ describe("headline", () => {
       const lanes = [...gone.lanes, { ...gone.lanes[0]!, device_id: second.device_id, name: "leaf-08", in_intent: false }];
       const text = headline({ ...gone, lanes, open_count: 2, episodes: [...gone.episodes, second] }, NOW);
 
-      expect(text.open).toBe("No drift open. 2 episodes never closed on devices no longer in intent.");
+      expect(text.open).toEqual({ count: 0, devices: [], others: 2 });
     });
   });
 

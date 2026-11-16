@@ -18,9 +18,19 @@ export function repairedBy(episode: DriftEpisode): string {
   return lookup<string>(REPAIRED_BY, close.kind, (raw) => `repaired by a ${raw}`);
 }
 
+/** The drift still open as of the shown time (spec 014 FR-019). */
+export interface OpenDrifts {
+  /** Open drifts on devices in intent, with any the server counted and did not list. */
+  count: number;
+  /** The devices in intent with open drift, and how long each has been open. */
+  devices: { name: string; duration: string }[];
+  /** Open drifts on devices no longer in intent. They are counted, never named: only their ids are known. */
+  others: number;
+}
+
 export interface Headline {
   latest: { name: string; duration: string; sentence: string } | null;
-  open: string;
+  open: OpenDrifts;
 }
 
 function seconds(from: string, to: string | Date): number {
@@ -40,19 +50,18 @@ export function headline(timeline: DriftTimeline, asOf: Date): Headline {
     };
   }
 
-  // A device that left intent is not scanned any more, so its last drifted scan
-  // leaves an episode that can never close. It stays in the data, and is counted
-  // apart from drift an operator can still act on (#236).
+  const open = timeline.episodes.filter((e) => !e.closed_at);
+  // A device with no lane is taken to be in intent: nothing says it left.
   const gone = new Set(timeline.lanes.filter((lane) => !lane.in_intent).map((lane) => lane.device_id));
-  const unclosed = timeline.episodes.filter((e) => !e.closed_at);
-  const open = unclosed.filter((e) => !gone.has(e.device_id));
-  const left = unclosed.length - open.length;
-  const count = Math.max(timeline.open_count - left, 0);
-
-  const each = open.map((e) => `${e.name} for ${durationText(seconds(e.opened_at, asOf))}`).join(", ");
-  const noun = count === 1 ? "drift" : "drifts";
-  const still = count === 0 ? "No drift open." : each ? `${count} ${noun} open: ${each}.` : `${count} ${noun} open.`;
-  if (left === 0) return { latest, open: still };
-  const where = left === 1 ? "1 episode never closed on a device" : `${left} episodes never closed on devices`;
-  return { latest, open: `${still} ${where} no longer in intent.` };
+  const ours = open.filter((e) => !gone.has(e.device_id));
+  // Drift the server counted without sending its episode.
+  const unlisted = Math.max(0, timeline.open_count - open.length);
+  return {
+    latest,
+    open: {
+      count: ours.length + unlisted,
+      devices: ours.map((e) => ({ name: e.name, duration: durationText(seconds(e.opened_at, asOf)) })),
+      others: open.length - ours.length,
+    },
+  };
 }

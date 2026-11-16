@@ -1,0 +1,39 @@
+{
+  "contract_version": "1",
+  "generated_at": "2026-11-07T21:20:48.919877Z",
+  "summary": {
+    "available": true,
+    "data": {
+      "devices": [
+        {
+          "device_id": "18e29d6e-246e-5cd1-32d2-c51d13d4de9e",
+          "drifted_s": 5,
+          "episodes": 1,
+          "in_intent": true,
+          "most_missing": 0,
+          "most_undesired": 1,
+          "name": "leaf-01",
+          "open": 1
+        },
+        {
+          "device_id": "18e29d6d-e0c5-0ba7-32d1-c510fc3ef077",
+          "drifted_s": 5,
+          "episodes": 1,
+          "in_intent": true,
+          "most_missing": 1,
+          "most_undesired": 0,
+          "name": "spine-01",
+          "open": 0
+        }
+      ],
+      "end": "2026-11-07T21:20:48.919877Z",
+      "start": "2026-11-06T21:20:48.919877Z"
+    },
+    "fetched_at": "2026-11-07T21:20:48.919877Z",
+    "reason": null,
+    "remedy": null,
+    "source": "audit",
+    "stale": false
+  },
+  "use_case": "dcfabric"
+}

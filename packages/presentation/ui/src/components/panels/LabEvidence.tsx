@@ -35,11 +35,11 @@ export function LabEvidence({ lab, now, presentOnly = false }: Props) {
 
   return (
     <ViewFrame title="Live lab evidence" view={lab} now={now} presentOnly={presentOnly}>
-      <div className="space-y-3 text-sm">
+      <div className="space-y-4 text-body">
         {latest.length === 0 ? (
           <div>
             <p>No live lab run recorded yet. Record one with:</p>
-            <p className="mt-1">
+            <p className="mt-2">
               <Command text="uv run invoke test-e2e" />
             </p>
           </div>
@@ -54,8 +54,8 @@ export function LabEvidence({ lab, now, presentOnly = false }: Props) {
                   <span aria-hidden="true">{encoding.glyph} </span>
                   {result(run)}
                 </p>
-                <p className="text-xs text-muted">{where(run, now)}</p>
-                <p className="text-xs">
+                <p className="text-meta text-muted">{where(run, now)}</p>
+                <p className="text-meta">
                   {since == null
                     ? `Commits on main since this run: unknown (${evidence?.commits_unknown_reason?.[suite] ?? "no reason given"})`
                     : `${since} commits on main since this run (matched by ${evidence?.matched_by?.[suite] ?? "unknown"})`}
@@ -65,7 +65,7 @@ export function LabEvidence({ lab, now, presentOnly = false }: Props) {
           })
         )}
         {odd.length > 0 && (
-          <ul className="space-y-1 text-xs text-muted">
+          <ul className="space-y-2 text-meta text-muted">
             {odd.map((run) => (
               <li key={run.id}>
                 {run.id}: {labEncoding(run.status).label}

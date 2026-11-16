@@ -221,14 +221,26 @@ class SeriesName(StrEnum):
     UNDESIRED_PATHS = "undesired_paths"
     DEPLOYS = "deploys"
     REPAIRS = "repairs"
+    # Spec 015. Not in `/history`'s default, so older callers get the same answer.
+    IN_SYNC_DEVICES = "in_sync_devices"
+    OPEN_DRIFTS = "open_drifts"
+    RUNS = "runs"
+    REPAIR_DURATION = "repair_duration"
+
+
+# What `/history` answers when no series is named: the series of spec 010.
+DEFAULT_SERIES = (SeriesName.DRIFTED_DEVICES, SeriesName.UNDESIRED_PATHS, SeriesName.DEPLOYS, SeriesName.REPAIRS)
 
 
 class Point(_Model):
-    # The scan time for per-scan series, the bucket start for counted series.
+    # The scan time for per-scan series, the close for `repair_duration`, the
+    # bucket start for counted series.
     t: UtcDatetime
-    # Per-scan series.
+    # Per-scan series; seconds for `repair_duration`; for `runs`, the runs that
+    # started in the bucket, None when none did.
     value: int | None = None
     # Counted series: `succeeded` and `failed`, each None in an empty bucket.
+    # `runs`: `<trigger>.<outcome>` keys, empty when no run started.
     by_outcome: dict[str, int | None] | None = None
 
 
@@ -522,6 +534,37 @@ class DriftTimeline(_Model):
 
 class DriftTimelineResponse(Envelope):
     timeline: View[DriftTimeline]
+
+
+class DeviceDriftSummary(_Model):
+    """One device's drift over a range (spec 015 FR-006)."""
+
+    device_id: UUID
+    name: str
+    in_intent: bool
+    # Drift episodes that overlap the range.
+    episodes: int = Field(ge=1)
+    # Of those, still open at the range's end.
+    open: int = Field(ge=0)
+    # Time drifted inside the range, scan to scan: an open episode counts up
+    # to its latest scan, not to the range's end.
+    drifted_s: int = Field(ge=0)
+    # The most missing paths any scan in the range saw.
+    most_missing: int = Field(ge=0)
+    # None when a drifted scan in the range predates the undesired split (010 FR-012a).
+    most_undesired: int | None = Field(default=None, ge=0)
+
+
+class DriftSummary(_Model):
+    start: UtcDatetime
+    end: UtcDatetime
+    # Most episodes first, then longest drifted, then name. A device with no
+    # episode in the range is left out.
+    devices: list[DeviceDriftSummary]
+
+
+class DriftSummaryResponse(Envelope):
+    summary: View[DriftSummary]
 
 
 # --- Run steps (spec 011) -----------------------------------------------------------

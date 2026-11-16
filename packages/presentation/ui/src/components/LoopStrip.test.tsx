@@ -67,6 +67,39 @@ describe("LoopStrip", () => {
     expect(block("Executor")).toHaveTextContent("Not recorded");
   });
 
+  // spec 014 US6: an unrecorded run must not read as six empty boxes.
+  it("shows a run with no recorded steps on one compact row: its blocks as chips, not boxes", () => {
+    render(<LoopStrip steps={reconcile} />);
+
+    const list = screen.getByRole("list", { name: "The loop, block by block" });
+    expect(list).toHaveAttribute("data-form", "compact");
+    expect(blocks()).toHaveLength(6);
+    for (const item of blocks()) expect(item).toHaveClass("chip");
+    // Each chip still says its status, for anyone not reading the glyph.
+    expect(block("Intent")).toHaveAccessibleName("Intent: Not recorded");
+    expect(block("Orchestrator")).toHaveAccessibleName("Orchestrator: Done");
+  });
+
+  it("shows a recorded run as six tiles, each with an icon tile, its status, time and reason", () => {
+    render(<LoopStrip steps={failed} />);
+
+    const list = screen.getByRole("list", { name: "The loop, block by block" });
+    expect(list).toHaveAttribute("data-form", "tiles");
+    for (const item of blocks()) expect(item.querySelector("[data-glyph]")).not.toBeNull();
+    expect(block("Executor")).toHaveTextContent("gNMI Set rejected: invalid value for mtu");
+    expect(block("Intent")).toHaveTextContent(/\d\d:\d\d:\d\d UTC/);
+  });
+
+  it("gives the run, its outcome and its start as one callout", () => {
+    render(<LoopStrip steps={deploy} />);
+
+    const callout = screen.getByRole("status", { name: "The run shown" });
+    expect(callout).toHaveTextContent("DeployIntent");
+    expect(callout).toHaveTextContent("Succeeded");
+    expect(callout).toHaveTextContent("started 2026-11-07");
+    expect(callout).toHaveClass("rounded-full");
+  });
+
   it("never shows a block as in progress, even for a running run", () => {
     const running = { ...deploy, run: { ...deploy.run, state: "running" as const, ended_at: null } };
     render(<LoopStrip steps={running} />);

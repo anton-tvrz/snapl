@@ -75,7 +75,7 @@ uv run invoke history.purge       # delete the stored metrics (stop the stack fi
 
 `uv run snapl dashboard` serves the dashboard at http://127.0.0.1:18030. It only reads.
 
-The page draws the fabric with each device's drift state, by shape and colour, and a lane per device shows that state over time. "As of" replays the drift scan by scan, and the loop strip shows what each NAF block did in one run. Below them are the schedule, the runs, CI, lab evidence, the hourly history and the metrics. Each view says where its data came from and how old it is, and when a source is down it gives the command that fixes it.
+The page leads with four numbers: devices in sync, open drifts, the latest repair's duration from scan to scan, and the runs of the last 24 hours with the failures named. Below them it draws the fabric with each device's drift state, by shape and colour, next to a ring with the share in sync and the devices that differ, ranked by how many paths differ. The loop strip shows what each NAF block did in one run. A lane per device shows the drift state over time, and "As of" replays it scan by scan. Then come the hourly history as a chart, the fabric history (devices in sync and open drifts at each scan, runs by trigger, repair durations), drift by device, and the metrics, under a time range that stays on screen, then the schedule and the runs, CI and lab evidence. The header's clock gives the time the page is showing. Each view says where its data came from and how old it is, and when a source is down it gives the command that fixes it.
 
 The page is built with Node, once, and Node is not needed to run snapl:
 

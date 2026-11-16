@@ -1,4 +1,4 @@
-import type { MetricsViewName } from "../api/types";
+import type { MetricsViewName, SeriesName } from "../api/types";
 import type { DataProvider, Range, RunId, RunsQuery } from "./provider";
 
 /** A request the server refused, or one that never reached it (status 0). */
@@ -12,7 +12,8 @@ export class ApiError extends Error {
   }
 }
 
-type Params = Record<string, string | number | undefined>;
+// A list is sent as one parameter per item: the server reads `series` repeated, never comma-joined.
+type Params = Record<string, string | number | readonly string[] | undefined>;
 
 interface ValidationItem {
   loc?: unknown[];
@@ -43,7 +44,8 @@ export class HttpProvider implements DataProvider {
   async #get<T>(path: string, params: Params = {}): Promise<T> {
     const query = new URLSearchParams();
     for (const [key, value] of Object.entries(params)) {
-      if (value !== undefined) query.set(key, String(value));
+      if (Array.isArray(value)) for (const item of value) query.append(key, item);
+      else if (value !== undefined) query.set(key, String(value));
     }
     const url = `${this.#base}/api/v1/${path}${query.size > 0 ? `?${query}` : ""}`;
     let response: Response;
@@ -78,11 +80,18 @@ export class HttpProvider implements DataProvider {
       limit: query.limit,
     });
 
-  history = (range?: Range, bucket?: string) =>
+  history = (range?: Range, bucket?: string, series?: SeriesName[]) =>
     this.#get<Awaited<ReturnType<DataProvider["history"]>>>("history", {
       start: range?.start.toISOString(),
       end: range?.end.toISOString(),
       bucket,
+      series,
+    });
+
+  driftSummary = (range?: Range) =>
+    this.#get<Awaited<ReturnType<DataProvider["driftSummary"]>>>("drift-summary", {
+      start: range?.start.toISOString(),
+      end: range?.end.toISOString(),
     });
 
   timeline = (range?: Range) =>

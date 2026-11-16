@@ -1,6 +1,6 @@
 ---
 name: snapl-dashboard
-description: The colour, shape, chart and motion rules for snapl's designed dashboard UI (spec 011). Read before adding or changing anything that shows state in packages/presentation/ui.
+description: The colour, shape, chart, motion and look rules (spacing, type, panels) for snapl's designed dashboard UI (specs 011 and 014). Read before adding or changing anything in packages/presentation/ui.
 ---
 
 # Dashboard encoding rules
@@ -67,8 +67,59 @@ A state a newer server sends is shown by its raw text, never hidden (010 contrac
 
 - Nothing moves when the viewer asks for reduced motion (`prefers-reduced-motion`). The same ring is drawn still.
 
+## Look
+
+These rules are enforced in code too. `packages/presentation/ui/src/look.test.ts` fails on spacing or type outside them, and the tokens are in `src/index.css`.
+
+### Spacing
+
+- **Gaps, padding and margins are multiples of 8 px**: Tailwind steps 2, 4, 6 and 8.
+- **2, 4 and 6 px are for the inside of a chip, a badge, a mark or a table cell only.** Add the `chip` or `cell` class to the same class string to say so. The class has no style; it is what the test reads.
+- Panel padding is 24 px. Table rows are `py-2`.
+
+### Type
+
+One scale, a 14 px base stepping by 1.25. No other size exists.
+
+| class | size | for |
+| --- | --- | --- |
+| `text-meta` | 12 px | metadata only: source and age, table headers, axis labels |
+| `text-body` | 14 px | everything read as text |
+| `text-title` | 17.5 px | panel titles |
+| `text-heading` | 22 px | section headings |
+| `text-number` | 27 px | a panel's lead value |
+| `text-number-lg` | 34 px | the number row |
+
+- Body text has a line height of 1.5, and large numbers 1.15. The tokens carry these, so don't set `leading-*` beside them.
+- Running text (sentences, failure reasons, error messages, notes) is kept to 45 to 75 characters a line with `max-w-prose`.
+- Tell headings, numbers and metadata apart by size first, weight second.
+
+### Panels
+
+- **One frame**: the title on the left of the header, at most one action on the right, and "source · age" in a muted footer.
+- **Light theme**: a panel is lifted by `shadow-panel`, a shadow tinted with the page's colour, its blur twice its offset. **Dark theme**: no shadow; the panel keeps its border.
+- The panel surface colours never change: the contrast tests are measured against them. Change the page colour if the page needs warming.
+- A group of panels has a small uppercase, letter-spaced label above it.
+
+### Colour
+
+- About 60% neutral page, 30% panel surfaces, 10% accent. The state colours are the accent. Add no other accent that competes with them.
+- **Amber covering much of the screen must only ever mean much drift.**
+
+### Motion and assets
+
+- Transitions are CSS only, so the reduced-motion rule stops them. No JavaScript animation library.
+- Icons are inline SVG. Nothing is loaded from another origin, and everything must fit the single-file snapshot.
+
 ## Before shipping a change that shows state
 
 1. Run `uv run invoke dashboard.test`.
 2. Run `uv run invoke dashboard.e2e`.
 3. Look at it in light and dark mode: `node packages/presentation/ui/e2e/screenshot.mjs <dashboard url> <out dir>`.
+4. Run the look check and read every picture it writes. Tests cannot say whether the page looks right.
+   ```bash
+   uv run invoke dashboard.build
+   uv run python dev/scripts/serve_dashboard_fixtures.py --port 18932 --sources up &
+   node packages/presentation/ui/e2e/look.mjs http://127.0.0.1:18932 <out dir>
+   ```
+   It prints the page's height and how far down the metrics start. Look for text cut off or overlapping, a panel still loading, uneven gaps, anything unreadable in dark, and sideways scroll.

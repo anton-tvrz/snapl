@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { TIMELINE, TIMELINE_AT_SCAN_2 } from "../../test/fixtures";
@@ -13,7 +13,10 @@ describe("Headline", () => {
 
     expect(screen.getByText("5 s")).toBeInTheDocument();
     expect(container).toHaveTextContent("repaired by an operator's reconcile");
-    expect(container).toHaveTextContent("1 drift open: leaf-01 for 35 s.");
+    expect(container).toHaveTextContent("1 drift open");
+    const chips = within(screen.getByRole("list", { name: "Devices with open drift" })).getAllByRole("listitem");
+    expect(chips.map((chip) => chip.textContent)).toEqual(["leaf-01 for 35 s"]);
+    expect(screen.getByText("5 s")).toHaveClass("text-number");
     expect(container.textContent).not.toMatch(/detect/i);
   });
 
@@ -37,5 +40,19 @@ describe("Headline", () => {
     const { container } = render(<Headline timeline={empty} asOf={NOW} />);
 
     expect(container).toHaveTextContent("No drift has been recorded.");
+    expect(container).toHaveTextContent("No drift open.");
+    expect(screen.queryByRole("list", { name: "Devices with open drift" })).not.toBeInTheDocument();
+  });
+
+  it("gives drift on devices no longer in intent as a count, never as a list of ids", () => {
+    const open = timeline.episodes.find((e) => !e.closed_at)!;
+    const id = "11111111-1111-1111-1111-111111111111";
+    const lanes = [...timeline.lanes, { device_id: id, name: id, in_intent: false, points: [] }];
+    const episodes = [...timeline.episodes, { ...open, device_id: id, name: id }];
+    const { container } = render(<Headline timeline={{ ...timeline, lanes, episodes, open_count: 2 }} asOf={NOW} />);
+
+    expect(container).toHaveTextContent("1 drift open");
+    expect(container).toHaveTextContent("1 more on a device no longer in intent.");
+    expect(container).not.toHaveTextContent(id);
   });
 });

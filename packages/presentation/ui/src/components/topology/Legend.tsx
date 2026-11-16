@@ -16,11 +16,11 @@ export function Legend({ states }: Props) {
   });
 
   return (
-    <ul aria-label="Drift states shown" className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted">
+    <ul aria-label="Drift states shown" className="flex flex-wrap gap-x-6 gap-y-2 text-meta text-muted">
       {shown.map((state) => {
         const encoding = driftEncoding(state);
         return (
-          <li key={state} className="flex items-center gap-1.5">
+          <li key={state} className="flex items-center gap-2">
             <svg width="18" height="18" viewBox="-11 -11 22 22" aria-hidden="true">
               <StateMark encoding={encoding} r={9} />
             </svg>

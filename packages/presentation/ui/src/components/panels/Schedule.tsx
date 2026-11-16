@@ -31,7 +31,7 @@ function Current({ status, now }: { status: ScheduleStatus; now: Date }) {
   const last = s.recent_runs?.at(-1);
   const summary = last?.summary;
   return (
-    <div className="space-y-1">
+    <div className="space-y-2">
       <p className="font-medium">
         {MODES[s.mode] ?? s.mode} every {durationText(s.interval)} · {s.paused ? "paused" : "active"}
       </p>
@@ -87,14 +87,14 @@ export function Schedule({ schedule, worker, now, presentOnly = false }: Props) 
   const status = schedule?.data;
   return (
     <ViewFrame title="Schedule and worker" view={schedule} now={now} presentOnly={presentOnly}>
-      <div className="space-y-3 text-sm">
+      <div className="space-y-4 text-body">
         {status && schedule?.available && <Current status={status} now={now} />}
         {(status?.repeated_failures ?? []).map((failure) => (
           <div key={failure.device_id} className="rounded border border-warn-line bg-warn-surface p-2">
             <p>
               {failure.name}: {failure.consecutive_failures} scheduled repairs failed in a row. Stop repairing with:
             </p>
-            <p className="mt-1">
+            <p className="mt-2">
               <Command text={failure.suggested_command} />
             </p>
           </div>

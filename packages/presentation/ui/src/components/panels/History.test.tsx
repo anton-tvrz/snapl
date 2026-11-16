@@ -38,6 +38,59 @@ describe("History", () => {
     );
   });
 
+  // spec 014 FR-020, FR-021: a chart, with the table one click away.
+  it("draws the history as a chart whose text alternative is the table", () => {
+    render(<History history={HISTORY} now={NOW} />);
+
+    const chart = screen.getByRole("img", { name: /Drift and deploys by hour, as a chart/ });
+    expect(chart).toHaveAccessibleName(/The same numbers are in the table below/);
+  });
+
+  it("keeps the table behind a closed toggle, with every column it had", () => {
+    render(<History history={HISTORY} now={NOW} />);
+
+    const toggle = screen.getByText("Show the table");
+    const details = toggle.closest("details")!;
+    expect(details).not.toHaveAttribute("open");
+    const table = within(details).getByRole("table", { name: "Drift and deploys by hour" });
+    expect(within(table).getAllByRole("columnheader").map((th) => th.textContent)).toEqual([
+      "Start (UTC)",
+      "Scans",
+      "Most drifted devices",
+      "Most undesired paths",
+      "Deploys ok / failed",
+      "Repairs ok / failed",
+    ]);
+  });
+
+  it("names every mark in a legend, by word and not by colour alone", () => {
+    render(<History history={HISTORY} now={NOW} />);
+
+    const legend = screen.getByRole("list", { name: "What the chart shows" });
+    expect(within(legend).getAllByRole("listitem").map((item) => item.textContent)).toEqual([
+      "Scans",
+      "Most drifted devices (line)",
+      "✓ Deploys that succeeded",
+      "✕ Deploys that failed (hatched)",
+      "✓ Scheduled repairs that succeeded (outlined)",
+      "✕ Scheduled repairs that failed (outlined, hatched)",
+    ]);
+  });
+
+  it("says so in words when no bucket in the range has a scan or a deploy", () => {
+    const quiet = {
+      ...HISTORY,
+      series: HISTORY.series.map((series) => ({
+        ...series,
+        points: series.bucket ? series.points.map((point) => ({ ...point, by_outcome: null })) : [],
+      })),
+    } as typeof HISTORY;
+    render(<History history={quiet} now={NOW} />);
+
+    expect(screen.getByText("No scans or deploys in this range.")).toBeInTheDocument();
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
+  });
+
   it("says why the history is unavailable", () => {
     render(<History history={undefined} now={NOW} error={new ApiError(422, "the range holds more than 2,000 buckets")} />);
 

@@ -3,10 +3,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { DeviceView, TopologyNode } from "./api/types";
 import { Command, Recording } from "./components/Command";
 import { DeviceDrawer } from "./components/DeviceDrawer";
+import { GroupLabel } from "./components/GroupLabel";
 import { ModeBanner } from "./components/ModeBanner";
+import { NumberRow } from "./components/NumberRow";
 import { LoopStrip } from "./components/LoopStrip";
 import { Ci } from "./components/panels/Ci";
 import { History } from "./components/panels/History";
+import { DriftByDevice } from "./components/panels/DriftByDevice";
+import { FabricHistory } from "./components/panels/FabricHistory";
 import { LabEvidence } from "./components/panels/LabEvidence";
 import { Links } from "./components/panels/Links";
 import { MetricView } from "./components/panels/Metrics";
@@ -20,14 +24,18 @@ import { Headline } from "./components/timeline/Headline";
 import { Lanes } from "./components/timeline/Lanes";
 import { Scrubber } from "./components/timeline/Scrubber";
 import { DeviceList } from "./components/topology/DeviceList";
+import { FabricSummary } from "./components/topology/FabricSummary";
 import { Topology } from "./components/topology/Topology";
-import { ArchiveMode, ViewFrame } from "./components/ViewFrame";
+import { ArchiveMode, PanelFrame, ViewFrame } from "./components/ViewFrame";
 import type { DataProvider, RunId } from "./data/provider";
 import { usePolling } from "./data/usePolling";
 import { activityFor } from "./lib/activity";
+import { FABRIC_SERIES } from "./lib/fabricHistory";
 import { bucketFor } from "./lib/history";
 import { domainOf, type Range, scanStops } from "./lib/lanes";
 import { METRIC_VIEWS } from "./lib/metrics";
+import { numberCards } from "./lib/numbers";
+import { fabricSummary } from "./lib/summary";
 import { linkNotes } from "./lib/linkNotes";
 import { markedLinks } from "./lib/paths";
 import { localText, utcText } from "./lib/time";
@@ -100,6 +108,27 @@ export function App({ provider }: Props) {
           ? bucketFor(range.end.getTime() - range.start.getTime())
           : undefined,
       ),
+    every(HISTORY_MS),
+    range
+      ? `${range.start.toISOString()}/${range.end.toISOString()}`
+      : "default",
+  );
+
+  // The number row's runs: the last 24 hours, whatever range the page shows (spec 015 FR-009).
+  const runsAnswer = usePolling(() => provider.history(undefined, undefined, ["runs"]), every(HISTORY_MS));
+
+  // The fabric history over the same range and buckets as the history (spec 015).
+  const fabricHistory = usePolling(
+    () => provider.history(range, range ? bucketFor(range.end.getTime() - range.start.getTime()) : undefined, FABRIC_SERIES),
+    every(HISTORY_MS),
+    range
+      ? `${range.start.toISOString()}/${range.end.toISOString()}`
+      : "default",
+  );
+
+  // Drift by device over the same range as the history (spec 015).
+  const driftSummary = usePolling(
+    () => provider.driftSummary(range),
     every(HISTORY_MS),
     range
       ? `${range.start.toISOString()}/${range.end.toISOString()}`
@@ -240,7 +269,20 @@ export function App({ provider }: Props) {
     () => (lanesData ? scanStops(lanesData.lanes) : []),
     [lanesData],
   );
-  const told = at ? pastTimeline.data?.timeline.data : lanesData;
+  const toldView = at ? pastTimeline.data?.timeline : lanes;
+  const told = toldView?.data ?? undefined;
+  // The number row: derived from the answers above, as of the time shown.
+  const cards = useMemo(
+    () =>
+      numberCards({
+        devices: devicesView,
+        timeline: toldView,
+        runs: runsAnswer.data ?? undefined,
+        now: shown,
+        past: !!at,
+      }),
+    [devicesView, toldView, runsAnswer.data, shown, at],
+  );
 
   // The selected device's row: from the device view, or a never-scanned row
   // for a device intent has and no scan has seen yet.
@@ -248,11 +290,14 @@ export function App({ provider }: Props) {
   const node = nodes?.find((n) => n.name === selected);
   const open = known ?? (node ? neverScanned(node) : undefined);
   const fabricReady = !at || devicesView !== undefined;
+  const summary = useMemo(() => fabricSummary(devices), [devices]);
 
   return (
     <Shell
       useCase={mode.data?.use_case ?? overview.data?.use_case}
       mode={mode.data?.mode}
+      at={generatedAt ? shown : undefined}
+      running={mode.data?.mode === "live" && !at}
     >
       <ArchiveMode.Provider value={archived}>
         <Recording.Provider value={recording}>
@@ -260,10 +305,10 @@ export function App({ provider }: Props) {
           {unreachable && (
             <div
               role="alert"
-              className="mb-4 rounded-lg border border-warn-line bg-warn-surface p-3 text-sm"
+              className="mb-4 flex flex-col gap-2 rounded-lg border border-warn-line bg-warn-surface p-4 text-body"
             >
-              <p className="font-medium">{unreachable.message}</p>
-              <p className="mt-2">
+              <p className="max-w-prose font-medium">{unreachable.message}</p>
+              <p>
                 <Command text="uv run snapl dashboard" />
               </p>
             </div>
@@ -272,7 +317,7 @@ export function App({ provider }: Props) {
           {at && (
             <section
               aria-label="Past time"
-              className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border-2 border-ink bg-sunken p-3 text-sm"
+              className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border-2 border-ink bg-sunken p-4 text-body"
             >
               <div className="min-w-0 flex-1">
                 <p className="font-semibold">
@@ -280,7 +325,7 @@ export function App({ provider }: Props) {
                   time)
                 </p>
                 {domain?.history && at < domain.history && (
-                  <p className="mt-1">
+                  <p>
                     History starts at {utcText(domain.history)}: nothing was
                     recorded before it.
                   </p>
@@ -289,18 +334,22 @@ export function App({ provider }: Props) {
               <button
                 type="button"
                 onClick={() => setAt(undefined)}
-                className="rounded border border-ink bg-surface px-3 py-1 font-medium"
+                className="chip rounded border border-ink bg-surface px-4 py-1 font-medium"
               >
                 Return to now
               </button>
             </section>
           )}
 
+          <div className="mb-4">
+            <NumberRow cards={cards} />
+          </div>
+
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
             <div className="min-w-0">
-              <ViewFrame title="Fabric" view={graph} now={now}>
+              <ViewFrame title="Fabric" view={graph} now={now} id="fabric">
                 {at && (
-                  <p className="mb-3 text-xs text-muted">
+                  <p className="mb-4 text-meta text-muted">
                     Devices and links are today's: the Source of Truth keeps no
                     history. Their states are as of the time shown.
                   </p>
@@ -317,13 +366,13 @@ export function App({ provider }: Props) {
                   />
                 )}
                 {!fabricReady && (
-                  <p className="text-sm text-muted">
+                  <p className="text-body text-muted">
                     Loading the fabric at that time…
                   </p>
                 )}
               </ViewFrame>
               {graph && !graph.data && devicesView && (
-                <div className="mt-3">
+                <div className="mt-4">
                   <DeviceList
                     devices={devices}
                     selected={selected}
@@ -344,6 +393,12 @@ export function App({ provider }: Props) {
                 selectedRun={chosenRun}
               />
             )}
+            {/* With no device selected, the fabric's own summary takes the drawer's place. */}
+            {!open && devicesView?.data && (
+              <PanelFrame title="In sync" footer={at ? "As of the time shown" : undefined}>
+                <FabricSummary summary={summary} onSelect={onSelect} />
+              </PanelFrame>
+            )}
           </div>
 
           {loopRun && (
@@ -354,7 +409,7 @@ export function App({ provider }: Props) {
                 now={now}
                 error={steps.error}
               >
-                <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
+                <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-meta text-muted">
                   <span>
                     {chosenRun
                       ? "Chosen run"
@@ -366,14 +421,14 @@ export function App({ provider }: Props) {
                     <button
                       type="button"
                       onClick={() => setChosenRun(undefined)}
-                      className="rounded border border-line px-2 py-0.5 text-ink"
+                      className="chip rounded border border-line px-2 py-0.5 text-ink"
                     >
                       Show the latest run
                     </button>
                   )}
                 </div>
                 {at && (
-                  <p className="mb-3 text-xs text-muted">
+                  <p className="mb-4 text-meta text-muted">
                     These are its steps as the audit trail records them now,
                     which can include steps after the time shown.
                   </p>
@@ -381,7 +436,7 @@ export function App({ provider }: Props) {
                 {loop?.data ? (
                   <LoopStrip steps={loop.data} />
                 ) : (
-                  <p className="text-sm text-muted">
+                  <p className="text-body text-muted">
                     The audit trail holds no record of this run.
                   </p>
                 )}
@@ -389,8 +444,12 @@ export function App({ provider }: Props) {
             </div>
           )}
 
+          {/* One range governs the lanes, the history and the metrics, so its
+              toolbar stays on screen while they scroll (spec 014 FR-027). */}
+          <div data-range-scope="" className="mt-6">
+            <GroupLabel>Drift and history</GroupLabel>
           {!recording && (
-            <div className="mt-4">
+            <div className="sticky top-2 z-10">
               <RangePicker
                 // An archive's time arrives with its first answer: the custom fields start from it.
                 key={
@@ -411,6 +470,7 @@ export function App({ provider }: Props) {
           <div className="mt-4">
             <ViewFrame
               title="Drift over time"
+              id="drift-over-time"
               view={lanes}
               now={now}
               error={timeline.error}
@@ -422,6 +482,7 @@ export function App({ provider }: Props) {
                     timeline={lanesData}
                     domain={domain}
                     now={now}
+                    selected={selected}
                     cursor={at}
                     error={timeline.error}
                     onSelectRun={onSelectRun}
@@ -441,13 +502,54 @@ export function App({ provider }: Props) {
 
           <div className="mt-4">
             <History
+              id="history"
               history={historyAnswer.data}
               now={now}
               error={historyAnswer.error}
             />
           </div>
 
-          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          <div className="mt-4">
+            <FabricHistory
+              id="fabric-history"
+              history={fabricHistory.data ?? undefined}
+              // Now, not as of the time shown: the reference is labelled "in intent now".
+              inIntent={overview.data?.devices.data?.filter((device) => device.in_intent).length}
+              error={fabricHistory.error}
+            />
+          </div>
+
+          <div className="mt-4">
+            <DriftByDevice
+              id="drift-by-device"
+              summary={driftSummary.data?.summary}
+              now={now}
+              error={driftSummary.error}
+              onSelect={onSelect}
+            />
+          </div>
+
+          <section aria-label="Metrics" className="mt-6">
+            <GroupLabel>Metrics</GroupLabel>
+            <div className="grid gap-4 lg:grid-cols-2">
+              {METRIC_VIEWS.map((view) => (
+                <MetricView
+                  key={view.name}
+                  provider={provider}
+                  name={view.name}
+                  title={view.title}
+                  range={fixed ? undefined : range}
+                  live={!fixed}
+                  now={now}
+                />
+              ))}
+            </div>
+          </section>
+          </div>
+
+          <section aria-label="Operations" className="mt-6">
+            <GroupLabel>Operations</GroupLabel>
+          <div className="grid gap-4 lg:grid-cols-2">
             <Schedule
               schedule={overview.data?.schedule}
               worker={overview.data?.worker}
@@ -471,7 +573,11 @@ export function App({ provider }: Props) {
           <div className="mt-4">
             <Undesired devices={devicesView} now={now} />
           </div>
-          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          </section>
+
+          <section aria-label="Evidence" className="mt-6">
+            <GroupLabel>Evidence</GroupLabel>
+          <div className="grid gap-4 lg:grid-cols-2">
             <Ci ci={overview.data?.ci} now={now} presentOnly={!!at} />
             <LabEvidence
               lab={overview.data?.lab}
@@ -479,28 +585,12 @@ export function App({ provider }: Props) {
               presentOnly={!!at}
             />
           </div>
-
-          <section aria-label="Metrics" className="mt-6">
-            <h2 className="mb-3 text-sm font-semibold">Metrics</h2>
-            <div className="grid gap-4 lg:grid-cols-2">
-              {METRIC_VIEWS.map((view) => (
-                <MetricView
-                  key={view.name}
-                  provider={provider}
-                  name={view.name}
-                  title={view.title}
-                  range={fixed ? undefined : range}
-                  live={!fixed}
-                  now={now}
-                />
-              ))}
-            </div>
           </section>
 
-          <section aria-label="Sources">
-            <h2 className="mt-6 mb-3 text-sm font-semibold">Sources</h2>
+          <section aria-label="Sources" className="mt-6">
+            <GroupLabel>Sources</GroupLabel>
             {at && (
-              <p className="mb-3 text-xs text-muted">
+              <p className="mb-4 text-meta text-muted">
                 Shows only the present: these are the sources' states now.
               </p>
             )}

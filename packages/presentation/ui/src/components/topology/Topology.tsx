@@ -56,7 +56,7 @@ export function Topology({ topology, devices, activity, marked, flagged, selecte
     );
     return (
       <div>
-        <p className="mb-3 text-sm text-muted">
+        <p className="mb-4 text-body text-muted">
           {layout.count} devices is more than the {layout.limit} this drawing fits on one screen. Showing the list.
         </p>
         <DeviceList devices={rows} selected={selected} onSelect={onSelect} />
@@ -74,7 +74,7 @@ export function Topology({ topology, devices, activity, marked, flagged, selecte
   return (
     <div>
       {fabricText && (
-        <p role="status" className="mb-2 text-xs text-muted">
+        <p role="status" className="mb-2 text-meta text-muted">
           {fabricText} on the fabric
         </p>
       )}
