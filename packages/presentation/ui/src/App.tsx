@@ -10,6 +10,7 @@ import { LoopStrip } from "./components/LoopStrip";
 import { Ci } from "./components/panels/Ci";
 import { History } from "./components/panels/History";
 import { DriftByDevice } from "./components/panels/DriftByDevice";
+import { FabricHistory } from "./components/panels/FabricHistory";
 import { LabEvidence } from "./components/panels/LabEvidence";
 import { Links } from "./components/panels/Links";
 import { MetricView } from "./components/panels/Metrics";
@@ -29,6 +30,7 @@ import { ArchiveMode, PanelFrame, ViewFrame } from "./components/ViewFrame";
 import type { DataProvider, RunId } from "./data/provider";
 import { usePolling } from "./data/usePolling";
 import { activityFor } from "./lib/activity";
+import { FABRIC_SERIES } from "./lib/fabricHistory";
 import { bucketFor } from "./lib/history";
 import { domainOf, type Range, scanStops } from "./lib/lanes";
 import { METRIC_VIEWS } from "./lib/metrics";
@@ -106,6 +108,15 @@ export function App({ provider }: Props) {
           ? bucketFor(range.end.getTime() - range.start.getTime())
           : undefined,
       ),
+    every(HISTORY_MS),
+    range
+      ? `${range.start.toISOString()}/${range.end.toISOString()}`
+      : "default",
+  );
+
+  // The fabric history over the same range and buckets as the history (spec 015).
+  const fabricHistory = usePolling(
+    () => provider.history(range, range ? bucketFor(range.end.getTime() - range.start.getTime()) : undefined, FABRIC_SERIES),
     every(HISTORY_MS),
     range
       ? `${range.start.toISOString()}/${range.end.toISOString()}`
@@ -492,6 +503,16 @@ export function App({ provider }: Props) {
               history={historyAnswer.data}
               now={now}
               error={historyAnswer.error}
+            />
+          </div>
+
+          <div className="mt-4">
+            <FabricHistory
+              id="fabric-history"
+              history={fabricHistory.data ?? undefined}
+              // Now, not as of the time shown: the reference is labelled "in intent now".
+              inIntent={overview.data?.devices.data?.filter((device) => device.in_intent).length}
+              error={fabricHistory.error}
             />
           </div>
 

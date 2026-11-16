@@ -172,6 +172,23 @@ test("selecting a device opens its detail, and the address reopens it", async ({
   await expect(page).toHaveURL(/\/$/);
 });
 
+test("the fabric history draws its four charts from the arc, each with its table", async ({ page }) => {
+  await page.goto("/");
+
+  const panel = page.getByRole("region", { name: "Fabric history" });
+  await expect(panel.getByRole("img", { name: /^Devices in sync at each scan, as a chart: 3 scans/ })).toBeVisible();
+  await expect(panel.getByRole("img", { name: /^Open drifts after each scan/ })).toBeVisible();
+  await expect(panel.getByRole("img", { name: /^Runs started in each hour, by trigger, as a chart: 12 runs, none failed/ })).toBeVisible();
+  await expect(panel.getByRole("img", { name: /^Each repaired drift's duration, scan to scan, as a chart: 1 repair, the longest 5 s/ })).toBeVisible();
+  // The charts draw: a stepped line, the runs' bars and the repair's point.
+  await expect(panel.locator(".recharts-line-curve")).toHaveCount(2);
+  await expect(panel.locator(".recharts-bar-rectangle path").first()).toBeVisible();
+  await expect(panel.locator(".recharts-scatter-symbol")).toHaveCount(1);
+
+  await panel.getByText("Show the table").first().click();
+  await expect(panel.getByRole("table", { name: "Devices in sync at each scan" }).getByRole("row")).toHaveCount(4);
+});
+
 test("drift by device lists the arc's two drifted devices and opens one", async ({ page }) => {
   await page.goto("/");
 

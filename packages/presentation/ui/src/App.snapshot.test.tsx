@@ -52,6 +52,14 @@ describe("App in a snapshot", () => {
     expect(await within(row).findByText(/of \d+$/)).toBeInTheDocument();
   });
 
+  it("has the fabric history, from the bundle", async () => {
+    render(<App provider={provider().p} />);
+
+    const panel = await screen.findByRole("region", { name: "Fabric history" });
+    expect(await within(panel).findByRole("img", { name: /^Devices in sync at each scan, as a chart/ })).toBeInTheDocument();
+    expect(within(panel).getByRole("img", { name: /^Runs started in each hour/ })).toBeInTheDocument();
+  });
+
   it("has drift by device, from the bundle", async () => {
     render(<App provider={provider().p} />);
 
