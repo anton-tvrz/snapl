@@ -47,16 +47,13 @@ function sources(dir: string): string[] {
 // Still to be restyled, slice by slice (specs/014-dashboard-look/tasks.md).
 // Empty when spec 014 is complete.
 const TO_RESTYLE = new Set<string>([
-  "App.tsx",
   "components/Command.tsx",
   "components/DeviceDrawer.tsx",
   "components/LoopStrip.tsx",
   "components/ModeBanner.tsx",
   "components/Shell.tsx",
   "components/SourceStrip.tsx",
-  "components/ViewFrame.tsx",
   "components/panels/Ci.tsx",
-  "components/panels/History.tsx",
   "components/panels/LabEvidence.tsx",
   "components/panels/Links.tsx",
   "components/panels/Metrics.tsx",

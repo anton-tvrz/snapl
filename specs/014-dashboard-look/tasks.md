@@ -74,13 +74,13 @@ uv run invoke dashboard.test && uv run invoke dashboard.e2e
 
 **Goal**: one frame for every panel.
 
-- [ ] T008 [US2] Tests first in `packages/presentation/ui/src/components/ViewFrame.test.tsx`: the header holds the title and, when given, exactly one action; the source and age are in a `footer`; the unavailable, stale, not-in-archive, present-only, loading and error states still say what they said; the title uses `text-title`.
-- [ ] T009 [US2] Change `ViewFrame.tsx`: an optional `action` prop (one node), the footer, `p-6` padding with `gap-4` between header, body and footer, `shadow-panel` in light and the border in dark, an optional `id` for the number row's links. Running text inside warnings gets `max-w-prose`.
-- [ ] T010 [P] [US2] Tests first, then `components/GroupLabel.tsx`: a small uppercase, letter-spaced label above a group of panels, as a heading of the right level.
-- [ ] T011 [US2] Make `panels/History.tsx` use `ViewFrame` (it draws its own section today). Its tests keep passing; the parity row stays.
-- [ ] T012 [US2] In `App.tsx`, replace the bare "Metrics" and "Sources" headings with `GroupLabel`, and give the unreachable and past-time banners the scale's spacing and type.
-- [ ] T013 [US2] Remove `ViewFrame.tsx`, `History.tsx` and any file now clean from the allowlist in `look.test.ts`. Update `e2e/smoke.spec.ts` where it relied on the old header.
-- [ ] T014 [US2] Run the look check. Append this slice's sentence to `changelog/246.changed.md`.
+- [x] T008 [US2] Tests first in `packages/presentation/ui/src/components/ViewFrame.test.tsx`: the header holds the title and, when given, exactly one action; the source and age are in a `footer`; the unavailable, stale, not-in-archive, present-only, loading and error states still say what they said; the title uses `text-title`.
+- [x] T009 [US2] Change `ViewFrame.tsx`: an optional `action` prop (one node), the footer, `p-6` padding with `gap-4` between header, body and footer, `shadow-panel` in light and the border in dark, an optional `id` for the number row's links. Running text inside warnings gets `max-w-prose`.
+- [x] T010 [P] [US2] Tests first, then `components/GroupLabel.tsx`: a small uppercase, letter-spaced label above a group of panels, as a heading of the right level.
+- [x] T011 [US2] Make `panels/History.tsx` use `ViewFrame` (it draws its own section today). Its tests keep passing; the parity row stays.
+- [x] T012 [US2] In `App.tsx`, replace the bare "Metrics" and "Sources" headings with `GroupLabel`, and give the unreachable and past-time banners the scale's spacing and type.
+- [x] T013 [US2] Remove `ViewFrame.tsx`, `History.tsx` and any file now clean from the allowlist in `look.test.ts`. Update `e2e/smoke.spec.ts` where it relied on the old header.
+- [x] T014 [US2] Run the look check. Append this slice's sentence to `changelog/246.changed.md`.
 
 **Checkpoint**: every panel shows its source and age in a footer, in both themes.
 
