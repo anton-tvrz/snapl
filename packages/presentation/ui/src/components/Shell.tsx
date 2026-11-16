@@ -1,3 +1,4 @@
+import { Clock } from "./Clock";
 import { type ReactNode, useEffect, useState } from "react";
 
 import { lookup, type Open } from "../api/open";
@@ -6,13 +7,17 @@ import { applyTheme, readTheme, storeTheme, type Theme } from "../lib/theme";
 interface Props {
   useCase: string | undefined;
   mode: Open<"live" | "archive" | "snapshot"> | undefined;
+  /** The time the page is showing, from the server. */
+  at?: Date;
+  /** True when that time is the live present, so the clock runs. */
+  running?: boolean;
   children: ReactNode;
 }
 
 const MODE_LABELS = { live: "Live", archive: "Archive", snapshot: "Recording" } as const;
 
 /** The page frame: what is being shown, in which mode, and that it only reads. */
-export function Shell({ useCase, mode, children }: Props) {
+export function Shell({ useCase, mode, at, running = false, children }: Props) {
   const [theme, setTheme] = useState<Theme>(readTheme);
 
   useEffect(() => {
@@ -35,6 +40,7 @@ export function Shell({ useCase, mode, children }: Props) {
           </p>
         )}
         <p className="rounded-full border border-line px-2 py-0.5 text-xs text-muted">Read-only</p>
+        <Clock at={at} running={running} />
         <nav className="ml-auto flex items-center gap-4 text-sm">
           {mode !== "snapshot" && (
             <a href="/plain" className="text-muted underline-offset-2 hover:text-ink hover:underline">

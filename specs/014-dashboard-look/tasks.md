@@ -152,15 +152,15 @@ uv run invoke dashboard.test && uv run invoke dashboard.e2e
 
 **Goal**: the first screen is complete and the page is in its final order.
 
-- [ ] T041 [US5] Tests first in `lib/summary.test.ts`: the counts; drifted devices ranked by differing paths then by name; `share` relative to the largest; a device in `error` listed with no bar; none scanned; none in intent.
-- [ ] T042 [US5] Implement `lib/summary.ts` (data-model.md "FabricSummary").
-- [ ] T043 [US5] Tests first in `components/topology/FabricSummary.test.tsx`: the ring's accessible sentence ("5 of 6 devices in sync"); the count as text inside the ring; the dashed ring when none is scanned; each ranked device with its state mark (`StateMark`), its count and a bar; selecting one calls `onSelect`; "No drift open." when none is drifted.
-- [ ] T044 [US5] Implement `FabricSummary.tsx` (research R7): an inline SVG ring with an ink outline, and the ranked list. No colour without a shape or a word.
-- [ ] T045 [US5] In `App.tsx`, show the summary beside the fabric when no device is selected and the drawer when one is. Tests in `App.test.tsx`.
-- [ ] T046 [P] [US5] Tests first, then `components/Clock.tsx` (research R8): the page's time in UTC, monospace; advancing in live mode at the present; still in archive and snapshot modes and at a past time; minutes only under reduced motion; it starts from the server's time, never the browser's.
-- [ ] T047 [US5] Put the clock in `Shell.tsx`'s header. Update `Shell.test.tsx`.
-- [ ] T048 [US4] Reorder `App.tsx` to FR-022: number row, fabric, the loop, the range toolbar, drift over time, history, metrics, schedule and running, runs, undesired config, CI and lab evidence, sources, links, each group under a `GroupLabel`. Update the App tests and `e2e/smoke.spec.ts` for the order.
-- [ ] T049 [US5] Remove the files now clean from the allowlist. Run the look check and record SC-001, SC-002 and SC-003 against the baseline of T003 in the PR body. Append to the changelog.
+- [x] T041 [US5] Tests first in `lib/summary.test.ts`: the counts; drifted devices ranked by differing paths then by name; `share` relative to the largest; a device in `error` listed with no bar; none scanned; none in intent.
+- [x] T042 [US5] Implement `lib/summary.ts` (data-model.md "FabricSummary").
+- [x] T043 [US5] Tests first in `components/topology/FabricSummary.test.tsx`: the ring's accessible sentence ("5 of 6 devices in sync"); the count as text inside the ring; the dashed ring when none is scanned; each ranked device with its state mark (`StateMark`), its count and a bar; selecting one calls `onSelect`; "No drift open." when none is drifted.
+- [x] T044 [US5] Implement `FabricSummary.tsx` (research R7): an inline SVG ring with an ink outline, and the ranked list. No colour without a shape or a word.
+- [x] T045 [US5] In `App.tsx`, show the summary beside the fabric when no device is selected and the drawer when one is. Tests in `App.test.tsx`.
+- [x] T046 [P] [US5] Tests first, then `components/Clock.tsx` (research R8): the page's time in UTC, monospace; advancing in live mode at the present; still in archive and snapshot modes and at a past time; minutes only under reduced motion; it starts from the server's time, never the browser's.
+- [x] T047 [US5] Put the clock in `Shell.tsx`'s header. Update `Shell.test.tsx`.
+- [x] T048 [US4] Reorder `App.tsx` to FR-022: number row, fabric, the loop, the range toolbar, drift over time, history, metrics, schedule and running, runs, undesired config, CI and lab evidence, sources, links, each group under a `GroupLabel`. Update the App tests and `e2e/smoke.spec.ts` for the order.
+- [x] T049 [US5] Remove the files now clean from the allowlist. Run the look check and record SC-001, SC-002 and SC-003 against the baseline of T003 in the PR body. Append to the changelog.
 
 **Checkpoint**: SC-001 to SC-003 hold on the fixtures.
 
@@ -189,6 +189,7 @@ uv run invoke dashboard.test && uv run invoke dashboard.e2e
 - [ ] T056 [P] Add a short "Look" note to ADR-0005 Decision 2 in `dev/adr/0005-dashboard-and-metrics-stack.md` pointing to the dashboard skill, and add spec 014 to `CLAUDE.md` "Recent Changes".
 - [ ] T057 Finish `changelog/246.changed.md` as one readable paragraph.
 - [ ] T061 Last task of this slice: point `.specify/feature.json` at `specs/015-more-metrics`, so the next overnight pass carries on with spec 015. Do it only when every task of this spec that doesn't need the lab is ticked.
+- [ ] T063 **Needs the lab**: SC-002 on the live page. Measure the full page at 1280 px wide on the lab that measured 4083 px on 2026-11-15 (26 lanes, 18 no longer in intent) and compare. On the fixtures, which have no device outside intent, the page is longer than before (slice G: 5191 px against 4169 px), so the fixtures cannot show this criterion.
 - [ ] T058 **Needs the lab**: quickstart item 7, the four cards, the ring and the ranked bars against `snapl status` on the live fabric with one induced drift.
 - [ ] T059 **Needs the lab**: quickstart item 8, retake `docs/images/dashboard-dark.png` and spec 011's screenshots from the live demo, after reseeding the Source of Truth so the integration tests' `query-*` devices are gone.
 - [ ] T060 **Needs the lab**: decide from the morning's pictures whether the look is right, and file what isn't as issues under #246.

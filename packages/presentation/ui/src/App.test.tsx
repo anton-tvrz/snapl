@@ -61,6 +61,58 @@ describe("App", () => {
     }
   });
 
+  // spec 014 US5: the fabric's own summary fills the space beside it.
+  it("shows the share in sync and the drifted devices beside the fabric until a device is selected", async () => {
+    render(<App provider={provider()} />);
+
+    const summary = await screen.findByRole("region", { name: "In sync" });
+    expect(within(summary).getByRole("img", { name: "5 of 6 devices in sync" })).toBeInTheDocument();
+    await userEvent.click(within(summary).getByRole("button", { name: /^Open leaf-01: Undesired config/ }));
+
+    expect(screen.getByRole("dialog", { name: "leaf-01" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "In sync" })).not.toBeInTheDocument();
+
+    await userEvent.click(within(screen.getByRole("dialog", { name: "leaf-01" })).getByRole("button", { name: /close/i }));
+    expect(screen.getByRole("region", { name: "In sync" })).toBeInTheDocument();
+  });
+
+  it("shows the server's time as a running clock in the header", async () => {
+    render(<App provider={provider()} />);
+
+    const clock = await within(screen.getAllByRole("banner")[0]!).findByRole("time");
+    expect(clock).toHaveTextContent(`${NOW.toISOString().slice(11, 19)} UTC`);
+    expect(clock).toHaveAttribute("data-running", "true");
+  });
+
+  it("puts the page in its order, under group labels (spec 014 FR-022)", async () => {
+    render(<App provider={provider({ overview: async () => OVERVIEW_UP })} />);
+    await screen.findByRole("group", { name: "Fabric topology" });
+    await screen.findByRole("region", { name: "Runs" });
+
+    const wanted = [
+      "Devices in sync",
+      "Fabric",
+      "The loop",
+      "Drift and history",
+      "Drift over time",
+      "Drift and deploys by hour",
+      "Metrics",
+      "Workflow duration (95th percentile)",
+      "Operations",
+      "Schedule and worker",
+      "Running now",
+      "Runs",
+      "Undesired config",
+      "Evidence",
+      "CI",
+      "Live lab evidence",
+      "Sources",
+      "Links",
+    ];
+    const headings = screen.getAllByRole("heading").map((heading) => heading.textContent);
+    expect(headings.filter((text) => wanted.includes(text ?? ""))).toEqual(wanted);
+  });
+
   it("opens a device's detail when it is selected, and puts it in the address", async () => {
     render(<App provider={provider()} />);
 

@@ -22,8 +22,9 @@ import { Headline } from "./components/timeline/Headline";
 import { Lanes } from "./components/timeline/Lanes";
 import { Scrubber } from "./components/timeline/Scrubber";
 import { DeviceList } from "./components/topology/DeviceList";
+import { FabricSummary } from "./components/topology/FabricSummary";
 import { Topology } from "./components/topology/Topology";
-import { ArchiveMode, ViewFrame } from "./components/ViewFrame";
+import { ArchiveMode, PanelFrame, ViewFrame } from "./components/ViewFrame";
 import type { DataProvider, RunId } from "./data/provider";
 import { usePolling } from "./data/usePolling";
 import { activityFor } from "./lib/activity";
@@ -31,6 +32,7 @@ import { bucketFor } from "./lib/history";
 import { domainOf, type Range, scanStops } from "./lib/lanes";
 import { METRIC_VIEWS } from "./lib/metrics";
 import { numberCards } from "./lib/numbers";
+import { fabricSummary } from "./lib/summary";
 import { linkNotes } from "./lib/linkNotes";
 import { markedLinks } from "./lib/paths";
 import { localText, utcText } from "./lib/time";
@@ -264,11 +266,14 @@ export function App({ provider }: Props) {
   const node = nodes?.find((n) => n.name === selected);
   const open = known ?? (node ? neverScanned(node) : undefined);
   const fabricReady = !at || devicesView !== undefined;
+  const summary = useMemo(() => fabricSummary(devices), [devices]);
 
   return (
     <Shell
       useCase={mode.data?.use_case ?? overview.data?.use_case}
       mode={mode.data?.mode}
+      at={generatedAt ? shown : undefined}
+      running={mode.data?.mode === "live" && !at}
     >
       <ArchiveMode.Provider value={archived}>
         <Recording.Provider value={recording}>
@@ -364,6 +369,12 @@ export function App({ provider }: Props) {
                 selectedRun={chosenRun}
               />
             )}
+            {/* With no device selected, the fabric's own summary takes the drawer's place. */}
+            {!open && devicesView?.data && (
+              <PanelFrame title="In sync" footer={at ? "As of the time shown" : undefined}>
+                <FabricSummary summary={summary} onSelect={onSelect} />
+              </PanelFrame>
+            )}
           </div>
 
           {loopRun && (
@@ -411,9 +422,10 @@ export function App({ provider }: Props) {
 
           {/* One range governs the lanes, the history and the metrics, so its
               toolbar stays on screen while they scroll (spec 014 FR-027). */}
-          <div data-range-scope="">
+          <div data-range-scope="" className="mt-6">
+            <GroupLabel>Drift and history</GroupLabel>
           {!recording && (
-            <div className="sticky top-2 z-10 mt-4">
+            <div className="sticky top-2 z-10">
               <RangePicker
                 // An archive's time arrives with its first answer: the custom fields start from it.
                 key={
@@ -491,7 +503,9 @@ export function App({ provider }: Props) {
           </section>
           </div>
 
-          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          <section aria-label="Operations" className="mt-6">
+            <GroupLabel>Operations</GroupLabel>
+          <div className="grid gap-4 lg:grid-cols-2">
             <Schedule
               schedule={overview.data?.schedule}
               worker={overview.data?.worker}
@@ -515,7 +529,11 @@ export function App({ provider }: Props) {
           <div className="mt-4">
             <Undesired devices={devicesView} now={now} />
           </div>
-          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          </section>
+
+          <section aria-label="Evidence" className="mt-6">
+            <GroupLabel>Evidence</GroupLabel>
+          <div className="grid gap-4 lg:grid-cols-2">
             <Ci ci={overview.data?.ci} now={now} presentOnly={!!at} />
             <LabEvidence
               lab={overview.data?.lab}
@@ -523,6 +541,7 @@ export function App({ provider }: Props) {
               presentOnly={!!at}
             />
           </div>
+          </section>
 
           <section aria-label="Sources" className="mt-6">
             <GroupLabel>Sources</GroupLabel>

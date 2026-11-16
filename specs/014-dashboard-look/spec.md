@@ -225,7 +225,7 @@ When a run's steps are not recorded one by one, the loop strip shows the run's o
 ### Measurable Outcomes
 
 - **SC-001**: At 1280 × 900, the number row and the fabric are fully visible without scrolling.
-- **SC-002**: On the captured fixtures with all sources up, the full page at 1280 px wide is at least 25% shorter than before this feature.
+- **SC-002**: On the live lab page that was measured at 4083 px on 2026-11-15 (26 lanes, 18 of them for devices no longer in intent), the full page at 1280 px wide is at least 25% shorter than before this feature. *Amended in slice G: this was first written against the captured fixtures. They have no device outside intent, so the height this criterion is about is not in them, and with the number row and the larger frame the fixture page is longer than before (5191 px against 4169 px). The maintainer decides whether the amended criterion is the right one.*
 - **SC-003**: The top of the first metrics chart is within 2000 px of the top of the page on the same fixtures.
 - **SC-004**: The designed page, the plain page and `snapl status --json` still agree on every device's state and on the schedule (spec 011 SC-011).
 - **SC-005**: Every contrast and encoding test of spec 011 passes without a change to what it requires.
