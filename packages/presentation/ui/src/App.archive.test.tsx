@@ -82,6 +82,15 @@ describe("App on an archive", () => {
     expect(await within(row).findByText(/of \d+$/)).toBeInTheDocument();
   });
 
+  it("counts the runs in the fourth card from the archive's trail", async () => {
+    render(<App provider={provider().p} />);
+    await settle();
+
+    const row = await screen.findByRole("list", { name: "The fabric in numbers" });
+    const card = within(row).getByRole("heading", { name: "Runs, 24 h" }).closest("li")!;
+    expect(await within(card).findByText("None failed.")).toBeInTheDocument();
+  });
+
   it("has the fabric history, from the archive's trail", async () => {
     render(<App provider={provider().p} />);
     await settle();
