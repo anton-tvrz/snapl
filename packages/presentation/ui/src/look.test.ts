@@ -44,25 +44,9 @@ function sources(dir: string): string[] {
   });
 }
 
-// Still to be restyled, slice by slice (specs/014-dashboard-look/tasks.md).
-// Empty when spec 014 is complete.
-const TO_RESTYLE = new Set<string>([
-  "components/Command.tsx",
-  "components/DeviceDrawer.tsx",
-  "components/LoopStrip.tsx",
-  "components/ModeBanner.tsx",
-  "components/Shell.tsx",
-  "components/SourceStrip.tsx",
-  "components/panels/Ci.tsx",
-  "components/panels/LabEvidence.tsx",
-  "components/panels/Links.tsx",
-  "components/panels/Runs.tsx",
-  "components/panels/Schedule.tsx",
-  "components/panels/Undesired.tsx",
-  "components/topology/DeviceList.tsx",
-  "components/topology/Legend.tsx",
-  "components/topology/Topology.tsx",
-]);
+// Empty since spec 014 PR H, and kept empty by the test below. While the
+// feature was built, this listed the files still to be restyled.
+const TO_RESTYLE = new Set<string>([]);
 
 describe("the look rules", () => {
   it("flags spacing outside the 8 px scale", () => {
@@ -102,6 +86,10 @@ describe("the look rules", () => {
     }
     expect(broken, "classes outside the look rules").toEqual({});
     expect(clean, "restyled already: remove from TO_RESTYLE").toEqual([]);
+  });
+
+  it("has no file left to restyle: spec 014 is complete, and nothing may be added back (SC-006)", () => {
+    expect([...TO_RESTYLE]).toEqual([]);
   });
 
   it("lists only files that exist", () => {

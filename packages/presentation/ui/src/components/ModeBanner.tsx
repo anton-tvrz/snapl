@@ -13,14 +13,14 @@ export function ModeBanner({ mode }: { mode: ModeResponse | undefined }) {
   const commit = archive.snapl_commit ? `commit ${archive.snapl_commit.slice(0, 7)}` : "an unknown commit";
 
   return (
-    <section aria-label="Archive" className="mb-4 rounded-lg border-2 border-ink bg-sunken p-3 text-sm">
+    <section aria-label="Archive" className="mb-4 rounded-lg border-2 border-ink bg-sunken p-4 text-body">
       <p className="font-semibold">
         Archive <span className="font-mono">{archive.name}</span>, made {utcText(new Date(archive.created_at))} from{" "}
         {commit}.
       </p>
-      <p className="mt-1">This page contacts nothing. Ages count from when the archive was made.</p>
+      <p className="mt-2">This page contacts nothing. Ages count from when the archive was made.</p>
       {missing.length > 0 && (
-        <ul aria-label="Missing from this archive" className="mt-2 space-y-0.5 text-xs">
+        <ul aria-label="Missing from this archive" className="mt-2 space-y-2 text-meta">
           {missing.map((part) => (
             <li key={part.name}>
               {part.name}: {part.reason ?? "no reason recorded"}
@@ -40,12 +40,12 @@ function RecordingBanner({ info }: { info: NonNullable<ModeResponse["archive"]> 
       ? `, covering ${utcText(new Date(info.metrics_start))} to ${utcText(new Date(info.metrics_end))}`
       : "";
   return (
-    <section aria-label="Recording" className="mb-4 rounded-lg border-2 border-ink bg-sunken p-3 text-sm">
+    <section aria-label="Recording" className="mb-4 rounded-lg border-2 border-ink bg-sunken p-4 text-body">
       <p className="font-semibold">
         A recording made {utcText(new Date(info.created_at))} from {commit}
         {range}.
       </p>
-      <p className="mt-1">Nothing here is live, and nothing refreshes.</p>
+      <p className="mt-2">Nothing here is live, and nothing refreshes.</p>
     </section>
   );
 }
