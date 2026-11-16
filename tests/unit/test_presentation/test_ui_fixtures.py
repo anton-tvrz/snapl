@@ -53,6 +53,8 @@ REQUESTS = {
     "links.json": "/api/v1/links",
     # 010's history over the server's default range, hourly: the plain page's table.
     "history.json": "/api/v1/history",
+    # Spec 015: drift by device over the server's default range.
+    "drift-summary.json": "/api/v1/drift-summary",
 }
 
 # The same arc with the other sources up (the server's --sources up), for the

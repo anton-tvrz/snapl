@@ -172,6 +172,20 @@ test("selecting a device opens its detail, and the address reopens it", async ({
   await expect(page).toHaveURL(/\/$/);
 });
 
+test("drift by device lists the arc's two drifted devices and opens one", async ({ page }) => {
+  await page.goto("/");
+
+  const panel = page.getByRole("region", { name: "Drift by device" });
+  const rows = panel.getByRole("list", { name: "Devices that drifted, most drifts first" }).getByRole("listitem");
+  await expect(rows).toHaveCount(2);
+  await expect(rows.first()).toContainText("leaf-01");
+  await expect(rows.first()).toContainText("1 still open");
+
+  await panel.getByRole("button", { name: /^Open spine-01:/ }).click();
+  await expect(page.getByRole("dialog", { name: "spine-01" })).toBeVisible();
+  await expect(page).toHaveURL(/\?device=spine-01$/);
+});
+
 test("the devices can be reached and opened from the keyboard", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("group", { name: "Fabric topology" })).toBeVisible();

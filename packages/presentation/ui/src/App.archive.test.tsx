@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import type { DataProvider } from "./data/provider";
 import {
+  DRIFT_SUMMARY,
   HISTORY,
   LINKS,
   METRICS,
@@ -38,6 +39,7 @@ function provider() {
     },
     timeline: calls.timeline,
     history: async () => HISTORY,
+    driftSummary: async () => DRIFT_SUMMARY,
     steps: async () => STEPS_DEPLOY,
     metrics: calls.metrics,
   } as unknown as DataProvider;
@@ -77,6 +79,14 @@ describe("App on an archive", () => {
     const row = await screen.findByRole("list", { name: "The fabric in numbers" });
     expect(within(row).getAllByRole("listitem")).toHaveLength(4);
     expect(await within(row).findByText(/of \d+$/)).toBeInTheDocument();
+  });
+
+  it("has drift by device, from the archive's trail", async () => {
+    render(<App provider={provider().p} />);
+    await settle();
+
+    const panel = await screen.findByRole("region", { name: "Drift by device" });
+    expect(await within(panel).findByRole("button", { name: /^Open spine-01:/ })).toBeInTheDocument();
   });
 
   it("shows what the archive does not hold neutrally", async () => {
