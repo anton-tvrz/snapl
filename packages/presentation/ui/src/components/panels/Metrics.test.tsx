@@ -17,6 +17,51 @@ describe("MetricPanel", () => {
     expect(rows.map((row) => row.textContent)).toEqual(["DeployIntent2.10 s", "ScanDrift1.58 s"]);
   });
 
+  // spec 014 FR-023, FR-024: the number first, the table still there.
+  it("leads with the latest value in the number size, and says which series it is", () => {
+    render(<MetricPanel title="Workflow duration" view={view("workflow-duration")} now={NOW} />);
+
+    const lead = screen.getByText("2.10 s", { selector: "[data-lead]" });
+    expect(lead).toHaveClass("text-number");
+    expect(screen.getByRole("region", { name: "Workflow duration" })).toHaveTextContent("2.10 sDeployIntent");
+  });
+
+  it("lists each drawn series with its latest value in a legend", () => {
+    render(<MetricPanel title="Workflow duration" view={view("workflow-duration")} now={NOW} />);
+
+    const legend = screen.getByRole("list", { name: "Workflow duration: series" });
+    expect(within(legend).getAllByRole("listitem").map((item) => item.textContent)).toEqual(["DeployIntent 2.10 s", "ScanDrift 1.58 s"]);
+  });
+
+  it("has no legend for a single series: the lead value is it", () => {
+    render(<MetricPanel title="Worker lag" view={view("worker-lag")} now={NOW} />);
+
+    expect(screen.getByText("26 ms", { selector: "[data-lead]" })).toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "Worker lag: series" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the latest-values table behind a closed toggle", () => {
+    render(<MetricPanel title="Workflow duration" view={view("workflow-duration")} now={NOW} />);
+
+    const details = screen.getByText("Latest values").closest("details")!;
+    expect(details).not.toHaveAttribute("open");
+    expect(within(details).getByRole("table", { name: "Workflow duration: latest values" })).toBeInTheDocument();
+  });
+
+  it("reads a rare rate per minute, and says so", () => {
+    render(<MetricPanel title="gNMI errors" view={view("gnmi-errors")} now={NOW} />);
+
+    const region = screen.getByRole("region", { name: "gNMI errors" });
+    expect(within(region).getByText("0/min", { selector: "[data-lead]" })).toBeInTheDocument();
+    expect(region).toHaveTextContent("per minute");
+  });
+
+  it("leads an up/down view with up or down in words", () => {
+    render(<MetricPanel title="Worker up" view={view("worker-up")} now={NOW} />);
+
+    expect(screen.getByText("up", { selector: "[data-lead]" })).toBeInTheDocument();
+  });
+
   it("draws durations and rates as a line chart", () => {
     render(<MetricPanel title="gNMI errors" view={view("gnmi-errors")} now={NOW} />);
 

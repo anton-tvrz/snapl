@@ -136,13 +136,13 @@ uv run invoke dashboard.test && uv run invoke dashboard.e2e
 
 **Goal**: the metrics read at a distance, and the range is always in reach.
 
-- [ ] T034 [US4] Tests first in `lib/metrics.test.ts`: `leadValue` picks the highest latest value for `ms` and `per_second`, the first series that is down for `up`, and `null` with no data; `formatValue` gives "1.4/min" for 0.024 per second and keeps "/s" at 1 or more; an unknown unit is shown raw.
-- [ ] T035 [US4] Implement `leadValue` and the per-minute form in `lib/metrics.ts`.
-- [ ] T036 [US4] Tests first in `components/panels/Metrics.test.tsx`: the lead value in `text-number` with its unit and, with several series, which series it is; a legend under the title with each drawn series' name and latest value; the latest-values table inside a closed `<details>` and still named as the chart's text alternative; the step and unit line in the footer area; the "first 6 series" note unchanged; up/down strips unchanged in what they say.
-- [ ] T037 [US4] Change `Metrics.tsx`: the lead value, the legend, an area fill under each line at low opacity (Recharts `Area` or a gradient, gaps still gaps, no animation), faint horizontal gridlines, no axis lines, chart height 192 px.
-- [ ] T038 [US4] Tests first in `components/panels/RangePicker.test.tsx`: the presets and the current range in words are always shown; the custom fields are behind a disclosure; every existing behaviour (apply, refused range, archive's exported range) is unchanged.
-- [ ] T039 [US4] Change `RangePicker.tsx` into a toolbar and make it sticky in `App.tsx` over the lanes, history and metrics (research R9). It stays absent in a recording.
-- [ ] T040 [US4] Remove the files now clean from the allowlist. Run the look check, scrolling is not captured, so also check the toolbar's stickiness in `e2e/smoke.spec.ts`. Append to the changelog.
+- [x] T034 [US4] Tests first in `lib/metrics.test.ts`: `leadValue` picks the highest latest value for `ms` and `per_second`, the first series that is down for `up`, and `null` with no data; `formatValue` gives "1.4/min" for 0.024 per second and keeps "/s" at 1 or more; an unknown unit is shown raw.
+- [x] T035 [US4] Implement `leadValue` and the per-minute form in `lib/metrics.ts`.
+- [x] T036 [US4] Tests first in `components/panels/Metrics.test.tsx`: the lead value in `text-number` with its unit and, with several series, which series it is; a legend under the title with each drawn series' name and latest value; the latest-values table inside a closed `<details>` and still named as the chart's text alternative; the step and unit line in the footer area; the "first 6 series" note unchanged; up/down strips unchanged in what they say.
+- [x] T037 [US4] Change `Metrics.tsx`: the lead value, the legend, an area fill under each line at low opacity (Recharts `Area` or a gradient, gaps still gaps, no animation), faint horizontal gridlines, no axis lines, chart height 192 px.
+- [x] T038 [US4] Tests first in `components/panels/RangePicker.test.tsx`: the presets and the current range in words are always shown; the custom fields are behind a disclosure; every existing behaviour (apply, refused range, archive's exported range) is unchanged.
+- [x] T039 [US4] Change `RangePicker.tsx` into a toolbar and make it sticky in `App.tsx` over the lanes, history and metrics (research R9). It stays absent in a recording.
+- [x] T040 [US4] Remove the files now clean from the allowlist. Run the look check, scrolling is not captured, so also check the toolbar's stickiness in `e2e/smoke.spec.ts`. Append to the changelog.
 
 **Checkpoint**: each metrics panel leads with a number.
 
