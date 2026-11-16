@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { ApiError } from "./data/http";
 import type { DataProvider } from "./data/provider";
-import { HISTORY, LINKS, METRICS, MODE, NOW, OVERVIEW, OVERVIEW_UP, SOURCES, STEPS_DEPLOY, TIMELINE, TOPOLOGY } from "./test/fixtures";
+import { DRIFT_SUMMARY, HISTORY, LINKS, METRICS, MODE, NOW, OVERVIEW, OVERVIEW_UP, SOURCES, STEPS_DEPLOY, TIMELINE, TOPOLOGY } from "./test/fixtures";
 
 function provider(overrides: Partial<DataProvider> = {}): DataProvider {
   const unused = async () => {
@@ -21,6 +21,7 @@ function provider(overrides: Partial<DataProvider> = {}): DataProvider {
     runs: unused,
     timeline: async () => TIMELINE,
     history: async () => HISTORY,
+    driftSummary: async () => DRIFT_SUMMARY,
     steps: async () => STEPS_DEPLOY,
     metrics: async (view: keyof typeof METRICS) => METRICS[view],
     ...overrides,
@@ -96,6 +97,7 @@ describe("App", () => {
       "Drift and history",
       "Drift over time",
       "Drift and deploys by hour",
+      "Drift by device",
       "Metrics",
       "Workflow duration (95th percentile)",
       "Operations",
@@ -395,5 +397,22 @@ describe("App", () => {
     await userEvent.click(screen.getByRole("button", { name: "7 d" }));
 
     expect(history).toHaveBeenLastCalledWith({ start: new Date(NOW.getTime() - 7 * 86_400_000), end: NOW }, "1d");
+  });
+
+  it("has drift by device, asked over the chosen range, and opens a device from it", async () => {
+    const driftSummary = vi.fn(async () => DRIFT_SUMMARY);
+    render(<App provider={provider({ driftSummary })} />);
+
+    const panel = await screen.findByRole("region", { name: "Drift by device" });
+    expect(driftSummary).toHaveBeenLastCalledWith(undefined);
+
+    await userEvent.click(within(panel).getByRole("button", { name: /^Open leaf-01:/ }));
+
+    expect(screen.getByRole("dialog", { name: "leaf-01" })).toBeInTheDocument();
+    expect(location.search).toBe("?device=leaf-01");
+
+    await userEvent.click(screen.getByRole("button", { name: "7 d" }));
+
+    expect(driftSummary).toHaveBeenLastCalledWith({ start: new Date(NOW.getTime() - 7 * 86_400_000), end: NOW });
   });
 });

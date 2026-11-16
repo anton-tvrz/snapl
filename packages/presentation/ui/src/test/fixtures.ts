@@ -3,6 +3,7 @@
 // files no longer matches what the server answers.
 import type {
   DevicesResponse,
+  DriftSummaryResponse,
   DriftTimelineResponse,
   HistoryResponse,
   LinksResponse,
@@ -23,6 +24,7 @@ import mode from "./fixtures/mode.json";
 import overview from "./fixtures/overview.json";
 import runsAtScan2 from "./fixtures/runs-at-scan-2.json";
 import history from "./fixtures/history.json";
+import driftSummary from "./fixtures/drift-summary.json";
 import links from "./fixtures/links.json";
 import sources from "./fixtures/sources.json";
 import stepsDeploy from "./fixtures/steps-deploy.json";
@@ -46,6 +48,7 @@ export const SOURCES = sources as unknown as SourcesResponse;
 export const LINKS = links as unknown as LinksResponse;
 /** 010's history over the default range (the last 24 h), hourly. */
 export const HISTORY = history as unknown as HistoryResponse;
+export const DRIFT_SUMMARY = driftSummary as unknown as DriftSummaryResponse;
 export const OVERVIEW = overview as unknown as Overview;
 /** The same arc with the other sources up: an active schedule, one worker, a scan running. */
 export const OVERVIEW_UP = overviewUp as unknown as Overview;

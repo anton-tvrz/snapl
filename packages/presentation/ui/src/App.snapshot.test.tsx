@@ -52,6 +52,14 @@ describe("App in a snapshot", () => {
     expect(await within(row).findByText(/of \d+$/)).toBeInTheDocument();
   });
 
+  it("has drift by device, from the bundle", async () => {
+    render(<App provider={provider().p} />);
+
+    const panel = await screen.findByRole("region", { name: "Drift by device" });
+    expect(await within(panel).findByRole("button", { name: /^Open leaf-01:/ })).toBeInTheDocument();
+    expect(within(panel).getByRole("button", { name: /^Open spine-01:/ })).toBeInTheDocument();
+  });
+
   it("asks nothing twice", async () => {
     const { p, overview, metrics } = provider();
     render(<App provider={p} />);

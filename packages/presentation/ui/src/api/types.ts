@@ -32,6 +32,10 @@ export type RunStepsResponse = Schemas["RunStepsResponse"];
 export type MetricsResponse = Schemas["MetricsResponse"];
 export type HistoryResponse = Schemas["HistoryResponse"];
 export type MetricsViewName = Schemas["MetricsViewName"];
+export type SeriesName = Schemas["SeriesName"];
+export type DriftSummaryResponse = Schemas["DriftSummaryResponse"];
+export type DriftSummary = Schemas["DriftSummary"];
+export type DeviceDriftSummary = Schemas["DeviceDriftSummary"];
 
 export type DeviceView = Schemas["DeviceView"];
 export type RunView = Schemas["RunView"];

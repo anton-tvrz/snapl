@@ -9,6 +9,7 @@ import { NumberRow } from "./components/NumberRow";
 import { LoopStrip } from "./components/LoopStrip";
 import { Ci } from "./components/panels/Ci";
 import { History } from "./components/panels/History";
+import { DriftByDevice } from "./components/panels/DriftByDevice";
 import { LabEvidence } from "./components/panels/LabEvidence";
 import { Links } from "./components/panels/Links";
 import { MetricView } from "./components/panels/Metrics";
@@ -105,6 +106,15 @@ export function App({ provider }: Props) {
           ? bucketFor(range.end.getTime() - range.start.getTime())
           : undefined,
       ),
+    every(HISTORY_MS),
+    range
+      ? `${range.start.toISOString()}/${range.end.toISOString()}`
+      : "default",
+  );
+
+  // Drift by device over the same range as the history (spec 015).
+  const driftSummary = usePolling(
+    () => provider.driftSummary(range),
     every(HISTORY_MS),
     range
       ? `${range.start.toISOString()}/${range.end.toISOString()}`
@@ -482,6 +492,16 @@ export function App({ provider }: Props) {
               history={historyAnswer.data}
               now={now}
               error={historyAnswer.error}
+            />
+          </div>
+
+          <div className="mt-4">
+            <DriftByDevice
+              id="drift-by-device"
+              summary={driftSummary.data?.summary}
+              now={now}
+              error={driftSummary.error}
+              onSelect={onSelect}
             />
           </div>
 

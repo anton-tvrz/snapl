@@ -3,6 +3,7 @@
 // the bundle embedded in it (spec 011 research R13, R14).
 import type {
   DevicesResponse,
+  DriftSummaryResponse,
   DriftTimelineResponse,
   HistoryResponse,
   LinksResponse,
@@ -12,6 +13,7 @@ import type {
   Overview,
   RunStepsResponse,
   RunsResponse,
+  SeriesName,
   SourcesResponse,
   TopologyResponse,
 } from "../api/types";
@@ -41,8 +43,13 @@ export interface DataProvider {
   topology(): Promise<TopologyResponse>;
   devices(at?: Date): Promise<DevicesResponse>;
   runs(query: RunsQuery): Promise<RunsResponse>;
-  /** 010's history series. Without a range, the server's default: the last 24 hours, hourly. */
-  history(range?: Range, bucket?: string): Promise<HistoryResponse>;
+  /**
+   * History series. Without a range, the server's default: the last 24 hours,
+   * hourly. Without names, 010's four; spec 015's are answered only when named.
+   */
+  history(range?: Range, bucket?: string, series?: SeriesName[]): Promise<HistoryResponse>;
+  /** Each device's drift over a range (spec 015). Without one, the server's last 24 hours. */
+  driftSummary(range?: Range): Promise<DriftSummaryResponse>;
   /** Without a range, the server's default: the last 24 hours by its own clock. */
   timeline(range?: Range): Promise<DriftTimelineResponse>;
   steps(run: RunId): Promise<RunStepsResponse>;

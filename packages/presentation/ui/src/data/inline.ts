@@ -8,6 +8,7 @@ import type {
   DevicesResponse,
   DeviceView,
   DriftEpisode,
+  DriftSummaryResponse,
   DriftTimeline,
   DriftTimelineResponse,
   HistoryResponse,
@@ -19,6 +20,7 @@ import type {
   RunStepsResponse,
   RunsResponse,
   RunView,
+  SeriesName,
   SourcesResponse,
   TopologyResponse,
 } from "../api/types";
@@ -44,6 +46,10 @@ export interface SnapshotBundle {
   topology: TopologyResponse;
   timeline: DriftTimelineResponse;
   history: HistoryResponse;
+  // Spec 015: the series `/history` answers only when named, and drift by
+  // device. A snapshot made before it has neither.
+  fabric_history?: HistoryResponse;
+  drift_summary?: DriftSummaryResponse;
   steps: Record<string, RunStepsResponse>;
   links: LinksResponse;
   sources: SourcesResponse;
@@ -57,6 +63,9 @@ export function readBundle(doc: Document): SnapshotBundle | null {
 }
 
 const at = (iso: string | null | undefined) => (iso ? pointTime(iso) : Number.POSITIVE_INFINITY);
+
+// 010's series: what the bundle's `history` holds. Any other name is in `fabric_history`.
+const DEFAULT_SERIES: readonly SeriesName[] = ["drifted_devices", "undesired_paths", "deploys", "repairs"];
 
 /** The last scan point recorded by `t`: the server's device view holds it with no time limit. */
 function lastPoint(lane: DeviceLane | undefined, t: number) {
@@ -129,7 +138,40 @@ export class InlineProvider implements DataProvider {
   sources = async () => this.#bundle.sources;
   links = async () => this.#bundle.links;
   topology = async () => this.#bundle.topology;
-  history = async () => this.#bundle.history;
+  history = async (_range?: Range, _bucket?: string, series?: SeriesName[]): Promise<HistoryResponse> => {
+    const { history, fabric_history } = this.#bundle;
+    if (!series?.some((name) => !DEFAULT_SERIES.includes(name))) return history;
+    return fabric_history ?? { ...history, series: [] };
+  };
+
+  /** True when ``range`` is the bundle's own, or none was asked for. */
+  #ownRange(range?: Range): boolean {
+    const { manifest } = this.#bundle;
+    return (
+      !range ||
+      (range.start.toISOString() === new Date(manifest.start).toISOString() &&
+        range.end.toISOString() === new Date(manifest.end).toISOString())
+    );
+  }
+
+  driftSummary = async (range?: Range): Promise<DriftSummaryResponse> => {
+    const bundled = this.#bundle.drift_summary;
+    if (bundled && this.#ownRange(range)) return bundled;
+    const { manifest } = this.#bundle;
+    return {
+      contract_version: "1",
+      generated_at: manifest.end,
+      use_case: manifest.use_case,
+      summary: {
+        source: "audit",
+        available: false,
+        stale: false,
+        reason: bundled ? `a snapshot holds only its own range, ${manifest.start} to ${manifest.end}` : "not in this snapshot",
+        remedy: "uv run snapl dashboard",
+        data: null,
+      },
+    };
+  };
 
   devices = async (when?: Date): Promise<DevicesResponse> => {
     const answer = this.#bundle.devices;
@@ -195,8 +237,7 @@ export class InlineProvider implements DataProvider {
   metrics = async (view: MetricsViewName, range?: Range): Promise<MetricsResponse> => {
     const bundled = this.#bundle.metrics[view];
     const { manifest } = this.#bundle;
-    const same = !range || (range.start.toISOString() === new Date(manifest.start).toISOString() && range.end.toISOString() === new Date(manifest.end).toISOString());
-    if (bundled && same) return bundled;
+    if (bundled && this.#ownRange(range)) return bundled;
     return {
       contract_version: "1",
       generated_at: manifest.end,

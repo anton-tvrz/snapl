@@ -6,6 +6,7 @@ import { App } from "./App";
 import type { DataProvider, Range, RunsQuery } from "./data/provider";
 import {
   DEVICES_AT_SCAN_2,
+  DRIFT_SUMMARY,
   HISTORY,
   LINKS,
   METRICS,
@@ -42,6 +43,7 @@ function provider() {
     timeline: async (range) => (calls.timeline(range), range ? TIMELINE_AT_SCAN_2 : TIMELINE),
     links: async () => LINKS,
     history: async () => HISTORY,
+    driftSummary: async () => DRIFT_SUMMARY,
     steps: async () => STEPS_DEPLOY,
     metrics: async (view) => METRICS[view],
   };
@@ -194,6 +196,14 @@ describe("App at a past time", () => {
     // The headline's duration; the number row shows the same repair.
     expect(within(screen.getByRole("region", { name: "Drift over time" })).getByText("5 s")).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Past time" })).not.toBeInTheDocument();
+  });
+
+  it("keeps drift by device over the page's range, not the time shown, like the history", async () => {
+    history.replaceState(null, "", `/?at=${STOP_2}`);
+    render(<App provider={provider().p} />);
+
+    const panel = await screen.findByRole("region", { name: "Drift by device" });
+    expect(await within(panel).findByRole("button", { name: /^Open leaf-01:/ })).toBeInTheDocument();
   });
 
   it("says where history starts when the time is before it", async () => {

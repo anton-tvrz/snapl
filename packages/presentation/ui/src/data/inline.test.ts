@@ -82,6 +82,28 @@ describe("InlineProvider at the bundle's time", () => {
     expect(other.metrics.reason).toMatch(/^a snapshot holds only its own range/);
   });
 
+  it("gives the bundled series of spec 015 when they are named, and 010's otherwise", async () => {
+    expect(await provider.history(undefined, undefined, ["in_sync_devices", "runs"])).toBe(bundle.fabric_history);
+    expect(await provider.history(undefined, undefined, ["deploys"])).toBe(bundle.history);
+  });
+
+  it("gives the bundled drift summary for the bundled range, and no other range", async () => {
+    expect(await provider.driftSummary()).toBe(bundle.drift_summary);
+    const same = { start: new Date(bundle.manifest.start), end: new Date(bundle.manifest.end) };
+    expect(await provider.driftSummary(same)).toBe(bundle.drift_summary);
+
+    const other = await provider.driftSummary({ start: new Date("2026-11-07T20:00:00Z"), end: new Date("2026-11-07T21:00:00Z") });
+    expect(other.summary).toMatchObject({ source: "audit", available: false, data: null });
+    expect(other.summary.reason).toMatch(/^a snapshot holds only its own range/);
+  });
+
+  it("says a snapshot made before spec 015 does not hold the drift summary or the new series", async () => {
+    const older = new InlineProvider({ ...bundle, drift_summary: undefined, fabric_history: undefined });
+
+    expect((await older.driftSummary()).summary).toMatchObject({ available: false, reason: "not in this snapshot" });
+    expect((await older.history(undefined, undefined, ["runs"])).series).toEqual([]);
+  });
+
   it("is a snapshot whose now is the bundle's end", async () => {
     const mode = await provider.mode();
 
