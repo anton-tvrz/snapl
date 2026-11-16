@@ -94,6 +94,19 @@ describe("App at a past time", () => {
     expect(sources).toHaveTextContent("Shows only the present");
   });
 
+  it("gives the number row as of the past time, and says what shows only the present", async () => {
+    history.replaceState(null, "", `/?at=${STOP_2}`);
+
+    render(<App provider={provider().p} />);
+    await settle();
+
+    const row = await screen.findByRole("list", { name: "The fabric in numbers" });
+    // At scan 2 spine-01 was still drifted and nothing had been repaired.
+    expect(await within(row).findByText("No repaired drift is recorded.")).toBeInTheDocument();
+    const card = within(row).getByRole("heading", { name: "Deploys, 24 h" }).closest("li")!;
+    expect(card).toHaveTextContent("Shows only the present.");
+  });
+
   it("gives the headline as of the past time", async () => {
     history.replaceState(null, "", `/?at=${STOP_2}`);
     const { p, calls } = provider();
@@ -167,7 +180,8 @@ describe("App at a past time", () => {
     await settle();
 
     expect(await screen.findByRole("list", { name: "Drift lanes" })).toBeInTheDocument();
-    expect(screen.getByText("5 s")).toBeInTheDocument();
+    // The headline's duration; the number row shows the same repair.
+    expect(within(screen.getByRole("region", { name: "Drift over time" })).getByText("5 s")).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Past time" })).not.toBeInTheDocument();
   });
 

@@ -70,6 +70,15 @@ describe("App on an archive", () => {
     expect(screen.queryByText(/Following now/)).not.toBeInTheDocument();
   });
 
+  it("has the number row, from the archive's own answers", async () => {
+    render(<App provider={provider().p} />);
+    await settle();
+
+    const row = await screen.findByRole("list", { name: "The fabric in numbers" });
+    expect(within(row).getAllByRole("listitem")).toHaveLength(4);
+    expect(await within(row).findByText(/of \d+$/)).toBeInTheDocument();
+  });
+
   it("shows what the archive does not hold neutrally", async () => {
     render(<App provider={provider().p} />);
     await settle();

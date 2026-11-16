@@ -90,13 +90,13 @@ uv run invoke dashboard.test && uv run invoke dashboard.e2e
 
 **Goal**: four numbers at the top of the page.
 
-- [ ] T015 [US1] Tests first in `packages/presentation/ui/src/lib/numbers.test.ts`, one per rule of data-model.md "NumberCard": the counts with devices in and out of intent; open drifts split by the lane's `in_intent`; the latest repair's context sentence with "scan to scan"; the 24-hour sum skipping `null` buckets; `nothing_to_compare` when the timeline has no scan point at the earlier time; `unavailable` when a view has no data; `present_only` for the fourth card at a past time when the history is not as of that time; no device in intent.
-- [ ] T016 [US1] Implement `lib/numbers.ts` (research R4). It takes the devices view, the timeline, the history, `now` and whether a past time is shown, and returns four `NumberCard`s. No request.
-- [ ] T017 [US1] Tests first in `components/NumberRow.test.tsx`: four cards in order; the value in `text-number-lg`; the label, the context line, and a link to the target panel's id; a card with no value shows its context in words and no "0"; each card has an inline icon tile that is hidden from screen readers; the row is a list with an accessible name.
-- [ ] T018 [US1] Implement `components/NumberRow.tsx`: a grid of four, wrapping to two and then one column. Each card is a `ViewFrame`-styled surface without the frame's states.
-- [ ] T019 [US1] In `App.tsx`, render the row above the fabric, and give the Fabric, Drift over time, and History panels the ids the cards link to. Add the row to `App.test.tsx`, `App.past.test.tsx`, `App.archive.test.tsx` and `App.snapshot.test.tsx`.
-- [ ] T020 [US1] Add a browser check to `e2e/smoke.spec.ts`: the four cards' values on the fixtures, and that following a card's link moves to its panel.
-- [ ] T021 [US1] Run the look check: the row and the whole fabric panel fit the first screen (SC-001). Append to the changelog.
+- [x] T015 [US1] Tests first in `packages/presentation/ui/src/lib/numbers.test.ts`, one per rule of data-model.md "NumberCard": the counts with devices in and out of intent; open drifts split by the lane's `in_intent`; the latest repair's context sentence with "scan to scan"; the 24-hour sum skipping `null` buckets; `nothing_to_compare` when the timeline has no scan point at the earlier time; `unavailable` when a view has no data; `present_only` for the fourth card at a past time when the history is not as of that time; no device in intent.
+- [x] T016 [US1] Implement `lib/numbers.ts` (research R4). It takes the devices view, the timeline, the history, `now` and whether a past time is shown, and returns four `NumberCard`s. No request.
+- [x] T017 [US1] Tests first in `components/NumberRow.test.tsx`: four cards in order; the value in `text-number-lg`; the label, the context line, and a link to the target panel's id; a card with no value shows its context in words and no "0"; each card has an inline icon tile that is hidden from screen readers; the row is a list with an accessible name.
+- [x] T018 [US1] Implement `components/NumberRow.tsx`: a grid of four, wrapping to two and then one column. Each card is a `ViewFrame`-styled surface without the frame's states.
+- [x] T019 [US1] In `App.tsx`, render the row above the fabric, and give the Fabric, Drift over time, and History panels the ids the cards link to. Add the row to `App.test.tsx`, `App.past.test.tsx`, `App.archive.test.tsx` and `App.snapshot.test.tsx`.
+- [x] T020 [US1] Add a browser check to `e2e/smoke.spec.ts`: the four cards' values on the fixtures, and that following a card's link moves to its panel.
+- [x] T021 [US1] Run the look check: the row and the whole fabric panel fit the first screen (SC-001). Append to the changelog.
 
 **Checkpoint**: the first screen reads as numbers, then the fabric.
 
@@ -173,6 +173,7 @@ uv run invoke dashboard.test && uv run invoke dashboard.e2e
 - [ ] T050 [US6] Tests first in `components/LoopStrip.test.tsx`: a run whose steps are not recorded shows one row with the run, its outcome, the FR-028 sentence and the six block names as a plain list, and no block boxes; a recorded run shows six rows or tiles in loop order, each with an icon tile, status glyph and word, reason and time; an unknown block or status is shown raw.
 - [ ] T051 [US6] Implement both forms in `LoopStrip.tsx`. The takeaway (run, outcome, started) is a pill-shaped callout.
 - [ ] T052 [US2] Restyle the remaining files on the allowlist to the scale: `DeviceDrawer.tsx` (device facts as value chips), `panels/Runs.tsx`, `Schedule.tsx`, `Undesired.tsx`, `Ci.tsx`, `LabEvidence.tsx`, `Links.tsx`, `SourceStrip.tsx`, `ModeBanner.tsx`, `Command.tsx`, the topology components. Table rows use `py-2`. Failure reasons, error messages and schedule notes get `max-w-prose`. Each file's tests keep passing; change a test only where it asserted a class.
+- [ ] T062 [US2] Found by slice C's look check: at 360 px wide the page is 388 px wide, so it scrolls sideways (it was 372 px before spec 014). Find what overflows (`narrow-light.png`), fix it, and add 360 to the widths `e2e/smoke.spec.ts` checks for sideways scroll, test first.
 - [ ] T053 [US2] Empty the allowlist in `look.test.ts` and make the test fail if it is ever non-empty again (SC-006).
 - [ ] T054 [US6] Run the look check on the default view and on the `loop` view of `screenshot.mjs`. Check the snapshot's size against SC-008 with `e2e/snapshot.spec.ts`'s fixtures and record it. Append to the changelog.
 

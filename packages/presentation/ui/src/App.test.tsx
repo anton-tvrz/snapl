@@ -47,6 +47,20 @@ describe("App", () => {
     expect(screen.getByRole("heading", { name: "Fabric" })).toBeInTheDocument();
   });
 
+  it("leads with the fabric in four numbers, above the fabric, each linked to its panel", async () => {
+    render(<App provider={provider()} />);
+
+    const row = await screen.findByRole("list", { name: "The fabric in numbers" });
+    expect(await within(row).findByText("5 of 6")).toBeInTheDocument();
+    expect(within(row).getByText("5 s")).toBeInTheDocument();
+    expect(await within(row).findByText("8 ok · 0 failed")).toBeInTheDocument();
+    const fabric = screen.getByRole("region", { name: "Fabric" });
+    expect(row.compareDocumentPosition(fabric) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    for (const link of within(row).getAllByRole("link")) {
+      expect(document.querySelector(link.getAttribute("href")!)).not.toBeNull();
+    }
+  });
+
   it("opens a device's detail when it is selected, and puts it in the address", async () => {
     render(<App provider={provider()} />);
 

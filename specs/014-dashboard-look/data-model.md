@@ -7,7 +7,7 @@ Nothing here is served by the API. These are the view models the UI derives from
 | field | type | |
 | --- | --- | --- |
 | `id` | `"in_sync" \| "open_drifts" \| "latest_repair" \| "deploys_repairs"` | |
-| `label` | `string` | "Devices in sync", "Open drifts", "Latest repair", "Deploys and repairs, 24 h" |
+| `label` | `string` | "Devices in sync", "Open drifts", "Latest repair", "Deploys, 24 h" |
 | `state` | `"known" \| "nothing_to_compare" \| "unavailable" \| "present_only"` | |
 | `value` | `string \| null` | the large text: "5 of 6", "2", "13 s", "4 ok · 1 failed". `null` unless the state is `known` or `nothing_to_compare` |
 | `context` | `string` | one line: the comparison, the device and age, or why there is no value |
