@@ -56,8 +56,6 @@ const TO_RESTYLE = new Set<string>([
   "components/panels/Ci.tsx",
   "components/panels/LabEvidence.tsx",
   "components/panels/Links.tsx",
-  "components/panels/Metrics.tsx",
-  "components/panels/RangePicker.tsx",
   "components/panels/Runs.tsx",
   "components/panels/Schedule.tsx",
   "components/panels/Undesired.tsx",

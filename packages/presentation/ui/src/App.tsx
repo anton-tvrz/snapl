@@ -409,8 +409,11 @@ export function App({ provider }: Props) {
             </div>
           )}
 
+          {/* One range governs the lanes, the history and the metrics, so its
+              toolbar stays on screen while they scroll (spec 014 FR-027). */}
+          <div data-range-scope="">
           {!recording && (
-            <div className="mt-4">
+            <div className="sticky top-2 z-10 mt-4">
               <RangePicker
                 // An archive's time arrives with its first answer: the custom fields start from it.
                 key={
@@ -470,6 +473,24 @@ export function App({ provider }: Props) {
             />
           </div>
 
+          <section aria-label="Metrics" className="mt-6">
+            <GroupLabel>Metrics</GroupLabel>
+            <div className="grid gap-4 lg:grid-cols-2">
+              {METRIC_VIEWS.map((view) => (
+                <MetricView
+                  key={view.name}
+                  provider={provider}
+                  name={view.name}
+                  title={view.title}
+                  range={fixed ? undefined : range}
+                  live={!fixed}
+                  now={now}
+                />
+              ))}
+            </div>
+          </section>
+          </div>
+
           <div className="mt-4 grid gap-4 lg:grid-cols-2">
             <Schedule
               schedule={overview.data?.schedule}
@@ -502,23 +523,6 @@ export function App({ provider }: Props) {
               presentOnly={!!at}
             />
           </div>
-
-          <section aria-label="Metrics" className="mt-6">
-            <GroupLabel>Metrics</GroupLabel>
-            <div className="grid gap-4 lg:grid-cols-2">
-              {METRIC_VIEWS.map((view) => (
-                <MetricView
-                  key={view.name}
-                  provider={provider}
-                  name={view.name}
-                  title={view.title}
-                  range={fixed ? undefined : range}
-                  live={!fixed}
-                  now={now}
-                />
-              ))}
-            </div>
-          </section>
 
           <section aria-label="Sources" className="mt-6">
             <GroupLabel>Sources</GroupLabel>

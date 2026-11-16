@@ -137,6 +137,23 @@ test("the number row leads the page, and a card's link moves to its panel", asyn
   await expect(page.locator("#history")).toBeInViewport();
 });
 
+test("the range toolbar stays on screen over the lanes, the history and the metrics", async ({ page }) => {
+  await page.goto("/");
+  const bar = page.getByRole("region", { name: "Time range" });
+  await expect(bar).toBeVisible();
+
+  // The default fixture server has no metrics store: the history is the last panel with data here.
+  await page.locator("#history").scrollIntoViewIfNeeded();
+  await page.mouse.wheel(0, 400);
+  await expect(bar).toBeInViewport();
+  const box = await bar.boundingBox();
+  expect(box!.y).toBeLessThan(40);
+
+  // Past the views it governs, it scrolls away with them.
+  await page.getByRole("heading", { name: "Links" }).scrollIntoViewIfNeeded();
+  await expect(bar).not.toBeInViewport();
+});
+
 test("selecting a device opens its detail, and the address reopens it", async ({ page }) => {
   await page.goto("/");
 
