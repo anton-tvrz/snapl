@@ -443,6 +443,7 @@ export function App({ provider }: Props) {
                     timeline={lanesData}
                     domain={domain}
                     now={now}
+                    selected={selected}
                     cursor={at}
                     error={timeline.error}
                     onSelectRun={onSelectRun}

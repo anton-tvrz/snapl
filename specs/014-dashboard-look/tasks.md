@@ -106,12 +106,12 @@ uv run invoke dashboard.test && uv run invoke dashboard.e2e
 
 **Goal**: devices no longer in intent stop taking the page over.
 
-- [ ] T022 [US3] Tests first in `components/timeline/Lanes.test.tsx`: with lanes in and out of intent, only the in-intent lanes are drawn and one row says "n devices no longer in intent"; opening it shows them all as before; it is open when `selected` is one of them; with none out of intent there is no such row; each lane's words for screen readers are unchanged.
-- [ ] T023 [US3] Implement the folded row in `Lanes.tsx` with a `<details>` element, and pass `selected` from `App.tsx`.
-- [ ] T024 [US3] Tests first in `lib/episodes.test.ts` and `components/timeline/Headline.test.tsx`: the open drifts are a count with one chip per device in intent (name and how long), and a separate count for devices no longer in intent; no device id appears in a sentence; "No drift open." is unchanged; the latest repair's sentence is unchanged.
-- [ ] T025 [US3] Change `lib/episodes.ts` to return the open drifts as data (the count, the in-intent devices with durations, the count of others), and `Headline.tsx` to draw the chips. The duration uses `text-number`.
-- [ ] T026 [US3] Remove the files now clean from the `look.test.ts` allowlist. Update `e2e/smoke.spec.ts` if the replay check relied on the old lanes.
-- [ ] T027 [US3] Run the look check. Append to the changelog.
+- [x] T022 [US3] Tests first in `components/timeline/Lanes.test.tsx`: with lanes in and out of intent, only the in-intent lanes are drawn and one row says "n devices no longer in intent"; opening it shows them all as before; it is open when `selected` is one of them; with none out of intent there is no such row; each lane's words for screen readers are unchanged.
+- [x] T023 [US3] Implement the folded row in `Lanes.tsx` with a `<details>` element, and pass `selected` from `App.tsx`.
+- [x] T024 [US3] Tests first in `lib/episodes.test.ts` and `components/timeline/Headline.test.tsx`: the open drifts are a count with one chip per device in intent (name and how long), and a separate count for devices no longer in intent; no device id appears in a sentence; "No drift open." is unchanged; the latest repair's sentence is unchanged.
+- [x] T025 [US3] Change `lib/episodes.ts` to return the open drifts as data (the count, the in-intent devices with durations, the count of others), and `Headline.tsx` to draw the chips. The duration uses `text-number`.
+- [x] T026 [US3] Remove the files now clean from the `look.test.ts` allowlist. Update `e2e/smoke.spec.ts` if the replay check relied on the old lanes.
+- [x] T027 [US3] Run the look check. Append to the changelog.
 
 **Checkpoint**: the lanes panel is as tall as the devices in intent.
 
