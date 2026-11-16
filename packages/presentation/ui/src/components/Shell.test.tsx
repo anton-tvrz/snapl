@@ -24,6 +24,27 @@ describe("Shell", () => {
     expect(screen.getByRole("main")).toHaveTextContent("content");
   });
 
+  it("shows the time the page is showing, running when live", () => {
+    render(
+      <Shell useCase="dcfabric" mode="live" at={new Date("2026-11-07T21:20:48Z")} running>
+        <p>content</p>
+      </Shell>,
+    );
+
+    expect(screen.getByRole("time")).toHaveTextContent("21:20:48 UTC");
+    expect(screen.getByRole("time")).toHaveAttribute("data-running", "true");
+  });
+
+  it("holds the clock still when it is not live at the present", () => {
+    render(
+      <Shell useCase="dcfabric" mode="archive" at={new Date("2026-11-07T21:20:48Z")}>
+        <p>content</p>
+      </Shell>,
+    );
+
+    expect(screen.getByRole("time")).toHaveAttribute("data-running", "false");
+  });
+
   it("says when it is showing an archive", () => {
     render(
       <Shell useCase="dcfabric" mode="archive">

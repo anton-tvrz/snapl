@@ -107,6 +107,17 @@ describe("App at a past time", () => {
     expect(card).toHaveTextContent("Shows only the present.");
   });
 
+  it("holds the clock still at the time shown", async () => {
+    history.replaceState(null, "", `/?at=${STOP_2}`);
+
+    render(<App provider={provider().p} />);
+    await settle();
+
+    const clock = within(screen.getAllByRole("banner")[0]!).getByRole("time");
+    expect(clock).toHaveAttribute("data-running", "false");
+    expect(clock).toHaveAttribute("datetime", `${STOP_2.slice(0, 19)}.000Z`);
+  });
+
   it("gives the headline as of the past time", async () => {
     history.replaceState(null, "", `/?at=${STOP_2}`);
     const { p, calls } = provider();
