@@ -114,6 +114,9 @@ export function App({ provider }: Props) {
       : "default",
   );
 
+  // The number row's runs: the last 24 hours, whatever range the page shows (spec 015 FR-009).
+  const runsAnswer = usePolling(() => provider.history(undefined, undefined, ["runs"]), every(HISTORY_MS));
+
   // The fabric history over the same range and buckets as the history (spec 015).
   const fabricHistory = usePolling(
     () => provider.history(range, range ? bucketFor(range.end.getTime() - range.start.getTime()) : undefined, FABRIC_SERIES),
@@ -274,11 +277,11 @@ export function App({ provider }: Props) {
       numberCards({
         devices: devicesView,
         timeline: toldView,
-        history: historyAnswer.data ?? undefined,
+        runs: runsAnswer.data ?? undefined,
         now: shown,
         past: !!at,
       }),
-    [devicesView, toldView, historyAnswer.data, shown, at],
+    [devicesView, toldView, runsAnswer.data, shown, at],
   );
 
   // The selected device's row: from the device view, or a never-scanned row

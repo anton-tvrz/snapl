@@ -307,7 +307,7 @@ Open the page, then run beats 1 to 3 of the demo arc in another terminal.
 Build the page once with `uv run invoke dashboard.build` (Node 22.12 or later). Without it, the dashboard serves the plain page of spec 010, which shows the same facts as tables, and the points below read the same there.
 
 **Point at:**
-- The four numbers at the top: devices in sync, open drifts, the latest repair from scan to scan, and the last 24 hours' deploys. Each one links to the panel with its detail. A number the page can't know is said in words, never shown as zero.
+- The four numbers at the top: devices in sync, open drifts, the latest repair from scan to scan, and the runs of the last 24 hours with the failures named. Each one links to the panel with its detail. A number the page can't know is said in words, never shown as zero.
 - The fabric: spines above leaves, with the links intent declares. Each device's drift state has its own shape and glyph, not just a colour. Select a device for its detail. With none selected, the ring next to it gives the share of devices in sync, and the devices that differ are listed below it, most paths first.
 - Devices: each device's drift state and its direction. A few seconds after `snapl scan`, the device you changed by hand shows `undesired` or `missing`, with the exact paths and the command that fixes it. Undesired-only drift gets a note and no command, because removal isn't automatic (#65).
 - Recent runs: the deploy, scan and reconcile appear as each finishes, with its trigger (`operator` or `schedule`) and a link to the Temporal Web UI.

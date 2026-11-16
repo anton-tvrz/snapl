@@ -15,7 +15,7 @@ const CARDS: NumberCard[] = [
     context: "spine-01, scan to scan, repaired by an operator's reconcile, 3 d ago.",
     target: "drift-over-time",
   },
-  { id: "deploys_repairs", label: "Deploys, 24 h", state: "unavailable", value: null, context: "Not read yet.", target: "history" },
+  { id: "runs", label: "Runs, 24 h", state: "unavailable", value: null, context: "Not read yet.", target: "fabric-history" },
 ];
 
 describe("NumberRow", () => {
@@ -28,7 +28,7 @@ describe("NumberRow", () => {
       "Devices in sync",
       "Open drifts",
       "Latest repair",
-      "Deploys, 24 h",
+      "Runs, 24 h",
     ]);
   });
 
@@ -46,13 +46,13 @@ describe("NumberRow", () => {
 
     expect(screen.getByRole("link", { name: "Devices in sync: view more" })).toHaveAttribute("href", "#fabric");
     expect(screen.getByRole("link", { name: "Open drifts: view more" })).toHaveAttribute("href", "#drift-over-time");
-    expect(screen.getByRole("link", { name: "Deploys, 24 h: view more" })).toHaveAttribute("href", "#history");
+    expect(screen.getByRole("link", { name: "Runs, 24 h: view more" })).toHaveAttribute("href", "#fabric-history");
   });
 
   it("says in words why a card has no number, and shows no zero in its place", () => {
     render(<NumberRow cards={CARDS} />);
 
-    const card = screen.getByRole("heading", { name: "Deploys, 24 h" }).closest("li")!;
+    const card = screen.getByRole("heading", { name: "Runs, 24 h" }).closest("li")!;
     expect(within(card).getByText("Not read yet.")).toBeInTheDocument();
     expect(card.querySelector(".text-number-lg")).toBeNull();
     expect(card).not.toHaveTextContent(/\b0\b/);

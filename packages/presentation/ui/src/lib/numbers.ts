@@ -3,10 +3,11 @@
 // no request. A number that is not known is said in words, never shown as zero.
 import type { DeviceView, DriftTimeline, HistoryResponse, View } from "../api/types";
 import { repairedBy } from "./episodes";
+import { parseRunKey } from "./fabricHistory";
 import { HOLD_MS, stateAt } from "./lanes";
 import { ageText, durationText } from "./time";
 
-export type NumberCardId = "in_sync" | "open_drifts" | "latest_repair" | "deploys_repairs";
+export type NumberCardId = "in_sync" | "open_drifts" | "latest_repair" | "runs";
 export type NumberCardState = "known" | "nothing_to_compare" | "unavailable" | "present_only";
 
 export interface NumberCard {
@@ -26,7 +27,8 @@ export interface NumbersInput {
   devices: View<DeviceView[]> | undefined;
   /** The drift timeline as of the time shown. */
   timeline: View<DriftTimeline> | undefined;
-  history: HistoryResponse | undefined;
+  /** `/history` for `runs` over the server's default range: the last 24 hours, whatever range the page shows. */
+  runs: HistoryResponse | undefined;
   /** The time shown: the server's now, or the "as of" time. */
   now: Date;
   /** True when a past time is shown. */
@@ -105,40 +107,31 @@ function latestRepair(input: NumbersInput): NumberCard {
   };
 }
 
-function lastDay(history: HistoryResponse, name: string, now: Date): { ok: number; failed: number } | null {
-  const points = history.series.find((series) => series.name === name)?.points ?? [];
-  let ok = 0;
-  let failed = 0;
-  let counted = false;
-  for (const point of points) {
-    const t = Date.parse(point.t);
-    if (t > now.getTime() || t <= now.getTime() - DAY_MS || !point.by_outcome) continue;
-    counted = true;
-    ok += point.by_outcome.succeeded ?? 0;
-    failed += point.by_outcome.failed ?? 0;
-  }
-  return counted ? { ok, failed } : null;
-}
-
-const pair = (counts: { ok: number; failed: number }) => `${counts.ok} ok · ${counts.failed} failed`;
-
-function deploysRepairs(input: NumbersInput): NumberCard {
-  const base = { id: "deploys_repairs" as const, label: "Deploys, 24 h", target: "history" };
-  // The history is asked for the range ending now, not as of the time shown.
+function runs(input: NumbersInput): NumberCard {
+  const base = { id: "runs" as const, label: "Runs, 24 h", target: "fabric-history" };
+  // The runs are asked for the 24 hours ending now, not as of the time shown.
   if (input.past) return { ...base, state: "present_only", value: null, context: "Shows only the present." };
-  if (!input.history) return { ...base, state: "unavailable", value: null, context: NOT_READ };
-  const deploys = lastDay(input.history, "deploys", input.now);
-  if (!deploys) return { ...base, state: "unavailable", value: null, context: "No deploy counts in the last 24 h." };
-  const repairs = lastDay(input.history, "repairs", input.now);
-  return {
-    ...base,
-    state: "known",
-    value: pair(deploys),
-    context: repairs ? `Deploys. Scheduled repairs: ${pair(repairs)}.` : "Deploys.",
-  };
+  if (!input.runs) return { ...base, state: "unavailable", value: null, context: NOT_READ };
+  const series = input.runs.series.find((one) => one.name === "runs");
+  if (!series) return { ...base, state: "unavailable", value: null, context: "Not in this recording." };
+  let total = 0;
+  let failed = 0;
+  let running = 0;
+  // Every bucket of the answer: it covers the last 24 hours, its first bucket from the hour before.
+  for (const point of series.points) {
+    total += point.value ?? 0;
+    for (const [key, count] of Object.entries(point.by_outcome ?? {})) {
+      const { outcome } = parseRunKey(key);
+      if (outcome === "failed") failed += count ?? 0;
+      if (outcome === "running") running += count ?? 0;
+    }
+  }
+  if (total === 0) return { ...base, state: "known", value: "0", context: "No run started in the last 24 h." };
+  const context = [failed === 0 ? "None failed" : `${failed} failed`, running > 0 ? `${running} running` : ""].filter(Boolean).join(", ");
+  return { ...base, state: "known", value: String(total), context: `${context}.` };
 }
 
 /** The number row's four cards, in order. */
 export function numberCards(input: NumbersInput): NumberCard[] {
-  return [inSync(input), openDrifts(input), latestRepair(input), deploysRepairs(input)];
+  return [inSync(input), openDrifts(input), latestRepair(input), runs(input)];
 }

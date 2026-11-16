@@ -106,7 +106,7 @@ describe("App at a past time", () => {
     const row = await screen.findByRole("list", { name: "The fabric in numbers" });
     // At scan 2 spine-01 was still drifted and nothing had been repaired.
     expect(await within(row).findByText("No repaired drift is recorded.")).toBeInTheDocument();
-    const card = within(row).getByRole("heading", { name: "Deploys, 24 h" }).closest("li")!;
+    const card = within(row).getByRole("heading", { name: "Runs, 24 h" }).closest("li")!;
     expect(card).toHaveTextContent("Shows only the present.");
   });
 
