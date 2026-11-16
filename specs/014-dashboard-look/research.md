@@ -39,7 +39,7 @@ Measured on the live dcfabric dashboard at 1280 px wide, light theme, `main` at 
 | Devices in sync | `overview.devices` (or the devices at a past time): devices with `in_intent`, and those whose state is `in_sync` |
 | Open drifts | the drift timeline's episodes with no `closed_at`, split by the lane's `in_intent` |
 | Latest repair | the drift timeline's `latest_closed`: `duration_s`, `name`, `closed_by`, `closed_at` |
-| Deploys and repairs, 24 h | the history's `deploys` and `repairs` series, `by_outcome`, summed over the buckets in the last 24 hours |
+| Deploys, 24 h | the history's `deploys` and `repairs` series, `by_outcome`, summed over the buckets in the last 24 hours |
 
 The comparison line for the first two cards uses the timeline's scan points: the state of each lane at 24 hours before the time shown, held for at most 15 minutes as the lanes rule says. With no scan point in that window the card says there is nothing to compare with.
 

@@ -122,6 +122,21 @@ test("the fabric is drawn: six devices in two tiers, eight links, leaf-01 undesi
   expect(seen.blocked).toEqual([]);
 });
 
+test("the number row leads the page, and a card's link moves to its panel", async ({ page }) => {
+  await page.goto("/");
+  const row = page.getByRole("list", { name: "The fabric in numbers" });
+
+  // The fixture arc: leaf-01 undesired, spine-01 repaired in 5 s, eight deploys.
+  await expect(row.getByText("5 of 6")).toBeVisible();
+  await expect(row.getByText("5 s", { exact: true })).toBeVisible();
+  await expect(row.getByText("8 ok · 0 failed")).toBeVisible();
+  await expect(row.getByRole("listitem")).toHaveCount(4);
+
+  await row.getByRole("link", { name: "Deploys, 24 h: view more" }).click();
+  await expect(page).toHaveURL(/#history$/);
+  await expect(page.locator("#history")).toBeInViewport();
+});
+
 test("selecting a device opens its detail, and the address reopens it", async ({ page }) => {
   await page.goto("/");
 

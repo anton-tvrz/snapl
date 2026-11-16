@@ -5,6 +5,8 @@ import { PanelFrame } from "../ViewFrame";
 
 interface Props {
   history: HistoryResponse | undefined;
+  /** For links from the number row. */
+  id?: string;
   now: Date;
   error?: Error | null;
 }
@@ -18,7 +20,7 @@ const pair = (c: Counts) => (c.succeeded === null ? "" : `${c.succeeded} / ${c.f
  * devices and undesired paths any scan saw, and the deploys and repairs, from
  * the audit trail. A bucket with no scan and no deploy says so.
  */
-export function History({ history, now, error }: Props) {
+export function History({ history, now, error, id }: Props) {
   const deploys = history?.series.find((series) => series.name === "deploys");
   const word = BUCKET_WORDS[deploys?.bucket ?? "1h"] ?? "bucket";
   const title = `Drift and deploys by ${word}`;
@@ -26,7 +28,7 @@ export function History({ history, now, error }: Props) {
   const markers = deploys?.markers ?? [];
 
   return (
-    <PanelFrame title={title} footer="Audit trail">
+    <PanelFrame title={title} footer="Audit trail" id={id}>
       {error && (
         <p role="alert" className="mb-4 max-w-prose text-body break-words">
           History unavailable: {error.message}

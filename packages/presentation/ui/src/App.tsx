@@ -5,6 +5,7 @@ import { Command, Recording } from "./components/Command";
 import { DeviceDrawer } from "./components/DeviceDrawer";
 import { GroupLabel } from "./components/GroupLabel";
 import { ModeBanner } from "./components/ModeBanner";
+import { NumberRow } from "./components/NumberRow";
 import { LoopStrip } from "./components/LoopStrip";
 import { Ci } from "./components/panels/Ci";
 import { History } from "./components/panels/History";
@@ -29,6 +30,7 @@ import { activityFor } from "./lib/activity";
 import { bucketFor } from "./lib/history";
 import { domainOf, type Range, scanStops } from "./lib/lanes";
 import { METRIC_VIEWS } from "./lib/metrics";
+import { numberCards } from "./lib/numbers";
 import { linkNotes } from "./lib/linkNotes";
 import { markedLinks } from "./lib/paths";
 import { localText, utcText } from "./lib/time";
@@ -241,7 +243,20 @@ export function App({ provider }: Props) {
     () => (lanesData ? scanStops(lanesData.lanes) : []),
     [lanesData],
   );
-  const told = at ? pastTimeline.data?.timeline.data : lanesData;
+  const toldView = at ? pastTimeline.data?.timeline : lanes;
+  const told = toldView?.data ?? undefined;
+  // The number row: derived from the answers above, as of the time shown.
+  const cards = useMemo(
+    () =>
+      numberCards({
+        devices: devicesView,
+        timeline: toldView,
+        history: historyAnswer.data ?? undefined,
+        now: shown,
+        past: !!at,
+      }),
+    [devicesView, toldView, historyAnswer.data, shown, at],
+  );
 
   // The selected device's row: from the device view, or a never-scanned row
   // for a device intent has and no scan has seen yet.
@@ -297,9 +312,13 @@ export function App({ provider }: Props) {
             </section>
           )}
 
+          <div className="mb-4">
+            <NumberRow cards={cards} />
+          </div>
+
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
             <div className="min-w-0">
-              <ViewFrame title="Fabric" view={graph} now={now}>
+              <ViewFrame title="Fabric" view={graph} now={now} id="fabric">
                 {at && (
                   <p className="mb-4 text-meta text-muted">
                     Devices and links are today's: the Source of Truth keeps no
@@ -412,6 +431,7 @@ export function App({ provider }: Props) {
           <div className="mt-4">
             <ViewFrame
               title="Drift over time"
+              id="drift-over-time"
               view={lanes}
               now={now}
               error={timeline.error}
@@ -442,6 +462,7 @@ export function App({ provider }: Props) {
 
           <div className="mt-4">
             <History
+              id="history"
               history={historyAnswer.data}
               now={now}
               error={historyAnswer.error}

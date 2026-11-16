@@ -44,6 +44,14 @@ describe("App in a snapshot", () => {
     expect(screen.queryByText("Live")).not.toBeInTheDocument();
   });
 
+  it("has the number row, from the bundle and with no request of its own", async () => {
+    render(<App provider={provider().p} />);
+
+    const row = await screen.findByRole("list", { name: "The fabric in numbers" });
+    expect(within(row).getAllByRole("listitem")).toHaveLength(4);
+    expect(await within(row).findByText(/of \d+$/)).toBeInTheDocument();
+  });
+
   it("asks nothing twice", async () => {
     const { p, overview, metrics } = provider();
     render(<App provider={p} />);
