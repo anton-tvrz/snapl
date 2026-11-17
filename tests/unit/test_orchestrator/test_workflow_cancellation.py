@@ -183,8 +183,12 @@ async def test_a_cancelled_scan_keeps_the_reports_that_completed(make_desired) -
         if device_id == done.device.id:
             return [done]
         # Hold spine-02 until spine-01's result is in the audit trail, so the
-        # workflow has taken its report before the cancel arrives.
-        while not any(e.target_id == done.device.id for e in await audit.query_by_workflow(wf_id)):
+        # workflow has taken its report before the cancel arrives. Its result is
+        # the drift check: since spec 015 its collect step is recorded first.
+        while not any(
+            e.target_id == done.device.id and e.activity_name == "detect_drift"
+            for e in await audit.query_by_workflow(wf_id)
+        ):
             await asyncio.sleep(0.01)
         started.set()
         await asyncio.sleep(30)
