@@ -131,7 +131,7 @@ A slice that changes the contract also regenerates the OpenAPI snapshot and the 
 - [ ] T033 [US3] Tests first against `WorkflowEnvironment.start_local()` with a metrics runtime on a free port, as spec 012's worker tests do: after a scan with one drifted device the endpoint shows the scan and path counters; after a failed deploy it shows the deploy counter with its reason. Prove each test red first by leaving the call out.
 - [ ] T034 [US3] Call the recorders: scan results and paths in `activities/observability.py` after the drift is evaluated, deploy ends in `workflows/deploy_intent.py` through `workflow.metric_meter()` where the workflow records its end.
 - [ ] T035 [US3] Tests first, then add the views `scan-results`, `drift-paths` and `deploy-outcomes` to `models.py`, `prometheus.py`, the fixture server, the plain page and `lib/metrics.ts`. Regenerate the OpenAPI snapshot and the types.
-- [ ] T036 [US3] Run the look check: 16 panels with data. Append to the changelog.
+- [ ] T036 [US3] Run the look check. Since #290 only The loop's timing is open by default: `full-light.png` shows that group's 5 panels and `firstMetricsChartTop` stays under 2000 px (spec 014 SC-003), and `open-light.png` (every fold open) shows 16 metrics panels with data, What the loop did holding 5. Append to the changelog.
 - [ ] T037 [US3] **Needs the lab**: quickstart items 5 and 6.
 
 **Checkpoint**: SC-003 holds in the label tests.

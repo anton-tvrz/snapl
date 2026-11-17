@@ -26,6 +26,14 @@ const shots = [
   { file: "first-screen-dark", scheme: "dark", viewport: WIDE, search: "", fullPage: false },
   { file: "device-light", scheme: "light", viewport: WIDE, search: "?device=leaf-01", fullPage: true },
   { file: "narrow-light", scheme: "light", viewport: NARROW, search: "", fullPage: true },
+  // Every folded panel and group open (#290): what the default view leaves folded.
+  {
+    file: "open-light",
+    scheme: "light",
+    viewport: WIDE,
+    search: "?open=history,fabric-history,drift-by-device,metrics-timing,metrics-work,metrics-worker,metrics-dashboard",
+    fullPage: true,
+  },
 ];
 
 const browser = await chromium.launch();
