@@ -1689,6 +1689,25 @@ def test_run_steps_rejects_a_bad_request(params: dict[str, str]):
     assert _steps_client().get("/api/v1/runs/steps", params=params).status_code == 422
 
 
+def test_run_steps_of_a_drift_response_reads_its_scan_s_steps():
+    """Spec 015 FR-017: the response's own events hold decisions; its scan child holds the steps."""
+    from tests.unit.test_presentation.test_dashboard_steps import _response
+
+    own, child = _response()
+    trail = View(source=SourceName.AUDIT, available=True, fetched_at=T0, data=[*own, *child])
+    params = {"workflow_id": "drift-response-1", "started_at": own[0].timestamp.isoformat()}
+
+    steps = _client(audit=trail).get("/api/v1/runs/steps", params=params).json()["steps"]["data"]
+
+    assert steps["recorded"] is True
+    assert [(b["block"], b["status"]) for b in steps["blocks"][:4]] == [
+        ("intent", "done"),
+        ("executor", "not_reached"),
+        ("collector", "done"),
+        ("observability", "done"),
+    ]
+
+
 def test_run_steps_with_the_audit_trail_down_says_so():
     down = View(source=SourceName.AUDIT, available=False, reason="unable to open database file", remedy="snapl scan")
     params = {"workflow_id": "deploy-intent-leaf", "started_at": "2026-11-07T21:00:00Z"}

@@ -8,22 +8,23 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+import os
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING
-from uuid import NAMESPACE_DNS, UUID, uuid5
+from uuid import NAMESPACE_DNS, UUID, uuid4, uuid5
 
 import yaml
 
 from snapl_intent.models import DesiredState, Device, Interface
 from snapl_orchestrator.audit.sqlite import SqliteAuditLog
-
-if TYPE_CHECKING:
-    from snapl_orchestrator.models import AuditEvent
+from snapl_orchestrator.models import AuditEvent, AuditEventType
 
 REPO = Path(__file__).resolve().parents[3]
 SEEDS = REPO / "packages" / "intent" / "snapl_intent" / "seed"
 ARC_FIXTURE = Path(__file__).parent / "fixtures" / "audit_demo_arc.sqlite"
+# Spec 015 T042 (FR-019): set to the path `write_arc_with_scan_steps` wrote to run
+# every suite on the arc with a scan's new step events added. Unset in CI.
+ARC_FIXTURE = Path(os.environ.get("SNAPL_ARC_FIXTURE") or ARC_FIXTURE)
 # One deploy that failed at apply, captured from the lab (spec 011 T057).
 FAILED_DEPLOY_FIXTURE = Path(__file__).parent / "fixtures" / "audit_failed_deploy.sqlite"
 
@@ -96,3 +97,60 @@ async def _fixture_events(path: Path) -> list[AuditEvent]:
         return await log.query_by_time_range(datetime(1970, 1, 1, tzinfo=UTC), datetime(9999, 1, 1, tzinfo=UTC))
     finally:
         await log.close()
+
+
+def with_scan_steps(events: list[AuditEvent]) -> list[AuditEvent]:
+    """The arc as a scan records it since spec 015 (FR-016): the new step events added.
+
+    Each ScanDrift run gets its ``fetch_devices_for_use_case`` step just after
+    it starts, and each drift check gets a ``collect_drift_state`` step for its
+    device just before it, failed when the check failed on a failed collect.
+    Nothing already in the trail is changed.
+    """
+    added: list[AuditEvent] = []
+    tick = timedelta(microseconds=1)
+    for event in events:
+        if event.workflow_type != "ScanDrift":
+            continue
+        common = {"workflow_id": event.workflow_id, "workflow_type": "ScanDrift", "actor": event.actor}
+        if event.event_type is AuditEventType.WORKFLOW_STARTED:
+            added.append(
+                AuditEvent(
+                    event_id=uuid4(),
+                    target_id=event.target_id,
+                    event_type=AuditEventType.ACTIVITY_COMPLETED,
+                    activity_name="fetch_devices_for_use_case",
+                    outcome="success",
+                    payload={"devices": len(ARC)},
+                    timestamp=event.timestamp + tick,
+                    **common,
+                )
+            )
+        elif event.activity_name == "detect_drift":
+            error = str(event.payload.get("error") or "")
+            failed = error.startswith("collect failed")
+            added.append(
+                AuditEvent(
+                    event_id=uuid4(),
+                    target_id=event.target_id,
+                    event_type=AuditEventType.ACTIVITY_FAILED if failed else AuditEventType.ACTIVITY_COMPLETED,
+                    activity_name="collect_drift_state",
+                    outcome="failure" if failed else "success",
+                    payload={"error": error} if failed else {},
+                    timestamp=event.timestamp - tick,
+                    **common,
+                )
+            )
+    return sorted([*events, *added], key=lambda e: e.timestamp)
+
+
+async def write_arc_with_scan_steps(path: Path) -> Path:
+    """Write the arc with a scan's step events added (``with_scan_steps``) to a new SQLite trail."""
+    log = SqliteAuditLog(database_url=str(path))
+    await log.initialize()
+    try:
+        for event in with_scan_steps(await arc_events()):
+            await log.append(event)
+    finally:
+        await log.close()
+    return path

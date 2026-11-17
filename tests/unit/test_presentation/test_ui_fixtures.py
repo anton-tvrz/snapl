@@ -90,6 +90,25 @@ def client() -> TestClient:
     return TestClient(_server().build_app(ui_dir=ROOT / "no-built-ui"))
 
 
+# The arc with the step events a scan records since spec 015 (--scan-steps): the
+# loop strip of the third scan, every device collected and checked.
+SCAN_STEPS_REQUESTS = {
+    "scan-steps/steps-scan.json": "/api/v1/runs/steps"
+    "?workflow_id=scan-drift-dcfabric-68101896-6a9c-4c65-8a84-24af2b98b12a"
+    "&started_at=2026-11-07T21:20:17.860408Z",
+}
+
+
+@pytest.fixture(scope="module")
+def client_scan_steps(tmp_path_factory: pytest.TempPathFactory):
+    import asyncio
+
+    from tests.unit.test_presentation.dashboard_fakes import write_arc_with_scan_steps
+
+    path = asyncio.run(write_arc_with_scan_steps(tmp_path_factory.mktemp("scan-steps") / "arc.sqlite"))
+    return TestClient(_server().build_app(ui_dir=ROOT / "no-built-ui", audit_path=path))
+
+
 # The same arc as a history archive opened by `snapl dashboard --archive`
 # (test_dashboard_archive.build_archive), for the UI's archive mode.
 ARCHIVE_REQUESTS = {
@@ -150,6 +169,11 @@ def test_ui_fixture_snapshot_bundle_is_what_the_command_collects(client_up: Test
     _check(json.dumps(bundle, indent=2, sort_keys=True) + "\n", "snapshot/bundle.json")
 
 
+@pytest.mark.parametrize("name", sorted(SCAN_STEPS_REQUESTS))
+def test_ui_fixture_with_scan_steps_is_what_the_server_answers(client_scan_steps: TestClient, name: str):
+    _check(_body(client_scan_steps, SCAN_STEPS_REQUESTS[name]), name)
+
+
 @pytest.mark.parametrize("name", sorted(ARCHIVE_REQUESTS))
 def test_ui_fixture_in_archive_mode_is_what_the_server_answers(client_archive: TestClient, name: str):
     _check(_body(client_archive, ARCHIVE_REQUESTS[name]), name)
@@ -197,4 +221,6 @@ def test_fixture_answers_are_the_same_on_every_run(client: TestClient):
 
 def test_there_is_no_fixture_file_without_a_request():
     found = {str(path.relative_to(FIXTURES)) for path in FIXTURES.rglob("*.json")}
-    assert found == set(REQUESTS) | set(UP_REQUESTS) | set(ARCHIVE_REQUESTS) | {"snapshot/bundle.json"}
+    assert found == (
+        set(REQUESTS) | set(UP_REQUESTS) | set(ARCHIVE_REQUESTS) | set(SCAN_STEPS_REQUESTS) | {"snapshot/bundle.json"}
+    )

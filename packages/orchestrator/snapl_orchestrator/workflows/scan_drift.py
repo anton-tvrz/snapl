@@ -32,6 +32,10 @@ _INTENT_RETRY = RetryPolicy(initial_interval=timedelta(seconds=2), maximum_attem
 _COLLECT_RETRY = RetryPolicy(initial_interval=timedelta(seconds=2), maximum_attempts=3)
 _DETECT_RETRY = RetryPolicy(maximum_attempts=1)
 
+# Patch id for recording the intent and collect steps (spec 015 FR-016). A scan
+# in flight when this shipped replays without the extra audit activities.
+_SCAN_STEPS_PATCH = "scan-drift-record-steps"
+
 
 async def _audit(
     *,
@@ -83,6 +87,24 @@ async def _audit_device(*, workflow_id: str, report: DriftReport) -> None:
     )
 
 
+async def _audit_step(*, target_id, activity_name: str, error: str | None, payload: dict | None = None) -> None:
+    """Record one step of the scan as completed, or failed with its error (spec 015 FR-016).
+
+    Projections that read scans select ``detect_drift`` only, so these steps
+    change no figure (FR-019); the loop strip maps them to their blocks.
+    """
+    if not workflow.patched(_SCAN_STEPS_PATCH):
+        return
+    await record_event(
+        workflow_type=_WORKFLOW_TYPE,
+        target_id=target_id,
+        event_type=AuditEventType.ACTIVITY_FAILED if error is not None else AuditEventType.ACTIVITY_COMPLETED,
+        activity_name=activity_name,
+        outcome="failure" if error is not None else "success",
+        payload={"error": error} if error is not None else payload,
+    )
+
+
 @workflow.defn(name="ScanDrift")
 class ScanDriftWorkflow:
     """Evaluate drift for every device in a use case in parallel."""
@@ -116,7 +138,18 @@ class ScanDriftWorkflow:
                     started_at=started_at,
                     partial_reports={},
                 )
+            await _audit_step(
+                target_id=use_case_id,
+                activity_name="fetch_devices_for_use_case",
+                error=f"intent fetch failed: {_cause(exc)}",
+            )
             raise
+        await _audit_step(
+            target_id=use_case_id,
+            activity_name="fetch_devices_for_use_case",
+            error=None,
+            payload={"devices": len(devices)},
+        )
 
         try:
             reports = await asyncio.gather(
@@ -202,6 +235,8 @@ class ScanDriftWorkflow:
         except ActivityError as exc:
             if is_cancelled_exception(exc):
                 raise
+            error = f"collect failed: {_cause(exc)}"
+            await _audit_step(target_id=device.id, activity_name="collect_drift_state", error=error)
             return DriftReport(
                 device_id=device.id,
                 device_name=device.name,
@@ -210,6 +245,11 @@ class ScanDriftWorkflow:
                 error=f"collect failed: {exc}",
                 timestamp=workflow.now(),
             )
+        await _audit_step(
+            target_id=device.id,
+            activity_name="collect_drift_state",
+            error=None if collected.success else (collected.error or "collect reported success=False"),
+        )
 
         try:
             return await workflow.execute_activity(
@@ -256,3 +296,9 @@ class ScanDriftWorkflow:
             ended_at=workflow.now(),
             cancelled=True,
         )
+
+
+def _cause(exc: BaseException) -> str:
+    """The activity's own error under Temporal's ActivityError wrapper."""
+    cause = exc.__cause__
+    return str(cause or exc) or type(exc).__name__

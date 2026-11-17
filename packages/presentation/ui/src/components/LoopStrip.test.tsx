@@ -2,11 +2,12 @@ import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import type { RunSteps } from "../api/types";
-import { STEPS_DEPLOY, STEPS_RECONCILE } from "../test/fixtures";
+import { STEPS_DEPLOY, STEPS_RECONCILE, STEPS_SCAN } from "../test/fixtures";
 import { LoopStrip } from "./LoopStrip";
 
 const deploy = STEPS_DEPLOY.steps.data!;
 const reconcile = STEPS_RECONCILE.steps.data!;
+const scan = STEPS_SCAN.steps.data!;
 
 // The arc has no failed deploy. This one is the fixture's with its apply
 // failed, as the server reports one (research R15); T057 captures a real one.
@@ -57,6 +58,32 @@ describe("LoopStrip", () => {
     expect(block("Collector")).toHaveTextContent("Not reached");
     expect(block("Observability")).toHaveTextContent("Not reached");
     expect(block("Intent")).toHaveTextContent("Done");
+  });
+
+  // spec 015 US4: a scan records its steps, so its strip shows its blocks.
+  it("shows a scan's recorded steps: Intent, Collector and Observability done with their times, Executor not reached", () => {
+    render(<LoopStrip steps={scan} />);
+
+    for (const name of ["Intent", "Collector", "Observability"]) {
+      expect(block(name)).toHaveTextContent("Done");
+      expect(block(name)).toHaveTextContent(/21:20:1[78] UTC/);
+    }
+    expect(block("Executor")).toHaveTextContent("Not reached");
+    expect(screen.queryByText(/not recorded one by one/)).not.toBeInTheDocument();
+    expect(screen.getByText(/ScanDrift/)).toBeInTheDocument();
+  });
+
+  it("names the Collector failed with a device's reason when a scan could not collect it", () => {
+    const reason = "collect failed: leaf-01 unreachable";
+    const failedCollect: RunSteps = {
+      ...scan,
+      blocks: scan.blocks.map((b) => (b.block === "collector" ? { ...b, status: "failed", reason } : b)),
+    };
+    render(<LoopStrip steps={failedCollect} />);
+
+    expect(block("Collector")).toHaveTextContent("Failed");
+    expect(block("Collector")).toHaveTextContent(reason);
+    expect(block("Observability")).toHaveTextContent("Done");
   });
 
   it("says when a run type's steps are not recorded one by one, and gives the outcome", () => {

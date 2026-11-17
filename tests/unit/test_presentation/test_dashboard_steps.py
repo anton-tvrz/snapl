@@ -23,7 +23,7 @@ import pytest
 
 from snapl_orchestrator.models import AuditEvent, AuditEventType, WorkflowReason
 from snapl_presentation.dashboard.models import BlockStatus, NafBlock, RunState, RunView, Trigger
-from snapl_presentation.dashboard.projections import STEP_BLOCKS, project_steps, run_events
+from snapl_presentation.dashboard.projections import STEP_BLOCKS, project_steps, run_events, scan_of_response
 from tests.unit.test_presentation.dashboard_fakes import ARC, arc_events, failed_deploy_events
 
 pytestmark = pytest.mark.unit
@@ -124,11 +124,13 @@ async def test_a_captured_deploy_has_four_steps_done_in_loop_order():
     assert steps.blocks[5].t is None
 
 
-async def test_step_blocks_covers_exactly_what_deploys_record():
-    """A step the workflow starts recording must be given a block here."""
+async def test_step_blocks_covers_exactly_what_deploys_and_scans_record():
+    """A step a workflow starts recording must be given a block here."""
     recorded = {e.activity_name for e in await arc_events() if e.workflow_type == "DeployIntent" and e.activity_name}
 
-    assert set(STEP_BLOCKS) == recorded == set(STEPS)
+    assert recorded == set(STEPS)
+    # Spec 015 FR-016: a scan records reading intent for the use case too.
+    assert set(STEP_BLOCKS) == {*STEPS, "fetch_devices_for_use_case"}
 
 
 async def test_run_events_picks_one_run_of_a_reused_workflow_id():
@@ -275,3 +277,241 @@ def test_a_recorded_step_failure_is_a_failed_step():
     (step,) = project_steps(_run(events, RunState.SUCCEEDED, "ScanDrift"), events).steps
 
     assert (step.outcome, step.reason) == ("failed", "gNMI timeout")
+
+
+# --- a scan's steps (spec 015 US4, T040) ---------------------------------------------
+
+SCAN = {"workflow_id": "scan-1", "workflow_type": "ScanDrift"}
+SPINE = UUID("00000000-0000-0000-0000-000000000001")
+
+
+def _scan(*, collect_fails: UUID | None = None, intent_fails: bool = False, of: dict | None = None, at: float = 0):
+    """A ScanDrift run as `scan_drift.py` records it since spec 015 (FR-016)."""
+    of = of or SCAN
+    events = [_event(at, AuditEventType.WORKFLOW_STARTED, **of, target_id="dcfabric")]
+    if intent_fails:
+        return [
+            *events,
+            _event(
+                at + 1,
+                AuditEventType.ACTIVITY_FAILED,
+                **of,
+                target_id="dcfabric",
+                activity_name="fetch_devices_for_use_case",
+                outcome="failure",
+                payload={"error": "intent fetch failed: Infrahub unreachable"},
+            ),
+        ]
+    events.append(
+        _event(
+            at + 1,
+            AuditEventType.ACTIVITY_COMPLETED,
+            **of,
+            target_id="dcfabric",
+            activity_name="fetch_devices_for_use_case",
+            outcome="success",
+            payload={"devices": 2},
+        )
+    )
+    for offset, device in ((2, SPINE), (3, LEAF)):
+        failed = device == collect_fails
+        error = {"error": "collect failed: leaf-01 unreachable"}
+        events.append(
+            _event(
+                at + offset,
+                AuditEventType.ACTIVITY_FAILED if failed else AuditEventType.ACTIVITY_COMPLETED,
+                **of,
+                target_id=device,
+                activity_name="collect_drift_state",
+                outcome="failure" if failed else "success",
+                payload=error if failed else {},
+            )
+        )
+        events.append(
+            _event(
+                at + offset + 2,
+                AuditEventType.ACTIVITY_FAILED if failed else AuditEventType.ACTIVITY_COMPLETED,
+                **of,
+                target_id=device,
+                activity_name="detect_drift",
+                outcome="failure" if failed else "success",
+                payload={"status": "error", "drift_items": 0, **error}
+                if failed
+                else {"status": "clean", "drift_items": 0},
+            )
+        )
+    events.append(
+        _event(
+            at + 9,
+            AuditEventType.WORKFLOW_TERMINATED,
+            **of,
+            target_id="dcfabric",
+            outcome="success",
+            reason=WorkflowReason.SUCCEEDED,
+        )
+    )
+    return events
+
+
+def _blocks(steps) -> dict:
+    return {block.block: block for block in steps.blocks}
+
+
+def test_step_blocks_names_a_block_for_each_step_a_scan_records():
+    assert STEP_BLOCKS["fetch_devices_for_use_case"] is NafBlock.INTENT
+    assert STEP_BLOCKS["collect_drift_state"] is NafBlock.COLLECTOR
+
+
+def test_a_scan_that_records_its_steps_shows_intent_collector_and_observability_done():
+    """Acceptance 1: done, each with the time of its block's last step; Executor not reached."""
+    events = _scan()
+
+    steps = project_steps(_run(events, RunState.SUCCEEDED, "ScanDrift"), events)
+
+    assert steps.recorded is True
+    assert _statuses(steps) == [DONE, NOT_REACHED, DONE, DONE, *TAIL]
+    blocks = _blocks(steps)
+    assert blocks[NafBlock.INTENT].t == T0 + timedelta(seconds=1)
+    assert blocks[NafBlock.COLLECTOR].t == T0 + timedelta(seconds=3)
+    assert blocks[NafBlock.OBSERVABILITY].t == T0 + timedelta(seconds=5)
+
+
+def test_a_scan_that_could_not_collect_a_device_fails_the_collector_with_its_reason():
+    """Acceptance 2. The device's failed drift check follows from its collect: Observability ran for the rest."""
+    events = _scan(collect_fails=LEAF)
+
+    steps = project_steps(_run(events, RunState.SUCCEEDED, "ScanDrift"), events)
+
+    assert _statuses(steps) == [DONE, NOT_REACHED, FAILED, DONE, *TAIL]
+    collector = _blocks(steps)[NafBlock.COLLECTOR]
+    assert collector.reason == "collect failed: leaf-01 unreachable"
+    assert collector.t == T0 + timedelta(seconds=3)
+    assert _blocks(steps)[NafBlock.OBSERVABILITY].t == T0 + timedelta(seconds=4)
+
+
+def test_a_scan_whose_drift_check_failed_on_its_own_fails_observability():
+    events = _scan()
+    check = next(e for e in events if e.activity_name == "detect_drift" and e.target_id == LEAF)
+    events[events.index(check)] = check.model_copy(
+        update={"event_type": AuditEventType.ACTIVITY_FAILED, "outcome": "failure", "payload": {"error": "boom"}}
+    )
+
+    steps = project_steps(_run(events, RunState.SUCCEEDED, "ScanDrift"), events)
+
+    assert _statuses(steps) == [DONE, NOT_REACHED, DONE, FAILED, *TAIL]
+    assert _blocks(steps)[NafBlock.OBSERVABILITY].reason == "boom"
+
+
+def test_a_scan_that_could_not_read_intent_fails_intent_and_reaches_nothing_else():
+    events = _scan(intent_fails=True)
+
+    steps = project_steps(_run(events, RunState.FAILED, "ScanDrift"), events)
+
+    assert _statuses(steps) == [FAILED, NOT_REACHED, NOT_REACHED, NOT_REACHED, *TAIL]
+    assert _blocks(steps)[NafBlock.INTENT].reason == "intent fetch failed: Infrahub unreachable"
+
+
+def test_a_scan_recorded_before_spec_015_still_says_its_steps_are_not_recorded():
+    """Acceptance 4 (FR-018): no intent step, so the drift checks alone do not make it recorded."""
+    events = [e for e in _scan() if e.activity_name in {None, "detect_drift"}]
+
+    steps = project_steps(_run(events, RunState.SUCCEEDED, "ScanDrift"), events)
+
+    assert steps.recorded is False
+    assert _statuses(steps) == [BlockStatus.NOT_RECORDED] * 4 + TAIL
+
+
+# --- a drift response's steps: its scan's, and its repairs (T040, FR-017) -------------
+
+RESPONSE = {"workflow_id": "drift-response-1", "workflow_type": "DriftResponse"}
+
+
+def _response(*, remediated: dict[UUID, str] | None = None, scan: list[AuditEvent] | None = None):
+    """A DriftResponse run, its scan child (`<id>-scan`) and its per-device decisions."""
+    own = [_event(0, AuditEventType.WORKFLOW_STARTED, **RESPONSE, target_id="dcfabric", payload={"mode": "remediate"})]
+    child = scan if scan is not None else _scan(of={**SCAN, "workflow_id": "drift-response-1-scan"}, at=0.5)
+    for index, (device, result) in enumerate((remediated or {}).items()):
+        own.append(
+            _event(
+                20 + index,
+                AuditEventType.DRIFT_RESPONSE,
+                **RESPONSE,
+                target_id=device,
+                payload={
+                    "decision": "remediated",
+                    "result": result,
+                    "reconcile_workflow_id": "drift-response-1-reconcile",
+                },
+            )
+        )
+    own.append(
+        _event(
+            30,
+            AuditEventType.WORKFLOW_TERMINATED,
+            **RESPONSE,
+            target_id="dcfabric",
+            outcome="success",
+            reason=WorkflowReason.SUCCEEDED,
+        )
+    )
+    return own, child
+
+
+def test_a_drift_response_that_found_nothing_shows_its_scan_s_blocks_and_no_executor():
+    """Acceptance 3."""
+    own, child = _response()
+
+    steps = project_steps(_run(own, RunState.SUCCEEDED, "DriftResponse"), own, scan_events=child)
+
+    assert steps.recorded is True
+    assert _statuses(steps) == [DONE, NOT_REACHED, DONE, DONE, *TAIL]
+    assert [step.name for step in steps.steps] == [
+        "fetch_devices_for_use_case",
+        "collect_drift_state",
+        "collect_drift_state",
+        "detect_drift",
+        "detect_drift",
+    ]
+
+
+def test_a_drift_response_that_repaired_shows_the_executor_done_at_its_last_successful_repair():
+    """A device the reconcile skipped (its deploy was in flight) is neither done nor failed here."""
+    own, child = _response(remediated={SPINE: "succeeded", LEAF: "skipped"})
+
+    steps = project_steps(_run(own, RunState.SUCCEEDED, "DriftResponse"), own, scan_events=child)
+
+    assert _statuses(steps) == [DONE, DONE, DONE, DONE, *TAIL]
+    assert _blocks(steps)[NafBlock.EXECUTOR].t == T0 + timedelta(seconds=20)
+
+
+@pytest.mark.parametrize("result", ["failed", "unknown"])
+def test_a_drift_response_whose_repair_failed_fails_the_executor(result: str):
+    own, child = _response(remediated={SPINE: "succeeded", LEAF: result})
+
+    steps = project_steps(_run(own, RunState.SUCCEEDED, "DriftResponse"), own, scan_events=child)
+
+    assert _statuses(steps) == [DONE, FAILED, DONE, DONE, *TAIL]
+    assert _blocks(steps)[NafBlock.EXECUTOR].reason == "the repair did not succeed on 1 device"
+
+
+def test_a_drift_response_whose_scan_predates_spec_015_is_not_recorded():
+    old_scan = [
+        e
+        for e in _scan(of={**SCAN, "workflow_id": "drift-response-1-scan"})
+        if e.activity_name != "fetch_devices_for_use_case"
+    ]
+    own, child = _response(scan=old_scan)
+
+    steps = project_steps(_run(own, RunState.SUCCEEDED, "DriftResponse"), own, scan_events=child)
+
+    assert steps.recorded is False
+    assert _statuses(steps) == [BlockStatus.NOT_RECORDED] * 4 + TAIL
+
+
+def test_a_drift_response_s_scan_is_found_by_its_child_id_and_start():
+    own, child = _response()
+    later = _scan(of={**SCAN, "workflow_id": "drift-response-1-scan"}, at=100)
+    trail = [*own, *child, *later, *_scan()]
+
+    assert scan_of_response(trail, "drift-response-1", own[0].timestamp) == sorted(child, key=lambda e: e.timestamp)
+    assert scan_of_response(trail, "no-such-run", own[0].timestamp) == []
