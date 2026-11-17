@@ -12,6 +12,7 @@ inside a ``200`` (FR-005, FR-007).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import pathlib  # noqa: TC003 — FastAPI resolves annotations at runtime
 import time
 from datetime import datetime, timedelta
@@ -81,7 +82,7 @@ from snapl_presentation.dashboard.sources import AUDIT_REMEDY, STACK_REMEDY, Sou
 from snapl_presentation.exceptions import first_line
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable, Hashable
+    from collections.abc import Awaitable, Callable, Hashable, Iterator
 
     from snapl_presentation.dashboard.archive import ArchiveExports
     from snapl_presentation.settings import CliSettings
@@ -190,6 +191,9 @@ class _Reader:
         # How each source's latest finished fetch went, for GET /metrics
         # (spec 012 R8). Recorded as fetches finish, so reading it costs none.
         self.outcomes: dict[SourceName, SourceOutcome] = {}
+        # Set while a snapshot is collected (`waiting_in_full`): every read
+        # waits for the fetch's own answer instead of the request budget.
+        self.in_full = False
 
     def _bound(self, name: SourceName) -> float:
         return max(self._timeout, _FETCH_BOUND_S.get(name, 0.0))
@@ -231,20 +235,20 @@ class _Reader:
         """
         task = self._fetch(key, name, load)
         budget = min(self._timeout, REQUEST_BUDGET_S)
+        # `wait` leaves the fetch running when the budget runs out. Waiting in
+        # full is still bounded: the fetch times out on its own.
+        done, _ = await asyncio.wait({task}, timeout=None if self.in_full else budget)
+        if not done:
+            return self._without(key, name, f"still waiting for {name.value} (more than {budget:g}s so far)")
+        self._forget(key, task)
         try:
-            view = await asyncio.wait_for(asyncio.shield(task), timeout=budget)
+            view = task.result()
         except TimeoutError:
-            if not task.done():
-                return self._without(key, name, f"still waiting for {name.value} (more than {budget:g}s so far)")
-            self._forget(key, task)
             return self._without(key, name, f"{name.value} did not answer within {self._bound(name):g}s")
         except SourceUnavailable as exc:
-            self._forget(key, task)
             return self._without(key, name, exc.reason, exc.remedy)
         except Exception as exc:
-            self._forget(key, task)
             return self._without(key, name, f"{name.value} failed: {first_line(str(exc)) or type(exc).__name__}")
-        self._forget(key, task)
         if view.data is not None and view.fetched_at is not None:
             self._last[key] = view
         return view
@@ -559,6 +563,21 @@ def _device_names(sot: View[Any], last_known: dict) -> dict:
     return last_known
 
 
+@contextlib.contextmanager
+def waiting_in_full(app: FastAPI) -> Iterator[None]:
+    """While inside, each request to ``app`` waits for its sources' own answers.
+
+    For the snapshot, which asks each route once and can't ask again as the
+    page does. A fetch is still bounded by its own timeout (#274).
+    """
+    reader: _Reader = app.state.reader
+    before, reader.in_full = reader.in_full, True
+    try:
+        yield
+    finally:
+        reader.in_full = before
+
+
 def create_app(
     sources: Sources,
     settings: CliSettings,
@@ -589,6 +608,7 @@ def create_app(
     )
     router = APIRouter(prefix="/api/v1")
     reader = _Reader(sources, settings.connect_timeout)
+    app.state.reader = reader
 
     def _check_use_case(requested: str | None) -> str:
         if requested is not None and requested != use_case:
