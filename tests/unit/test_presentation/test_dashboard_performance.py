@@ -7,6 +7,7 @@ under a second over all of them.
 
 from __future__ import annotations
 
+import gc
 import time
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
@@ -116,6 +117,14 @@ def trail() -> list[AuditEvent]:
 
 
 def _timed(fn) -> float:
+    """How long ``fn`` takes, without a collection of garbage it did not make.
+
+    Building the 100,000-event trail leaves a full collection due, and it
+    walks every event: about 60 ms here, and about 0.3 s in CI under coverage,
+    landing in whichever timed call comes first (#287). Collecting before the
+    clock starts keeps that out of the projection's time.
+    """
+    gc.collect()
     started = time.perf_counter()
     fn()
     return time.perf_counter() - started
