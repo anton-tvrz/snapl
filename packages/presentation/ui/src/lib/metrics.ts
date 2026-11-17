@@ -121,6 +121,11 @@ export interface LeadValue {
   window: string | null;
 }
 
+/** A window as the server's note words it under two minutes ("60 s"), and as a duration above. */
+function windowText(seconds: number): string {
+  return seconds < 120 ? `${seconds} s` : durationText(seconds);
+}
+
 /** The seconds a count's point covers: the server's window note, or else its step (research R4). */
 export function countWindow(data: MetricsData): number {
   const noted = /events in the last (\d+) s/.exec(data.note ?? "");
@@ -149,7 +154,7 @@ export function leadValue(data: MetricsData, kind?: MetricKind | null): LeadValu
     text: formatValue(top.value, data.unit),
     series: many ? top.label : null,
     unitNote: data.unit === "per_second" && perMinute(top.value) ? "per minute" : null,
-    window: kind === "events" ? `in the last ${durationText(countWindow(data))}` : null,
+    window: kind === "events" ? `in the last ${windowText(countWindow(data))}` : null,
   };
 }
 

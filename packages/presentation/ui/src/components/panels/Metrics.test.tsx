@@ -62,7 +62,7 @@ describe("MetricPanel", () => {
 
     const region = screen.getByRole("region", { name: "Workflows completed (count)" });
     expect(within(region).getByText("1", { selector: "[data-lead]" })).toBeInTheDocument();
-    expect(region).toHaveTextContent("1in the last 1 minScanDrift");
+    expect(region).toHaveTextContent("1in the last 60 sScanDrift");
     expect(region).toHaveTextContent("count · step 15 s");
     expect(region).toHaveTextContent("events in the last 60 s");
   });

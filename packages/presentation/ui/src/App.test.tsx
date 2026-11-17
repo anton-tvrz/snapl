@@ -377,7 +377,7 @@ describe("App", () => {
 
     const panel = await screen.findByRole("region", { name: "Workflows completed (count)" });
     expect(await within(panel).findByText("1", { selector: "[data-lead]" })).toBeInTheDocument();
-    expect(panel).toHaveTextContent("in the last 1 min");
+    expect(panel).toHaveTextContent("in the last 60 s");
   });
 
   it("asks the lanes and the metrics for a chosen range, and keeps it in the address", async () => {

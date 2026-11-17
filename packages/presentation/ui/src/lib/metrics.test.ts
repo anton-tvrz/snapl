@@ -132,7 +132,7 @@ describe("metrics helpers", () => {
       const completed = data("workflows-completed");
       expect(completed.note).toBe("events in the last 60 s");
 
-      expect(leadValue(completed, "events")).toEqual({ text: "1", series: "ScanDrift", unitNote: null, window: "in the last 1 min" });
+      expect(leadValue(completed, "events")).toEqual({ text: "1", series: "ScanDrift", unitNote: null, window: "in the last 60 s" });
       const steady = { ...completed, series: [{ labels: {}, points: [3, 3, 3].map((value) => ({ t: "2026-11-07T21:20:00Z", value })) }] };
       expect(leadValue(steady, "events")?.text).toBe("3");
     });
