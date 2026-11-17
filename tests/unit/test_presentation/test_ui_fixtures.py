@@ -21,6 +21,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from snapl_presentation.dashboard.models import MetricsViewName
+from snapl_presentation.dashboard.prometheus import VIEWS
+
 pytestmark = pytest.mark.unit
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -68,10 +71,7 @@ UP_REQUESTS = {
     "up/overview.json": "/api/v1/overview",
     "up/sources.json": "/api/v1/sources",
     # Each metrics view over the server's default range: the hour before NOW.
-    **{
-        f"up/metrics-{view}.json": f"/api/v1/metrics/{view}"
-        for view in ("workflow-duration", "gnmi-duration", "gnmi-errors", "worker-lag", "worker-up", "source-health")
-    },
+    **{f"up/metrics-{view.value}.json": f"/api/v1/metrics/{view.value}" for view in MetricsViewName},
 }
 
 
@@ -167,6 +167,26 @@ def test_the_up_server_has_temporal_up_and_the_default_server_does_not(client: T
     assert metrics["available"] is True
     assert {series["labels"]["workflow_type"] for series in metrics["data"]["series"]} == {"DeployIntent", "ScanDrift"}
     assert client.get("/api/v1/metrics/workflow-duration").json()["metrics"]["available"] is False
+
+
+@pytest.mark.parametrize("view", list(MetricsViewName))
+def test_the_up_server_answers_every_view_with_its_own_labels_and_unit(client_up: TestClient, view: MetricsViewName):
+    """Spec 015 T023: synthetic series for every view, with research R2's label sets."""
+    data = client_up.get(f"/api/v1/metrics/{view.value}").json()["metrics"]["data"]
+
+    assert data["unit"] == VIEWS[view].unit
+    assert data["series"]
+    assert all(set(series["labels"]) == set(VIEWS[view].labels) for series in data["series"])
+    assert len(data["series"]) <= 6  # the palette's limit (research R2)
+
+
+def test_the_up_server_says_the_window_of_a_count(client_up: TestClient):
+    """The default hour is at 15 s, so a count's 60 s windows overlap (research R4)."""
+    counted = client_up.get("/api/v1/metrics/workflows-completed").json()["metrics"]["data"]
+    gauge = client_up.get("/api/v1/metrics/worker-slots").json()["metrics"]["data"]
+
+    assert counted["note"] == "events in the last 60 s"
+    assert gauge["note"] is None
 
 
 def test_fixture_answers_are_the_same_on_every_run(client: TestClient):

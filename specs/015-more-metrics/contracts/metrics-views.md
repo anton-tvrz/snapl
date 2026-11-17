@@ -6,7 +6,7 @@ Every addition is **compatible** under 010's versioning rules: new enum values, 
 
 ## `MetricsViewName` (new values)
 
-`$ns`, `$uc` and `$w` are as in spec 012. `rate()` below means spec 012's rate, or PR #241's first-observation form once it has merged. `increase()` over `$w` is scaled to the step, so a point is "events in this step".
+`$ns`, `$uc` and `$w` are as in spec 012. `rate()` below means spec 012's rate, or PR #241's first-observation form once it has merged. `increase()` over `$w` is not scaled: a point is the events in the window ending at it, so when `$w` is longer than the step, neighbouring points overlap (research R4).
 
 | view | query (template) | unit | series labels | reads |
 | --- | --- | --- | --- | --- |
@@ -22,6 +22,11 @@ Every addition is **compatible** under 010's versioning rules: new enum values, 
 | `deploy-outcomes` | `sum by (outcome, reason) (increase(snapl_deploy_ends_total{use_case="$uc"}[$w]))` | count | `outcome`, `reason` | snapl, new |
 
 The label sets of the SDK families were read from the live metrics store on 2026-11-15 (research R2).
+
+Settled in PR D (#284):
+- **Rates are #241's first-observation form**, in the means as in the percentiles. `increase()` is that rate times the window (`increase` is `rate` times the range in Prometheus), so a first workflow completion after a worker restart counts as one instead of showing nothing (#191).
+- **The window note.** `$w` is `max(60 s, step)`. When it is longer than the step, a view that counts events (`workflows-completed`, and PR E's three) says `events in the last 60 s` in its `note`, after any step note and before "no data in range". When `$w` is the step, a point is the events in its own step and there is no window note. `worker-slots` is a `count` but a gauge, so it has no window note.
+- **Checked live** on 2026-11-17: each of the seven queries answered `success` from the lab's Prometheus, with the series labels above. `source-fetch-time` also carries `__name__`, `job` and `instance`, which the parser drops, as for `source-health`.
 
 ## `MetricUnit` (new value)
 

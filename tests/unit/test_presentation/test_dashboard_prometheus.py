@@ -27,7 +27,9 @@ from snapl_presentation.dashboard.prometheus import (
     choose_step,
     parse_matrix,
     plan_range,
+    rate_window,
     render_query,
+    window_note,
 )
 from snapl_presentation.dashboard.sources import SourceUnavailable
 
@@ -119,11 +121,33 @@ EXPECTED_QUERIES = {
     ),
     MetricsViewName.WORKER_UP: 'up{job="snapl-worker"}',
     MetricsViewName.SOURCE_HEALTH: "snapl_dashboard_source_up",
+    # Spec 015 (contracts/metrics-views.md): means, counts and current values.
+    MetricsViewName.WORKFLOW_MEAN: (
+        f"sum by (workflow_type) ({_rate('temporal_workflow_endtoend_latency_sum{namespace="default"}')})"
+        f" / sum by (workflow_type) ({_rate('temporal_workflow_endtoend_latency_count{namespace="default"}')})"
+    ),
+    MetricsViewName.GNMI_MEAN: (
+        f"sum by (device, operation) ({_rate('snapl_gnmi_call_duration_sum{use_case="dcfabric"}')})"
+        f" / sum by (device, operation) ({_rate('snapl_gnmi_call_duration_count{use_case="dcfabric"}')})"
+    ),
+    MetricsViewName.WORKFLOWS_COMPLETED: (
+        f"sum by (workflow_type) (({_rate('temporal_workflow_completed{namespace="default"}')} * 60))"
+    ),
+    MetricsViewName.ACTIVITY_TIME: (
+        f"sum by (activity_type) ({_rate('temporal_activity_execution_latency_sum{namespace="default"}')})"
+        f" / sum by (activity_type) ({_rate('temporal_activity_execution_latency_count{namespace="default"}')})"
+    ),
+    MetricsViewName.WORKER_SLOTS: 'sum by (worker_type) (temporal_worker_task_slots_used{namespace="default"})',
+    MetricsViewName.SERVER_REQUEST_TIME: (
+        f"sum({_rate('temporal_request_latency_sum{namespace="default"}')})"
+        f" / sum({_rate('temporal_request_latency_count{namespace="default"}')})"
+    ),
+    MetricsViewName.SOURCE_FETCH_TIME: "snapl_dashboard_source_fetch_duration_milliseconds",
 }
 
 
 def test_every_view_has_exactly_the_documented_query() -> None:
-    assert set(VIEWS) == set(MetricsViewName)
+    assert set(VIEWS) == set(MetricsViewName) == set(EXPECTED_QUERIES)
     for view, expected in EXPECTED_QUERIES.items():
         assert render_query(view, namespace="default", use_case="dcfabric", window_s=60) == expected
 
@@ -157,6 +181,13 @@ def test_units_and_series_labels_follow_the_data_model() -> None:
         MetricsViewName.WORKER_LAG: "ms",
         MetricsViewName.WORKER_UP: "up",
         MetricsViewName.SOURCE_HEALTH: "up",
+        MetricsViewName.WORKFLOW_MEAN: "ms",
+        MetricsViewName.GNMI_MEAN: "ms",
+        MetricsViewName.WORKFLOWS_COMPLETED: "count",
+        MetricsViewName.ACTIVITY_TIME: "ms",
+        MetricsViewName.WORKER_SLOTS: "count",
+        MetricsViewName.SERVER_REQUEST_TIME: "ms",
+        MetricsViewName.SOURCE_FETCH_TIME: "ms",
     }
     assert {v: spec.labels for v, spec in VIEWS.items()} == {
         MetricsViewName.WORKFLOW_DURATION: ("workflow_type",),
@@ -165,7 +196,56 @@ def test_units_and_series_labels_follow_the_data_model() -> None:
         MetricsViewName.WORKER_LAG: (),
         MetricsViewName.WORKER_UP: (),
         MetricsViewName.SOURCE_HEALTH: ("source",),
+        MetricsViewName.WORKFLOW_MEAN: ("workflow_type",),
+        MetricsViewName.GNMI_MEAN: ("device", "operation"),
+        MetricsViewName.WORKFLOWS_COMPLETED: ("workflow_type",),
+        MetricsViewName.ACTIVITY_TIME: ("activity_type",),
+        MetricsViewName.WORKER_SLOTS: ("worker_type",),
+        MetricsViewName.SERVER_REQUEST_TIME: (),
+        MetricsViewName.SOURCE_FETCH_TIME: ("source",),
     }
+
+
+def test_only_the_event_views_count_events_in_a_window() -> None:
+    """A gauge's `count` is a current value: worker-slots says nothing about a window (research R4)."""
+    assert {v for v, spec in VIEWS.items() if spec.counts_events} == {MetricsViewName.WORKFLOWS_COMPLETED}
+
+
+def test_a_count_of_events_is_the_first_observation_rate_times_the_window() -> None:
+    """increase() is rate() times the window, so a first completion counts too (#191)."""
+    query = render_query(MetricsViewName.WORKFLOWS_COMPLETED, namespace="n", use_case="u", window_s=300)
+
+    assert "offset 300s" in query
+    assert "/ 300 or rate(" in query
+    assert query.endswith(" * 300))")
+    assert "$" not in query
+
+
+# --- the window of a count (research R4) -----------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("step", "expected"),
+    [
+        (15, "events in the last 60 s"),  # the default hour: each point overlaps three neighbours
+        (59, "events in the last 60 s"),
+        (60, None),  # the window is the step: a point is the events in its own step
+        (360, None),
+    ],
+)
+def test_a_count_says_its_window_when_the_window_is_longer_than_the_step(step: int, expected: str | None) -> None:
+    assert window_note(MetricsViewName.WORKFLOWS_COMPLETED, step) == expected
+
+
+def test_views_that_do_not_count_events_have_no_window_note() -> None:
+    for view in MetricsViewName:
+        if view is not MetricsViewName.WORKFLOWS_COMPLETED:
+            assert window_note(view, 15) is None, view
+
+
+def test_the_window_spans_four_scrapes_or_one_step() -> None:
+    assert rate_window(15) == 60
+    assert rate_window(300) == 300
 
 
 async def test_only_query_start_end_and_step_reach_prometheus() -> None:
@@ -247,6 +327,121 @@ def test_parse_matrix_drops_name_job_and_instance_for_an_unlabelled_view() -> No
     series = parse_matrix(body, ())
 
     assert all(s.labels == {} for s in series)
+
+
+def _matrix(results: list[tuple[dict[str, str], list[tuple[int, str]]]]) -> dict[str, Any]:
+    """A query_range answer in the captured format (fixtures/prometheus/), built by hand."""
+    return {
+        "status": "success",
+        "data": {
+            "resultType": "matrix",
+            "result": [{"metric": metric, "values": [[ts, raw] for ts, raw in values]} for metric, values in results],
+        },
+    }
+
+
+_T = int(T0.timestamp())
+
+# Built by hand with the label sets the live store held on 2026-11-15 (research R2).
+HAND_BUILT: dict[MetricsViewName, tuple[list[tuple[dict[str, str], list[tuple[int, str]]]], list[dict[str, str]]]] = {
+    MetricsViewName.WORKFLOW_MEAN: (
+        [({"workflow_type": "ScanDrift"}, [(_T, "1580.2")]), ({"workflow_type": "DeployIntent"}, [(_T, "NaN")])],
+        [{"workflow_type": "ScanDrift"}, {"workflow_type": "DeployIntent"}],
+    ),
+    MetricsViewName.GNMI_MEAN: (
+        [({"device": "leaf-01", "operation": "collect"}, [(_T, "212.5")])],
+        [{"device": "leaf-01", "operation": "collect"}],
+    ),
+    MetricsViewName.WORKFLOWS_COMPLETED: (
+        [({"workflow_type": wt}, [(_T, "1.0666666666666667")]) for wt in ("DeployIntent", "ScanDrift")],
+        [{"workflow_type": "DeployIntent"}, {"workflow_type": "ScanDrift"}],
+    ),
+    MetricsViewName.ACTIVITY_TIME: (
+        [({"activity_type": "detect_drift"}, [(_T, "41")])],
+        [{"activity_type": "detect_drift"}],
+    ),
+    MetricsViewName.WORKER_SLOTS: (
+        [({"worker_type": wt}, [(_T, "0")]) for wt in ("ActivityWorker", "LocalActivityWorker", "WorkflowWorker")],
+        [{"worker_type": "ActivityWorker"}, {"worker_type": "LocalActivityWorker"}, {"worker_type": "WorkflowWorker"}],
+    ),
+    MetricsViewName.SERVER_REQUEST_TIME: ([({}, [(_T, "18.4")])], [{}]),
+    MetricsViewName.SOURCE_FETCH_TIME: (
+        [
+            (
+                {
+                    "__name__": "snapl_dashboard_source_fetch_duration_milliseconds",
+                    "instance": "host.docker.internal:18030",
+                    "job": "snapl-dashboard",
+                    "source": "audit",
+                },
+                [(_T, "3.2")],
+            )
+        ],
+        [{"source": "audit"}],
+    ),
+}
+
+
+def test_every_new_view_has_a_hand_built_matrix() -> None:
+    assert set(HAND_BUILT) == set(MetricsViewName) - {
+        MetricsViewName.WORKFLOW_DURATION,
+        MetricsViewName.GNMI_DURATION,
+        MetricsViewName.GNMI_ERRORS,
+        MetricsViewName.WORKER_LAG,
+        MetricsViewName.WORKER_UP,
+        MetricsViewName.SOURCE_HEALTH,
+    }
+
+
+@pytest.mark.parametrize("view", sorted(HAND_BUILT))
+async def test_a_new_view_parses_its_matrix_to_series_with_its_labels(view: MetricsViewName) -> None:
+    results, labels = HAND_BUILT[view]
+    prom = FakeProm({"http_status": 200, "body": _matrix(results)})
+
+    data = await source(prom).query(view, an_hour())
+
+    assert data.view is view
+    assert data.unit == VIEWS[view].unit
+    assert [s.labels for s in data.series] == labels
+    [params] = prom.range_queries()
+    assert params["query"] == [EXPECTED_QUERIES[view]]
+    for series, (_, values) in zip(data.series, results, strict=True):
+        [(ts, raw)] = values
+        assert series.points[0].t == datetime.fromtimestamp(ts, UTC)
+        assert series.points[0].value == (None if raw == "NaN" else float(raw))
+
+
+async def test_a_count_over_the_default_hour_carries_its_window() -> None:
+    results, _ = HAND_BUILT[MetricsViewName.WORKFLOWS_COMPLETED]
+    prom = FakeProm({"http_status": 200, "body": _matrix(results)})
+
+    data = await source(prom).query(MetricsViewName.WORKFLOWS_COMPLETED, an_hour())
+
+    assert data.note == "events in the last 60 s"
+
+
+async def test_a_count_keeps_every_note_in_order() -> None:
+    prom = FakeProm(fixture("range_absent_metric"))
+
+    data = await source(prom).query(MetricsViewName.WORKFLOWS_COMPLETED, plan_range(T0 - timedelta(hours=1), T0, 1))
+
+    assert data.note == "events in the last 60 s; no data in range"
+
+    data = await source(prom).query(MetricsViewName.WORKFLOWS_COMPLETED, plan_range(T0 - timedelta(days=400), T0, 1))
+    assert data.note is not None
+    assert data.note.startswith("step raised to ")
+    assert data.note.endswith("; no data in range")
+    assert "events in the last" not in data.note  # the raised step is longer than four scrapes
+
+
+async def test_a_gauge_count_has_no_window_note() -> None:
+    results, _ = HAND_BUILT[MetricsViewName.WORKER_SLOTS]
+    prom = FakeProm({"http_status": 200, "body": _matrix(results)})
+
+    data = await source(prom).query(MetricsViewName.WORKER_SLOTS, an_hour())
+
+    assert data.unit == "count"
+    assert data.note is None
 
 
 def _two_finite_points(body: dict[str, Any]) -> tuple[int, int]:

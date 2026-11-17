@@ -46,7 +46,9 @@ __all__ = [
     "choose_step",
     "parse_matrix",
     "plan_range",
+    "rate_window",
     "render_query",
+    "window_note",
 ]
 
 # development/prometheus/prometheus.yml scrapes every 15 s.
@@ -73,12 +75,29 @@ def _rate(selector: str) -> str:
     )
 
 
+def _increase(selector: str) -> str:
+    """``increase(selector[$w])`` that also counts a series' first observation.
+
+    ``increase()`` is ``rate()`` times the window, so this is ``_rate`` times
+    ``$sec``: a first workflow completion after a worker restart counts as one,
+    where a plain ``increase()`` shows nothing (#191).
+    """
+    return f"({_rate(selector)} * $sec)"
+
+
+def _mean(sum_selector: str, count_selector: str, by: str) -> str:
+    """The mean of a histogram over the window: exact with any buckets (spec 015 research R3)."""
+    return f"{by}({_rate(sum_selector)}) / {by}({_rate(count_selector)})"
+
+
 @dataclass(frozen=True)
 class MetricsViewSpec:
     # `$ns`, `$uc`, `$w` and `$sec` are filled by render_query, and nothing else is.
     query: str
     unit: MetricUnit
     labels: tuple[str, ...]
+    # True for a count of events over the window, as opposed to a gauge's current count (research R4).
+    counts_events: bool = False
 
 
 VIEWS: dict[MetricsViewName, MetricsViewSpec] = {
@@ -107,6 +126,57 @@ VIEWS: dict[MetricsViewName, MetricsViewSpec] = {
     ),
     MetricsViewName.WORKER_UP: MetricsViewSpec('up{job="snapl-worker"}', "up", ()),
     MetricsViewName.SOURCE_HEALTH: MetricsViewSpec("snapl_dashboard_source_up", "up", ("source",)),
+    # Spec 015 (contracts/metrics-views.md, research R2 to R4).
+    MetricsViewName.WORKFLOW_MEAN: MetricsViewSpec(
+        _mean(
+            'temporal_workflow_endtoend_latency_sum{namespace="$ns"}',
+            'temporal_workflow_endtoend_latency_count{namespace="$ns"}',
+            "sum by (workflow_type) ",
+        ),
+        "ms",
+        ("workflow_type",),
+    ),
+    MetricsViewName.GNMI_MEAN: MetricsViewSpec(
+        _mean(
+            'snapl_gnmi_call_duration_sum{use_case="$uc"}',
+            'snapl_gnmi_call_duration_count{use_case="$uc"}',
+            "sum by (device, operation) ",
+        ),
+        "ms",
+        ("device", "operation"),
+    ),
+    MetricsViewName.WORKFLOWS_COMPLETED: MetricsViewSpec(
+        f"sum by (workflow_type) ({_increase('temporal_workflow_completed{namespace="$ns"}')})",
+        "count",
+        ("workflow_type",),
+        counts_events=True,
+    ),
+    # Summed over workflow_type: six activity types fit the palette, twelve pairs would not (R2).
+    MetricsViewName.ACTIVITY_TIME: MetricsViewSpec(
+        _mean(
+            'temporal_activity_execution_latency_sum{namespace="$ns"}',
+            'temporal_activity_execution_latency_count{namespace="$ns"}',
+            "sum by (activity_type) ",
+        ),
+        "ms",
+        ("activity_type",),
+    ),
+    MetricsViewName.WORKER_SLOTS: MetricsViewSpec(
+        'sum by (worker_type) (temporal_worker_task_slots_used{namespace="$ns"})', "count", ("worker_type",)
+    ),
+    # Summed over operation: the SDK's own operations grow with its version (R2).
+    MetricsViewName.SERVER_REQUEST_TIME: MetricsViewSpec(
+        _mean(
+            'temporal_request_latency_sum{namespace="$ns"}',
+            'temporal_request_latency_count{namespace="$ns"}',
+            "sum",
+        ),
+        "ms",
+        (),
+    ),
+    MetricsViewName.SOURCE_FETCH_TIME: MetricsViewSpec(
+        "snapl_dashboard_source_fetch_duration_milliseconds", "ms", ("source",)
+    ),
 }
 
 
@@ -123,6 +193,20 @@ def render_query(view: MetricsViewName, *, namespace: str, use_case: str, window
         .replace("$w", f"{window_s}s")
         .replace("$sec", str(window_s))
     )
+
+
+def rate_window(step: int) -> int:
+    """The window ``$w`` of a range at ``step``: at least four scrapes, and at least one step."""
+    return max(4 * SCRAPE_INTERVAL_S, step)
+
+
+def window_note(view: MetricsViewName, step: int) -> str | None:
+    """What a count's point covers, when its window is longer than the step (research R4).
+
+    Neighbouring points then overlap, so they must not be added up.
+    """
+    window = rate_window(step)
+    return f"events in the last {window} s" if VIEWS[view].counts_events and window > step else None
 
 
 def choose_step(start: datetime, end: datetime, requested: int) -> int:
@@ -234,7 +318,7 @@ class PrometheusSource:
             return cached[1]
 
         spec = VIEWS[view]
-        window = max(4 * SCRAPE_INTERVAL_S, plan.step)
+        window = rate_window(plan.step)
         params = {
             "query": render_query(view, namespace=self._namespace, use_case=self._use_case, window_s=window),
             "start": str(int(plan.start.timestamp())),
@@ -249,7 +333,9 @@ class PrometheusSource:
         body = self._body(response)
 
         series = parse_matrix(body, spec.labels)
-        notes = [note for note in (plan.note, None if series else "no data in range") if note]
+        notes = [
+            note for note in (plan.note, window_note(view, plan.step), None if series else "no data in range") if note
+        ]
         data = MetricsData(
             view=view,
             unit=spec.unit,

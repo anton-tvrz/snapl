@@ -329,6 +329,31 @@ async def test_metrics_the_archive_lacks_are_not_in_this_archive(tmp_path: Path)
             )
 
 
+SPEC_015_VIEWS = (
+    MetricsViewName.WORKFLOW_MEAN,
+    MetricsViewName.GNMI_MEAN,
+    MetricsViewName.WORKFLOWS_COMPLETED,
+    MetricsViewName.ACTIVITY_TIME,
+    MetricsViewName.WORKER_SLOTS,
+    MetricsViewName.SERVER_REQUEST_TIME,
+    MetricsViewName.SOURCE_FETCH_TIME,
+)
+
+
+async def test_an_archive_made_before_spec_015_answers_its_views_as_not_in_this_archive(tmp_path: Path):
+    """contracts/metrics-views.md: the new views come from exported Prometheus data, which an older archive lacks."""
+    omit = tuple(f"metrics/{view.value}" for view in SPEC_015_VIEWS)
+    created = datetime.fromisoformat(CREATED)
+    with open_archive(build_archive(tmp_path, omit=omit)) as opened:
+        metrics = ArchivedMetrics(opened.root, opened.created_at)
+        assert (await metrics.refresh()).available is True
+        assert metrics.exported_range(MetricsViewName.WORKER_UP) is not None
+        for view in SPEC_015_VIEWS:
+            assert metrics.exported_range(view) is None
+            with pytest.raises(SourceUnavailable, match=NOT_IN_ARCHIVE):
+                await metrics.query(view, plan_range(created - timedelta(hours=1), created, 15))
+
+
 async def test_lab_runs_come_from_the_archive_with_no_git_history(tmp_path: Path):
     with open_archive(build_archive(tmp_path)) as opened:
         view = await archived_lab_runs(opened.root, opened.created_at).refresh()

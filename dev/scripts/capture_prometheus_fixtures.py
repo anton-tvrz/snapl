@@ -49,6 +49,13 @@ VIEW_FILES = {
     MetricsViewName.WORKER_LAG: "range_activity_schedule_to_start_p95.json",
     MetricsViewName.WORKER_UP: "range_worker_up.json",
     MetricsViewName.SOURCE_HEALTH: "range_source_up.json",
+    MetricsViewName.WORKFLOW_MEAN: "range_workflow_mean.json",
+    MetricsViewName.GNMI_MEAN: "range_gnmi_mean.json",
+    MetricsViewName.WORKFLOWS_COMPLETED: "range_workflows_completed.json",
+    MetricsViewName.ACTIVITY_TIME: "range_activity_time.json",
+    MetricsViewName.WORKER_SLOTS: "range_worker_slots.json",
+    MetricsViewName.SERVER_REQUEST_TIME: "range_server_request_time.json",
+    MetricsViewName.SOURCE_FETCH_TIME: "range_source_fetch_time.json",
 }
 
 
