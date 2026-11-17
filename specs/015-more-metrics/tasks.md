@@ -112,10 +112,10 @@ A slice that changes the contract also regenerates the OpenAPI snapshot and the 
 
 ### D2: the designed page
 
-- [ ] T026 [US5] Tests first in `lib/metrics.test.ts`: every view is in exactly one group of data-model.md "MetricGroup"; a view the list does not know goes to "Other" by its raw name; `formatValue` for `count` rounds for display and names the window; each title says mean, 95th percentile, count or current value.
-- [ ] T027 [US5] Change `METRIC_VIEWS` in `lib/metrics.ts` to the grouped list and add the `count` unit.
-- [ ] T028 [US5] Tests first in `components/panels/Metrics.test.tsx` and `App.test.tsx`, then render the groups under `GroupLabel`s in `App.tsx`. A `count` panel's lead value is the latest point with its window, never a sum.
-- [ ] T029 [US5] Run the look check: 13 panels with data (the three counter views arrive in PR E). Append to the changelog.
+- [x] T026 [US5] Tests first in `lib/metrics.test.ts`: every view is in exactly one group of data-model.md "MetricGroup"; a view the list does not know goes to "Other" by its raw name; `formatValue` for `count` rounds for display and names the window; each title says mean, 95th percentile, count or current value.
+- [x] T027 [US5] Change `METRIC_VIEWS` in `lib/metrics.ts` to the grouped list and add the `count` unit.
+- [x] T028 [US5] Tests first in `components/panels/Metrics.test.tsx` and `App.test.tsx`, then render the groups under `GroupLabel`s in `App.tsx`. A `count` panel's lead value is the latest point with its window, never a sum.
+- [x] T029 [US5] Run the look check: 13 panels with data (the three counter views arrive in PR E). Append to the changelog.
 
 **Checkpoint**: the metrics section has four groups.
 

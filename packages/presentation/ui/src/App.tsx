@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import type { DeviceView, TopologyNode } from "./api/types";
+import type { DeviceView, MetricsViewName, TopologyNode } from "./api/types";
 import { Command, Recording } from "./components/Command";
 import { DeviceDrawer } from "./components/DeviceDrawer";
 import { GroupLabel } from "./components/GroupLabel";
@@ -33,7 +33,7 @@ import { activityFor } from "./lib/activity";
 import { FABRIC_SERIES } from "./lib/fabricHistory";
 import { bucketFor } from "./lib/history";
 import { domainOf, type Range, scanStops } from "./lib/lanes";
-import { METRIC_VIEWS } from "./lib/metrics";
+import { groupViews, METRIC_VIEWS } from "./lib/metrics";
 import { numberCards } from "./lib/numbers";
 import { fabricSummary } from "./lib/summary";
 import { linkNotes } from "./lib/linkNotes";
@@ -49,6 +49,8 @@ const TOPOLOGY_MS = 30_000;
 const HISTORY_MS = 60_000;
 
 const NO_FLAGS = new Map<string, number>();
+// The metrics in their groups (spec 015). The page asks for the views it knows.
+const METRIC_GROUPS_ON_PAGE = groupViews(METRIC_VIEWS.map((view) => view.name));
 
 interface Props {
   provider: DataProvider;
@@ -531,17 +533,25 @@ export function App({ provider }: Props) {
 
           <section aria-label="Metrics" className="mt-6">
             <GroupLabel>Metrics</GroupLabel>
-            <div className="grid gap-4 lg:grid-cols-2">
-              {METRIC_VIEWS.map((view) => (
-                <MetricView
-                  key={view.name}
-                  provider={provider}
-                  name={view.name}
-                  title={view.title}
-                  range={fixed ? undefined : range}
-                  live={!fixed}
-                  now={now}
-                />
+            <div className="flex flex-col gap-6">
+              {METRIC_GROUPS_ON_PAGE.map((group) => (
+                <div key={group.id} role="group" aria-label={group.label}>
+                  <GroupLabel level={3}>{group.label}</GroupLabel>
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    {group.views.map((view) => (
+                      <MetricView
+                        key={view.name}
+                        provider={provider}
+                        name={view.name as MetricsViewName}
+                        title={view.title}
+                        kind={view.kind}
+                        range={fixed ? undefined : range}
+                        live={!fixed}
+                        now={now}
+                      />
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
           </section>

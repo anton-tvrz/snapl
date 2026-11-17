@@ -496,13 +496,13 @@ const METRIC_VIEWS = [
   { name: "gnmi-mean", title: "gNMI call duration (mean)" },
   { name: "activity-time", title: "Activity run time (mean)" },
   { name: "workflows-completed", title: "Workflows completed (count)" },
-  { name: "gnmi-errors", title: "gNMI errors" },
+  { name: "gnmi-errors", title: "gNMI errors (rate)" },
   { name: "worker-lag", title: "Activity wait before a worker picks it up (95th percentile)" },
   { name: "worker-up", title: "Worker up" },
   { name: "worker-slots", title: "Worker slots in use (current value)" },
   { name: "server-request-time", title: "Temporal request time (mean)" },
   { name: "source-health", title: "Dashboard sources up" },
-  { name: "source-fetch-time", title: "Dashboard source read time (latest read)" },
+  { name: "source-fetch-time", title: "Dashboard source read time (current value)" },
 ];
 const RANGES = { "1h": 3600, "24h": 86400, "7d": 604800 };
 const RANGE_KEY = "snapl.metrics.range";

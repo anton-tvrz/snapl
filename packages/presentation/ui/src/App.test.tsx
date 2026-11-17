@@ -354,6 +354,32 @@ describe("App", () => {
     expect(await screen.findByRole("table", { name: "Worker up: latest values" })).toHaveTextContent("up");
   });
 
+  // spec 015 T028: the metrics in four groups, each under its label.
+  it("groups the thirteen metrics panels under four labels", async () => {
+    render(<App provider={provider()} />);
+
+    const section = await screen.findByRole("region", { name: "Metrics" });
+    const labels = ["The loop's timing", "What the loop did", "The worker", "The dashboard"];
+    const groups = labels.map((name) => within(section).getByRole("group", { name }));
+    for (const [before, after] of groups.slice(1).map((group, i) => [groups[i]!, group] as const)) {
+      expect(before.compareDocumentPosition(after) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+    expect(within(section).queryByRole("group", { name: "Other" })).not.toBeInTheDocument();
+    expect(within(groups[0]!).getByRole("heading", { name: "The loop's timing", level: 3 })).toBeInTheDocument();
+    const titles = (group: HTMLElement) => within(group).getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
+    expect(await within(groups[1]!).findAllByRole("region")).toHaveLength(2);
+    expect(titles(groups[1]!)).toEqual(["Workflows completed (count)", "gNMI errors (rate)"]);
+    expect(groups.flatMap((group) => within(group).getAllByRole("region"))).toHaveLength(13);
+  });
+
+  it("leads the workflows-completed panel with a count and its window", async () => {
+    render(<App provider={provider()} />);
+
+    const panel = await screen.findByRole("region", { name: "Workflows completed (count)" });
+    expect(await within(panel).findByText("1", { selector: "[data-lead]" })).toBeInTheDocument();
+    expect(panel).toHaveTextContent("in the last 1 min");
+  });
+
   it("asks the lanes and the metrics for a chosen range, and keeps it in the address", async () => {
     const timeline = vi.fn(async () => TIMELINE);
     const metrics = vi.fn(async (view: keyof typeof METRICS) => METRICS[view]);
@@ -364,7 +390,8 @@ describe("App", () => {
 
     const range = { start: new Date(NOW.getTime() - 86_400_000), end: NOW };
     expect(timeline).toHaveBeenLastCalledWith(range);
-    expect(metrics).toHaveBeenLastCalledWith("source-health", range);
+    // The page's last metrics panel.
+    expect(metrics).toHaveBeenLastCalledWith("source-fetch-time", range);
     const params = new URLSearchParams(location.search);
     expect(params.get("from")).toBe(range.start.toISOString());
     expect(params.get("to")).toBe(NOW.toISOString());
@@ -386,7 +413,7 @@ describe("App", () => {
       await vi.advanceTimersByTimeAsync(30_000);
     });
 
-    expect(metrics).toHaveBeenCalledTimes(12);
+    expect(metrics).toHaveBeenCalledTimes(26);
   });
 
   it("has the history table, asked over the chosen range in buckets that keep it readable", async () => {

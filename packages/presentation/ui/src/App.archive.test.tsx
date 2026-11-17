@@ -131,6 +131,26 @@ describe("App on an archive", () => {
     expect(calls.metrics).toHaveBeenCalledTimes(before.metrics);
   });
 
+  // spec 015: an archive made before the new views answers them as not in this archive.
+  it("shows the views an older archive lacks as not in this archive, and the rest from the archive", async () => {
+    const older = new Set(["workflow-duration", "gnmi-duration", "gnmi-errors", "worker-lag", "worker-up", "source-health"]);
+    const { p } = provider();
+    const metrics = async (view: keyof typeof METRICS) =>
+      older.has(view)
+        ? METRICS[view]
+        : {
+            ...METRICS[view],
+            metrics: { source: "prometheus", available: false, reason: "not in this archive", remedy: "uv run snapl dashboard" },
+          };
+    render(<App provider={{ ...p, metrics } as DataProvider} />);
+    await settle();
+
+    const missing = await screen.findByRole("region", { name: "Workflows completed (count)" });
+    expect(await within(missing).findByRole("status")).toHaveTextContent("Not in this archive");
+    const held = screen.getByRole("region", { name: "Worker up" });
+    expect(await within(held).findByRole("table", { name: "Worker up: latest values" })).toHaveTextContent("up");
+  });
+
   it("asks the metrics for the exported range only, whatever range the lanes use", async () => {
     const { p, calls } = provider();
     render(<App provider={p} />);

@@ -5,7 +5,7 @@ import type { DataProvider } from "../../data/provider";
 import { usePolling } from "../../data/usePolling";
 import { TONES } from "../../lib/encoding";
 import type { Range } from "../../lib/lanes";
-import { formatValue, latest, leadValue, seriesLabel, UNIT_NAMES, upState } from "../../lib/metrics";
+import { formatValue, latest, leadValue, type MetricKind, seriesLabel, UNIT_NAMES, upState } from "../../lib/metrics";
 import { durationText, utcText } from "../../lib/time";
 import { ViewFrame } from "../ViewFrame";
 
@@ -45,7 +45,8 @@ function Lines({ title, data }: { title: string; data: MetricsData }) {
             stroke="var(--muted)"
             fontSize={12}
           />
-          <YAxis tickFormatter={format} axisLine={false} tickLine={false} stroke="var(--muted)" fontSize={12} width={64} />
+          {/* A count is shown whole, so its ticks are whole too: 0.25 would read as 0. */}
+          <YAxis allowDecimals={data.unit !== "count"} tickFormatter={format} axisLine={false} tickLine={false} stroke="var(--muted)" fontSize={12} width={64} />
           <Tooltip
             labelFormatter={(t) => utcText(new Date(Number(t)))}
             formatter={(value) => format(value)}
@@ -128,6 +129,8 @@ function Strips({ title, data }: { title: string; data: MetricsData }) {
 
 interface PanelProps {
   title: string;
+  /** What the value is; a count of events leads with the window it covers (spec 015). */
+  kind?: MetricKind | null;
   view: View<MetricsData> | undefined;
   now: Date;
   /** Why the last request failed, such as a range the server refused. */
@@ -135,10 +138,10 @@ interface PanelProps {
 }
 
 /** One metrics view (spec 012): its chart, and the latest value of each series as a table. */
-export function MetricPanel({ title, view, now, error }: PanelProps) {
+export function MetricPanel({ title, kind, view, now, error }: PanelProps) {
   const data = view?.data;
   const all = data?.series ?? [];
-  const lead = data ? leadValue(data) : null;
+  const lead = data ? leadValue(data, kind) : null;
   // The legend names what the chart draws: up/down strips name themselves.
   const legend = data && data.unit !== "up" ? all.slice(0, SLOTS) : [];
   return (
@@ -155,6 +158,7 @@ export function MetricPanel({ title, view, now, error }: PanelProps) {
               <span data-lead="" className="text-number font-semibold tabular-nums">
                 {lead.text}
               </span>
+              {lead.window && <span className="text-meta">{lead.window}</span>}
               {lead.series && <span className="text-meta text-muted">{lead.series}</span>}
             </p>
           )}
@@ -232,6 +236,7 @@ interface ViewProps {
   provider: DataProvider;
   name: MetricsViewName;
   title: string;
+  kind?: MetricKind | null;
   /** The chosen range, or undefined for the server's default (the last hour). */
   range?: Range;
   now: Date;
@@ -240,8 +245,8 @@ interface ViewProps {
 }
 
 /** One metrics view, asked for every 30 s and again when the range changes. */
-export function MetricView({ provider, name, title, range, now, live = true }: ViewProps) {
+export function MetricView({ provider, name, title, kind, range, now, live = true }: ViewProps) {
   const key = range ? `${range.start.toISOString()}/${range.end.toISOString()}` : "default";
   const answer = usePolling(() => provider.metrics(name, range), live ? METRICS_MS : null, key);
-  return <MetricPanel title={title} view={answer.data?.metrics} now={now} error={answer.error} />;
+  return <MetricPanel title={title} kind={kind} view={answer.data?.metrics} now={now} error={answer.error} />;
 }
