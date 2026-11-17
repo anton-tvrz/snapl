@@ -76,6 +76,7 @@ from snapl_presentation.dashboard.projections import (
     project_timeline,
     project_topology,
     run_events,
+    scan_of_response,
 )
 from snapl_presentation.dashboard.prometheus import SCRAPE_INTERVAL_S, plan_range
 from snapl_presentation.dashboard.sources import AUDIT_REMEDY, STACK_REMEDY, Sources, SourceUnavailable, utcnow
@@ -704,7 +705,13 @@ def create_app(
                 ),
                 run.trigger,
             )
-            steps = project_steps(run.model_copy(update={"trigger": trigger}), of_run)
+            # A drift response's steps are its scan child's (spec 015 FR-017).
+            scan = (
+                scan_of_response(audit.data or [], workflow_id, started_at)
+                if run.workflow_type == "DriftResponse"
+                else []
+            )
+            steps = project_steps(run.model_copy(update={"trigger": trigger}), of_run, scan_events=scan)
         view: View[RunSteps] = View(
             source=SourceName.AUDIT,
             available=audit.available,

@@ -30,6 +30,7 @@ import links from "./fixtures/links.json";
 import sources from "./fixtures/sources.json";
 import stepsDeploy from "./fixtures/steps-deploy.json";
 import stepsReconcile from "./fixtures/steps-reconcile.json";
+import stepsScan from "./fixtures/scan-steps/steps-scan.json";
 import timelineAtScan2 from "./fixtures/timeline-at-scan-2.json";
 import timeline from "./fixtures/timeline.json";
 import modeArchive from "./fixtures/archive/mode.json";
@@ -100,6 +101,8 @@ export const TIMELINE = timeline as unknown as DriftTimelineResponse;
 export const STEPS_DEPLOY = stepsDeploy as unknown as RunStepsResponse;
 /** The reconcile itself: its steps are not recorded one by one. */
 export const STEPS_RECONCILE = stepsReconcile as unknown as RunStepsResponse;
+/** The arc's third scan as a scan records it since spec 015: every device collected and checked. */
+export const STEPS_SCAN = stepsScan as unknown as RunStepsResponse;
 export const TIMELINE_AT_SCAN_2 = timelineAtScan2 as unknown as DriftTimelineResponse;
 
 /** The "as of" stops of the arc's three scans, as the fixtures above were asked for. */

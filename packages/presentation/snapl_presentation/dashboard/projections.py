@@ -1251,6 +1251,8 @@ def project_drift_summary(
 # The one place a recorded step is given its NAF block (FR-026).
 STEP_BLOCKS: dict[str, NafBlock] = {
     "fetch_desired_state": NafBlock.INTENT,
+    # A scan reads intent once for the use case (spec 015 FR-016).
+    "fetch_devices_for_use_case": NafBlock.INTENT,
     "apply_config": NafBlock.EXECUTOR,
     "collect_drift_state": NafBlock.COLLECTOR,
     "detect_drift": NafBlock.OBSERVABILITY,
@@ -1297,7 +1299,94 @@ def _failure_text(end: AuditEvent) -> str | None:
     return _end_reason(end)
 
 
-def project_steps(run: RunView, events: Sequence[AuditEvent]) -> RunSteps:
+def scan_of_response(events: Sequence[AuditEvent], workflow_id: str, started_at: datetime) -> list[AuditEvent]:
+    """The events of the scan a DriftResponse run started, its child ``<id>-scan`` (spec 015 FR-017).
+
+    The child's id is fixed by the parent's, so the scan is that id's first
+    run that started at or after the parent did.
+    """
+    child = f"{workflow_id}-scan"
+    start = min(
+        (
+            e.timestamp
+            for e in events
+            if e.workflow_id == child and e.event_type is AuditEventType.WORKFLOW_STARTED and e.timestamp >= started_at
+        ),
+        default=None,
+    )
+    return run_events(events, child, start) if start is not None else []
+
+
+_STEP_EVENTS = {AuditEventType.ACTIVITY_COMPLETED, AuditEventType.ACTIVITY_FAILED}
+# A scan that records its steps reads intent first; one recorded before spec 015
+# wrote only its drift checks, and stays "not recorded" (FR-018).
+_SCAN_INTENT_STEP = "fetch_devices_for_use_case"
+_SCAN_BLOCKS = (NafBlock.INTENT, NafBlock.COLLECTOR, NafBlock.OBSERVABILITY)
+
+
+def _records_scan_steps(scan: Sequence[AuditEvent]) -> bool:
+    return any(e.activity_name == _SCAN_INTENT_STEP and e.event_type in _STEP_EVENTS for e in scan)
+
+
+def _step_reason(event: AuditEvent) -> str | None:
+    return first_line(str(event.payload.get("error") or "")) or None
+
+
+def _scan_blocks(scan: Sequence[AuditEvent]) -> dict[NafBlock, BlockState]:
+    """Intent, Collector and Observability from a scan's recorded steps (spec 015 FR-017).
+
+    A block is failed by its first failed step, with that step's reason, and
+    otherwise done at its last step. A device whose collect failed also records
+    its drift check as failed: that failure is the Collector's, so it does not
+    fail Observability, which still ran for the other devices. A block with no
+    step was not reached.
+    """
+    ordered = sorted((e for e in scan if e.event_type in _STEP_EVENTS and e.activity_name), key=lambda e: e.timestamp)
+    not_collected = {
+        e.target_id
+        for e in ordered
+        if e.activity_name == "collect_drift_state" and e.event_type is AuditEventType.ACTIVITY_FAILED
+    }
+    blocks: dict[NafBlock, BlockState] = {}
+    for block in _SCAN_BLOCKS:
+        of_block = [e for e in ordered if STEP_BLOCKS.get(e.activity_name or "") is block]
+        if block is NafBlock.OBSERVABILITY:
+            of_block = [e for e in of_block if e.target_id not in not_collected]
+        failed = next((e for e in of_block if e.event_type is AuditEventType.ACTIVITY_FAILED), None)
+        if failed is not None:
+            blocks[block] = BlockState(
+                block=block, status=BlockStatus.FAILED, reason=_step_reason(failed), t=failed.timestamp
+            )
+        elif of_block:
+            blocks[block] = BlockState(block=block, status=BlockStatus.DONE, t=of_block[-1].timestamp)
+        else:
+            blocks[block] = BlockState(block=block, status=BlockStatus.NOT_REACHED)
+    return blocks
+
+
+def _repair_block(events: Sequence[AuditEvent]) -> BlockState:
+    """The Executor in a DriftResponse: what its per-device decisions say the repair did."""
+    repairs = sorted(
+        (
+            e
+            for e in events
+            if e.event_type is AuditEventType.DRIFT_RESPONSE and e.payload.get("decision") == "remediated"
+        ),
+        key=lambda e: e.timestamp,
+    )
+    # `unknown`: the reconcile failed as a whole, so its result for the device is not known to be a success.
+    failed = [e for e in repairs if e.payload.get("result") in {"failed", "unknown"}]
+    if failed:
+        count = len(failed)
+        reason = f"the repair did not succeed on {count} device{'s' if count != 1 else ''}"
+        return BlockState(block=NafBlock.EXECUTOR, status=BlockStatus.FAILED, reason=reason, t=failed[0].timestamp)
+    succeeded = [e for e in repairs if e.payload.get("result") == "succeeded"]
+    if succeeded:
+        return BlockState(block=NafBlock.EXECUTOR, status=BlockStatus.DONE, t=succeeded[-1].timestamp)
+    return BlockState(block=NafBlock.EXECUTOR, status=BlockStatus.NOT_REACHED)
+
+
+def project_steps(run: RunView, events: Sequence[AuditEvent], scan_events: Sequence[AuditEvent] = ()) -> RunSteps:
     """What each NAF block did in one run, as far as the audit trail records it.
 
     Only a recorded step marks a block done. Nothing records a step starting,
@@ -1305,10 +1394,18 @@ def project_steps(run: RunView, events: Sequence[AuditEvent]) -> RunSteps:
     reason and no failed step: the block that failed is the first with no
     record, or Observability when its check ran and found drift.
 
+    A scan records its own steps since spec 015 (FR-016); a drift response
+    shows its scan's blocks and, as the Executor, its repairs (FR-017). A scan
+    recorded before then is still not recorded (FR-018).
+
     Args:
         events: the run's own events (``run_events``).
+        scan_events: for a DriftResponse, its scan's events (``scan_of_response``).
     """
     ordered = sorted(events, key=lambda e: e.timestamp)
+    if run.workflow_type == "DriftResponse":
+        # The strip lists the scan's steps: the response itself records decisions, not steps.
+        ordered = sorted([*ordered, *scan_events], key=lambda e: e.timestamp)
     steps = [
         RunStep(
             name=event.activity_name,
@@ -1328,6 +1425,15 @@ def project_steps(run: RunView, events: Sequence[AuditEvent]) -> RunSteps:
         BlockState(block=NafBlock.ORCHESTRATOR, status=BlockStatus.DONE, t=start.timestamp if start else None),
         BlockState(block=NafBlock.PRESENTATION, status=BlockStatus.SURFACE),
     ]
+    scan = {"ScanDrift": events, "DriftResponse": scan_events}.get(run.workflow_type)
+    if scan is not None and _records_scan_steps(scan):
+        blocks = _scan_blocks(scan)
+        blocks[NafBlock.EXECUTOR] = (
+            _repair_block(events)
+            if run.workflow_type == "DriftResponse"
+            else BlockState(block=NafBlock.EXECUTOR, status=BlockStatus.NOT_REACHED)
+        )
+        return RunSteps(run=run, recorded=True, steps=steps, blocks=[*(blocks[b] for b in _LOOP_STEPS), *tail])
     if run.workflow_type not in _STEPWISE:
         loop = [BlockState(block=block, status=BlockStatus.NOT_RECORDED) for block in _LOOP_STEPS]
         return RunSteps(run=run, recorded=False, steps=steps, blocks=[*loop, *tail])

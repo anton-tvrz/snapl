@@ -71,8 +71,11 @@ def _install_blocking_intent(state, audit, started: asyncio.Event) -> None:
     )
 
 
-async def _start_block_cancel(workflow_run, arg, *, workflows, started, task_queue, wf_id):
+async def _start_block_cancel(workflow_run, arg, *, workflows, started, task_queue, wf_id, ready=None):
     """Start a workflow, wait until its activity has begun, cancel, return the outcome.
+
+    ``ready``, when given, is awaited (with a deadline) after the activity has
+    begun and before the cancel, for a test that cancels at a later point.
 
     Returns the workflow result, or the raised exception for workflows that
     audit and re-raise on cancellation (reconcile) — callers can then assert
@@ -90,6 +93,8 @@ async def _start_block_cancel(workflow_run, arg, *, workflows, started, task_que
     ):
         handle = await env.client.start_workflow(workflow_run, arg, id=wf_id, task_queue=task_queue)
         await asyncio.wait_for(started.wait(), timeout=10)
+        if ready is not None:
+            await ready()
         await handle.cancel()
         try:
             return await handle.result()
@@ -182,13 +187,27 @@ async def test_a_cancelled_scan_keeps_the_reports_that_completed(make_desired) -
             return [done, blocked]
         if device_id == done.device.id:
             return [done]
-        # Hold spine-02 until spine-01's result is in the audit trail, so the
-        # workflow has taken its report before the cancel arrives.
-        while not any(e.target_id == done.device.id for e in await audit.query_by_workflow(wf_id)):
-            await asyncio.sleep(0.01)
         started.set()
-        await asyncio.sleep(30)
+        await asyncio.sleep(30)  # spine-02 is held until the cancel / worker shutdown
         return [blocked]
+
+    async def spine_01_checked() -> None:
+        """Wait, with a deadline, until spine-01's drift check is in the trail.
+
+        The workflow takes a device's report just before it records the check,
+        so the cancel then arrives after the report was taken. Since spec 015
+        the scan records spine-01's collect step first, so any spine-01 event
+        is not enough. The wait is here, not in the held activity, so a late
+        check fails this test instead of hanging the worker's shutdown.
+        """
+        deadline = asyncio.get_running_loop().time() + 20
+        while asyncio.get_running_loop().time() < deadline:
+            events = await audit.query_by_workflow(wf_id)
+            if any(e.target_id == done.device.id and e.activity_name == "detect_drift" for e in events):
+                return
+            await asyncio.sleep(0.01)
+        seen = [(e.activity_name, e.event_type.value) for e in await audit.query_by_workflow(wf_id)]
+        raise AssertionError(f"spine-01's drift check was not recorded within 20 s; the trail had {seen}")
 
     intent_store = MagicMock()
     intent_store.get_desired_state = AsyncMock(side_effect=_get)
@@ -223,6 +242,7 @@ async def test_a_cancelled_scan_keeps_the_reports_that_completed(make_desired) -
         started=started,
         task_queue="test-cancel-scan-partial",
         wf_id=wf_id,
+        ready=spine_01_checked,
     )
 
     assert result.cancelled is True

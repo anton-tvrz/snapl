@@ -142,12 +142,12 @@ A slice that changes the contract also regenerates the OpenAPI snapshot and the 
 
 **Goal**: a scheduled run shows its blocks.
 
-- [ ] T038 [US4] Tests first in the scan workflow's tests (`tests/unit/test_orchestrator/`), on the local test server with fakes: a scan writes one `fetch_devices_for_use_case` event for the use case and one `collect_drift_state` event per device, each completed or failed with its reason, beside the `detect_drift` events it writes today; a failed collect is recorded as failed and the scan carries on as it does now.
-- [ ] T039 [US4] Write the events in `workflows/scan_drift.py` through #241's `record_event` helper.
-- [ ] T040 [US4] Tests first in the projections tests: on a trail with the new events, `project_steps` for a scan gives Intent, Collector and Observability as done or failed with the time of each block's last step, and Executor as not reached; a drift response shows its scan's blocks and its repairs; a scan without the new events is still not recorded.
-- [ ] T041 [US4] Add the two names to `STEP_BLOCKS` and change `project_steps` in `projections.py`.
-- [ ] T042 [US4] FR-019: run the whole existing projection, app, archive and snapshot test suites against the captured trail with the new events added to it, without changing what any test expects. Add that augmented trail as a fixture and one test that compares each existing answer with and without the new events.
-- [ ] T043 [US4] Update `components/LoopStrip.test.tsx` and its fixtures for a scan with recorded steps. Run the look check on the `loop` view. Append to the changelog.
+- [x] T038 [US4] Tests first in the scan workflow's tests (`tests/unit/test_orchestrator/`), on the local test server with fakes: a scan writes one `fetch_devices_for_use_case` event for the use case and one `collect_drift_state` event per device, each completed or failed with its reason, beside the `detect_drift` events it writes today; a failed collect is recorded as failed and the scan carries on as it does now.
+- [x] T039 [US4] Write the events in `workflows/scan_drift.py` through #241's `record_event` helper.
+- [x] T040 [US4] Tests first in the projections tests: on a trail with the new events, `project_steps` for a scan gives Intent, Collector and Observability as done or failed with the time of each block's last step, and Executor as not reached; a drift response shows its scan's blocks and its repairs; a scan without the new events is still not recorded.
+- [x] T041 [US4] Add the two names to `STEP_BLOCKS` and change `project_steps` in `projections.py`.
+- [x] T042 [US4] FR-019: run the whole existing projection, app, archive and snapshot test suites against the captured trail with the new events added to it, without changing what any test expects. Add that augmented trail as a fixture and one test that compares each existing answer with and without the new events.
+- [x] T043 [US4] Update `components/LoopStrip.test.tsx` and its fixtures for a scan with recorded steps. Run the look check on the `loop` view. Append to the changelog.
 - [ ] T044 [US4] **Needs the lab**: quickstart item 7, with the scan's duration before and after.
 
 **Checkpoint**: SC-005 on the fixtures.
