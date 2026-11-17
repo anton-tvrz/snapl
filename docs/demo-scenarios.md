@@ -368,6 +368,29 @@ Read the file before you share it: it includes the error text and paths recorded
 
 ---
 
+## Scenario 13 — What did the loop do today?
+
+**Story:** "Not just the last run: a day of the loop's work, counted."
+
+> **Not yet run against the lab.** These views are checked in tests and on captured fixtures (spec 015). Its live checks (tasks T037, T044, T049 and T050) are still open. Rehearse this scenario before you show it.
+
+Leave the schedule running in report mode for a few hours (Scenario 9), or run beats 1 to 3 of the demo arc. Then open the dashboard with the range at 24 h.
+
+**Point at:**
+- **The fabric history**, from the audit trail:
+  - devices in sync and open drifts at each scan;
+  - runs by trigger and outcome;
+  - how long each repaired drift lasted, from scan to scan.
+- **Drift by device**: for each device, how many drift episodes the range saw, how long it was drifted, and the most paths missing or undesired in one scan.
+- **"What the loop did"** in Metrics: workflows completed by type, scan results by device and state, differing paths found by device and kind, and deploys ended by outcome and reason. A count's point is the events in its window. Read the latest value, and don't add points up.
+- **The loop strip on the latest scan**: Intent, Collector and Observability done with their times, and Executor not reached. A scan recorded before spec 015 still says its steps are not recorded.
+
+**Expect:** once the worker has run a scan since it was restarted, `curl -s localhost:18091/metrics | grep '^snapl_scan_results_total'` prints one counter per device and state.
+
+The metrics describe the loop, not the network: snapl collects no device telemetry (interface counters, BGP state, CPU). Say so if you are asked.
+
+---
+
 ## Suggested 10-minute demo arc
 
 | # | beat | command | *min* |
@@ -430,3 +453,7 @@ node, or a port mismatch all show up there as a named failing line.
 
 Together these mean "we converge to intent" is currently true for additions and
 changes, not deletions. Say it before the audience finds it.
+
+- **No device telemetry**: the dashboard's metrics are the loop's own (timings,
+  counts of scans, drifts and deploys). Interface counters, BGP state and device
+  health are not collected.

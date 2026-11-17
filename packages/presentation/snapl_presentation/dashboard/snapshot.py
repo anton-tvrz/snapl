@@ -32,6 +32,40 @@ LATEST_WITH_STEPS = 20
 CONTAINS = "devices, links, drift history, runs and their steps, schedule, CI status, lab runs, metrics"
 NOTE = "error text and paths recorded from devices are included as recorded. Read it before publishing."
 
+# Spec 015 T045, research R8: the ten views spec 015 added would almost triple
+# a seven-day snapshot at the page's step (180 KB to 501 KB on the fixtures),
+# against SC-006's 60%. The snapshot asks them for at most COARSE_POINTS points
+# per series, at the smallest step on this ladder that keeps under it, and says
+# so in each view's note. The six views before them keep the page's step.
+COARSE_VIEWS = frozenset(
+    {
+        MetricsViewName.WORKFLOW_MEAN,
+        MetricsViewName.GNMI_MEAN,
+        MetricsViewName.WORKFLOWS_COMPLETED,
+        MetricsViewName.ACTIVITY_TIME,
+        MetricsViewName.WORKER_SLOTS,
+        MetricsViewName.SERVER_REQUEST_TIME,
+        MetricsViewName.SOURCE_FETCH_TIME,
+        MetricsViewName.SCAN_RESULTS,
+        MetricsViewName.DRIFT_PATHS,
+        MetricsViewName.DEPLOY_OUTCOMES,
+    }
+)
+COARSE_POINTS = 60
+_LADDER = (
+    (60, "1 min"),
+    (300, "5 min"),
+    (900, "15 min"),
+    (1800, "30 min"),
+    (3600, "1 h"),
+    (7200, "2 h"),
+    (10800, "3 h"),
+    (21600, "6 h"),
+    (43200, "12 h"),
+    (86400, "1 d"),
+    (604800, "1 w"),
+)
+
 _ELEMENT = re.compile(r'(<script id="snapl-bundle" type="application/json">)(.*?)(</script>)', re.S)
 # Inside a script element, none of these may appear raw: `</script` or `<!--`
 # would end or change it, and U+2028/2029 end a line in older parsers.
@@ -59,6 +93,23 @@ def _bucket(days: int) -> str:
     return "1d" if days <= 60 else "1w"
 
 
+def coarse_step(span_s: int) -> tuple[int, str]:
+    """The step, and its words, for a spec 015 view over ``span_s`` seconds in a snapshot."""
+    for step, words in _LADDER:
+        if span_s / step + 1 <= COARSE_POINTS:
+            return step, words
+    return _LADDER[-1]
+
+
+def _say_coarse(answer: dict[str, Any], words: str) -> dict[str, Any]:
+    data = answer["metrics"].get("data")
+    if data is not None:
+        # Joined after the server's own notes, whose count window the page reads.
+        said = f"one point every {words} in this snapshot, to keep the file small"
+        data["note"] = "; ".join(note for note in (data.get("note"), said) if note)
+    return answer
+
+
 async def _collect(app: FastAPI, days: int, commit: str | None, source: str) -> dict[str, Any]:
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://snapshot.invalid") as client:
@@ -73,6 +124,13 @@ async def _collect(app: FastAPI, days: int, commit: str | None, source: str) -> 
         start = end - timedelta(days=days)
         window = {"start": _iso(start), "end": _iso(end)}
         sources = await get("sources")
+        step, words = coarse_step(int((end - start).total_seconds()))
+
+        async def metrics(view: MetricsViewName) -> Any:
+            if view in COARSE_VIEWS:
+                return _say_coarse(await get(f"metrics/{view.value}", step=step, **window), words)
+            return await get(f"metrics/{view.value}", **window)
+
         runs = await get("runs", limit=500)
         listed = runs["runs"]["data"] or []
         wanted = [run for run in listed if run["workflow_type"] == "DeployIntent"] + listed[:LATEST_WITH_STEPS]
@@ -108,7 +166,7 @@ async def _collect(app: FastAPI, days: int, commit: str | None, source: str) -> 
             "steps": steps,
             "links": await get("links"),
             "sources": sources,
-            "metrics": {view.value: await get(f"metrics/{view.value}", **window) for view in MetricsViewName},
+            "metrics": {view.value: await metrics(view) for view in MetricsViewName},
         }
 
 

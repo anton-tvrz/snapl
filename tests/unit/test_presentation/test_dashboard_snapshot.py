@@ -18,9 +18,13 @@ import pytest
 from typer.testing import CliRunner
 
 from snapl_presentation import cli
+from snapl_presentation.dashboard.models import MetricsViewName
 from snapl_presentation.dashboard.snapshot import (
+    COARSE_POINTS,
+    COARSE_VIEWS,
     FORMAT,
     SnapshotError,
+    coarse_step,
     collect_bundle,
     render,
     summary,
@@ -124,6 +128,71 @@ def test_the_views_cover_the_range(bundle: dict):
     assert [s["name"] for s in fabric] == ["in_sync_devices", "open_drifts", "runs", "repair_duration"]
     assert fabric[2]["bucket"] == "1d"
     assert bundle["metrics"]["worker-up"]["metrics"]["data"]["step"] >= 2520
+
+
+def _data(bundle: dict, view: str) -> dict:
+    return bundle["metrics"][view]["metrics"]["data"]
+
+
+# Spec 015 T045, research R8: the views spec 015 added are exported coarser.
+def test_spec_015_views_are_the_ten_it_added():
+    assert {view.value for view in COARSE_VIEWS} == {
+        "workflow-mean",
+        "gnmi-mean",
+        "workflows-completed",
+        "activity-time",
+        "worker-slots",
+        "server-request-time",
+        "source-fetch-time",
+        "scan-results",
+        "drift-paths",
+        "deploy-outcomes",
+    }
+
+
+@pytest.mark.parametrize(
+    ("span", "step", "words"),
+    [
+        (timedelta(days=7), 10800, "3 h"),
+        (timedelta(days=1), 1800, "30 min"),
+        (timedelta(hours=1), 300, "5 min"),
+        (timedelta(days=20), 43200, "12 h"),
+        (timedelta(days=30), 86400, "1 d"),
+        (timedelta(days=400), 604800, "1 w"),
+    ],
+)
+def test_the_coarse_step_is_the_smallest_on_the_ladder_within_the_point_limit(span, step, words):
+    assert coarse_step(int(span.total_seconds())) == (step, words)
+    assert span.total_seconds() / step + 1 <= COARSE_POINTS
+
+
+def test_a_seven_day_snapshot_has_spec_015_views_at_three_hours_and_says_so(bundle: dict):
+    for view in COARSE_VIEWS:
+        data = _data(bundle, view.value)
+        assert data["step"] == 10800, view
+        assert data["series"], view
+        assert all(len(series["points"]) <= COARSE_POINTS for series in data["series"]), view
+        assert "one point every 3 h in this snapshot" in data["note"], view
+        # The count's own window wording, which the page reads, is not mistaken for it.
+        assert "events in the last" not in data["note"].split("; ")[-1]
+
+
+def test_a_seven_day_snapshot_keeps_the_earlier_views_at_their_step(bundle: dict):
+    for view in MetricsViewName:
+        if view not in COARSE_VIEWS:
+            data = _data(bundle, view.value)
+            assert data["step"] == 2520, view
+            assert "in this snapshot" not in (data["note"] or ""), view
+
+
+def test_a_seven_day_snapshot_grows_less_than_60_percent_over_its_size_before_spec_015(bundle: dict):
+    """SC-006: measured against the same bundle without what spec 015 added."""
+    before = {key: value for key, value in bundle.items() if key not in {"fabric_history", "drift_summary"}}
+    before["metrics"] = {name: answer for name, answer in bundle["metrics"].items() if name not in COARSE_VIEWS}
+
+    grown = len(render(TEMPLATE, bundle).encode()) / len(render(TEMPLATE, before).encode())
+
+    assert grown < 1.6
 
 
 def test_every_deploy_run_has_its_steps(bundle: dict):
