@@ -175,6 +175,8 @@ test("selecting a device opens its detail, and the address reopens it", async ({
 
 test("the fabric history draws its four charts from the arc, each with its table", async ({ page }) => {
   await page.goto("/");
+  // Folded until opened (#290).
+  await page.getByRole("button", { name: "Show Fabric history" }).click();
 
   const panel = page.getByRole("region", { name: "Fabric history" });
   await expect(panel.getByRole("img", { name: /^Devices in sync at each scan, as a chart: 3 scans/ })).toBeVisible();
@@ -192,6 +194,7 @@ test("the fabric history draws its four charts from the arc, each with its table
 
 test("drift by device lists the arc's two drifted devices and opens one", async ({ page }) => {
   await page.goto("/");
+  await page.getByRole("button", { name: "Show Drift by device" }).click();
 
   const panel = page.getByRole("region", { name: "Drift by device" });
   const rows = panel.getByRole("list", { name: "Devices that drifted, most drifts first" }).getByRole("listitem");
@@ -201,7 +204,19 @@ test("drift by device lists the arc's two drifted devices and opens one", async 
 
   await panel.getByRole("button", { name: /^Open spine-01:/ }).click();
   await expect(page.getByRole("dialog", { name: "spine-01" })).toBeVisible();
-  await expect(page).toHaveURL(/\?device=spine-01$/);
+  await expect(page).toHaveURL(/\?device=spine-01&open=drift-by-device%2Cmetrics-timing$/);
+});
+
+// #290: the number row's link opens the panel it points to.
+test("the runs card's link opens the folded fabric history", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Show Fabric history" })).toBeVisible();
+
+  await page.getByRole("link", { name: "Runs, 24 h: view more" }).click();
+
+  const panel = page.getByRole("region", { name: "Fabric history" });
+  await expect(panel.getByRole("img", { name: /^Devices in sync at each scan/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Hide Fabric history" })).toBeVisible();
 });
 
 test("the devices can be reached and opened from the keyboard", async ({ page }) => {
@@ -272,7 +287,8 @@ test("the runs panel lists the fixture's 12 runs, and each unavailable source's 
     "Running now": ["temporal is not part of the fixture server", "uv run invoke dev.deps"],
     CI: ["ci is not part of the fixture server", "export GITHUB_TOKEN=…"],
     "Live lab evidence": ["lab_runs is not part of the fixture server", "uv run invoke test-e2e"],
-    "Worker up": ["prometheus is not part of the fixture server", "uv run invoke dev.deps"],
+    // The first metrics group is the one open by default (#290).
+    "Workflow duration (95th percentile)": ["prometheus is not part of the fixture server", "uv run invoke dev.deps"],
   };
   for (const [panel, [reason, remedy]] of Object.entries(down)) {
     const region = page.getByRole("region", { name: panel });

@@ -11,6 +11,8 @@ export interface UrlState {
   from?: Date;
   to?: Date;
   run?: RunId;
+  /** The folded panels and groups that are open (#290). Unset means the page's default. */
+  open?: string[];
 }
 
 function date(value: string | null): Date | undefined {
@@ -36,6 +38,7 @@ export function parseUrlState(search: string): UrlState {
     from: date(params.get("from")),
     to: date(params.get("to")),
     run: run(params.get("run")),
+    open: params.has("open") ? (params.get("open") ?? "").split(",").filter(Boolean) : undefined,
   };
   return Object.fromEntries(Object.entries(state).filter(([, value]) => value !== undefined));
 }
@@ -48,6 +51,7 @@ export function urlSearch(state: UrlState): string {
   if (state.from) params.set("from", state.from.toISOString());
   if (state.to) params.set("to", state.to.toISOString());
   if (state.run) params.set("run", `${state.run.workflow_id}@${state.run.started_at}`);
+  if (state.open) params.set("open", [...state.open].sort().join(","));
   return params.size > 0 ? `?${params}` : "";
 }
 

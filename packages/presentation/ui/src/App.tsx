@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { DeviceView, MetricsViewName, TopologyNode } from "./api/types";
 import { Command, Recording } from "./components/Command";
 import { DeviceDrawer } from "./components/DeviceDrawer";
+import { Fold } from "./components/Fold";
 import { GroupLabel } from "./components/GroupLabel";
 import { ModeBanner } from "./components/ModeBanner";
 import { NumberRow } from "./components/NumberRow";
@@ -51,6 +52,10 @@ const HISTORY_MS = 60_000;
 const NO_FLAGS = new Map<string, number>();
 // The metrics in their groups (spec 015). The page asks for the views it knows.
 const METRIC_GROUPS_ON_PAGE = groupViews(METRIC_VIEWS.map((view) => view.name));
+// Folded until opened, so the metrics start near the top (spec 014 SC-003, #290).
+// The first metrics group is open by default.
+const FOLDS = new Set(["history", "fabric-history", "drift-by-device", ...METRIC_GROUPS_ON_PAGE.map((g) => `metrics-${g.id}`)]);
+const DEFAULT_OPEN = ["metrics-timing"];
 
 interface Props {
   provider: DataProvider;
@@ -71,11 +76,35 @@ function neverScanned(node: TopologyNode): DeviceView {
  * every source's state. The panels for runs, schedule, CI and metrics arrive
  * in later slices; until then the plain page has them.
  */
+function sameSet(a: ReadonlySet<string>, b: readonly string[]): boolean {
+  return a.size === b.length && b.every((id) => a.has(id));
+}
+
 export function App({ provider }: Props) {
   const [initial] = useState(() => parseUrlState(location.search));
   const [selected, setSelected] = useState<string | undefined>(initial.device);
   const [at, setAt] = useState<Date | undefined>(initial.at);
   const [chosenRun, setChosenRun] = useState<RunId | undefined>(initial.run);
+  const [opened, setOpen] = useState<ReadonlySet<string>>(() => new Set(initial.open ?? DEFAULT_OPEN));
+  const onToggle = useCallback(
+    (id: string) =>
+      setOpen((current) => {
+        const next = new Set(current);
+        if (!next.delete(id)) next.add(id);
+        return next;
+      }),
+    [],
+  );
+  // A link to a folded panel, such as the number row's "View more", opens it.
+  useEffect(() => {
+    const openLinked = () => {
+      const id = decodeURIComponent(location.hash.slice(1));
+      if (FOLDS.has(id)) setOpen((current) => (current.has(id) ? current : new Set([...current, id])));
+    };
+    openLinked();
+    window.addEventListener("hashchange", openLinked);
+    return () => window.removeEventListener("hashchange", openLinked);
+  }, []);
   // One range for the lanes and the metrics. Unset follows now (each view's own default).
   const [range, setRange] = useState<Range | undefined>(() =>
     initial.from && initial.to
@@ -171,8 +200,9 @@ export function App({ provider }: Props) {
       run: chosenRun,
       from: range?.start,
       to: range?.end,
+      open: sameSet(opened, DEFAULT_OPEN) ? undefined : [...opened],
     });
-  }, [selected, at, chosenRun, range]);
+  }, [selected, at, chosenRun, range, opened]);
 
   const onSelect = useCallback(
     (name: string) =>
@@ -503,40 +533,52 @@ export function App({ provider }: Props) {
           </div>
 
           <div className="mt-4">
-            <History
-              id="history"
-              history={historyAnswer.data}
-              now={now}
-              error={historyAnswer.error}
-            />
+            <Fold id="history" title="Drift and deploys by hour" open={opened.has("history")} onToggle={onToggle}>
+              <History
+                id="history"
+                history={historyAnswer.data}
+                now={now}
+                error={historyAnswer.error}
+              />
+            </Fold>
           </div>
 
           <div className="mt-4">
-            <FabricHistory
-              id="fabric-history"
-              history={fabricHistory.data ?? undefined}
-              // Now, not as of the time shown: the reference is labelled "in intent now".
-              inIntent={overview.data?.devices.data?.filter((device) => device.in_intent).length}
-              error={fabricHistory.error}
-            />
+            <Fold id="fabric-history" title="Fabric history" open={opened.has("fabric-history")} onToggle={onToggle}>
+              <FabricHistory
+                id="fabric-history"
+                history={fabricHistory.data ?? undefined}
+                // Now, not as of the time shown: the reference is labelled "in intent now".
+                inIntent={overview.data?.devices.data?.filter((device) => device.in_intent).length}
+                error={fabricHistory.error}
+              />
+            </Fold>
           </div>
 
           <div className="mt-4">
-            <DriftByDevice
-              id="drift-by-device"
-              summary={driftSummary.data?.summary}
-              now={now}
-              error={driftSummary.error}
-              onSelect={onSelect}
-            />
+            <Fold id="drift-by-device" title="Drift by device" open={opened.has("drift-by-device")} onToggle={onToggle}>
+              <DriftByDevice
+                id="drift-by-device"
+                summary={driftSummary.data?.summary}
+                now={now}
+                error={driftSummary.error}
+                onSelect={onSelect}
+              />
+            </Fold>
           </div>
 
           <section aria-label="Metrics" className="mt-6">
             <GroupLabel>Metrics</GroupLabel>
             <div className="flex flex-col gap-6">
               {METRIC_GROUPS_ON_PAGE.map((group) => (
-                <div key={group.id} role="group" aria-label={group.label}>
-                  <GroupLabel level={3}>{group.label}</GroupLabel>
+                <Fold
+                  key={group.id}
+                  id={`metrics-${group.id}`}
+                  title={group.label}
+                  group={group.views.length}
+                  open={opened.has(`metrics-${group.id}`)}
+                  onToggle={onToggle}
+                >
                   <div className="grid gap-4 lg:grid-cols-2">
                     {group.views.map((view) => (
                       <MetricView
@@ -551,7 +593,7 @@ export function App({ provider }: Props) {
                       />
                     ))}
                   </div>
-                </div>
+                </Fold>
               ))}
             </div>
           </section>

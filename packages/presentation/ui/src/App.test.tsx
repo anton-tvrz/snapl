@@ -7,6 +7,9 @@ import { ApiError } from "./data/http";
 import type { DataProvider } from "./data/provider";
 import { DRIFT_SUMMARY, FABRIC_HISTORY, HISTORY, LINKS, METRICS, MODE, NOW, OVERVIEW, OVERVIEW_UP, SOURCES, STEPS_DEPLOY, TIMELINE, TOPOLOGY } from "./test/fixtures";
 
+// Every folded panel and group open (#290).
+const ALL_OPEN = "/?open=history,fabric-history,drift-by-device,metrics-timing,metrics-work,metrics-worker,metrics-dashboard";
+
 function provider(overrides: Partial<DataProvider> = {}): DataProvider {
   const unused = async () => {
     throw new Error("not asked in this slice");
@@ -346,6 +349,7 @@ describe("App", () => {
   });
 
   it("has a panel for each metrics view", async () => {
+    history.replaceState(null, "", ALL_OPEN);
     render(<App provider={provider()} />);
 
     for (const title of ["Workflow duration (95th percentile)", "Worker up", "Dashboard sources up"]) {
@@ -355,8 +359,10 @@ describe("App", () => {
   });
 
   // spec 015 T028: the metrics in four groups, each under its label.
-  it("groups the thirteen metrics panels under four labels", async () => {
-    render(<App provider={provider()} />);
+  // #290 (spec 014 SC-003): only the first group is open, and a folded group asks nothing.
+  it("groups the metrics under four labels, with only the loop's timing open", async () => {
+    const metrics = vi.fn(async (view: keyof typeof METRICS) => METRICS[view]);
+    render(<App provider={provider({ metrics })} />);
 
     const section = await screen.findByRole("region", { name: "Metrics" });
     const labels = ["The loop's timing", "What the loop did", "The worker", "The dashboard"];
@@ -365,14 +371,69 @@ describe("App", () => {
       expect(before.compareDocumentPosition(after) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     }
     expect(within(section).queryByRole("group", { name: "Other" })).not.toBeInTheDocument();
-    expect(within(groups[0]!).getByRole("heading", { name: "The loop's timing", level: 3 })).toBeInTheDocument();
-    const titles = (group: HTMLElement) => within(group).getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
-    expect(await within(groups[1]!).findAllByRole("region")).toHaveLength(2);
-    expect(titles(groups[1]!)).toEqual(["Workflows completed (count)", "gNMI errors (rate)"]);
-    expect(groups.flatMap((group) => within(group).getAllByRole("region"))).toHaveLength(13);
+    const titles = (group: HTMLElement) => within(group).queryAllByRole("heading", { level: 2 }).map((h) => h.textContent);
+    expect(await within(groups[0]!).findAllByRole("region")).toHaveLength(5);
+    for (const group of groups.slice(1)) expect(titles(group)).toEqual([]);
+    expect(within(groups[1]!).getByRole("button", { name: "Show What the loop did" })).toHaveTextContent("Show 2 panels");
+    expect(new Set(metrics.mock.calls.map(([view]) => view))).toEqual(
+      new Set(["workflow-duration", "workflow-mean", "gnmi-duration", "gnmi-mean", "activity-time"]),
+    );
+
+    await userEvent.click(within(groups[1]!).getByRole("button", { name: "Show What the loop did" }));
+
+    expect(titles(within(section).getByRole("group", { name: "What the loop did" }))).toEqual([
+      "Workflows completed (count)",
+      "gNMI errors (rate)",
+    ]);
+    expect(new URLSearchParams(location.search).get("open")).toBe("metrics-timing,metrics-work");
+  });
+
+  // #290: the history's detail panels are folded behind their headings.
+  it("folds the history's detail panels, opens one with a click and keeps it in the address", async () => {
+    render(<App provider={provider()} />);
+
+    for (const name of ["Drift and deploys by hour", "Fabric history", "Drift by device"]) {
+      expect(await screen.findByRole("button", { name: `Show ${name}` })).toHaveAttribute("aria-expanded", "false");
+    }
+    expect(screen.queryByRole("img", { name: /^Devices in sync at each scan/ })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Show Fabric history" }));
+
+    const panel = screen.getByRole("region", { name: "Fabric history" });
+    expect(await within(panel).findByRole("img", { name: /^Devices in sync at each scan/ })).toBeInTheDocument();
+    expect(new URLSearchParams(location.search).get("open")).toBe("fabric-history,metrics-timing");
+
+    await userEvent.click(screen.getByRole("button", { name: "Hide Fabric history" }));
+
+    expect(screen.getByRole("button", { name: "Show Fabric history" })).toBeInTheDocument();
+    expect(new URLSearchParams(location.search).has("open")).toBe(false);
+  });
+
+  it("opens what the address names, and closes what it leaves out", async () => {
+    history.replaceState(null, "", "/?open=drift-by-device%2Cmetrics-worker");
+    render(<App provider={provider()} />);
+
+    const panel = await screen.findByRole("region", { name: "Drift by device" });
+    expect(await within(panel).findByRole("button", { name: /^Open leaf-01:/ })).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "Worker up" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show The loop's timing" })).toBeInTheDocument();
+  });
+
+  it("opens the panel a number-row link points to", async () => {
+    render(<App provider={provider()} />);
+    await screen.findByRole("button", { name: "Show Fabric history" });
+
+    await act(async () => {
+      location.hash = "#fabric-history";
+      window.dispatchEvent(new HashChangeEvent("hashchange"));
+    });
+
+    expect(screen.getByRole("button", { name: "Hide Fabric history" })).toBeInTheDocument();
+    history.replaceState(null, "", "/");
   });
 
   it("leads the workflows-completed panel with a count and its window", async () => {
+    history.replaceState(null, "", ALL_OPEN);
     render(<App provider={provider()} />);
 
     const panel = await screen.findByRole("region", { name: "Workflows completed (count)" });
@@ -381,6 +442,7 @@ describe("App", () => {
   });
 
   it("asks the lanes and the metrics for a chosen range, and keeps it in the address", async () => {
+    history.replaceState(null, "", ALL_OPEN);
     const timeline = vi.fn(async () => TIMELINE);
     const metrics = vi.fn(async (view: keyof typeof METRICS) => METRICS[view]);
     render(<App provider={provider({ timeline, metrics })} />);
@@ -390,7 +452,7 @@ describe("App", () => {
 
     const range = { start: new Date(NOW.getTime() - 86_400_000), end: NOW };
     expect(timeline).toHaveBeenLastCalledWith(range);
-    // The page's last metrics panel.
+    // The page's last metrics panel, every group open.
     expect(metrics).toHaveBeenLastCalledWith("source-fetch-time", range);
     const params = new URLSearchParams(location.search);
     expect(params.get("from")).toBe(range.start.toISOString());
@@ -413,7 +475,8 @@ describe("App", () => {
       await vi.advanceTimersByTimeAsync(30_000);
     });
 
-    expect(metrics).toHaveBeenCalledTimes(26);
+    // The five views of the one open group, twice (#290).
+    expect(metrics).toHaveBeenCalledTimes(10);
   });
 
   it("has the history table, asked over the chosen range in buckets that keep it readable", async () => {
@@ -429,6 +492,7 @@ describe("App", () => {
   });
 
   it("has the fabric history, its four series named and asked over the chosen range", async () => {
+    window.history.replaceState(null, "", ALL_OPEN);
     const history = vi.fn(async (_range?: unknown, _bucket?: unknown, series?: unknown) => (series ? FABRIC_HISTORY : HISTORY));
     render(<App provider={provider({ history })} />);
 
@@ -462,6 +526,7 @@ describe("App", () => {
   });
 
   it("draws the devices in intent now over the devices in sync", async () => {
+    history.replaceState(null, "", ALL_OPEN);
     render(<App provider={provider()} />);
 
     const panel = await screen.findByRole("region", { name: "Fabric history" });
@@ -469,6 +534,7 @@ describe("App", () => {
   });
 
   it("has drift by device, asked over the chosen range, and opens a device from it", async () => {
+    history.replaceState(null, "", ALL_OPEN);
     const driftSummary = vi.fn(async () => DRIFT_SUMMARY);
     render(<App provider={provider({ driftSummary })} />);
 
@@ -478,7 +544,7 @@ describe("App", () => {
     await userEvent.click(within(panel).getByRole("button", { name: /^Open leaf-01:/ }));
 
     expect(screen.getByRole("dialog", { name: "leaf-01" })).toBeInTheDocument();
-    expect(location.search).toBe("?device=leaf-01");
+    expect(new URLSearchParams(location.search).get("device")).toBe("leaf-01");
 
     await userEvent.click(screen.getByRole("button", { name: "7 d" }));
 

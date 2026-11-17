@@ -22,6 +22,9 @@ import {
   TOPOLOGY,
 } from "./test/fixtures";
 
+// Every folded panel and group open (#290).
+const ALL_OPEN = "/?open=history,fabric-history,drift-by-device,metrics-timing,metrics-work,metrics-worker,metrics-dashboard";
+
 // The "as of" time (spec 011 US2): the fabric, the device detail and the runs
 // at a past time, and what cannot be shown for one.
 
@@ -200,7 +203,7 @@ describe("App at a past time", () => {
   });
 
   it("keeps the fabric history over the page's range, not the time shown, like the history", async () => {
-    history.replaceState(null, "", `/?at=${STOP_2}`);
+    history.replaceState(null, "", `${ALL_OPEN}&at=${STOP_2}`);
     render(<App provider={provider().p} />);
 
     const panel = await screen.findByRole("region", { name: "Fabric history" });
@@ -208,7 +211,7 @@ describe("App at a past time", () => {
   });
 
   it("keeps drift by device over the page's range, not the time shown, like the history", async () => {
-    history.replaceState(null, "", `/?at=${STOP_2}`);
+    history.replaceState(null, "", `${ALL_OPEN}&at=${STOP_2}`);
     render(<App provider={provider().p} />);
 
     const panel = await screen.findByRole("region", { name: "Drift by device" });

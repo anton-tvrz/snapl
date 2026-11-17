@@ -39,6 +39,23 @@ describe("parseUrlState", () => {
   });
 });
 
+describe("the open panels (#290)", () => {
+  it("reads the panels named open, in any order", () => {
+    expect(parseUrlState("?open=fabric-history%2Cmetrics-worker").open).toEqual(["fabric-history", "metrics-worker"]);
+  });
+
+  it("reads an empty list as every fold closed, and no list as the default", () => {
+    expect(parseUrlState("?open=").open).toEqual([]);
+    expect(parseUrlState("?device=leaf-01").open).toBeUndefined();
+  });
+
+  it("writes the list sorted, and writes nothing when there is none", () => {
+    expect(urlSearch({ open: ["metrics-worker", "fabric-history"] })).toBe("?open=fabric-history%2Cmetrics-worker");
+    expect(urlSearch({ open: [] })).toBe("?open=");
+    expect(urlSearch({})).toBe("");
+  });
+});
+
 describe("urlSearch", () => {
   it("writes what parseUrlState reads back", () => {
     const state = {
