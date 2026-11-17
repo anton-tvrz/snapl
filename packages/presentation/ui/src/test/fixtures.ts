@@ -49,6 +49,9 @@ import metricsActivityTime from "./fixtures/up/metrics-activity-time.json";
 import metricsWorkerSlots from "./fixtures/up/metrics-worker-slots.json";
 import metricsServerRequestTime from "./fixtures/up/metrics-server-request-time.json";
 import metricsSourceFetchTime from "./fixtures/up/metrics-source-fetch-time.json";
+import metricsScanResults from "./fixtures/up/metrics-scan-results.json";
+import metricsDriftPaths from "./fixtures/up/metrics-drift-paths.json";
+import metricsDeployOutcomes from "./fixtures/up/metrics-deploy-outcomes.json";
 import topology from "./fixtures/topology.json";
 
 export const MODE = mode as unknown as ModeResponse;
@@ -82,6 +85,9 @@ export const METRICS: Record<MetricsViewName, MetricsResponse> = {
   "worker-slots": metricsWorkerSlots as unknown as MetricsResponse,
   "server-request-time": metricsServerRequestTime as unknown as MetricsResponse,
   "source-fetch-time": metricsSourceFetchTime as unknown as MetricsResponse,
+  "scan-results": metricsScanResults as unknown as MetricsResponse,
+  "drift-paths": metricsDriftPaths as unknown as MetricsResponse,
+  "deploy-outcomes": metricsDeployOutcomes as unknown as MetricsResponse,
 };
 export const TOPOLOGY = topology as unknown as TopologyResponse;
 export const DEVICES = devices as unknown as DevicesResponse;

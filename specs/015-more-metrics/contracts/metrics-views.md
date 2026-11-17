@@ -92,11 +92,18 @@ Settled in PR B (#272):
 
 | family | type | labels |
 | --- | --- | --- |
-| `snapl_scan_results_total` | counter | `device`, `use_case`, `state` (a drift state) |
+| `snapl_scan_results_total` | counter | `device`, `use_case`, `state` (`in_sync` \| `missing` \| `undesired` \| `missing_and_undesired` \| `error` \| `unknown`) |
 | `snapl_drift_paths_total` | counter | `device`, `use_case`, `kind` (`missing` \| `undesired` \| `unclassified`) |
 | `snapl_deploy_ends_total` | counter | `device`, `use_case`, `outcome` (`succeeded` \| `failed`), `reason` (a workflow reason, or `none`) |
 
-The Temporal runtime adds `namespace`, `task_queue`, `service_name` and, inside an activity, `activity_type`. No other label is allowed.
+The Temporal runtime adds `namespace`, `task_queue`, `service_name` and, inside an activity, `activity_type`; inside a workflow, `workflow_type`. No other label is allowed.
+
+Settled in PR E (#292):
+- **Names.** The runtime exports a counter under the name it is created with, adding no `_total` (research R6), so the worker creates them under the names above.
+- **`state`** names what the scan found as the dashboard names a device's state (`_drift_fields`): one path or more that intent asked for is `missing`, paths only the device carries are `undesired`, both are `missing_and_undesired`. `drifted` and `never_scanned` are the dashboard's alone: a scan made now always knows its paths' direction. A status the worker does not know is `unknown`.
+- **Scans only.** The scan and path counters count `detect_drift` under `ScanDrift`. Under `DeployIntent` the same activity is the deploy's verification, which the deploy counter holds, so it is not counted as a scan.
+- **Paths.** A scan adds its number of paths of each kind; a kind with no path adds nothing. `unclassified` stays in the enum for the dashboard's sake, and a scan made now never gives it.
+- **Deploy ends** are recorded where `DeployIntent` writes its terminal audit event, cancellation included (`failed`, `cancelled`). A deploy that ends before intent is read (`device_not_found`, `intent_unavailable`) has `device` and `use_case` `unknown`: the workflow has only the device's id, and an id is not a label.
 
 ## Audit trail (new step names)
 

@@ -913,7 +913,7 @@ export interface components {
          * @description The named PromQL views. A request picks one; it never supplies a query (FR-011).
          * @enum {string}
          */
-        MetricsViewName: "workflow-duration" | "gnmi-duration" | "gnmi-errors" | "worker-lag" | "worker-up" | "source-health" | "workflow-mean" | "gnmi-mean" | "workflows-completed" | "activity-time" | "worker-slots" | "server-request-time" | "source-fetch-time";
+        MetricsViewName: "workflow-duration" | "gnmi-duration" | "gnmi-errors" | "worker-lag" | "worker-up" | "source-health" | "workflow-mean" | "gnmi-mean" | "workflows-completed" | "activity-time" | "worker-slots" | "server-request-time" | "source-fetch-time" | "scan-results" | "drift-paths" | "deploy-outcomes";
         /** ModeResponse */
         ModeResponse: {
             archive?: components["schemas"]["ArchiveInfo"] | null;
@@ -1827,7 +1827,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description A named view. Any other name is 404. */
-                view: "workflow-duration" | "gnmi-duration" | "gnmi-errors" | "worker-lag" | "worker-up" | "source-health" | "workflow-mean" | "gnmi-mean" | "workflows-completed" | "activity-time" | "worker-slots" | "server-request-time" | "source-fetch-time";
+                view: "workflow-duration" | "gnmi-duration" | "gnmi-errors" | "worker-lag" | "worker-up" | "source-health" | "workflow-mean" | "gnmi-mean" | "workflows-completed" | "activity-time" | "worker-slots" | "server-request-time" | "source-fetch-time" | "scan-results" | "drift-paths" | "deploy-outcomes";
             };
             cookie?: never;
         };

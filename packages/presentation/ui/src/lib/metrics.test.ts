@@ -20,7 +20,7 @@ describe("metrics helpers", () => {
   it("puts the views in four groups, in order", () => {
     expect(groupViews(Object.keys(METRICS)).map((group) => [group.label, group.views.map((v) => v.name)])).toEqual([
       ["The loop's timing", ["workflow-duration", "workflow-mean", "gnmi-duration", "gnmi-mean", "activity-time"]],
-      ["What the loop did", ["workflows-completed", "gnmi-errors"]],
+      ["What the loop did", ["workflows-completed", "scan-results", "drift-paths", "deploy-outcomes", "gnmi-errors"]],
       ["The worker", ["worker-up", "worker-lag", "worker-slots", "server-request-time"]],
       ["The dashboard", ["source-health", "source-fetch-time"]],
     ]);
@@ -58,6 +58,10 @@ describe("metrics helpers", () => {
     expect(METRIC_VIEWS.find((v) => v.name === "workflow-duration")!.title).toBe("Workflow duration (95th percentile)");
     expect(METRIC_VIEWS.find((v) => v.name === "workflows-completed")!.title).toBe("Workflows completed (count)");
     expect(METRIC_VIEWS.find((v) => v.name === "worker-slots")!.title).toBe("Worker slots in use (current value)");
+    // PR E: the worker's counters are counts of events.
+    expect(METRIC_VIEWS.find((v) => v.name === "scan-results")!.title).toBe("Scan results (count)");
+    expect(METRIC_VIEWS.find((v) => v.name === "drift-paths")!.title).toBe("Differing paths found (count)");
+    expect(METRIC_VIEWS.find((v) => v.name === "deploy-outcomes")!.title).toBe("Deploys ended (count)");
   });
 
   it("names a series by its labels, and an unlabelled one as all", () => {

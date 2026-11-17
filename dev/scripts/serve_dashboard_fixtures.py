@@ -278,6 +278,23 @@ _SERIES: dict[MetricsViewName, list[tuple[dict[str, str], Any]]] = {
         ({"source": source}, lambda i, base=base: base + base / 5 * (i * 7 % 5))
         for source, base in (("audit", 4.0), ("sot", 90.0), ("temporal", 30.0), ("ci", 600.0), ("lab_runs", 15.0))
     ],
+    # Spec 015 PR E: the worker's counters, with the label sets of contracts/metrics-views.md.
+    # A scan every 20 points finds leaf-01 drifted for a stretch, and a repair deploys it back.
+    MetricsViewName.SCAN_RESULTS: [
+        ({"device": "spine-01", "state": "in_sync"}, lambda i: 1.0 if i % 20 < 4 else 0.0),
+        ({"device": "leaf-01", "state": "in_sync"}, lambda i: 1.0 if i % 20 < 4 and not 60 <= i < 100 else 0.0),
+        ({"device": "leaf-01", "state": "missing"}, lambda i: 1.0 if i % 20 < 4 and 60 <= i < 80 else 0.0),
+        ({"device": "leaf-02", "state": "undesired"}, lambda i: 1.0 if i % 20 < 4 and 80 <= i < 100 else 0.0),
+        ({"device": "leaf-02", "state": "error"}, lambda i: None if 100 <= i < 110 else 0.0),
+    ],
+    MetricsViewName.DRIFT_PATHS: [
+        ({"device": "leaf-01", "kind": "missing"}, lambda i: 2.0 if i % 20 < 4 and 60 <= i < 80 else 0.0),
+        ({"device": "leaf-02", "kind": "undesired"}, lambda i: 1.0 if i % 20 < 4 and 80 <= i < 100 else 0.0),
+    ],
+    MetricsViewName.DEPLOY_OUTCOMES: [
+        ({"outcome": "succeeded", "reason": "none"}, lambda i: 1.0 if 80 <= i < 84 else 0.0),
+        ({"outcome": "failed", "reason": "apply_failed"}, lambda i: 1.0 if 64 <= i < 68 else 0.0),
+    ],
 }
 
 

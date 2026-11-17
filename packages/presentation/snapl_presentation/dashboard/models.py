@@ -676,6 +676,10 @@ class MetricsViewName(StrEnum):
     WORKER_SLOTS = "worker-slots"
     SERVER_REQUEST_TIME = "server-request-time"
     SOURCE_FETCH_TIME = "source-fetch-time"
+    # Spec 015 PR E: the worker's own counters.
+    SCAN_RESULTS = "scan-results"
+    DRIFT_PATHS = "drift-paths"
+    DEPLOY_OUTCOMES = "deploy-outcomes"
 
 
 # `count` (spec 015): events in one window, or a gauge's current count.

@@ -125,13 +125,13 @@ A slice that changes the contract also regenerates the OpenAPI snapshot and the 
 
 **Goal**: scan results, drift paths and deploy ends are counted.
 
-- [ ] T030 [US3] Read the installed `temporalio`'s `MetricMeter.create_counter` and how a counter's name is exported (research R6). Record what was found in research.md and correct the family names in contracts/metrics-views.md if a suffix is added.
-- [ ] T031 [US3] Tests first in `tests/unit/test_orchestrator/test_metrics.py`: each recorder adds one with exactly its label set; a value outside its enum is recorded as `unknown`; a recorder never raises, and does nothing outside an activity or with metrics off. One test per counter holds the label set (FR-013).
-- [ ] T032 [US3] Add `PathKind`, `DeployOutcome`, `record_scan_result`, `record_drift_paths` and `record_deploy_end` to `packages/orchestrator/snapl_orchestrator/metrics.py`.
-- [ ] T033 [US3] Tests first against `WorkflowEnvironment.start_local()` with a metrics runtime on a free port, as spec 012's worker tests do: after a scan with one drifted device the endpoint shows the scan and path counters; after a failed deploy it shows the deploy counter with its reason. Prove each test red first by leaving the call out.
-- [ ] T034 [US3] Call the recorders: scan results and paths in `activities/observability.py` after the drift is evaluated, deploy ends in `workflows/deploy_intent.py` through `workflow.metric_meter()` where the workflow records its end.
-- [ ] T035 [US3] Tests first, then add the views `scan-results`, `drift-paths` and `deploy-outcomes` to `models.py`, `prometheus.py`, the fixture server, the plain page and `lib/metrics.ts`. Regenerate the OpenAPI snapshot and the types.
-- [ ] T036 [US3] Run the look check. Since #290 only The loop's timing is open by default: `full-light.png` shows that group's 5 panels and `firstMetricsChartTop` stays under 2000 px (spec 014 SC-003), and `open-light.png` (every fold open) shows 16 metrics panels with data, What the loop did holding 5. Append to the changelog.
+- [x] T030 [US3] Read the installed `temporalio`'s `MetricMeter.create_counter` and how a counter's name is exported (research R6). Record what was found in research.md and correct the family names in contracts/metrics-views.md if a suffix is added.
+- [x] T031 [US3] Tests first in `tests/unit/test_orchestrator/test_metrics.py`: each recorder adds one with exactly its label set; a value outside its enum is recorded as `unknown`; a recorder never raises, and does nothing outside an activity or with metrics off. One test per counter holds the label set (FR-013).
+- [x] T032 [US3] Add `PathKind`, `DeployOutcome`, `record_scan_result`, `record_drift_paths` and `record_deploy_end` to `packages/orchestrator/snapl_orchestrator/metrics.py`.
+- [x] T033 [US3] Tests first against `WorkflowEnvironment.start_local()` with a metrics runtime on a free port, as spec 012's worker tests do: after a scan with one drifted device the endpoint shows the scan and path counters; after a failed deploy it shows the deploy counter with its reason. Prove each test red first by leaving the call out.
+- [x] T034 [US3] Call the recorders: scan results and paths in `activities/observability.py` after the drift is evaluated, deploy ends in `workflows/deploy_intent.py` through `workflow.metric_meter()` where the workflow records its end.
+- [x] T035 [US3] Tests first, then add the views `scan-results`, `drift-paths` and `deploy-outcomes` to `models.py`, `prometheus.py`, the fixture server, the plain page and `lib/metrics.ts`. Regenerate the OpenAPI snapshot and the types.
+- [x] T036 [US3] Run the look check. Since #290 only The loop's timing is open by default: `full-light.png` shows that group's 5 panels and `firstMetricsChartTop` stays under 2000 px (spec 014 SC-003), and `open-light.png` (every fold open) shows 16 metrics panels with data, What the loop did holding 5. Append to the changelog.
 - [ ] T037 [US3] **Needs the lab**: quickstart items 5 and 6.
 
 **Checkpoint**: SC-003 holds in the label tests.

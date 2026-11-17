@@ -35,6 +35,10 @@ EXPECTED_FILES = {
     "range_worker_slots.json",
     "range_server_request_time.json",
     "range_source_fetch_time.json",
+    # PR E's counters (captured live by T049).
+    "range_scan_results.json",
+    "range_drift_paths.json",
+    "range_deploy_outcomes.json",
     "range_absent_metric.json",
     "instant_up.json",
     "error_bad_query.json",

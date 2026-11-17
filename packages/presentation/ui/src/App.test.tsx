@@ -374,7 +374,7 @@ describe("App", () => {
     const titles = (group: HTMLElement) => within(group).queryAllByRole("heading", { level: 2 }).map((h) => h.textContent);
     expect(await within(groups[0]!).findAllByRole("region")).toHaveLength(5);
     for (const group of groups.slice(1)) expect(titles(group)).toEqual([]);
-    expect(within(groups[1]!).getByRole("button", { name: "Show What the loop did" })).toHaveTextContent("Show 2 panels");
+    expect(within(groups[1]!).getByRole("button", { name: "Show What the loop did" })).toHaveTextContent("Show 5 panels");
     expect(new Set(metrics.mock.calls.map(([view]) => view))).toEqual(
       new Set(["workflow-duration", "workflow-mean", "gnmi-duration", "gnmi-mean", "activity-time"]),
     );
@@ -383,6 +383,9 @@ describe("App", () => {
 
     expect(titles(within(section).getByRole("group", { name: "What the loop did" }))).toEqual([
       "Workflows completed (count)",
+      "Scan results (count)",
+      "Differing paths found (count)",
+      "Deploys ended (count)",
       "gNMI errors (rate)",
     ]);
     expect(new URLSearchParams(location.search).get("open")).toBe("metrics-timing,metrics-work");

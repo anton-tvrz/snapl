@@ -65,6 +65,8 @@ From the metrics store's series API, leaving out `job`, `instance`, `namespace`,
 
 **To check in the slice**: read the installed `temporalio`'s `MetricMeter.create_counter` signature and whether the exported name gains a `_total` suffix, before fixing the names in the contract. Test against `WorkflowEnvironment.start_local()` with a metrics runtime on a free port, as spec 012's tests do.
 
+**Checked in PR E** (temporalio 1.25.0): `MetricMeter.create_counter(name, description=None, unit=None)` returns a `MetricCounter` whose `add(value: int, additional_attributes=None)` takes a non-negative int. The runtime's Prometheus exporter writes the name exactly as given: a counter created as `snapl_probe_a` is served as `snapl_probe_a`, one created as `snapl_probe_b_total` as `snapl_probe_b_total`, and the unit is not appended. The SDK's own counters follow the same rule (`temporal_workflow_completed` has no suffix). So the worker creates the three counters under their full contract names, `_total` included, and the contract's family names stand.
+
 ## R7. Scan steps without changing any figure
 
 **Decision**: `ScanDrift` writes `activity_completed` or `activity_failed` events for `fetch_devices_for_use_case` (target: the use case) and `collect_drift_state` (target: the device), next to the `detect_drift` event it writes today.
