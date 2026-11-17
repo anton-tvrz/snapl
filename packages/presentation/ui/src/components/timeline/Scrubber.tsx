@@ -61,8 +61,8 @@ export function Scrubber({ domain, stops, value, onChange }: Props) {
   };
 
   return (
-    <div className={`mt-3 grid ${NAME_COLUMN} items-center gap-x-3`}>
-      <span className="text-xs font-semibold">As of</span>
+    <div className={`mt-4 grid ${NAME_COLUMN} items-center gap-x-4`}>
+      <span className="text-meta font-semibold">As of</span>
       <div
         role="slider"
         tabIndex={0}

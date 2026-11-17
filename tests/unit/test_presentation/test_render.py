@@ -16,6 +16,7 @@ import pytest
 from rich.console import Console
 
 from snapl_orchestrator.models import WorkflowReason
+from snapl_presentation.exit_codes import ExitCode
 from snapl_presentation.render import HumanRenderer, JsonRenderer, build_renderer
 
 pytestmark = pytest.mark.unit
@@ -364,3 +365,11 @@ def test_a_run_line_is_never_hard_wrapped_on_a_narrow_console() -> None:
     HumanRenderer(console).schedule(view)
     lines = console.export_text().splitlines()
     assert any("6 devices: 5 clean, 1 drifted, 0 errored" in line and "wrote: no" in line for line in lines)
+
+
+@pytest.mark.parametrize("as_json", [True, False])
+def test_a_cancelled_scan_exits_as_an_error_even_when_what_it_finished_was_clean(scan_result, as_json) -> None:
+    """The scan did not answer for the whole fabric, so it is not a clean scan (#36)."""
+    cancelled = scan_result().model_copy(update={"cancelled": True})
+
+    assert build_renderer(as_json=as_json).scan_code(cancelled) == ExitCode.ERROR

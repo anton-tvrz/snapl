@@ -29,7 +29,9 @@ Why a drifted device was left alone by a `remediate` run.
 
 The kind of change a `SCHEDULE_CHANGED` audit event records. It is stored as the `change` key of `AuditEvent.payload`.
 
-`created`, `interval_changed`, `response_changed`, `paused`, `resumed`, `triggered`, `deleted`. (A `stood_down` value would arrive with the deferred stand-down follow-up.)
+`created`, `interval_changed`, `response_changed`, `paused`, `resumed`, `triggered`, `deleted`, `stood_down`.
+
+`stood_down` (#136) is recorded by a run that returned its own schedule to `report` after a failed repair. Its payload has `from`, `to` and `reason`, and its actor is `snapl:stand-down`.
 
 ### AuditEventType (extended)
 

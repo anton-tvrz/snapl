@@ -140,8 +140,10 @@ class Renderer:
     def scan_code(result: DriftScanResult) -> ExitCode:
         # Errored devices mean the scan could not answer the question for them:
         # operational failure outranks drift, so the caller is not told "just
-        # drift" when part of the fabric was never actually evaluated.
-        if result.errored:
+        # drift" when part of the fabric was never actually evaluated. A
+        # cancelled scan did not evaluate all of it either, whatever the part
+        # it finished shows (#36).
+        if result.errored or result.cancelled:
             return ExitCode.ERROR
         return ExitCode.DRIFT if result.drifted else ExitCode.OK
 

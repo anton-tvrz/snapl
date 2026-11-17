@@ -3,7 +3,8 @@
 The structural diff (`snapl_observability.structural.diff`) expects ``actual_data``
 keyed by **per-entity paths** with **flat snake_case field dicts**:
 
-- ``/interface[name=ethernet-1/1]`` → ``{"description", "ip_address", "prefix_length", "enabled", "mtu"}``
+- ``/interface[name=ethernet-1/1]``
+  → ``{"description", "ip_address", "prefix_length", "ipv4_addresses", "enabled", "mtu"}``
 - ``/network-instance[name=default]/protocols/bgp/neighbor[peer-address=10.10.1.1]``
   → ``{"peer_address", "peer_asn", "peer_group", "enabled"}``
 
@@ -49,24 +50,44 @@ def _enabled(node: dict[str, Any]) -> bool:
     return bool(_get_local(node, "admin-state") == "enable")
 
 
-def _interface_ip(iface: dict[str, Any]) -> tuple[str | None, int | None]:
-    """First configured IPv4 address on an interface → (address, prefix_length)."""
+def _interface_addresses(iface: dict[str, Any]) -> list[dict[str, str]]:
+    """Every configured IPv4 address on an interface, in the device's order (#193).
+
+    Each is ``{"prefix": "10.10.1.0/31", "path": "subinterface[index=0]/ipv4/address[ip-prefix=10.10.1.0/31]"}``,
+    with ``path`` relative to the interface, so the diff can name an address
+    intent never asked for.
+    """
+    addresses: list[dict[str, str]] = []
     for sub in _get_local(iface, "subinterface", []) or []:
+        index = _get_local(sub, "index")
         ipv4 = _get_local(sub, "ipv4")
         for addr in _get_local(ipv4, "address", []) or []:
             prefix = _get_local(addr, "ip-prefix")
             if prefix:
-                address, _, length = str(prefix).partition("/")
-                return address or None, int(length) if length.isdigit() else None
-    return None, None
+                addresses.append(
+                    {
+                        "prefix": str(prefix),
+                        "path": f"subinterface[index={index}]/ipv4/address[ip-prefix={prefix}]",
+                    }
+                )
+    return addresses
 
 
 def _normalize_interface(iface: dict[str, Any]) -> dict[str, Any]:
-    ip_address, prefix_length = _interface_ip(iface)
+    addresses = _interface_addresses(iface)
+    ip_address: str | None = None
+    prefix_length: int | None = None
+    if addresses:
+        # The single-address fields carry the first address. The diff matches
+        # intent's one address against the whole list (`ipv4_addresses`).
+        address, _, length = addresses[0]["prefix"].partition("/")
+        ip_address = address or None
+        prefix_length = int(length) if length.isdigit() else None
     return {
         "description": _get_local(iface, "description"),
         "ip_address": ip_address,
         "prefix_length": prefix_length,
+        "ipv4_addresses": addresses,
         "enabled": _enabled(iface),
         "mtu": _get_local(iface, "mtu"),
     }

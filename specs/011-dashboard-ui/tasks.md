@@ -341,7 +341,7 @@ Each PR says `Closes` a task issue under #146 and carries `changelog/146.added.m
 - [x] T075 [US5] packages/presentation/snapl_presentation/cli.py: `--archive`, building `Sources` from the archive, the fixed clock, and the start lines. No settings are read from the environment in this mode.
 - [x] T076 [US5] tasks/history.py: `_EXPORTS` gains the four routes. Amend specs/012-measured-metrics/contracts/history-tasks.md "Contents" to list them, with a link to this spec.
 - [x] T077 [US5] packages/presentation/ui/src/components/ModeBanner.tsx, and the mode read once at load and passed to `ViewFrame`, the range picker and `usePolling`.
-- [ ] T078 [US5] **Needs the lab**: quickstart item 6 (a real archive, the stack stopped, the checksum). Amended 2026-11-13: Wi-Fi no longer has to be off (spec SC-008).
+- [x] T078 [US5] **Needs the lab**: quickstart item 6 (a real archive, the stack stopped, the checksum). Amended 2026-11-13: Wi-Fi no longer has to be off (spec SC-008). Done 2026-11-13 by the maintainer (#242): the 2026-11-12 archive (ca723ea) opened with the dev stack stopped. The banner, the 8 links, the lanes and scrubber over the whole trail, the exported metrics and "Not in this archive" on Running now were all as expected. The checksum was unchanged and no temporary directory was left.
 
 **Checkpoint**: history can be read months later on a machine with nothing running.
 
@@ -378,7 +378,7 @@ Each PR says `Closes` a task issue under #146 and carries `changelog/146.added.m
 - [x] T084 [US6] packages/presentation/ui/snapshot.html and vite.snapshot.config.ts (`vite-plugin-singlefile`, the `<meta>` policy of research R4, the empty bundle element), built by the same `npm run build` into `static/ui/snapshot.html`.
 - [x] T085 [US6] packages/presentation/ui/src/data/inline.ts, and `main.tsx` choosing `InlineProvider` when the bundle element is present and not empty.
 - [x] T086 [US6] packages/presentation/snapl_presentation/dashboard/snapshot.py: `collect_bundle`, `render`, `write`. cli.py: `--snapshot`, `--days`, `--force`, alone or with `--archive`, printing the contract's summary.
-- [ ] T087 [US6] **Needs the lab**: quickstart item 7 in Chromium, Firefox and Safari, with the file's size recorded in the PR.
+- [x] T087 [US6] **Needs the lab**: quickstart item 7 in Chromium, Firefox and Safari, with the file's size recorded in the PR. Done 2026-11-13 (#244) in Safari, by the maintainer, and in headless Chromium on 2026-11-12. Both showed zero requests beyond the file, the recording banner and the topology, and replayed both arcs. Firefox was not checked; the maintainer accepted that. The 7-day snapshot is 2,819 kB.
 - [ ] T088 [US6] **Needs the maintainer**: quickstart items 10 (a first-time viewer, SC-003) and 12 (read a snapshot before publishing one).
 
 **Checkpoint**: `demo.html` can be attached to a post.

@@ -421,6 +421,7 @@ def test_drift_response_enums_have_the_documented_values() -> None:
         "resumed",
         "triggered",
         "deleted",
+        "stood_down",
     ]
     assert AuditEventType.SCHEDULE_CHANGED.value == "schedule_changed"
     assert AuditEventType.DRIFT_RESPONSE.value == "drift_response"

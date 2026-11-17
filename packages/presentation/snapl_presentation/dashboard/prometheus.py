@@ -55,9 +55,27 @@ SCRAPE_INTERVAL_S = 15
 MAX_POINTS = 10_000
 
 
+def _rate(selector: str) -> str:
+    """``rate(selector[$w])`` that also counts a series' first observation (#191).
+
+    A series is created by its first observation, so ``rate()`` has no earlier
+    sample to compare with and sees no increase: a device's first gNMI error
+    never showed. A series with no sample one window ago started from zero
+    inside the window, so its value is its increase, and dividing by the
+    window's seconds gives the rate. That only holds if Prometheus was scraping
+    the worker then, which ``up ... offset $w`` checks. Without it, a counter
+    that grew while Prometheus was down would show as one burst. In the first
+    window after Prometheus starts, a first observation is still missed.
+    """
+    return (
+        f'((({selector} unless {selector} offset $w) and on() (up{{job="snapl-worker"}} offset $w))'
+        f" / $sec or rate({selector}[$w]))"
+    )
+
+
 @dataclass(frozen=True)
 class MetricsViewSpec:
-    # `$ns`, `$uc` and `$w` are filled by render_query, and nothing else is.
+    # `$ns`, `$uc`, `$w` and `$sec` are filled by render_query, and nothing else is.
     query: str
     unit: MetricUnit
     labels: tuple[str, ...]
@@ -66,24 +84,24 @@ class MetricsViewSpec:
 VIEWS: dict[MetricsViewName, MetricsViewSpec] = {
     MetricsViewName.WORKFLOW_DURATION: MetricsViewSpec(
         "histogram_quantile(0.95, sum by (le, workflow_type) "
-        '(rate(temporal_workflow_endtoend_latency_bucket{namespace="$ns"}[$w])))',
+        f"({_rate('temporal_workflow_endtoend_latency_bucket{namespace="$ns"}')}))",
         "ms",
         ("workflow_type",),
     ),
     MetricsViewName.GNMI_DURATION: MetricsViewSpec(
         "histogram_quantile(0.95, sum by (le, device, operation) "
-        '(rate(snapl_gnmi_call_duration_bucket{use_case="$uc"}[$w])))',
+        f"({_rate('snapl_gnmi_call_duration_bucket{use_case="$uc"}')}))",
         "ms",
         ("device", "operation"),
     ),
     MetricsViewName.GNMI_ERRORS: MetricsViewSpec(
-        'sum by (device) (rate(snapl_gnmi_call_duration_count{use_case="$uc",outcome="error"}[$w]))',
+        f"sum by (device) ({_rate('snapl_gnmi_call_duration_count{use_case="$uc",outcome="error"}')})",
         "per_second",
         ("device",),
     ),
     MetricsViewName.WORKER_LAG: MetricsViewSpec(
         "histogram_quantile(0.95, sum by (le) "
-        '(rate(temporal_activity_schedule_to_start_latency_bucket{namespace="$ns"}[$w])))',
+        f"({_rate('temporal_activity_schedule_to_start_latency_bucket{namespace="$ns"}')}))",
         "ms",
         (),
     ),
@@ -103,6 +121,7 @@ def render_query(view: MetricsViewName, *, namespace: str, use_case: str, window
         spec.query.replace("$ns", _label_value(namespace))
         .replace("$uc", _label_value(use_case))
         .replace("$w", f"{window_s}s")
+        .replace("$sec", str(window_s))
     )
 
 

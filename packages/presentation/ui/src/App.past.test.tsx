@@ -6,6 +6,8 @@ import { App } from "./App";
 import type { DataProvider, Range, RunsQuery } from "./data/provider";
 import {
   DEVICES_AT_SCAN_2,
+  DRIFT_SUMMARY,
+  FABRIC_HISTORY,
   HISTORY,
   LINKS,
   METRICS,
@@ -41,7 +43,8 @@ function provider() {
     runs: async (query) => (calls.runs(query), RUNS_AT_SCAN_2),
     timeline: async (range) => (calls.timeline(range), range ? TIMELINE_AT_SCAN_2 : TIMELINE),
     links: async () => LINKS,
-    history: async () => HISTORY,
+    history: async (_range?: unknown, _bucket?: unknown, series?: unknown) => (series ? FABRIC_HISTORY : HISTORY),
+    driftSummary: async () => DRIFT_SUMMARY,
     steps: async () => STEPS_DEPLOY,
     metrics: async (view) => METRICS[view],
   };
@@ -92,6 +95,30 @@ describe("App at a past time", () => {
     expect(await screen.findByText(/devices and links are today's/i)).toBeInTheDocument();
     const sources = screen.getByRole("region", { name: "Sources" });
     expect(sources).toHaveTextContent("Shows only the present");
+  });
+
+  it("gives the number row as of the past time, and says what shows only the present", async () => {
+    history.replaceState(null, "", `/?at=${STOP_2}`);
+
+    render(<App provider={provider().p} />);
+    await settle();
+
+    const row = await screen.findByRole("list", { name: "The fabric in numbers" });
+    // At scan 2 spine-01 was still drifted and nothing had been repaired.
+    expect(await within(row).findByText("No repaired drift is recorded.")).toBeInTheDocument();
+    const card = within(row).getByRole("heading", { name: "Runs, 24 h" }).closest("li")!;
+    expect(card).toHaveTextContent("Shows only the present.");
+  });
+
+  it("holds the clock still at the time shown", async () => {
+    history.replaceState(null, "", `/?at=${STOP_2}`);
+
+    render(<App provider={provider().p} />);
+    await settle();
+
+    const clock = within(screen.getAllByRole("banner")[0]!).getByRole("time");
+    expect(clock).toHaveAttribute("data-running", "false");
+    expect(clock).toHaveAttribute("datetime", `${STOP_2.slice(0, 19)}.000Z`);
   });
 
   it("gives the headline as of the past time", async () => {
@@ -167,8 +194,25 @@ describe("App at a past time", () => {
     await settle();
 
     expect(await screen.findByRole("list", { name: "Drift lanes" })).toBeInTheDocument();
-    expect(screen.getByText("5 s")).toBeInTheDocument();
+    // The headline's duration; the number row shows the same repair.
+    expect(within(screen.getByRole("region", { name: "Drift over time" })).getByText("5 s")).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Past time" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the fabric history over the page's range, not the time shown, like the history", async () => {
+    history.replaceState(null, "", `/?at=${STOP_2}`);
+    render(<App provider={provider().p} />);
+
+    const panel = await screen.findByRole("region", { name: "Fabric history" });
+    expect(await within(panel).findByRole("img", { name: /^Open drifts after each scan, as a chart: 3 scans/ })).toBeInTheDocument();
+  });
+
+  it("keeps drift by device over the page's range, not the time shown, like the history", async () => {
+    history.replaceState(null, "", `/?at=${STOP_2}`);
+    render(<App provider={provider().p} />);
+
+    const panel = await screen.findByRole("region", { name: "Drift by device" });
+    expect(await within(panel).findByRole("button", { name: /^Open leaf-01:/ })).toBeInTheDocument();
   });
 
   it("says where history starts when the time is before it", async () => {

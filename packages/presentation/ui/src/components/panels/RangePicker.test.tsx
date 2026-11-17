@@ -73,4 +73,33 @@ describe("RangePicker", () => {
     expect(screen.getByText("Up to the archive's time: the lanes show its last 24 h.")).toBeInTheDocument();
     expect(screen.queryByText(/Following now/)).not.toBeInTheDocument();
   });
+
+  // spec 014 FR-027, research R9: a toolbar, with the custom fields one click away.
+  it("is a toolbar that always shows the presets and the range in words", () => {
+    render(<RangePicker now={NOW} onChange={vi.fn()} />);
+
+    const bar = screen.getByRole("region", { name: "Time range" });
+    expect(bar).toHaveAttribute("data-toolbar");
+    expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual(["1 h", "24 h", "7 d", "Apply"]);
+    expect(screen.getByText(/^Following now/)).toBeInTheDocument();
+  });
+
+  it("keeps the custom start and end behind a closed disclosure", () => {
+    render(<RangePicker now={NOW} onChange={vi.fn()} />);
+
+    const details = screen.getByText("Custom range").closest("details")!;
+    expect(details).not.toHaveAttribute("open");
+    expect(details).toContainElement(screen.getByLabelText("From (UTC)"));
+    expect(details).toContainElement(screen.getByRole("button", { name: "Apply" }));
+  });
+
+  it("opens the disclosure when a custom range is refused, so the reason is seen", async () => {
+    render(<RangePicker now={NOW} onChange={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText("From (UTC)"), { target: { value: "2026-11-07T21:00" } });
+    fireEvent.change(screen.getByLabelText("To (UTC)"), { target: { value: "2026-11-07T20:00" } });
+    await userEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+    expect(screen.getByText("Custom range").closest("details")).toHaveAttribute("open");
+  });
 });

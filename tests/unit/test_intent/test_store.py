@@ -98,7 +98,6 @@ def _make_bgp_session_node(
         device=_rel_one(SimpleNamespace(id=str(device_uuid))),
         local_as=_rel_one(SimpleNamespace(asn=_attr(local_asn))),
         remote_as=_rel_one(SimpleNamespace(asn=_attr(peer_asn))),
-        local_ip=_rel_one(SimpleNamespace(address=_attr(None))),
         remote_ip=_rel_one(SimpleNamespace(address=_attr(peer_address))),
         peer_group=_rel_one(SimpleNamespace(name=_attr(peer_group))) if peer_group else _rel_one(None),
         status=_attr(status),
@@ -147,7 +146,6 @@ def _make_device_node(
         use_case=_attr(use_case),
         platform=_attr("nokia-srlinux"),
         description=_attr(None),
-        interfaces=_rel_many([]),
     )
 
 
@@ -435,12 +433,6 @@ class TestGetSchema:
         # Source files are discovered from the packaged schemas tree.
         assert result.source_files, "expected non-empty source_files"
         assert all(f.endswith(".yml") for f in result.source_files)
-
-    async def test_unknown_use_case_raises_schema_error(self, mock_infrahub_client):
-        store = InfrahubIntentStore(client=mock_infrahub_client)
-
-        with pytest.raises(IntentSchemaError):
-            await store.get_schema("definitely-not-a-real-use-case")
 
     async def test_no_provisioned_kinds_raises_schema_error(self, mock_infrahub_client):
         # Infrahub is reachable but only built-ins are present — schema was
@@ -996,3 +988,83 @@ class TestBranchSupport:
 
         kwargs = mock_infrahub_client.filters.await_args_list[0].kwargs
         assert kwargs.get("branch") == "hotfix-branch"
+
+
+# ---------------------------------------------------------------------------
+# #49 and #68: store cleanup and schema contract accuracy
+# ---------------------------------------------------------------------------
+
+
+class _SdkError(Exception):
+    """Stands in for an exception raised from inside the Infrahub SDK."""
+
+
+_SdkError.__module__ = "infrahub_sdk.exceptions"
+
+
+class TestDeleteDeviceErrorsMatchTheOtherReads:
+    async def test_an_sdk_error_is_a_connection_error(self, mock_infrahub_client):
+        """delete_device looked the device up with its own try/except, which let
+        SDK errors through raw. It now reads through the same wrapper (#49)."""
+        mock_infrahub_client.filters = AsyncMock(side_effect=_SdkError("graphql error"))
+        store = InfrahubIntentStore(client=mock_infrahub_client)
+
+        with pytest.raises(IntentConnectionError, match="graphql error"):
+            await store.delete_device(uuid4())
+
+
+class TestChildQueriesOverlap:
+    async def test_interfaces_and_sessions_are_queried_at_the_same_time(self, mock_infrahub_client):
+        """Two independent round-trips on the drift hot path (#49). Each query
+        waits for the other to start, so queries made one after another time out."""
+        import asyncio
+
+        node = _make_device_node(name="spine-01")
+        started = {"InterfacePhysical": asyncio.Event(), "RoutingBGPSession": asyncio.Event()}
+
+        async def _filters(kind=None, **_kwargs):
+            if kind == "DcimDevice":
+                return [node]
+            started[kind].set()
+            other = next(event for name, event in started.items() if name != kind)
+            await asyncio.wait_for(other.wait(), timeout=2)
+            return []
+
+        mock_infrahub_client.filters = AsyncMock(side_effect=_filters)
+        store = InfrahubIntentStore(client=mock_infrahub_client)
+
+        states = await store.get_desired_state(use_case="dcfabric")
+
+        assert [state.device.name for state in states] == ["spine-01"]
+
+
+class TestSchemaVersionAndUseCase:
+    @property
+    def _KINDS(self) -> dict:  # noqa: N802 — reads as the constant it stands for
+        return {"DcimDevice": _schema_kind("DcimDevice")}
+
+    async def test_the_version_is_the_live_schema_hash(self, mock_infrahub_client):
+        """Not a constant "1.0" (#68): the hash the SDK holds for the branch's schema."""
+        mock_infrahub_client.schema.all.return_value = self._KINDS
+        mock_infrahub_client.schema.cache = {"main": SimpleNamespace(hash="a1b2c3d4")}
+        store = InfrahubIntentStore(client=mock_infrahub_client)
+
+        assert (await store.get_schema("dcfabric")).version == "a1b2c3d4"
+
+    async def test_the_version_is_unknown_when_the_sdk_holds_no_hash(self, mock_infrahub_client):
+        mock_infrahub_client.schema.all.return_value = self._KINDS
+        mock_infrahub_client.schema.cache = {}
+        store = InfrahubIntentStore(client=mock_infrahub_client)
+
+        assert (await store.get_schema("dcfabric")).version == "unknown"
+
+    async def test_a_use_case_without_seed_data_still_has_the_schema(self, mock_infrahub_client):
+        """One schema serves every use case, so whether seed data ships for a
+        use case says nothing about its schema (#68)."""
+        mock_infrahub_client.schema.all.return_value = self._KINDS
+        store = InfrahubIntentStore(client=mock_infrahub_client)
+
+        schema = await store.get_schema("a-use-case-with-no-seed")
+
+        assert schema.use_case == "a-use-case-with-no-seed"
+        assert schema.entities == ["DcimDevice"]

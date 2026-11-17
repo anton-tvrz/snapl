@@ -385,6 +385,19 @@ def test_devices_runs_timeline_and_steps_come_from_the_archived_trail(served):
     assert steps["steps"]["data"]["recorded"] is True
 
 
+def test_the_drift_summary_and_the_new_series_come_from_the_archived_trail(served):
+    """Both are computed from the audit trail, so an archive made before spec 015 answers them too."""
+    client, _ = served
+
+    summary = client.get("/api/v1/drift-summary").json()["summary"]
+    assert summary["available"] is True
+    assert {d["name"] for d in summary["data"]["devices"]} >= {"spine-01", "leaf-01"}
+    params = [("series", name) for name in ("in_sync_devices", "open_drifts", "runs", "repair_duration")]
+    series = {s["name"]: s for s in client.get("/api/v1/history", params=params).json()["series"]}
+    assert [p["value"] for p in series["repair_duration"]["points"]]
+    assert sum(p["value"] or 0 for p in series["runs"]["points"]) == 12
+
+
 def test_schedule_worker_and_ci_are_exactly_as_exported(served):
     client, _ = served
     overview = client.get("/api/v1/overview").json()
@@ -431,7 +444,13 @@ def test_every_route_answers_with_no_network(served, monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(socket, "create_connection", refuse)
     client, _ = served
     paths = ["mode", "overview", "devices", "runs", "topology", "links", "sources", "schedule", "history"]
-    paths += ["drift-timeline", "ci", "lab-runs", *(f"metrics/{view.value}" for view in MetricsViewName)]
+    paths += [
+        "drift-timeline",
+        "drift-summary",
+        "ci",
+        "lab-runs",
+        *(f"metrics/{view.value}" for view in MetricsViewName),
+    ]
 
     for path in paths:
         assert client.get(f"/api/v1/{path}").status_code == 200, path
@@ -505,10 +524,16 @@ def test_an_archive_of_100k_events_is_ready_within_10_s(tmp_path: Path):
     )
 
     started = time.perf_counter()
-    with open_archive(big) as opened:
-        client = TestClient(create_archive_app(opened, ui_dir=None))
-        for path in ("mode", "overview", "topology", "drift-timeline"):
+    # One client for every request, so they share one event loop: a read that
+    # outlasts the request budget carries on into the next request (#274).
+    with open_archive(big) as opened, TestClient(create_archive_app(opened, ui_dir=None)) as client:
+        for path in ("mode", "overview", "topology"):
             assert client.get(f"/api/v1/{path}").status_code == 200
+        # Ready means answering with the trail's data. "Still waiting for
+        # audit" is a 200 too, and the page asks again, so this does as well.
+        while (timeline := client.get("/api/v1/drift-timeline").json()["timeline"])["data"] is None:
+            assert time.perf_counter() - started < 10, timeline["reason"]
+            time.sleep(0.05)
         elapsed = time.perf_counter() - started
         assert len(client.get("/api/v1/runs", params={"limit": 500}).json()["runs"]["data"]) == 500
 

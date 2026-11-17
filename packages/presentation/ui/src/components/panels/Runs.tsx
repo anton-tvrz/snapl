@@ -37,26 +37,26 @@ export function Runs({ runs, now, device }: RunsProps) {
   return (
     <ViewFrame title="Runs" view={runs} now={now}>
       {device && !all && (
-        <p className="mb-2 flex flex-wrap items-center gap-2 text-xs text-muted">
+        <p className="mb-2 flex flex-wrap items-center gap-2 text-meta text-muted">
           <span>Only {device}'s runs.</span>
-          <button type="button" onClick={() => setAll(true)} className="rounded border border-line px-2 py-0.5 text-ink">
+          <button type="button" onClick={() => setAll(true)} className="chip rounded border border-line px-2 py-0.5 text-ink">
             Show every device's runs
           </button>
         </p>
       )}
       {list.length === 0 ? (
-        <p className="text-sm text-muted">No runs recorded yet.</p>
+        <p className="text-body text-muted">No runs recorded yet.</p>
       ) : (
         <div className="overflow-x-auto">
-          <table aria-label="Runs" className="w-full text-left text-sm">
-            <thead className="text-xs text-muted">
+          <table aria-label="Runs" className="w-full text-left text-body">
+            <thead className="text-meta text-muted">
               <tr>
-                <th className="py-1 pr-3 font-medium">Started</th>
-                <th className="py-1 pr-3 font-medium">Run</th>
-                <th className="py-1 pr-3 font-medium">Target</th>
-                <th className="py-1 pr-3 font-medium">Outcome</th>
-                <th className="py-1 pr-3 font-medium">Trigger</th>
-                <th className="py-1 font-medium">Duration</th>
+                <th className="cell py-1 pr-4 font-medium">Started</th>
+                <th className="cell py-1 pr-4 font-medium">Run</th>
+                <th className="cell py-1 pr-4 font-medium">Target</th>
+                <th className="cell py-1 pr-4 font-medium">Outcome</th>
+                <th className="cell py-1 pr-4 font-medium">Trigger</th>
+                <th className="cell py-1 font-medium">Duration</th>
               </tr>
             </thead>
             <tbody>
@@ -64,21 +64,21 @@ export function Runs({ runs, now, device }: RunsProps) {
                 const outcome = runEncoding(run.state);
                 return (
                   <tr key={`${run.workflow_id}@${run.started_at}`} className="border-t border-line align-top">
-                    <td className="py-1 pr-3 whitespace-nowrap">{ageText(run.started_at, now)}</td>
-                    <td className="py-1 pr-3">
+                    <td className="py-2 pr-4 whitespace-nowrap">{ageText(run.started_at, now)}</td>
+                    <td className="py-2 pr-4">
                       <RunLink run={run} />
                     </td>
-                    <td className="py-1 pr-3 font-mono text-xs">{run.target ?? ""}</td>
-                    <td className="py-1 pr-3">
+                    <td className="py-2 pr-4 font-mono text-meta">{run.target ?? ""}</td>
+                    <td className="py-2 pr-4">
                       <span aria-hidden="true">{outcome.glyph} </span>
                       {outcome.label}
-                      {run.reason && <span className="block text-xs break-words text-muted">{run.reason}</span>}
+                      {run.reason && <span className="block max-w-prose text-meta break-words text-muted">{run.reason}</span>}
                     </td>
-                    <td className="py-1 pr-3">
+                    <td className="py-2 pr-4">
                       {run.trigger}
                       {run.actor ? ` (${run.actor})` : ""}
                     </td>
-                    <td className="py-1 whitespace-nowrap">
+                    <td className="py-2 whitespace-nowrap">
                       {run.state === "running"
                         ? elapsed(run, now)
                         : run.duration_s == null
@@ -108,13 +108,13 @@ export function Running({ running, now, presentOnly = false }: RunningProps) {
   return (
     <ViewFrame title="Running now" view={running} now={now} presentOnly={presentOnly}>
       {list.length === 0 ? (
-        <p className="text-sm text-muted">Nothing is running.</p>
+        <p className="text-body text-muted">Nothing is running.</p>
       ) : (
-        <ul className="space-y-1 text-sm">
+        <ul className="space-y-2 text-body">
           {list.map((run) => (
             <li key={`${run.workflow_id}@${run.started_at}`} className="flex flex-wrap gap-x-2">
               <RunLink run={run} />
-              {run.target && <span className="font-mono text-xs">{run.target}</span>}
+              {run.target && <span className="font-mono text-meta">{run.target}</span>}
               <span>{elapsed(run, now)}</span>
               <span className="text-muted">{run.trigger}</span>
             </li>

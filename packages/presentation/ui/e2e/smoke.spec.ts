@@ -122,6 +122,39 @@ test("the fabric is drawn: six devices in two tiers, eight links, leaf-01 undesi
   expect(seen.blocked).toEqual([]);
 });
 
+test("the number row leads the page, and a card's link moves to its panel", async ({ page }) => {
+  await page.goto("/");
+  const row = page.getByRole("list", { name: "The fabric in numbers" });
+
+  // The fixture arc: leaf-01 undesired, spine-01 repaired in 5 s, twelve runs started by the operator.
+  await expect(row.getByText("5 of 6")).toBeVisible();
+  await expect(row.getByText("5 s", { exact: true })).toBeVisible();
+  await expect(row.getByText("12", { exact: true })).toBeVisible();
+  await expect(row.getByText("None failed.")).toBeVisible();
+  await expect(row.getByRole("listitem")).toHaveCount(4);
+
+  await row.getByRole("link", { name: "Runs, 24 h: view more" }).click();
+  await expect(page).toHaveURL(/#fabric-history$/);
+  await expect(page.locator("#fabric-history")).toBeInViewport();
+});
+
+test("the range toolbar stays on screen over the lanes, the history and the metrics", async ({ page }) => {
+  await page.goto("/");
+  const bar = page.getByRole("region", { name: "Time range" });
+  await expect(bar).toBeVisible();
+
+  // The default fixture server has no metrics store: the history is the last panel with data here.
+  await page.locator("#history").scrollIntoViewIfNeeded();
+  await page.mouse.wheel(0, 400);
+  await expect(bar).toBeInViewport();
+  const box = await bar.boundingBox();
+  expect(box!.y).toBeLessThan(40);
+
+  // Past the views it governs, it scrolls away with them.
+  await page.getByRole("heading", { name: "Links" }).scrollIntoViewIfNeeded();
+  await expect(bar).not.toBeInViewport();
+});
+
 test("selecting a device opens its detail, and the address reopens it", async ({ page }) => {
   await page.goto("/");
 
@@ -138,6 +171,37 @@ test("selecting a device opens its detail, and the address reopens it", async ({
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page).toHaveURL(/\/$/);
+});
+
+test("the fabric history draws its four charts from the arc, each with its table", async ({ page }) => {
+  await page.goto("/");
+
+  const panel = page.getByRole("region", { name: "Fabric history" });
+  await expect(panel.getByRole("img", { name: /^Devices in sync at each scan, as a chart: 3 scans/ })).toBeVisible();
+  await expect(panel.getByRole("img", { name: /^Open drifts after each scan/ })).toBeVisible();
+  await expect(panel.getByRole("img", { name: /^Runs started in each hour, by trigger, as a chart: 12 runs, none failed/ })).toBeVisible();
+  await expect(panel.getByRole("img", { name: /^Each repaired drift's duration, scan to scan, as a chart: 1 repair, the longest 5 s/ })).toBeVisible();
+  // The charts draw: a stepped line, the runs' bars and the repair's point.
+  await expect(panel.locator(".recharts-line-curve")).toHaveCount(2);
+  await expect(panel.locator(".recharts-bar-rectangle path").first()).toBeVisible();
+  await expect(panel.locator(".recharts-scatter-symbol")).toHaveCount(1);
+
+  await panel.getByText("Show the table").first().click();
+  await expect(panel.getByRole("table", { name: "Devices in sync at each scan" }).getByRole("row")).toHaveCount(4);
+});
+
+test("drift by device lists the arc's two drifted devices and opens one", async ({ page }) => {
+  await page.goto("/");
+
+  const panel = page.getByRole("region", { name: "Drift by device" });
+  const rows = panel.getByRole("list", { name: "Devices that drifted, most drifts first" }).getByRole("listitem");
+  await expect(rows).toHaveCount(2);
+  await expect(rows.first()).toContainText("leaf-01");
+  await expect(rows.first()).toContainText("1 still open");
+
+  await panel.getByRole("button", { name: /^Open spine-01:/ }).click();
+  await expect(page.getByRole("dialog", { name: "spine-01" })).toBeVisible();
+  await expect(page).toHaveURL(/\?device=spine-01$/);
 });
 
 test("the devices can be reached and opened from the keyboard", async ({ page }) => {
@@ -217,7 +281,8 @@ test("the runs panel lists the fixture's 12 runs, and each unavailable source's 
   }
 });
 
-for (const width of [1280, 1024]) {
+// 360 is a phone: nothing may scroll sideways there either (spec 014 T062).
+for (const width of [1280, 1024, 360]) {
   test(`the page fits ${width} pixels with no sideways scroll`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
     await page.goto("/?device=leaf-01");

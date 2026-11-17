@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import type { DataProvider } from "./data/provider";
 import {
+  DRIFT_SUMMARY,
+  FABRIC_HISTORY,
   HISTORY,
   LINKS,
   METRICS,
@@ -37,7 +39,8 @@ function provider() {
       throw new Error("not asked");
     },
     timeline: calls.timeline,
-    history: async () => HISTORY,
+    history: async (_range?: unknown, _bucket?: unknown, series?: unknown) => (series ? FABRIC_HISTORY : HISTORY),
+    driftSummary: async () => DRIFT_SUMMARY,
     steps: async () => STEPS_DEPLOY,
     metrics: calls.metrics,
   } as unknown as DataProvider;
@@ -68,6 +71,40 @@ describe("App on an archive", () => {
     expect(within(screen.getAllByRole("banner")[0]!).getByText("Archive")).toBeInTheDocument();
     expect(screen.queryByText("Live")).not.toBeInTheDocument();
     expect(screen.queryByText(/Following now/)).not.toBeInTheDocument();
+  });
+
+  it("has the number row, from the archive's own answers", async () => {
+    render(<App provider={provider().p} />);
+    await settle();
+
+    const row = await screen.findByRole("list", { name: "The fabric in numbers" });
+    expect(within(row).getAllByRole("listitem")).toHaveLength(4);
+    expect(await within(row).findByText(/of \d+$/)).toBeInTheDocument();
+  });
+
+  it("counts the runs in the fourth card from the archive's trail", async () => {
+    render(<App provider={provider().p} />);
+    await settle();
+
+    const row = await screen.findByRole("list", { name: "The fabric in numbers" });
+    const card = within(row).getByRole("heading", { name: "Runs, 24 h" }).closest("li")!;
+    expect(await within(card).findByText("None failed.")).toBeInTheDocument();
+  });
+
+  it("has the fabric history, from the archive's trail", async () => {
+    render(<App provider={provider().p} />);
+    await settle();
+
+    const panel = await screen.findByRole("region", { name: "Fabric history" });
+    expect(await within(panel).findByRole("img", { name: /^Runs started in each hour/ })).toBeInTheDocument();
+  });
+
+  it("has drift by device, from the archive's trail", async () => {
+    render(<App provider={provider().p} />);
+    await settle();
+
+    const panel = await screen.findByRole("region", { name: "Drift by device" });
+    expect(await within(panel).findByRole("button", { name: /^Open spine-01:/ })).toBeInTheDocument();
   });
 
   it("shows what the archive does not hold neutrally", async () => {

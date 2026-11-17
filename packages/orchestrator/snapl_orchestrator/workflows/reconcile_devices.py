@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import timedelta
 from uuid import UUID
 
 from temporalio import workflow
-from temporalio.common import RetryPolicy
 from temporalio.exceptions import (
     ChildWorkflowError,
     WorkflowAlreadyStartedError,
@@ -15,19 +13,17 @@ from temporalio.exceptions import (
 )
 
 with workflow.unsafe.imports_passed_through():
-    from snapl_orchestrator.activities.audit import record_audit_event
     from snapl_orchestrator.models import (
-        AuditEvent,
         AuditEventType,
         ReconcileResult,
         WorkflowReason,
         WorkflowResult,
     )
+    from snapl_orchestrator.workflows.audit import record_event
     from snapl_orchestrator.workflows.deploy_intent import DeployIntentWorkflow
 
 
 _WORKFLOW_TYPE = "ReconcileDevices"
-_AUDIT_RETRY = RetryPolicy(initial_interval=timedelta(seconds=1), maximum_attempts=5)
 
 
 async def _audit(
@@ -39,22 +35,14 @@ async def _audit(
     reason: WorkflowReason | None = None,
     payload: dict | None = None,
 ) -> None:
-    event = AuditEvent(
-        event_id=workflow.uuid4(),
-        workflow_id=workflow_id,
+    await record_event(
         workflow_type=_WORKFLOW_TYPE,
+        workflow_id=workflow_id,
         target_id=target_id,
         event_type=event_type,
         outcome=outcome,
         reason=reason,
-        payload=payload or {},
-        timestamp=workflow.now(),
-    )
-    await workflow.execute_activity(
-        record_audit_event,
-        event,
-        start_to_close_timeout=timedelta(seconds=10),
-        retry_policy=_AUDIT_RETRY,
+        payload=payload,
     )
 
 

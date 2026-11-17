@@ -418,3 +418,86 @@ class TestUndesiredEntities:
 
         assert [i.path for i in first] == [i.path for i in second]
         assert len(first) == 4
+
+
+class TestExtraAddressesOnIntentInterfaces:
+    """An intent-managed interface carrying more addresses than intent gives it (#193)."""
+
+    _IFACE = "/interface[name=ethernet-1/1]"
+
+    @staticmethod
+    def _address(prefix: str) -> dict[str, str]:
+        return {"prefix": prefix, "path": f"subinterface[index=0]/ipv4/address[ip-prefix={prefix}]"}
+
+    def _actual(self, desired, *prefixes: str):
+        actual = _matching_actual_data(desired)
+        entry = actual[self._IFACE]
+        entry["ipv4_addresses"] = [self._address(prefix) for prefix in prefixes]
+        first, _, length = prefixes[0].partition("/") if prefixes else (None, "", "")
+        entry["ip_address"] = first
+        entry["prefix_length"] = int(length) if length else None
+        return actual
+
+    def test_the_intended_address_alone_is_clean(self):
+        from snapl_observability.structural.diff import diff_desired_vs_actual
+
+        desired = _build_desired_state()
+
+        assert diff_desired_vs_actual(desired, self._actual(desired, "10.1.1.0/31")) == []
+
+    def test_an_extra_address_is_reported_as_undesired(self):
+        from snapl_observability.structural.diff import diff_desired_vs_actual
+
+        desired = _build_desired_state()
+
+        items = diff_desired_vs_actual(desired, self._actual(desired, "10.1.1.0/31", "10.99.0.1/31"))
+
+        assert len(items) == 1
+        item = items[0]
+        assert item.path == f"{self._IFACE}/subinterface[index=0]/ipv4/address[ip-prefix=10.99.0.1/31]"
+        assert item.desired is None
+        assert item.actual == "10.99.0.1/31"
+        assert item.undesired is True
+        assert item.entity_kind == "interface"
+
+    def test_the_intended_address_is_found_wherever_the_device_lists_it(self):
+        from snapl_observability.structural.diff import diff_desired_vs_actual
+
+        desired = _build_desired_state()
+
+        items = diff_desired_vs_actual(desired, self._actual(desired, "10.0.9.9/31", "10.1.1.0/31"))
+
+        assert [(item.actual, item.undesired) for item in items] == [("10.0.9.9/31", True)]
+
+    def test_a_missing_intended_address_is_forward_drift_and_the_rest_is_undesired(self):
+        from snapl_observability.structural.diff import diff_desired_vs_actual
+
+        desired = _build_desired_state()
+
+        items = diff_desired_vs_actual(desired, self._actual(desired, "10.99.0.1/31", "10.99.0.3/31"))
+
+        forward = [(item.path, item.desired, item.actual) for item in items if not item.undesired]
+        assert forward == [(f"{self._IFACE}/ip_address", "10.1.1.0", "10.99.0.1")]
+        assert [item.actual for item in items if item.undesired] == ["10.99.0.3/31"]
+
+    def test_actual_data_without_the_address_list_compares_as_before(self):
+        from snapl_observability.structural.diff import diff_desired_vs_actual
+
+        desired = _build_desired_state()
+        actual = _matching_actual_data(desired)
+        actual[self._IFACE]["ip_address"] = "10.9.9.9"
+
+        items = diff_desired_vs_actual(desired, actual)
+
+        assert [(item.path, item.actual) for item in items] == [(f"{self._IFACE}/ip_address", "10.9.9.9")]
+
+    def test_the_report_orders_forward_drift_before_undesired(self):
+        from snapl_observability.structural.diff import diff_desired_vs_actual
+
+        desired = _build_desired_state()
+        actual = self._actual(desired, "10.1.1.0/31", "10.99.0.1/31")
+        actual[self._IFACE]["description"] = "changed by hand"
+
+        items = diff_desired_vs_actual(desired, actual)
+
+        assert [item.undesired for item in items] == [False, True]

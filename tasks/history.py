@@ -32,7 +32,7 @@ from pathlib import Path
 import httpx
 from invoke import Exit, task
 
-from snapl_presentation.dashboard.models import MetricsViewName
+from snapl_presentation.dashboard.models import MetricsViewName, SeriesName
 from snapl_presentation.settings import CliSettings
 
 from .dev import PROMETHEUS_DATA
@@ -45,9 +45,9 @@ DEFAULT_ARCHIVE_DIR = PROJECT_ROOT / ".snapl" / "archives"
 PROMETHEUS_IMAGE = "prom/prometheus:v3.10.0"
 EXPORT_DAYS = 7
 # Spec 011 adds the views archive mode reads (its research R13); older archives
-# lack them and still open.
-_EXPORTS = ("overview", "history", "links", "sources", "topology", "devices", "runs", "drift-timeline")
-_RANGED = ("history", "drift-timeline")
+# lack them and still open. Spec 015 adds drift-summary.
+_EXPORTS = ("overview", "history", "links", "sources", "topology", "devices", "runs", "drift-timeline", "drift-summary")
+_RANGED = ("history", "drift-timeline", "drift-summary")
 
 
 @dataclass
@@ -89,6 +89,37 @@ def _commit() -> str | None:
     except (OSError, subprocess.SubprocessError):
         return None
     return result.stdout.strip() if result.returncode == 0 else None
+
+
+def _mounted_data_dirs() -> list[Path]:
+    """Where each running Prometheus container's ``/prometheus`` comes from on this host.
+
+    Read from Docker, because the stack may have been started from another
+    checkout (#237). Empty when Docker can't be asked.
+    """
+    template = '{{range .Mounts}}{{if eq .Destination "/prometheus"}}{{.Source}}{{end}}{{end}}'
+    try:
+        # Bandit: fixed docker commands, no shell; the ids come from docker itself.
+        listed = subprocess.run(  # nosec B603 B607
+            ["docker", "ps", "-q", "--filter", "label=com.docker.compose.service=prometheus"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        sources = [
+            subprocess.run(  # nosec B603 B607
+                ["docker", "inspect", "--format", template, container],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            ).stdout.strip()
+            for container in (listed.stdout.split() if listed.returncode == 0 else [])
+        ]
+    except (OSError, subprocess.SubprocessError):
+        return []
+    return [Path(source) for source in sources if source]
 
 
 # --- the parts ---------------------------------------------------------------------
@@ -133,9 +164,19 @@ def _metrics_snapshot(prometheus: str, data: Path) -> tuple[Part, Path | None]:
         error = body.get("error") or f"HTTP {response.status_code}"
         part.reason = f"Prometheus refused the snapshot: {error}"
         return part, None
+    # The data dir is bind-mounted from the checkout that started the stack. From
+    # another worktree the snapshot is under that checkout, not this one (#237).
+    looked = [data]
     snapshot = data / "snapshots" / name
     if not snapshot.is_dir():
-        part.reason = f"Prometheus made snapshot {name}, but it isn't under {data}"
+        looked += [mounted for mounted in _mounted_data_dirs() if mounted != data]
+        snapshot = next((d / "snapshots" / name for d in looked if (d / "snapshots" / name).is_dir()), snapshot)
+    if not snapshot.is_dir():
+        where = ", ".join(str(d) for d in looked)
+        part.reason = (
+            f"Prometheus made snapshot {name}, but it isn't under {where}. It is left behind in the data"
+            " directory of the checkout that started Prometheus: delete its snapshots/ entry by hand"
+        )
         return part, None
     part.path, part.present, part.bytes = f"prometheus/{name}", True, _size(snapshot)
     return part, snapshot
@@ -154,9 +195,11 @@ def _dashboard_export(dashboard: str, staging: Path, now: datetime) -> Part:
     """The dashboard's JSON for the last 7 days, as the API serves it (R9)."""
     part = Part("dashboard_export", "export", False, dashboard)
     start = (now - timedelta(days=EXPORT_DAYS)).isoformat()
-    wanted: list[tuple[str, str, dict[str, str]]] = [
+    wanted: list[tuple[str, str, dict[str, str | list[str]]]] = [
         (f"{name}.json", f"/api/v1/{name}", {"start": start} if name in _RANGED else {}) for name in _EXPORTS
     ]
+    # Every series, not only `/history`'s default four (spec 015).
+    wanted[_EXPORTS.index("history")][2]["series"] = [name.value for name in SeriesName]
     wanted += [(f"metrics/{v.value}.json", f"/api/v1/metrics/{v.value}", {"start": start}) for v in MetricsViewName]
     out = staging / "export"
     failed: list[str] = []

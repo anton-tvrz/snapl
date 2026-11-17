@@ -18,6 +18,11 @@ if TYPE_CHECKING:
     from snapl_intent.models import Device
 
 
+# How many devices one batch dials at once (#55). Each collect holds a gRPC
+# connection, so an uncapped batch over a large fabric would open one per device.
+DEFAULT_MAX_CONCURRENCY = 16
+
+
 class GnmiCollector(Collector):
     """Nokia SR Linux Collector implementation using gNMI (pygnmi).
 
@@ -33,6 +38,7 @@ class GnmiCollector(Collector):
         password: gNMI password.
         insecure: Skip TLS verification (default True for lab environments).
         timeout: gNMI operation timeout in seconds (default 30).
+        max_concurrency: How many devices ``collect_batch`` dials at once (default 16).
 
     Raises:
         CollectorConfigError: If ``password`` is empty or missing.
@@ -47,9 +53,13 @@ class GnmiCollector(Collector):
         password: str,
         insecure: bool = True,
         timeout: int = 30,
+        max_concurrency: int = DEFAULT_MAX_CONCURRENCY,
     ) -> None:
         if not password:
             raise CollectorConfigError("password is required")
+        if max_concurrency < 1:
+            raise CollectorConfigError(f"max_concurrency must be at least 1, got {max_concurrency}")
+        self._max_concurrency = max_concurrency
         self._host = host
         self._port = port
         self._username = username
@@ -161,20 +171,26 @@ class GnmiCollector(Collector):
         stripped = [re.sub(r"^[\w.-]+:", "", el, count=1) for el in elements if el]
         return "/" + "/".join(stripped)
 
-    def _classify_error(self, exc: Exception, timeout: int) -> str:
+    def _classify_error(self, exc: Exception, timeout: int, target: str | None = None) -> str:
+        """Turn an exception into a reason an operator can act on.
+
+        A dial that never connects raises an exception whose ``str()`` is empty,
+        so the reason falls back to the exception's class name, and a
+        connectivity error names the ``host:port`` that was dialed (#194).
+        """
+        where = f", dialing {target}" if target else ""
         if isinstance(exc, grpc.RpcError):
             code = exc.code()
             detail = exc.details() or ""
             if code == grpc.StatusCode.UNAUTHENTICATED:
-                return f"auth error: {detail}"
+                return f"auth error: {detail or type(exc).__name__}"
             if code == grpc.StatusCode.DEADLINE_EXCEEDED:
-                return f"timeout after {timeout}s"
-            return f"connectivity error: {detail}"
-        if isinstance(exc, OSError):
-            return f"connectivity error: {exc}"
+                return f"timeout after {timeout}s{where}"
+            return f"connectivity error: {detail or type(exc).__name__}{where}"
+        reason = str(exc) or type(exc).__name__
         if isinstance(exc, KeyError | TypeError | ValueError):
-            return f"parse error: {exc}"
-        return f"connectivity error: {exc}"
+            return f"parse error: {reason}"
+        return f"connectivity error: {reason}{where}"
 
     # ── Core operations ───────────────────────────────────────────────────
 
@@ -225,7 +241,7 @@ class GnmiCollector(Collector):
                 device_name=device.name,
                 success=False,
                 paths=paths,
-                error=self._classify_error(exc, self._timeout),
+                error=self._classify_error(exc, self._timeout, f"{host}:{self._port}"),
                 duration_ms=duration_ms,
             )
 
@@ -245,16 +261,21 @@ class GnmiCollector(Collector):
         if len(ids) != len(set(ids)):
             raise ValueError("duplicate device IDs in devices list")
 
+        # Created per batch: a semaphore belongs to the event loop it is first used on.
+        slots = asyncio.Semaphore(self._max_concurrency)
+
         async def _collect_one(device: Device) -> CollectResult:
             try:
-                return await self.collect(device, paths)
+                async with slots:
+                    return await self.collect(device, paths)
             except Exception as exc:
+                host = self._dial_host(device)
                 return CollectResult(
                     device_id=device.id,
                     device_name=device.name,
                     success=False,
                     paths=paths,
-                    error=self._classify_error(exc, self._timeout),
+                    error=self._classify_error(exc, self._timeout, f"{host}:{self._port}" if host else None),
                 )
 
         results_list = await asyncio.gather(*[_collect_one(d) for d in devices])

@@ -75,6 +75,8 @@ def test_the_bundle_holds_every_view_the_page_reads(bundle: dict):
         "topology",
         "timeline",
         "history",
+        "fabric_history",
+        "drift_summary",
         "steps",
         "links",
         "sources",
@@ -105,6 +107,11 @@ def test_the_views_cover_the_range(bundle: dict):
     timeline = bundle["timeline"]["timeline"]["data"]
     assert (timeline["start"], timeline["end"]) == (bundle["manifest"]["start"], bundle["manifest"]["end"])
     assert bundle["history"]["series"][2]["bucket"] == "1d"
+    summary = bundle["drift_summary"]["summary"]["data"]
+    assert (summary["start"], summary["end"]) == (bundle["manifest"]["start"], bundle["manifest"]["end"])
+    fabric = bundle["fabric_history"]["series"]
+    assert [s["name"] for s in fabric] == ["in_sync_devices", "open_drifts", "runs", "repair_duration"]
+    assert fabric[2]["bucket"] == "1d"
     assert bundle["metrics"]["worker-up"]["metrics"]["data"]["step"] >= 2520
 
 

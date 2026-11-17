@@ -1,8 +1,8 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import type { View } from "../api/types";
-import { ArchiveMode, ViewFrame } from "./ViewFrame";
+import { ArchiveMode, PanelFrame, ViewFrame } from "./ViewFrame";
 
 const NOW = new Date("2026-11-07T21:00:30Z");
 const base = { source: "temporal", fetched_at: "2026-11-07T21:00:00Z" } as const;
@@ -144,5 +144,95 @@ describe("ViewFrame", () => {
     );
 
     expect(screen.getByText("Unavailable")).toBeInTheDocument();
+  });
+
+  // The one frame of spec 014 (FR-010): title left, one action right, source and age in a footer.
+  it("puts the source and the age in its footer, not its header", () => {
+    frame({ ...base, available: true, data: {} });
+
+    const region = screen.getByRole("region", { name: "Schedule" });
+    const footer = region.querySelector("footer")!;
+    expect(footer).toHaveTextContent("Temporal · 30 s ago");
+    expect(region.querySelector("header")).not.toHaveTextContent("Temporal");
+    // The footer comes after the content.
+    expect(screen.getByText("the schedule itself").compareDocumentPosition(footer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("has no footer before the first answer", () => {
+    frame(undefined);
+
+    expect(screen.getByRole("region", { name: "Schedule" }).querySelector("footer")).toBeNull();
+  });
+
+  it("holds one action on the right of its header", () => {
+    render(
+      <ViewFrame title="Runs" view={{ ...base, available: true, data: {} }} now={NOW} action={<button type="button">Expand</button>}>
+        <p>runs</p>
+      </ViewFrame>,
+    );
+
+    const header = screen.getByRole("region", { name: "Runs" }).querySelector("header")!;
+    expect(within(header).getByRole("heading", { name: "Runs" })).toBeInTheDocument();
+    expect(within(header).getByRole("button", { name: "Expand" })).toBeInTheDocument();
+  });
+
+  it("sets its title in the title size and can be linked to by id", () => {
+    render(
+      <ViewFrame title="Fabric" view={{ ...base, available: true, data: {} }} now={NOW} id="fabric">
+        <p>fabric</p>
+      </ViewFrame>,
+    );
+
+    expect(screen.getByRole("heading", { name: "Fabric" })).toHaveClass("text-title");
+    expect(screen.getByRole("region", { name: "Fabric" })).toHaveAttribute("id", "fabric");
+  });
+
+  it("is lifted by the panel shadow, and keeps its border for the dark theme", () => {
+    frame({ ...base, available: true, data: {} });
+
+    const region = screen.getByRole("region", { name: "Schedule" });
+    expect(region).toHaveClass("shadow-panel");
+    expect(region.className).toMatch(/border/);
+  });
+
+  it("keeps a failure's reason to a readable line length", () => {
+    frame({ source: "temporal", available: false, reason: "connection refused", remedy: "uv run invoke dev.deps" });
+
+    expect(screen.getByText("connection refused")).toHaveClass("max-w-prose");
+  });
+});
+
+describe("PanelFrame", () => {
+  it("frames a panel that has no view of its own: title, footer text and content", () => {
+    render(
+      <PanelFrame title="Drift and deploys by hour" footer="Audit trail">
+        <p>the table</p>
+      </PanelFrame>,
+    );
+
+    const region = screen.getByRole("region", { name: "Drift and deploys by hour" });
+    expect(region.querySelector("footer")).toHaveTextContent("Audit trail");
+    expect(within(region).getByText("the table")).toBeInTheDocument();
+  });
+
+  it("can shrink inside a grid, so wide content scrolls inside it and never widens the page", () => {
+    // Found at 360 px (spec 014 T062): a grid item is as wide as its content unless it may shrink.
+    render(
+      <PanelFrame title="CI">
+        <p>content</p>
+      </PanelFrame>,
+    );
+
+    expect(screen.getByRole("region", { name: "CI" })).toHaveClass("min-w-0");
+  });
+
+  it("has no footer when it is given none", () => {
+    render(
+      <PanelFrame title="Links">
+        <p>links</p>
+      </PanelFrame>,
+    );
+
+    expect(screen.getByRole("region", { name: "Links" }).querySelector("footer")).toBeNull();
   });
 });

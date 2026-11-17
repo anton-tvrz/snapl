@@ -161,3 +161,70 @@ async def test_reconcile_cancellation_propagates_to_children(make_desired) -> No
 
     types = [e.event_type for e in await audit.query_by_workflow(wf_id)]
     assert AuditEventType.WORKFLOW_CANCELLED in types
+
+
+@pytest.mark.asyncio
+async def test_a_cancelled_scan_keeps_the_reports_that_completed(make_desired) -> None:
+    """A scan cancelled part-way returns what it had finished (#36). Before, it
+    returned no reports and total=0, although the per-device result was already
+    in the audit trail."""
+    from datetime import UTC, datetime
+
+    from snapl_collector.models import CollectResult
+    from snapl_observability.models import DriftReport, DriftStatus
+
+    done, blocked = make_desired("spine-01"), make_desired("spine-02")
+    audit = InMemoryAuditLog()
+    started = asyncio.Event()
+
+    async def _get(*, device_id=None, use_case=None):
+        if use_case is not None:
+            return [done, blocked]
+        if device_id == done.device.id:
+            return [done]
+        # Hold spine-02 until spine-01's result is in the audit trail, so the
+        # workflow has taken its report before the cancel arrives.
+        while not any(e.target_id == done.device.id for e in await audit.query_by_workflow(wf_id)):
+            await asyncio.sleep(0.01)
+        started.set()
+        await asyncio.sleep(30)
+        return [blocked]
+
+    intent_store = MagicMock()
+    intent_store.get_desired_state = AsyncMock(side_effect=_get)
+    collector = MagicMock()
+    collector.collect = AsyncMock(
+        return_value=CollectResult(
+            device_id=done.device.id, device_name=done.device.name, success=True, data={}, paths=["/interface"]
+        )
+    )
+    observer = MagicMock()
+    observer.detect_drift = AsyncMock(
+        return_value=DriftReport(
+            device_id=done.device.id,
+            device_name=done.device.name,
+            status=DriftStatus.CLEAN,
+            items=[],
+            timestamp=datetime.now(tz=UTC),
+        )
+    )
+    observer.emit_event = AsyncMock()
+    set_activities(
+        Activities(
+            intent_store=intent_store, executor=MagicMock(), collector=collector, observer=observer, audit_log=audit
+        )
+    )
+
+    wf_id = "scan-cancel-partial"
+    result = await _start_block_cancel(
+        ScanDriftWorkflow.run,
+        "dcfabric",
+        workflows=[ScanDriftWorkflow],
+        started=started,
+        task_queue="test-cancel-scan-partial",
+        wf_id=wf_id,
+    )
+
+    assert result.cancelled is True
+    assert set(result.reports) == {done.device.id}
+    assert (result.total, result.clean, result.drifted, result.errored) == (1, 1, 0, 0)

@@ -92,21 +92,30 @@ def an_hour() -> RangePlan:
 
 # --- named views (FR-011) --------------------------------------------------------
 
+
+def _rate(selector: str, window: str = "60s", seconds: int = 60) -> str:
+    """A rate that also counts a series' first observation (#191), as data-model.md gives it."""
+    return (
+        f'((({selector} unless {selector} offset {window}) and on() (up{{job="snapl-worker"}} offset {window}))'
+        f" / {seconds} or rate({selector}[{window}]))"
+    )
+
+
 EXPECTED_QUERIES = {
     MetricsViewName.WORKFLOW_DURATION: (
         "histogram_quantile(0.95, sum by (le, workflow_type) "
-        '(rate(temporal_workflow_endtoend_latency_bucket{namespace="default"}[60s])))'
+        f"({_rate('temporal_workflow_endtoend_latency_bucket{namespace="default"}')}))"
     ),
     MetricsViewName.GNMI_DURATION: (
         "histogram_quantile(0.95, sum by (le, device, operation) "
-        '(rate(snapl_gnmi_call_duration_bucket{use_case="dcfabric"}[60s])))'
+        f"({_rate('snapl_gnmi_call_duration_bucket{use_case="dcfabric"}')}))"
     ),
     MetricsViewName.GNMI_ERRORS: (
-        'sum by (device) (rate(snapl_gnmi_call_duration_count{use_case="dcfabric",outcome="error"}[60s]))'
+        f"sum by (device) ({_rate('snapl_gnmi_call_duration_count{use_case="dcfabric",outcome="error"}')})"
     ),
     MetricsViewName.WORKER_LAG: (
         "histogram_quantile(0.95, sum by (le) "
-        '(rate(temporal_activity_schedule_to_start_latency_bucket{namespace="default"}[60s])))'
+        f"({_rate('temporal_activity_schedule_to_start_latency_bucket{namespace="default"}')}))"
     ),
     MetricsViewName.WORKER_UP: 'up{job="snapl-worker"}',
     MetricsViewName.SOURCE_HEALTH: "snapl_dashboard_source_up",
@@ -122,6 +131,16 @@ def test_every_view_has_exactly_the_documented_query() -> None:
 def test_the_rate_window_spans_at_least_four_scrapes_and_one_step() -> None:
     assert "[60s]" in render_query(MetricsViewName.GNMI_ERRORS, namespace="n", use_case="u", window_s=60)
     assert "[300s]" in render_query(MetricsViewName.GNMI_ERRORS, namespace="n", use_case="u", window_s=300)
+
+
+def test_a_first_observation_is_divided_by_the_window_in_seconds() -> None:
+    """A series with no sample one window ago started from zero inside it, so its
+    value is its increase over the window (#191)."""
+    query = render_query(MetricsViewName.GNMI_ERRORS, namespace="n", use_case="u", window_s=300)
+
+    assert "offset 300s" in query
+    assert "/ 300 or rate(" in query
+    assert "$" not in query
 
 
 def test_a_quote_in_a_setting_cannot_break_out_of_the_matcher() -> None:
@@ -230,17 +249,40 @@ def test_parse_matrix_drops_name_job_and_instance_for_an_unlabelled_view() -> No
     assert all(s.labels == {} for s in series)
 
 
+def _two_finite_points(body: dict[str, Any]) -> tuple[int, int]:
+    """The first series and index whose point and the next one are both finite."""
+    for s, result in enumerate(body["data"]["result"]):
+        values = result["values"]
+        for i in range(len(values) - 1):
+            if all(math.isfinite(float(v)) for _, v in values[i : i + 2]):
+                return s, i
+    raise AssertionError("the capture has no two adjacent finite points")
+
+
 @pytest.mark.parametrize("raw", ["NaN", "+Inf", "-Inf"])
 def test_non_finite_values_become_none(raw: str) -> None:
-    # Synthesised: the capture holds only finite values, so one is replaced.
+    # Synthesised for each spelling: one finite point is replaced, its neighbour is kept.
     body = copy.deepcopy(fixture("range_gnmi_duration_p95")["body"])
-    body["data"]["result"][0]["values"][1][1] = raw
+    s, i = _two_finite_points(body)
+    body["data"]["result"][s]["values"][i + 1][1] = raw
 
-    [first, *_] = parse_matrix(body, ("device", "operation"))
+    series = parse_matrix(body, ("device", "operation"))
 
-    assert first.points[1].value is None
-    assert first.points[0].value is not None
-    assert math.isfinite(first.points[0].value)
+    assert series[s].points[i + 1].value is None
+    assert series[s].points[i].value is not None
+    assert math.isfinite(series[s].points[i].value)
+
+
+def test_the_captures_own_nan_points_become_none() -> None:
+    # The live capture (T043) holds real "NaN": histogram_quantile over a zero rate (#191).
+    body = fixture("range_gnmi_duration_p95")["body"]
+    raw = [v for result in body["data"]["result"] for _, v in result["values"]]
+    assert "NaN" in raw
+
+    points = [p for s in parse_matrix(body, ("device", "operation")) for p in s.points]
+
+    assert sum(p.value is None for p in points) == raw.count("NaN")
+    assert all(math.isfinite(p.value) for p in points if p.value is not None)
 
 
 async def test_a_view_answers_with_series_from_the_capture() -> None:
@@ -251,7 +293,7 @@ async def test_a_view_answers_with_series_from_the_capture() -> None:
     assert data.view is MetricsViewName.GNMI_DURATION
     assert data.unit == "ms"
     assert (data.start, data.end, data.step) == (T0 - timedelta(hours=1), T0, 15)
-    assert len(data.series) == 6
+    assert len(data.series) == 9  # T043's live capture: 6 devices collecting, 3 of them also configured
     assert set(data.series[0].labels) == {"device", "operation"}
     assert data.note is None
 
@@ -349,7 +391,7 @@ async def test_a_failure_is_not_cached() -> None:
     prom.query_range = fixture("range_gnmi_errors")
     data = await prometheus.query(MetricsViewName.GNMI_ERRORS, an_hour())
 
-    assert len(data.series) == 3
+    assert len(data.series) == 1  # T043's live capture: leaf-04, paused for four scans
 
 
 # --- /sources probe (010's source protocol) --------------------------------------

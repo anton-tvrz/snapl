@@ -4,7 +4,7 @@
 
 - **Decision 1** (FastAPI and uvicorn, spec 010): Accepted on 2026-11-08, once spec 010's implementation PRs (#154, #160, #162, #164, #166, #168) had merged.
 - **Decision 2** (spec 011): Accepted on 2026-11-10, once spec 011's implementation PRs had merged: #200, #202, #204, #206, #208, #210, #212, #214, #216, #218, #220, #222, #224, #226 and #228.
-- **Decision 3** (spec 012): Proposed. Implemented by #180, #182, #184, #186 and #188. It is accepted once the live evidence in spec 012's quickstart (items 1–5) is in (T042).
+- **Decision 3** (spec 012): Accepted on 2026-11-09. Implemented by #180, #182, #184, #186 and #188; spec 012's quickstart items 1–7 were run against the live lab in #195. Two defects it found are in this decision's metrics, and neither changes the decision: #191 (a series' first observation is invisible to `rate()`) and #192 (the default buckets make the gNMI p95 a constant 480 ms). Both are fixed: #191 in the dashboard's queries (spec 012 data-model, `R(x)`), #192 by bucket overrides on the worker.
 
 ## Date
 
@@ -48,6 +48,8 @@ The UI uses React, Vite, TypeScript, Tailwind and Recharts.
 **As built** (2026-11-10):
 - **TypeScript 5.9, not 7.** openapi-typescript 7.13 needs TypeScript 5 (#204).
 - **No shadcn/ui components.** The panels needed none of them; Tailwind alone covers them (#204).
+
+**Look** (2026-11-16, spec 014, #246): the page's spacing, type scale and panel frame are rules in the "Look" section of `dev/skills/dashboard/SKILL.md`, and `packages/presentation/ui/src/look.test.ts` fails on code that breaks them. Spec 014 restyled the page to them with no new dependency.
 - **One more build output**: `static/ui/snapshot.html`, built with `vite-plugin-singlefile`, a whole page in one file for `--snapshot` (#228).
 
 ### 3. Prometheus, without Grafana (spec 012)
@@ -67,7 +69,7 @@ Prometheus runs in the Compose stack on 18090. It scrapes:
 - **One endpoint, no new dependency (R1).** An activity's histogram, recorded through `activity.metric_meter()`, appears on the same endpoint as the SDK's own metrics. The runtime adds `activity_type`, `namespace`, `task_queue` and `service_name` itself. So the worker serves everything from `Runtime(telemetry=TelemetryConfig(metrics=PrometheusConfig(...)))`, and no package takes `prometheus_client`.
 - **Loopback is reachable from Compose on OrbStack (R2).** Prometheus in a container scraped a server bound to `127.0.0.1` on the host through `host.docker.internal`, so the worker binds `127.0.0.1:18091` and stays off the LAN.
 - **A taken port fails at `Runtime()` construction (R3)**, with `ValueError: … Address already in use`, before any client connects. The worker catches it, logs a warning, and runs without metrics.
-- **`timedelta` histograms are exported in milliseconds (R4)**, with the runtime's default buckets. The gNMI metric is named `snapl_gnmi_call_duration`, with no unit suffix, and the unit is stated in its description and in the dashboard's views.
+- **`timedelta` histograms are exported in milliseconds (R4)**. The three histograms the dashboard charts get their own bucket bounds (`HISTOGRAM_BUCKETS_MS` in `worker/metrics.py`), because the runtime's defaults made the gNMI p95 a constant 480 ms (#192); the rest keep the defaults. The gNMI metric is named `snapl_gnmi_call_duration`, with no unit suffix, and the unit is stated in its description and in the dashboard's views.
 
 **Linux caveat (not measured).** On Linux Docker, `host.docker.internal` needs `extra_hosts: host-gateway` (the Compose service carries it) and reaches the bridge address, not loopback. A Linux host must start the worker with `WORKER_METRICS_BIND=0.0.0.0` (or the bridge IP), and the dashboard with a matching `DASHBOARD_HOST`, for Prometheus to scrape them. Nothing automates this.
 
@@ -114,4 +116,4 @@ flowchart LR
 - Contributors who change the UI need Node. CI gains a front-end job.
 - Prometheus adds a Compose service and a host directory that grows until its size cap.
 - With no Grafana, dashboards are code, not configuration. That is a deliberate trade for a single maintainer.
-- The constitution's Technology Stack does not list these. Listing them needs a minor version bump, deferred until 011 or 012 lands, so the stack never claims something not yet in the code.
+- The constitution's Technology Stack lists FastAPI and uvicorn (010) and Prometheus (012) since 2.1.0 (#195). Node is added when 011 lands, so the stack never claims something not yet in the code.

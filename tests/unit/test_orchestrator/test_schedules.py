@@ -701,3 +701,153 @@ def test_no_public_function_creates_a_remediate_schedule() -> None:
         params = inspect.signature(fn).parameters
         if name.startswith(("ensure", "create")):
             assert "mode" not in params, f"{name} must not take a mode (FR-003)"
+
+
+# ---------------------------------------------------------------------------
+# #139: no serial round trips for the recent runs, and none at all to trigger
+# ---------------------------------------------------------------------------
+
+
+async def test_describe_reads_the_recent_runs_at_the_same_time() -> None:
+    """Each run's describe waits until every run's describe has started, so
+    lookups made one after another never finish."""
+    import asyncio
+
+    client, audit = FakeClient(), InMemoryAuditLog()
+    await _ensure(client, audit)
+    runs = [f"drift-response-dcfabric-2026-10-28T03:{m:02d}:00Z" for m in range(0, 25, 5)]
+    client.schedules["drift-response-dcfabric"]["info"] = _info(
+        recent=[_action_result(w, _T0 + timedelta(minutes=5 * i)) for i, w in enumerate(runs)]
+    )
+    started = 0
+    all_started = asyncio.Event()
+
+    class Overlapping(FakeWorkflowHandle):
+        async def describe(self):
+            nonlocal started
+            started += 1
+            if started == len(runs):
+                all_started.set()
+            await asyncio.wait_for(all_started.wait(), timeout=2)
+            return await super().describe()
+
+    for w in runs:
+        client.runs[w] = Overlapping(WorkflowExecutionStatus.COMPLETED, _response_result(w, clean=6, drifted=0))
+
+    view = await describe_drift_schedule(client, use_case_id="dcfabric")
+
+    assert [r.workflow_id for r in view.recent_runs] == runs
+    assert [r.status for r in view.recent_runs] == ["completed"] * 5
+
+
+async def test_trigger_does_not_look_up_the_recent_runs() -> None:
+    """It needs the mode and whether a run is in progress, not the last five results."""
+    client, audit = await _created()
+    done = "drift-response-dcfabric-2026-10-28T03:00:00Z"
+    client.schedules["drift-response-dcfabric"]["info"] = _info(recent=[_action_result(done, _T0)])
+    # No handle is registered for the run: looking it up would raise KeyError.
+
+    mode = await trigger_drift_schedule(client, use_case_id="dcfabric", audit_log=audit, actor="anton")
+
+    assert mode is DriftResponseMode.REPORT
+    assert client.runs == {}
+
+
+# ---------------------------------------------------------------------------
+# stand_down_drift_schedule (#136, spec 009 FR-018)
+# ---------------------------------------------------------------------------
+
+_REASON = "drift-response-dcfabric-2026-10-28T03:00:00Z: the repair failed on leaf-01"
+
+
+async def _remediating() -> tuple[FakeClient, InMemoryAuditLog]:
+    client, audit = await _created()
+    await set_drift_response(
+        client, use_case_id="dcfabric", mode=DriftResponseMode.REMEDIATE, audit_log=audit, actor="anton"
+    )
+    client.get_schedule_handle("drift-response-dcfabric").calls.clear()
+    return client, audit
+
+
+async def test_stand_down_returns_a_remediate_schedule_to_report_and_says_why() -> None:
+    from snapl_orchestrator.schedules import STAND_DOWN_ACTOR, stand_down_drift_schedule
+
+    client, audit = await _remediating()
+
+    changed = await stand_down_drift_schedule(client, use_case_id="dcfabric", reason=_REASON, audit_log=audit)
+
+    assert changed is True
+    view = await describe_drift_schedule(client, use_case_id="dcfabric")
+    assert view.mode is DriftResponseMode.REPORT
+    assert view.note == f"stood down: {_REASON}"
+    # Detection keeps running: the schedule is not paused.
+    assert view.paused is False
+    record = (await _changes(audit))[-1]
+    assert record.actor == STAND_DOWN_ACTOR == "snapl:stand-down"
+    assert record.payload == {"change": "stood_down", "from": "remediate", "to": "report", "reason": _REASON}
+
+
+async def test_stand_down_leaves_a_report_schedule_alone() -> None:
+    """An operator already switched it back while the run was in progress."""
+    from snapl_orchestrator.schedules import stand_down_drift_schedule
+
+    client, audit = await _created()
+    before = len(await _changes(audit))
+
+    changed = await stand_down_drift_schedule(client, use_case_id="dcfabric", reason=_REASON, audit_log=audit)
+
+    assert changed is False
+    assert client.get_schedule_handle("drift-response-dcfabric").calls == []
+    assert len(await _changes(audit)) == before
+
+
+async def test_stand_down_keeps_a_pause_and_its_reason() -> None:
+    from snapl_orchestrator.schedules import stand_down_drift_schedule
+
+    client, audit = await _remediating()
+    await pause_drift_schedule(client, use_case_id="dcfabric", reason="maintenance", audit_log=audit, actor="anton")
+
+    await stand_down_drift_schedule(client, use_case_id="dcfabric", reason=_REASON, audit_log=audit)
+
+    view = await describe_drift_schedule(client, use_case_id="dcfabric")
+    assert (view.mode, view.paused, view.note) == (DriftResponseMode.REPORT, True, "maintenance")
+
+
+async def test_stand_down_on_a_deleted_schedule_is_not_found() -> None:
+    from snapl_orchestrator.exceptions import ScheduleNotFoundError
+    from snapl_orchestrator.schedules import stand_down_drift_schedule
+
+    with pytest.raises(ScheduleNotFoundError):
+        await stand_down_drift_schedule(
+            FakeClient(), use_case_id="dcfabric", reason=_REASON, audit_log=InMemoryAuditLog()
+        )
+
+
+async def test_switching_back_to_remediate_clears_the_stand_down_note() -> None:
+    """The note says the schedule was switched to report; once an operator
+    switches it back, that note describes a state the schedule is no longer in."""
+    from snapl_orchestrator.schedules import stand_down_drift_schedule
+
+    client, audit = await _remediating()
+    await stand_down_drift_schedule(client, use_case_id="dcfabric", reason=_REASON, audit_log=audit)
+
+    view = await set_drift_response(
+        client, use_case_id="dcfabric", mode=DriftResponseMode.REMEDIATE, audit_log=audit, actor="anton"
+    )
+
+    assert view.mode is DriftResponseMode.REMEDIATE
+    assert view.note is None
+
+
+async def test_switching_response_keeps_a_note_that_is_not_a_stand_down() -> None:
+    from snapl_orchestrator.schedules import stand_down_drift_schedule
+
+    client, audit = await _remediating()
+    await pause_drift_schedule(client, use_case_id="dcfabric", reason="maintenance", audit_log=audit, actor="anton")
+    await stand_down_drift_schedule(client, use_case_id="dcfabric", reason=_REASON, audit_log=audit)
+
+    view = await set_drift_response(
+        client, use_case_id="dcfabric", mode=DriftResponseMode.REMEDIATE, audit_log=audit, actor="anton"
+    )
+
+    assert (view.paused, view.note) == (True, "maintenance")

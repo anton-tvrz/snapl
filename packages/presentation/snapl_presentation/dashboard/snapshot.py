@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import httpx
 
-from snapl_presentation.dashboard.models import MetricsViewName
+from snapl_presentation.dashboard.models import DEFAULT_SERIES, MetricsViewName, SeriesName
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -98,6 +98,14 @@ async def _collect(app: FastAPI, days: int, commit: str | None, source: str) -> 
             "topology": await get("topology"),
             "timeline": await get("drift-timeline", **window),
             "history": await get("history", bucket=_bucket(days), **window),
+            # The series spec 015 added, which `/history` answers only when named.
+            "fabric_history": await get(
+                "history",
+                series=[name.value for name in SeriesName if name not in DEFAULT_SERIES],
+                bucket=_bucket(days),
+                **window,
+            ),
+            "drift_summary": await get("drift-summary", **window),
             "steps": steps,
             "links": await get("links"),
             "sources": sources,

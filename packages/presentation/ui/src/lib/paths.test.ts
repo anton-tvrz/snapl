@@ -26,6 +26,10 @@ describe("interfaceOf", () => {
     expect(interfaceOf("/interface[name=lo0]")).toBe("lo0");
   });
 
+  it("names the interface of an extra address under a subinterface (#193)", () => {
+    expect(interfaceOf("/interface[name=ethernet-1/49]/subinterface[index=0]/ipv4/address[ip-prefix=10.99.0.1/31]")).toBe("ethernet-1/49");
+  });
+
   it("is null for a path that names no interface", () => {
     expect(interfaceOf("/network-instance[name=default]/protocols/bgp/neighbor[peer-address=10.0.0.1]")).toBeNull();
     expect(interfaceOf("/system/name")).toBeNull();

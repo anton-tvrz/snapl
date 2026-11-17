@@ -5,7 +5,7 @@
 
 **Tests**: TDD is mandatory per CLAUDE.md and the constitution. Every phase lists its tests first, and each test is run and seen to fail before the code it covers is written.
 
-**Organization**: Tasks are grouped by user story (US1 to US3). The stand-down story is deferred to #136 and has no tasks here.
+**Organization**: Tasks are grouped by user story (US1 to US3). The stand-down story is deferred to #136 and has no tasks here. *(2026-11-15: implemented for #136, see research R8 and contracts/orchestrator-schedules.md.)*
 
 ## Format: `[ID] [P?] [Story] Description`
 
@@ -175,7 +175,7 @@
   - each excluded device gets one device-level `DRIFT_RESPONSE` with its `decision`, `scan_workflow_id` and `paths`;
   - each remediated device gets one with `reconcile_workflow_id`;
   - a clean, or only undesired and errored, fabric starts no reconcile child;
-  - a reconcile with `failed > 0` is returned in the result and the run still terminates with success, with no schedule call (stand-down deferred, #136);
+  - a reconcile with `failed > 0` is returned in the result and the run still terminates with success, with no schedule call (stand-down deferred, #136); *(2026-11-15: implemented for #136, see research R8 and contracts/orchestrator-schedules.md.)*
   - an in-flight skip is not a failure;
   - the use-case-level `DRIFT_RESPONSE` carries the remediated count, excluded counts by reason, and `reconcile_workflow_id`.
 - [x] T030 [P] [US3] Extend tests/unit/test_orchestrator/test_schedules.py, covering:

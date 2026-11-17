@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { ApiError } from "./data/http";
 import type { DataProvider } from "./data/provider";
-import { HISTORY, LINKS, METRICS, MODE, NOW, OVERVIEW, OVERVIEW_UP, SOURCES, STEPS_DEPLOY, TIMELINE, TOPOLOGY } from "./test/fixtures";
+import { DRIFT_SUMMARY, FABRIC_HISTORY, HISTORY, LINKS, METRICS, MODE, NOW, OVERVIEW, OVERVIEW_UP, SOURCES, STEPS_DEPLOY, TIMELINE, TOPOLOGY } from "./test/fixtures";
 
 function provider(overrides: Partial<DataProvider> = {}): DataProvider {
   const unused = async () => {
@@ -20,7 +20,8 @@ function provider(overrides: Partial<DataProvider> = {}): DataProvider {
     devices: unused,
     runs: unused,
     timeline: async () => TIMELINE,
-    history: async () => HISTORY,
+    history: async (_range?: unknown, _bucket?: unknown, series?: unknown) => (series ? FABRIC_HISTORY : HISTORY),
+    driftSummary: async () => DRIFT_SUMMARY,
     steps: async () => STEPS_DEPLOY,
     metrics: async (view: keyof typeof METRICS) => METRICS[view],
     ...overrides,
@@ -45,6 +46,74 @@ describe("App", () => {
     expect(device("leaf-01")).toHaveAccessibleName("leaf-01, leaf, Undesired config");
     expect(device("spine-01")).toHaveAccessibleName("spine-01, spine, In sync");
     expect(screen.getByRole("heading", { name: "Fabric" })).toBeInTheDocument();
+  });
+
+  it("leads with the fabric in four numbers, above the fabric, each linked to its panel", async () => {
+    render(<App provider={provider()} />);
+
+    const row = await screen.findByRole("list", { name: "The fabric in numbers" });
+    expect(await within(row).findByText("5 of 6")).toBeInTheDocument();
+    expect(within(row).getByText("5 s")).toBeInTheDocument();
+    expect(await within(row).findByText("None failed.")).toBeInTheDocument();
+    const fabric = screen.getByRole("region", { name: "Fabric" });
+    expect(row.compareDocumentPosition(fabric) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    for (const link of within(row).getAllByRole("link")) {
+      expect(document.querySelector(link.getAttribute("href")!)).not.toBeNull();
+    }
+  });
+
+  // spec 014 US5: the fabric's own summary fills the space beside it.
+  it("shows the share in sync and the drifted devices beside the fabric until a device is selected", async () => {
+    render(<App provider={provider()} />);
+
+    const summary = await screen.findByRole("region", { name: "In sync" });
+    expect(within(summary).getByRole("img", { name: "5 of 6 devices in sync" })).toBeInTheDocument();
+    await userEvent.click(within(summary).getByRole("button", { name: /^Open leaf-01: Undesired config/ }));
+
+    expect(screen.getByRole("dialog", { name: "leaf-01" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "In sync" })).not.toBeInTheDocument();
+
+    await userEvent.click(within(screen.getByRole("dialog", { name: "leaf-01" })).getByRole("button", { name: /close/i }));
+    expect(screen.getByRole("region", { name: "In sync" })).toBeInTheDocument();
+  });
+
+  it("shows the server's time as a running clock in the header", async () => {
+    render(<App provider={provider()} />);
+
+    const clock = await within(screen.getAllByRole("banner")[0]!).findByRole("time");
+    expect(clock).toHaveTextContent(`${NOW.toISOString().slice(11, 19)} UTC`);
+    expect(clock).toHaveAttribute("data-running", "true");
+  });
+
+  it("puts the page in its order, under group labels (spec 014 FR-022)", async () => {
+    render(<App provider={provider({ overview: async () => OVERVIEW_UP })} />);
+    await screen.findByRole("group", { name: "Fabric topology" });
+    await screen.findByRole("region", { name: "Runs" });
+
+    const wanted = [
+      "Devices in sync",
+      "Fabric",
+      "The loop",
+      "Drift and history",
+      "Drift over time",
+      "Drift and deploys by hour",
+      "Fabric history",
+      "Drift by device",
+      "Metrics",
+      "Workflow duration (95th percentile)",
+      "Operations",
+      "Schedule and worker",
+      "Running now",
+      "Runs",
+      "Undesired config",
+      "Evidence",
+      "CI",
+      "Live lab evidence",
+      "Sources",
+      "Links",
+    ];
+    const headings = screen.getAllByRole("heading").map((heading) => heading.textContent);
+    expect(headings.filter((text) => wanted.includes(text ?? ""))).toEqual(wanted);
   });
 
   it("opens a device's detail when it is selected, and puts it in the address", async () => {
@@ -135,7 +204,8 @@ describe("App", () => {
   it("still shows each source's state", async () => {
     render(<App provider={provider()} />);
 
-    expect(await screen.findByText("Audit trail")).toBeInTheDocument();
+    // The sources panel names it; the history panels name it in their footers too.
+    expect((await screen.findAllByText("Audit trail")).length).toBeGreaterThan(0);
     expect(screen.getAllByText("uv run invoke dev.deps").length).toBeGreaterThan(0);
   });
 
@@ -324,10 +394,67 @@ describe("App", () => {
     render(<App provider={provider({ history })} />);
 
     expect(await screen.findByRole("region", { name: "Drift and deploys by hour" })).toBeInTheDocument();
-    expect(history).toHaveBeenLastCalledWith(undefined, undefined);
+    expect(history).toHaveBeenCalledWith(undefined, undefined);
 
     await userEvent.click(screen.getByRole("button", { name: "7 d" }));
 
-    expect(history).toHaveBeenLastCalledWith({ start: new Date(NOW.getTime() - 7 * 86_400_000), end: NOW }, "1d");
+    expect(history).toHaveBeenCalledWith({ start: new Date(NOW.getTime() - 7 * 86_400_000), end: NOW }, "1d");
+  });
+
+  it("has the fabric history, its four series named and asked over the chosen range", async () => {
+    const history = vi.fn(async (_range?: unknown, _bucket?: unknown, series?: unknown) => (series ? FABRIC_HISTORY : HISTORY));
+    render(<App provider={provider({ history })} />);
+
+    const panel = await screen.findByRole("region", { name: "Fabric history" });
+    expect(await within(panel).findByRole("img", { name: /^Devices in sync at each scan, as a chart: 3 scans/ })).toBeInTheDocument();
+    const named = ["in_sync_devices", "open_drifts", "runs", "repair_duration"];
+    expect(history).toHaveBeenCalledWith(undefined, undefined, named);
+
+    await userEvent.click(screen.getByRole("button", { name: "7 d" }));
+
+    expect(history).toHaveBeenCalledWith({ start: new Date(NOW.getTime() - 7 * 86_400_000), end: NOW }, "1d", named);
+  });
+
+  it("counts the runs of the last 24 hours in the fourth card, whatever range is chosen", async () => {
+    const history = vi.fn(async (_range?: unknown, _bucket?: unknown, series?: unknown) => (series ? FABRIC_HISTORY : HISTORY));
+    render(<App provider={provider({ history })} />);
+
+    const row = await screen.findByRole("list", { name: "The fabric in numbers" });
+    const card = within(row).getByRole("heading", { name: "Runs, 24 h" }).closest("li")!;
+    expect(await within(card).findByText("12")).toBeInTheDocument();
+    expect(card).toHaveTextContent("None failed.");
+    expect(within(card).getByRole("link", { name: "Runs, 24 h: view more" })).toHaveAttribute("href", "#fabric-history");
+
+    await userEvent.click(screen.getByRole("button", { name: "7 d" }));
+
+    // The page's history follows the range; the card's runs never do.
+    expect(history).toHaveBeenCalledWith(expect.objectContaining({ end: NOW }), "1d");
+    const forCard = history.mock.calls.filter((call) => JSON.stringify(call[2]) === '["runs"]');
+    expect(forCard.length).toBeGreaterThan(0);
+    for (const call of forCard) expect(call.slice(0, 2)).toEqual([undefined, undefined]);
+  });
+
+  it("draws the devices in intent now over the devices in sync", async () => {
+    render(<App provider={provider()} />);
+
+    const panel = await screen.findByRole("region", { name: "Fabric history" });
+    expect(await within(panel).findByRole("img", { name: /, against \d+ in intent now\./ })).toBeInTheDocument();
+  });
+
+  it("has drift by device, asked over the chosen range, and opens a device from it", async () => {
+    const driftSummary = vi.fn(async () => DRIFT_SUMMARY);
+    render(<App provider={provider({ driftSummary })} />);
+
+    const panel = await screen.findByRole("region", { name: "Drift by device" });
+    expect(driftSummary).toHaveBeenLastCalledWith(undefined);
+
+    await userEvent.click(within(panel).getByRole("button", { name: /^Open leaf-01:/ }));
+
+    expect(screen.getByRole("dialog", { name: "leaf-01" })).toBeInTheDocument();
+    expect(location.search).toBe("?device=leaf-01");
+
+    await userEvent.click(screen.getByRole("button", { name: "7 d" }));
+
+    expect(driftSummary).toHaveBeenLastCalledWith({ start: new Date(NOW.getTime() - 7 * 86_400_000), end: NOW });
   });
 });

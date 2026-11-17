@@ -8,23 +8,23 @@
         {
           "metric": {
             "__name__": "up",
-            "instance": "host.docker.internal:18095",
+            "instance": "host.docker.internal:18030",
             "job": "snapl-dashboard"
           },
           "value": [
-            1794169875.231,
-            "0"
+            1794256113.65,
+            "1"
           ]
         },
         {
           "metric": {
             "__name__": "up",
-            "instance": "host.docker.internal:18096",
+            "instance": "host.docker.internal:18091",
             "job": "snapl-worker"
           },
           "value": [
-            1794169875.231,
-            "0"
+            1794256113.65,
+            "1"
           ]
         }
       ]

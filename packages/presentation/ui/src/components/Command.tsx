@@ -19,8 +19,8 @@ export function Command({ text, copy = true }: Props) {
   if (recording) {
     return (
       <span className="inline-flex max-w-full flex-wrap items-center gap-2 align-middle">
-        <span className="text-xs text-muted">The operator could run:</span>{" "}
-        <code className="overflow-x-auto rounded bg-sunken px-1.5 py-0.5 font-mono text-[0.8125rem] whitespace-nowrap">
+        <span className="text-meta text-muted">The operator could run:</span>{" "}
+        <code className="chip overflow-x-auto rounded bg-sunken px-1.5 py-0.5 font-mono text-meta whitespace-nowrap">
           {text}
         </code>
       </span>
@@ -36,7 +36,7 @@ export function Command({ text, copy = true }: Props) {
 
   return (
     <span className="inline-flex max-w-full items-center gap-2 align-middle">
-      <code className="select-all overflow-x-auto rounded bg-sunken px-1.5 py-0.5 font-mono text-[0.8125rem] whitespace-nowrap">
+      <code className="chip select-all overflow-x-auto rounded bg-sunken px-1.5 py-0.5 font-mono text-meta whitespace-nowrap">
         {text}
       </code>
       {copy && (
@@ -44,13 +44,13 @@ export function Command({ text, copy = true }: Props) {
           type="button"
           onClick={onCopy}
           aria-label={`Copy command: ${text}`}
-          className="shrink-0 rounded border border-line px-1.5 py-0.5 text-xs text-muted hover:text-ink focus-visible:outline-2"
+          className="chip shrink-0 rounded border border-line px-1.5 py-0.5 text-meta text-muted hover:text-ink focus-visible:outline-2"
         >
           Copy
         </button>
       )}
       {state !== "idle" && (
-        <span role="status" className="text-xs text-muted">
+        <span role="status" className="text-meta text-muted">
           {state === "copied" ? "Copied" : "Copy failed: select the text"}
         </span>
       )}

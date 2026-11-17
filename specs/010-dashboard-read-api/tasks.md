@@ -331,7 +331,7 @@ Every story depends on these.
 - [x] T049 [US4] Extend static/index.html:
   - lab evidence panel: latest per suite, age, "N commits on main since the last live run", incomplete and unreadable runs
   - CI panel: `main` and each PR with gate, failed jobs, links and coverage
-- [ ] T050 [US4] **Live evidence items 5 and 6** (quickstart.md):
+- [ ] T050 [US4] **Live evidence items 5 and 6** (quickstart.md). Item 5 is half done in #195: "1 commit on main since the last live run", matched by `ancestor`. Item 6 needs #195's squash merge:
   - Run `invoke test-e2e` on `main`, then pull three commits that land on `main` afterwards. Verify "3 commits on main since the last live run", matched by `ancestor`. Don't make throwaway commits on your own `main`.
   - Run `invoke test-integration` at PR E's up-to-date branch head, squash-merge it, pull, and verify the run is matched by `tree`.
 
@@ -362,7 +362,7 @@ Every story depends on these.
 
 - [x] T054 [US5] Add `/api/v1/overview` and `/api/v1/sources` to packages/presentation/snapl_presentation/dashboard/app.py. Fetch views with `asyncio.gather(..., return_exceptions=True)`, wrap each in the source's timeout (`SNAPL_CONNECT_TIMEOUT`), and turn every exception into an unavailable view. T051 to T053 pass.
 - [x] T055 [US5] Switch static/index.html to a single `/api/v1/overview` poll every 5 s, plus `/api/v1/history` every 60 s. Add a source status strip from `/api/v1/sources` showing each source's state, age and remedy.
-- [ ] T056 [US5] **Live evidence items 3 and 4**:
+- [x] T056 [US5] **Live evidence items 3 and 4**:
   - Stop the worker, then Temporal, then Infrahub, and record what the page showed each time.
   - Run `demo.reset` then `demo.up`, and record that history and lab runs survived.
 
@@ -386,7 +386,7 @@ Every story depends on these.
   - Every URL is built from the server's settings. `SNAPL_PROJECT_BOARD_URL` is new.
   - The OpenAPI snapshot gains the route.
   - This was asked for by the maintainer after the T032 run.
-- [ ] T063a Walk the whole of quickstart.md once more and paste the evidence into a PR. **Needs the lab.** (Split from T063 in PR F: the walk needs the maintainer's lab, the checks above do not.)
+- [x] T063a Walk the whole of quickstart.md once more and paste the evidence into a PR. **Needs the lab.** (Split from T063 in PR F: the walk needs the maintainer's lab, the checks above do not.)
 
 ---
 

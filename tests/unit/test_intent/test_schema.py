@@ -137,6 +137,50 @@ class TestSchemaLoader:
         assert client.schema.load.await_count == 6  # 3 batches x 2 invocations
 
 
+class TestProvisionReportsWhetherAnythingChanged:
+    """``changed`` was always True (#68). Infrahub's load response carries the
+    schema hash before and after, and the SDK exposes that as ``schema_updated``."""
+
+    def _client(self, *responses) -> MagicMock:
+        from tests.conftest import ready_schema_registry
+
+        client = MagicMock()
+        client.schema = MagicMock()
+        client.schema.load = AsyncMock(side_effect=list(responses))
+        client.schema.all = AsyncMock(return_value=ready_schema_registry())
+        return client
+
+    @staticmethod
+    def _response(*, updated: bool):
+        from infrahub_sdk.schema import SchemaLoadResponse
+
+        return SchemaLoadResponse(hash="new" if updated else "same", previous_hash="same")
+
+    async def test_no_batch_changed_the_schema(self, intent_package_root: Path):
+        client = self._client(*[self._response(updated=False)] * 3)
+
+        result = await SchemaLoader(client=client, schemas_root=intent_package_root / "schemas").load()
+
+        assert result.changed is False
+
+    async def test_one_batch_changed_the_schema(self, intent_package_root: Path):
+        client = self._client(
+            self._response(updated=False), self._response(updated=True), self._response(updated=False)
+        )
+
+        result = await SchemaLoader(client=client, schemas_root=intent_package_root / "schemas").load()
+
+        assert result.changed is True
+
+    async def test_a_response_that_does_not_say_is_reported_as_changed(self, intent_package_root: Path):
+        """Not knowing must not read as "nothing changed": a caller may skip a re-seed on that."""
+        client = self._client(*[{"errors": []}] * 3)
+
+        result = await SchemaLoader(client=client, schemas_root=intent_package_root / "schemas").load()
+
+        assert result.changed is True
+
+
 class TestSchemaReadiness:
     """After loading, the loader must block until Infrahub has actually
     registered the extension attributes — otherwise a following seed races the
