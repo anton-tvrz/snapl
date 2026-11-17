@@ -143,6 +143,16 @@ EXPECTED_QUERIES = {
         f" / sum({_rate('temporal_request_latency_count{namespace="default"}')})"
     ),
     MetricsViewName.SOURCE_FETCH_TIME: "snapl_dashboard_source_fetch_duration_milliseconds",
+    # Spec 015 PR E: the worker's own counters.
+    MetricsViewName.SCAN_RESULTS: (
+        f"sum by (device, state) (({_rate('snapl_scan_results_total{use_case="dcfabric"}')} * 60))"
+    ),
+    MetricsViewName.DRIFT_PATHS: (
+        f"sum by (device, kind) (({_rate('snapl_drift_paths_total{use_case="dcfabric"}')} * 60))"
+    ),
+    MetricsViewName.DEPLOY_OUTCOMES: (
+        f"sum by (outcome, reason) (({_rate('snapl_deploy_ends_total{use_case="dcfabric"}')} * 60))"
+    ),
 }
 
 
@@ -188,6 +198,9 @@ def test_units_and_series_labels_follow_the_data_model() -> None:
         MetricsViewName.WORKER_SLOTS: "count",
         MetricsViewName.SERVER_REQUEST_TIME: "ms",
         MetricsViewName.SOURCE_FETCH_TIME: "ms",
+        MetricsViewName.SCAN_RESULTS: "count",
+        MetricsViewName.DRIFT_PATHS: "count",
+        MetricsViewName.DEPLOY_OUTCOMES: "count",
     }
     assert {v: spec.labels for v, spec in VIEWS.items()} == {
         MetricsViewName.WORKFLOW_DURATION: ("workflow_type",),
@@ -203,12 +216,23 @@ def test_units_and_series_labels_follow_the_data_model() -> None:
         MetricsViewName.WORKER_SLOTS: ("worker_type",),
         MetricsViewName.SERVER_REQUEST_TIME: (),
         MetricsViewName.SOURCE_FETCH_TIME: ("source",),
+        MetricsViewName.SCAN_RESULTS: ("device", "state"),
+        MetricsViewName.DRIFT_PATHS: ("device", "kind"),
+        MetricsViewName.DEPLOY_OUTCOMES: ("outcome", "reason"),
     }
+
+
+EVENT_VIEWS = {
+    MetricsViewName.WORKFLOWS_COMPLETED,
+    MetricsViewName.SCAN_RESULTS,
+    MetricsViewName.DRIFT_PATHS,
+    MetricsViewName.DEPLOY_OUTCOMES,
+}
 
 
 def test_only_the_event_views_count_events_in_a_window() -> None:
     """A gauge's `count` is a current value: worker-slots says nothing about a window (research R4)."""
-    assert {v for v, spec in VIEWS.items() if spec.counts_events} == {MetricsViewName.WORKFLOWS_COMPLETED}
+    assert {v for v, spec in VIEWS.items() if spec.counts_events} == EVENT_VIEWS
 
 
 def test_a_count_of_events_is_the_first_observation_rate_times_the_window() -> None:
@@ -234,12 +258,13 @@ def test_a_count_of_events_is_the_first_observation_rate_times_the_window() -> N
     ],
 )
 def test_a_count_says_its_window_when_the_window_is_longer_than_the_step(step: int, expected: str | None) -> None:
-    assert window_note(MetricsViewName.WORKFLOWS_COMPLETED, step) == expected
+    for view in EVENT_VIEWS:
+        assert window_note(view, step) == expected, view
 
 
 def test_views_that_do_not_count_events_have_no_window_note() -> None:
     for view in MetricsViewName:
-        if view is not MetricsViewName.WORKFLOWS_COMPLETED:
+        if view not in EVENT_VIEWS:
             assert window_note(view, 15) is None, view
 
 
@@ -378,6 +403,26 @@ HAND_BUILT: dict[MetricsViewName, tuple[list[tuple[dict[str, str], list[tuple[in
             )
         ],
         [{"source": "audit"}],
+    ),
+    # Spec 015 PR E: the label sets the worker writes (contracts/metrics-views.md), with
+    # the runtime's own labels, which the sum drops, left out as Prometheus would.
+    MetricsViewName.SCAN_RESULTS: (
+        [
+            ({"device": "leaf-01", "state": "undesired"}, [(_T, "1")]),
+            ({"device": "spine-01", "state": "in_sync"}, [(_T, "4")]),
+        ],
+        [{"device": "leaf-01", "state": "undesired"}, {"device": "spine-01", "state": "in_sync"}],
+    ),
+    MetricsViewName.DRIFT_PATHS: (
+        [({"device": "leaf-01", "kind": "undesired"}, [(_T, "2")])],
+        [{"device": "leaf-01", "kind": "undesired"}],
+    ),
+    MetricsViewName.DEPLOY_OUTCOMES: (
+        [
+            ({"outcome": "succeeded", "reason": "none"}, [(_T, "1")]),
+            ({"outcome": "failed", "reason": "verification_failed"}, [(_T, "NaN")]),
+        ],
+        [{"outcome": "succeeded", "reason": "none"}, {"outcome": "failed", "reason": "verification_failed"}],
     ),
 }
 

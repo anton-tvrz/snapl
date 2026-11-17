@@ -1163,6 +1163,10 @@ SPEC_015_VIEWS = (
     "worker-slots",
     "server-request-time",
     "source-fetch-time",
+    # PR E: the worker's counters.
+    "scan-results",
+    "drift-paths",
+    "deploy-outcomes",
 )
 
 

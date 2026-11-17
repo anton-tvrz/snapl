@@ -56,6 +56,9 @@ VIEW_FILES = {
     MetricsViewName.WORKER_SLOTS: "range_worker_slots.json",
     MetricsViewName.SERVER_REQUEST_TIME: "range_server_request_time.json",
     MetricsViewName.SOURCE_FETCH_TIME: "range_source_fetch_time.json",
+    MetricsViewName.SCAN_RESULTS: "range_scan_results.json",
+    MetricsViewName.DRIFT_PATHS: "range_drift_paths.json",
+    MetricsViewName.DEPLOY_OUTCOMES: "range_deploy_outcomes.json",
 }
 
 

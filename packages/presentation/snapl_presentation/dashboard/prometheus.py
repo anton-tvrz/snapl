@@ -177,6 +177,25 @@ VIEWS: dict[MetricsViewName, MetricsViewSpec] = {
     MetricsViewName.SOURCE_FETCH_TIME: MetricsViewSpec(
         "snapl_dashboard_source_fetch_duration_milliseconds", "ms", ("source",)
     ),
+    # Spec 015 PR E: the worker's counters (FR-010 to FR-012), summed over the runtime's labels.
+    MetricsViewName.SCAN_RESULTS: MetricsViewSpec(
+        f"sum by (device, state) ({_increase('snapl_scan_results_total{use_case="$uc"}')})",
+        "count",
+        ("device", "state"),
+        counts_events=True,
+    ),
+    MetricsViewName.DRIFT_PATHS: MetricsViewSpec(
+        f"sum by (device, kind) ({_increase('snapl_drift_paths_total{use_case="$uc"}')})",
+        "count",
+        ("device", "kind"),
+        counts_events=True,
+    ),
+    MetricsViewName.DEPLOY_OUTCOMES: MetricsViewSpec(
+        f"sum by (outcome, reason) ({_increase('snapl_deploy_ends_total{use_case="$uc"}')})",
+        "count",
+        ("outcome", "reason"),
+        counts_events=True,
+    ),
 }
 
 

@@ -1627,7 +1627,10 @@
           "activity-time",
           "worker-slots",
           "server-request-time",
-          "source-fetch-time"
+          "source-fetch-time",
+          "scan-results",
+          "drift-paths",
+          "deploy-outcomes"
         ],
         "title": "MetricsViewName",
         "type": "string"
@@ -4049,7 +4052,10 @@
                 "activity-time",
                 "worker-slots",
                 "server-request-time",
-                "source-fetch-time"
+                "source-fetch-time",
+                "scan-results",
+                "drift-paths",
+                "deploy-outcomes"
               ],
               "title": "View",
               "type": "string"

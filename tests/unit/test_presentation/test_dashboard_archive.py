@@ -337,6 +337,9 @@ SPEC_015_VIEWS = (
     MetricsViewName.WORKER_SLOTS,
     MetricsViewName.SERVER_REQUEST_TIME,
     MetricsViewName.SOURCE_FETCH_TIME,
+    MetricsViewName.SCAN_RESULTS,
+    MetricsViewName.DRIFT_PATHS,
+    MetricsViewName.DEPLOY_OUTCOMES,
 )
 
 

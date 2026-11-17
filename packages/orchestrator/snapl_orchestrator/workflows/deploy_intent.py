@@ -21,6 +21,7 @@ with workflow.unsafe.imports_passed_through():
     from snapl_orchestrator.activities.executor import apply_config
     from snapl_orchestrator.activities.intent import fetch_desired_state
     from snapl_orchestrator.activities.observability import detect_drift
+    from snapl_orchestrator.metrics import record_deploy_end
     from snapl_orchestrator.models import (
         AuditEventType,
         WorkflowReason,
@@ -75,6 +76,12 @@ async def _record_event(
 class DeployIntentWorkflow:
     """End-to-end durable deploy: intent → apply → collect → verify → audit."""
 
+    def __init__(self) -> None:
+        # The deploy counter's device labels (spec 015 FR-012). Before intent
+        # is read there is no name, and an id is not a label (FR-013).
+        self._device_name = "unknown"
+        self._use_case = "unknown"
+
     @workflow.run
     async def run(self, device_id: UUID) -> WorkflowResult:  # noqa: PLR0911 — multiple terminal branches by design
         wf_id = workflow.info().workflow_id
@@ -122,6 +129,8 @@ class DeployIntentWorkflow:
                 detail=_format_cause(exc, default="intent fetch failed"),
                 started_at=started_at,
             )
+
+        self._device_name, self._use_case = desired.device.name, desired.device.use_case
 
         await _record_event(
             workflow_id=wf_id,
@@ -284,6 +293,7 @@ class DeployIntentWorkflow:
             reason=WorkflowReason.SUCCEEDED,
             payload={"undesired_paths": undesired_paths} if undesired_paths else None,
         )
+        record_deploy_end(self._device_name, self._use_case, WorkflowReason.SUCCEEDED)
         return WorkflowResult(
             workflow_id=wf_id,
             workflow_type=_WORKFLOW_TYPE,
@@ -316,6 +326,7 @@ class DeployIntentWorkflow:
             reason=reason,
             payload={"detail": detail},
         )
+        record_deploy_end(self._device_name, self._use_case, reason)
         return WorkflowResult(
             workflow_id=wf_id,
             workflow_type=_WORKFLOW_TYPE,
@@ -343,6 +354,7 @@ class DeployIntentWorkflow:
             reason=WorkflowReason.VERIFICATION_FAILED,
             payload={"drift_paths": [item.path for item in drift_items]},
         )
+        record_deploy_end(self._device_name, self._use_case, WorkflowReason.VERIFICATION_FAILED)
         return WorkflowResult(
             workflow_id=wf_id,
             workflow_type=_WORKFLOW_TYPE,
@@ -368,6 +380,7 @@ class DeployIntentWorkflow:
             event_type=AuditEventType.WORKFLOW_CANCELLED,
             outcome="cancelled",
         )
+        record_deploy_end(self._device_name, self._use_case, WorkflowReason.CANCELLED)
         return WorkflowResult(
             workflow_id=wf_id,
             workflow_type=_WORKFLOW_TYPE,

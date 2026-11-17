@@ -8,10 +8,11 @@ This file adds what the contract does not say.
 
 | enum | values | used as |
 | --- | --- | --- |
+| `ScanState` | `in_sync`, `missing`, `undesired`, `missing_and_undesired`, `error`, `unknown` | `state` on `snapl_scan_results_total` |
 | `PathKind` | `missing`, `undesired`, `unclassified` | `kind` on `snapl_drift_paths_total` |
 | `DeployOutcome` | `succeeded`, `failed` | `outcome` on `snapl_deploy_ends_total` |
 
-`state` is the observability block's drift status value. `reason` is the workflow's `WorkflowReason` value, or `none` when the deploy succeeded. A value outside the enum is recorded as `unknown`, never as raw text.
+`state` is what the scan found, named as the dashboard names a device's drift state (US3 scenario 1: one undesired path is state `undesired`). PR E corrected this from "the observability block's drift status value", whose three values (`clean`, `drifted`, `error`) cannot say `undesired`. `reason` is the workflow's `WorkflowReason` value, or `none` when the deploy succeeded. A value outside the enum is recorded as `unknown`, never as raw text.
 
 ## Rules for the audit-trail series
 
