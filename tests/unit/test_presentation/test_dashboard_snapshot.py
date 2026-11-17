@@ -139,6 +139,31 @@ def test_a_source_that_did_not_answer_is_in_the_bundle_as_unavailable():
     assert down["metrics"]["worker-up"]["metrics"]["available"] is False
 
 
+def test_a_source_slower_than_the_request_budget_is_in_the_bundle_with_its_answer(monkeypatch):
+    """A page asks again while a source is still answering. A snapshot asks
+    once, so it waits for every source's own answer. On a large trail the audit
+    read outlasts the request budget, and the snapshot recorded the trail as
+    "still waiting" (#274). A zero budget makes every source that slow."""
+    from snapl_presentation.dashboard import app as app_module
+
+    monkeypatch.setattr(app_module, "REQUEST_BUDGET_S", 0.0)
+    app = _app()
+
+    slow = collect_bundle(app, days=7, commit=None, source="live")
+
+    assert [view["source"] for view in slow["sources"]["sources"] if not view["available"]] == []
+    assert slow["runs"]["runs"]["data"]
+    assert slow["steps"]
+    assert slow["timeline"]["timeline"]["available"] is True
+    assert slow["drift_summary"]["summary"]["available"] is True
+    assert all(view["metrics"]["available"] for view in slow["metrics"].values())
+    # The app serves pages again afterwards, within the request budget.
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as client:
+        assert "still waiting" in client.get("/api/v1/sources").json()["sources"][0]["reason"]
+
+
 # --- render ------------------------------------------------------------------------
 
 

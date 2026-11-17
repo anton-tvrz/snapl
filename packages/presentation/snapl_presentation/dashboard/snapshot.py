@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import httpx
 
+from snapl_presentation.dashboard.app import waiting_in_full
 from snapl_presentation.dashboard.models import DEFAULT_SERIES, MetricsViewName, SeriesName
 
 if TYPE_CHECKING:
@@ -71,8 +72,6 @@ async def _collect(app: FastAPI, days: int, commit: str | None, source: str) -> 
         end = datetime.fromisoformat(mode["now"])
         start = end - timedelta(days=days)
         window = {"start": _iso(start), "end": _iso(end)}
-        # Read every source once first, so no view is cut short by a source
-        # still answering its first request.
         sources = await get("sources")
         runs = await get("runs", limit=500)
         listed = runs["runs"]["data"] or []
@@ -116,8 +115,13 @@ async def _collect(app: FastAPI, days: int, commit: str | None, source: str) -> 
 def collect_bundle(
     app: FastAPI, *, days: int, commit: str | None, source: Literal["live", "archive"]
 ) -> dict[str, Any]:
-    """Every view the page reads, over the ``days`` before the app's own now."""
-    return asyncio.run(_collect(app, days, commit, source))
+    """Every view the page reads, over the ``days`` before the app's own now.
+
+    Each read waits for its source's own answer, not the page's request budget:
+    the page asks again, the snapshot can't (#274).
+    """
+    with waiting_in_full(app):
+        return asyncio.run(_collect(app, days, commit, source))
 
 
 def render(template: str, bundle: dict[str, Any]) -> str:
