@@ -18,6 +18,9 @@ import {
   TOPOLOGY,
 } from "./test/fixtures";
 
+// Every folded panel and group open (#290).
+const ALL_OPEN = "/?open=history,fabric-history,drift-by-device,metrics-timing,metrics-work,metrics-worker,metrics-dashboard";
+
 // The page on `snapl dashboard --archive` (spec 011 US5, T073, T077).
 
 function provider() {
@@ -92,6 +95,7 @@ describe("App on an archive", () => {
   });
 
   it("has the fabric history, from the archive's trail", async () => {
+    history.replaceState(null, "", ALL_OPEN);
     render(<App provider={provider().p} />);
     await settle();
 
@@ -100,6 +104,7 @@ describe("App on an archive", () => {
   });
 
   it("has drift by device, from the archive's trail", async () => {
+    history.replaceState(null, "", ALL_OPEN);
     render(<App provider={provider().p} />);
     await settle();
 
@@ -133,6 +138,7 @@ describe("App on an archive", () => {
 
   // spec 015: an archive made before the new views answers them as not in this archive.
   it("shows the views an older archive lacks as not in this archive, and the rest from the archive", async () => {
+    history.replaceState(null, "", ALL_OPEN);
     const older = new Set(["workflow-duration", "gnmi-duration", "gnmi-errors", "worker-lag", "worker-up", "source-health"]);
     const { p } = provider();
     const metrics = async (view: keyof typeof METRICS) =>

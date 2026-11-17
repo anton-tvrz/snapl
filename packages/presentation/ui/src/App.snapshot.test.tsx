@@ -6,6 +6,9 @@ import { App } from "./App";
 import { InlineProvider, type SnapshotBundle } from "./data/inline";
 import { SNAPSHOT_BUNDLE } from "./test/fixtures";
 
+// Every folded panel and group open (#290).
+const ALL_OPEN = "/?open=history,fabric-history,drift-by-device,metrics-timing,metrics-work,metrics-worker,metrics-dashboard";
+
 // The page in a snapshot file (spec 011 US6, T082).
 
 const bundle = SNAPSHOT_BUNDLE as SnapshotBundle;
@@ -53,6 +56,7 @@ describe("App in a snapshot", () => {
   });
 
   it("has the fabric history, from the bundle", async () => {
+    history.replaceState(null, "", ALL_OPEN);
     render(<App provider={provider().p} />);
 
     const panel = await screen.findByRole("region", { name: "Fabric history" });
@@ -61,6 +65,7 @@ describe("App in a snapshot", () => {
   });
 
   it("has drift by device, from the bundle", async () => {
+    history.replaceState(null, "", ALL_OPEN);
     render(<App provider={provider().p} />);
 
     const panel = await screen.findByRole("region", { name: "Drift by device" });
