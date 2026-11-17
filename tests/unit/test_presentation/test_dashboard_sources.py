@@ -14,6 +14,8 @@ from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
+from temporalio.api.taskqueue.v1 import PollerInfo
+from temporalio.api.workflowservice.v1 import DescribeTaskQueueResponse
 from temporalio.service import RPCError, RPCStatusCode
 
 from snapl_intent.exceptions import IntentError
@@ -422,7 +424,7 @@ class StrictClient:
         pollers = self._pollers
 
         async def describe_task_queue(request):
-            return SimpleNamespace(pollers=[object()] * pollers)
+            return DescribeTaskQueueResponse(pollers=[_fresh_poller() for _ in range(pollers)])
 
         return SimpleNamespace(workflow_service=SimpleNamespace(describe_task_queue=describe_task_queue))
 
@@ -456,6 +458,12 @@ def _temporal_source(clock: Clock, *, client=None, probe_failure: str | None = N
     source = TemporalSource(CliSettings(), "dcfabric", probe=probe, connect=connect, clock=clock, **overrides)
     source.connects = connects  # type: ignore[attr-defined]
     return source
+
+
+def _fresh_poller() -> PollerInfo:
+    poller = PollerInfo(identity="worker")
+    poller.last_access_time.FromDatetime(datetime.now(UTC))
+    return poller
 
 
 async def test_temporal_reads_running_pollers_and_schedule_through_read_calls_only():
