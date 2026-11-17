@@ -1155,6 +1155,38 @@ def test_metrics_unknown_view_is_404():
     assert _client().get("/api/v1/metrics/cpu").status_code == 404
 
 
+SPEC_015_VIEWS = (
+    "workflow-mean",
+    "gnmi-mean",
+    "workflows-completed",
+    "activity-time",
+    "worker-slots",
+    "server-request-time",
+    "source-fetch-time",
+)
+
+
+@pytest.mark.parametrize("view", SPEC_015_VIEWS)
+def test_metrics_answers_each_view_of_spec_015(view: str):
+    prometheus = FakePrometheus()
+
+    response = _client(prometheus=prometheus).get(f"/api/v1/metrics/{view}")
+
+    assert response.status_code == 200
+    assert response.json()["metrics"]["data"]["view"] == view
+    [(name, _)] = prometheus.plans
+    assert name == view
+
+
+def test_metrics_openapi_lists_every_view_and_the_count_unit():
+    document = _client().get("/api/v1/openapi.json").json()
+
+    [parameter] = [p for p in document["paths"]["/api/v1/metrics/{view}"]["get"]["parameters"] if p["name"] == "view"]
+    assert parameter["schema"]["enum"] == [name.value for name in MetricsViewName]
+    assert set(SPEC_015_VIEWS) <= set(parameter["schema"]["enum"])
+    assert "count" in document["components"]["schemas"]["MetricsData"]["properties"]["unit"]["enum"]
+
+
 @pytest.mark.parametrize(
     "params",
     [
@@ -1337,6 +1369,15 @@ def test_page_fetches_every_metrics_view():
     assert "/api/v1/metrics/" in page
     for view in MetricsViewName:
         assert f'"{view.value}"' in page, view
+
+
+def test_page_shows_a_count_rounded_and_an_unknown_unit_raw():
+    """Spec 015: `count` reads as a whole number; only `up` reads as up or down."""
+    page = _client().get("/").text
+
+    assert 'if (unit === "count") return Math.round(value).toString();' in page
+    assert 'if (unit === "up") return value >= 1 ? "up" : "down";' in page
+    assert 'return value + " " + unit;' in page
 
 
 def test_page_has_a_range_selector_for_1h_24h_and_7d():

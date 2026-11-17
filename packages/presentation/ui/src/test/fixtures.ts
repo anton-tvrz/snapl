@@ -42,6 +42,13 @@ import metricsGnmiErrors from "./fixtures/up/metrics-gnmi-errors.json";
 import metricsWorkerLag from "./fixtures/up/metrics-worker-lag.json";
 import metricsWorkerUp from "./fixtures/up/metrics-worker-up.json";
 import metricsSourceHealth from "./fixtures/up/metrics-source-health.json";
+import metricsWorkflowMean from "./fixtures/up/metrics-workflow-mean.json";
+import metricsGnmiMean from "./fixtures/up/metrics-gnmi-mean.json";
+import metricsWorkflowsCompleted from "./fixtures/up/metrics-workflows-completed.json";
+import metricsActivityTime from "./fixtures/up/metrics-activity-time.json";
+import metricsWorkerSlots from "./fixtures/up/metrics-worker-slots.json";
+import metricsServerRequestTime from "./fixtures/up/metrics-server-request-time.json";
+import metricsSourceFetchTime from "./fixtures/up/metrics-source-fetch-time.json";
 import topology from "./fixtures/topology.json";
 
 export const MODE = mode as unknown as ModeResponse;
@@ -68,6 +75,13 @@ export const METRICS: Record<MetricsViewName, MetricsResponse> = {
   "worker-lag": metricsWorkerLag as unknown as MetricsResponse,
   "worker-up": metricsWorkerUp as unknown as MetricsResponse,
   "source-health": metricsSourceHealth as unknown as MetricsResponse,
+  "workflow-mean": metricsWorkflowMean as unknown as MetricsResponse,
+  "gnmi-mean": metricsGnmiMean as unknown as MetricsResponse,
+  "workflows-completed": metricsWorkflowsCompleted as unknown as MetricsResponse,
+  "activity-time": metricsActivityTime as unknown as MetricsResponse,
+  "worker-slots": metricsWorkerSlots as unknown as MetricsResponse,
+  "server-request-time": metricsServerRequestTime as unknown as MetricsResponse,
+  "source-fetch-time": metricsSourceFetchTime as unknown as MetricsResponse,
 };
 export const TOPOLOGY = topology as unknown as TopologyResponse;
 export const DEVICES = devices as unknown as DevicesResponse;

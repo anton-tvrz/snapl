@@ -91,6 +91,14 @@ def test_the_bundle_holds_every_view_the_page_reads(bundle: dict):
         "worker-lag",
         "worker-up",
         "source-health",
+        # Spec 015.
+        "workflow-mean",
+        "gnmi-mean",
+        "workflows-completed",
+        "activity-time",
+        "worker-slots",
+        "server-request-time",
+        "source-fetch-time",
     }
 
 

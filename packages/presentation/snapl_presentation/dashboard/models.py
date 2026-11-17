@@ -668,9 +668,18 @@ class MetricsViewName(StrEnum):
     WORKER_LAG = "worker-lag"
     WORKER_UP = "worker-up"
     SOURCE_HEALTH = "source-health"
+    # Spec 015 (contracts/metrics-views.md): families already exported, not drawn before.
+    WORKFLOW_MEAN = "workflow-mean"
+    GNMI_MEAN = "gnmi-mean"
+    WORKFLOWS_COMPLETED = "workflows-completed"
+    ACTIVITY_TIME = "activity-time"
+    WORKER_SLOTS = "worker-slots"
+    SERVER_REQUEST_TIME = "server-request-time"
+    SOURCE_FETCH_TIME = "source-fetch-time"
 
 
-MetricUnit = Literal["ms", "per_second", "up"]
+# `count` (spec 015): events in one window, or a gauge's current count.
+MetricUnit = Literal["ms", "per_second", "up", "count"]
 
 
 class MetricPoint(_Model):

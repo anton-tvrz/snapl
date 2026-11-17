@@ -103,12 +103,12 @@ A slice that changes the contract also regenerates the OpenAPI snapshot and the 
 
 ### D1: the server and the plain page
 
-- [ ] T020 [US1] Tests first in `tests/unit/test_presentation/test_dashboard_prometheus.py`: each of `workflow-mean`, `gnmi-mean`, `workflows-completed`, `activity-time`, `worker-slots`, `server-request-time` and `source-fetch-time` renders the query in contracts/metrics-views.md with only `$ns`, `$uc` and the window filled; its unit and labels; a matrix in the captured format parses to its series. Build the matrix responses by hand in the captured format, using the label sets in research R2.
-- [ ] T021 [US1] Add `count` to `MetricUnit` and the seven names to `MetricsViewName` in `models.py`, and the seven specs to `VIEWS` in `prometheus.py`, using #241's rate helper for rates. For `increase`, apply research R4: when the window is longer than the step, set the view's note to say the window.
-- [ ] T022 [US1] Tests first in `test_dashboard_app.py`, then check the routes: each new view answers, an unknown one is still `404`, and the OpenAPI enum lists all of them.
-- [ ] T023 [P] [US1] Add synthetic series for the seven views to `dev/scripts/serve_dashboard_fixtures.py`, with the label sets of research R2, and extend its test in `tests/unit/test_presentation/test_ui_fixtures.py`.
-- [ ] T024 [US1] Make the plain page (`dashboard/static/index.html`) list the new views and show the `count` unit. Its tests in `test_dashboard_pages.py` (or the file that holds them) come first.
-- [ ] T025 [US1] Regenerate the OpenAPI snapshot and the UI's types. Append to the changelog.
+- [x] T020 [US1] Tests first in `tests/unit/test_presentation/test_dashboard_prometheus.py`: each of `workflow-mean`, `gnmi-mean`, `workflows-completed`, `activity-time`, `worker-slots`, `server-request-time` and `source-fetch-time` renders the query in contracts/metrics-views.md with only `$ns`, `$uc` and the window filled; its unit and labels; a matrix in the captured format parses to its series. Build the matrix responses by hand in the captured format, using the label sets in research R2.
+- [x] T021 [US1] Add `count` to `MetricUnit` and the seven names to `MetricsViewName` in `models.py`, and the seven specs to `VIEWS` in `prometheus.py`, using #241's rate helper for rates. For `increase`, apply research R4: when the window is longer than the step, set the view's note to say the window.
+- [x] T022 [US1] Tests first in `test_dashboard_app.py`, then check the routes: each new view answers, an unknown one is still `404`, and the OpenAPI enum lists all of them.
+- [x] T023 [P] [US1] Add synthetic series for the seven views to `dev/scripts/serve_dashboard_fixtures.py`, with the label sets of research R2, and extend its test in `tests/unit/test_presentation/test_ui_fixtures.py`.
+- [x] T024 [US1] Make the plain page (`dashboard/static/index.html`) list the new views and show the `count` unit. Its tests in `test_dashboard_pages.py` (or the file that holds them) come first.
+- [x] T025 [US1] Regenerate the OpenAPI snapshot and the UI's types. Append to the changelog.
 
 ### D2: the designed page
 

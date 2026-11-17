@@ -1562,7 +1562,8 @@
             "enum": [
               "ms",
               "per_second",
-              "up"
+              "up",
+              "count"
             ],
             "title": "Unit",
             "type": "string"
@@ -1619,7 +1620,14 @@
           "gnmi-errors",
           "worker-lag",
           "worker-up",
-          "source-health"
+          "source-health",
+          "workflow-mean",
+          "gnmi-mean",
+          "workflows-completed",
+          "activity-time",
+          "worker-slots",
+          "server-request-time",
+          "source-fetch-time"
         ],
         "title": "MetricsViewName",
         "type": "string"
@@ -4034,7 +4042,14 @@
                 "gnmi-errors",
                 "worker-lag",
                 "worker-up",
-                "source-health"
+                "source-health",
+                "workflow-mean",
+                "gnmi-mean",
+                "workflows-completed",
+                "activity-time",
+                "worker-slots",
+                "server-request-time",
+                "source-fetch-time"
               ],
               "title": "View",
               "type": "string"

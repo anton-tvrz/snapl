@@ -32,7 +32,7 @@ The first capture (2026-11-08) was synthetic: a stand-in worker with randomised 
 
 ## Re-capturing
 
-`dev/scripts/capture_prometheus_fixtures.py` asks a running Prometheus everything above, using the dashboard's own view queries (`render_query`), and rewrites these files:
+`dev/scripts/capture_prometheus_fixtures.py` asks a running Prometheus everything above, using the dashboard's own view queries (`render_query`), and rewrites these files. It also asks spec 015's seven views and writes them as `range_<view>.json` (for example `range_workflow_mean.json`); those are not captured yet (spec 015 T049, which needs the lab), so the tests build their answers by hand:
 
 ```bash
 uv run invoke dev.deps                       # Prometheus on 18090; run the worker and snapl dashboard too

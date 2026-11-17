@@ -52,7 +52,7 @@ from snapl_presentation.dashboard.models import (  # noqa: E402
     SourceName,
     View,
 )
-from snapl_presentation.dashboard.prometheus import VIEWS, RangePlan  # noqa: E402
+from snapl_presentation.dashboard.prometheus import VIEWS, RangePlan, window_note  # noqa: E402
 from snapl_presentation.dashboard.sources import AuditSource, Sources, TemporalSnapshot  # noqa: E402
 from snapl_presentation.settings import CliSettings  # noqa: E402
 from tests.unit.test_presentation.dashboard_fakes import ARC_FIXTURE, SCAN_3_END, arc_states  # noqa: E402
@@ -243,6 +243,41 @@ _SERIES: dict[MetricsViewName, list[tuple[dict[str, str], Any]]] = {
         ({"source": source}, lambda i, source=source: _source_up(source, i))
         for source in ("audit", "sot", "temporal", "ci", "lab_runs")
     ],
+    # Spec 015, with the label sets of its research R2.
+    MetricsViewName.WORKFLOW_MEAN: [
+        ({"workflow_type": "DeployIntent"}, lambda i: 700.0 + 60 * (i * 7 % 11)),
+        ({"workflow_type": "ScanDrift"}, lambda i: None if 100 <= i < 110 else 1500.0 + 40 * (i * 5 % 13)),
+    ],
+    MetricsViewName.GNMI_MEAN: [
+        ({"device": "spine-01", "operation": "collect"}, lambda i: 30.0 + 3 * (i * 3 % 7)),
+        ({"device": "leaf-01", "operation": "configure"}, lambda i: 90.0 + 8 * (i * 5 % 9)),
+    ],
+    MetricsViewName.WORKFLOWS_COMPLETED: [
+        ({"workflow_type": "ScanDrift"}, lambda i: 1.0 if i % 20 < 4 else 0.0),
+        ({"workflow_type": "DriftResponse"}, lambda i: 1.0 if 2 <= i % 20 < 6 else 0.0),
+        ({"workflow_type": "DeployIntent"}, lambda i: 1.0 if 60 <= i < 64 else 0.0),
+    ],
+    MetricsViewName.ACTIVITY_TIME: [
+        ({"activity_type": activity}, lambda i, base=base: base + base / 10 * (i * 3 % 7))
+        for activity, base in (
+            ("collect_drift_state", 220.0),
+            ("detect_drift", 12.0),
+            ("fetch_desired_state", 80.0),
+            ("fetch_devices_for_use_case", 60.0),
+            ("apply_config", 400.0),
+            ("record_audit_event", 4.0),
+        )
+    ],
+    MetricsViewName.WORKER_SLOTS: [
+        ({"worker_type": "ActivityWorker"}, lambda i: 6.0 if i % 20 < 2 else 0.0),
+        ({"worker_type": "LocalActivityWorker"}, lambda _: 0.0),
+        ({"worker_type": "WorkflowWorker"}, lambda i: 1.0 if i % 20 < 2 else 0.0),
+    ],
+    MetricsViewName.SERVER_REQUEST_TIME: [({}, lambda i: 15.0 + i * 5 % 23)],
+    MetricsViewName.SOURCE_FETCH_TIME: [
+        ({"source": source}, lambda i, base=base: base + base / 5 * (i * 7 % 5))
+        for source, base in (("audit", 4.0), ("sot", 90.0), ("temporal", 30.0), ("ci", 600.0), ("lab_runs", 15.0))
+    ],
 }
 
 
@@ -274,7 +309,7 @@ class _PrometheusUp:
             end=plan.end,
             step=plan.step,
             series=series,
-            note=plan.note,
+            note="; ".join(note for note in (plan.note, window_note(view, plan.step)) if note) or None,
         )
 
 
