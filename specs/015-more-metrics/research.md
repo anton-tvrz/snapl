@@ -83,6 +83,17 @@ From the metrics store's series API, leaving out `job`, `instance`, `namespace`,
 
 **To decide in the slice, by measuring**: if SC-006's limit is passed, the snapshot exports the new views at a coarser step (at most 120 points per series) and says so in each view's note.
 
+**Measured in PR G (T045)**: a seven-day snapshot's bundle on the fixture app (`serve_dashboard_fixtures.build_app(up=True)`, `collect_bundle(days=7)`), with a stub template, so the built UI's size is left out:
+
+| | Bytes | Against before |
+|---|---:|---:|
+| Before spec 015 (`bcdf48f`) | 180,639 | |
+| After PR F, every view at the page's step (241 points per series) | 501,034 | +177% |
+| The ten new views at 120 points per series (estimated) | about 342,000 | about +89% |
+| The ten new views at a 3 h step (57 points per series), as shipped | 263,555 | +46% |
+
+The new views are 317 KB of the growth; the history series and the drift summary add 3 KB. At most 120 points per series was not enough, so the snapshot asks them for the smallest step on a fixed ladder (1 min, 5 min, 15 min, 30 min, 1 h, 2 h, 3 h, 6 h, 12 h, 1 d, 1 w) that keeps at most 60 points per series: 3 h for seven days. Each view's note ends "one point every 3 h in this snapshot, to keep the file small". The six earlier views keep the page's step. `test_a_seven_day_snapshot_grows_less_than_60_percent_over_its_size_before_spec_015` holds SC-006, against the same bundle without what spec 015 added.
+
 ## R9. PR #241
 
 PR #241 (draft, the maintainer's) rewrites `worker/metrics.py` (bucket overrides), `dashboard/prometheus.py` (a rate that counts a first observation), adds `workflows/audit.py` (one `record_event` helper) and changes `scan_drift.py`.

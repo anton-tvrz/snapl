@@ -45,6 +45,7 @@ Each package under `packages/` maps to one NAF block:
 - `presentation` — CLI interface
 
 ## Recent Changes
+- 015-more-metrics: ten more metrics views, seven over families already exported and three over the worker's new counters (`snapl_scan_results_total`, `snapl_drift_paths_total`, `snapl_deploy_ends_total`), and a `count` unit. Four history series and `/api/v1/drift-summary` come from the audit trail, as do a scan's steps (workflow patch `scan-drift-record-steps`). A snapshot exports the new views at a coarser step. No new deps; see ADR-0005 Decision 3.
 - 014-dashboard-look: the dashboard's look rules (8 px spacing, one type scale, one panel frame) in the "Look" section of `dev/skills/dashboard/SKILL.md`, enforced by `src/look.test.ts`; a number row, a fabric summary ring, the history as a chart, a sticky time range; `e2e/look.mjs` renders the page from fixtures; no new deps; see ADR-0005 Decision 2
 - 011-dashboard-ui: the designed dashboard UI in `packages/presentation/ui/` (React 19, Vite 8, TypeScript 5.9, Tailwind 4, Recharts; Vitest and Playwright), built by `invoke dashboard.build` into the package, served at `/` with the plain page at `/plain`; `snapl dashboard --archive` and `--snapshot`; see ADR-0005 Decision 2 and `dev/skills/dashboard/`
 - 012-measured-metrics: Prometheus v3.10.0 in Compose (data in `.snapl/prometheus`, kept by `demo.reset`), worker metrics via temporalio's runtime on 18091 (no new Python deps), dashboard `/api/v1/metrics/*` and `/metrics`, `invoke history.archive`/`history.purge`; see ADR-0005 Decision 3

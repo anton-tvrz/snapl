@@ -4,7 +4,7 @@
 
 - **Decision 1** (FastAPI and uvicorn, spec 010): Accepted on 2026-11-08, once spec 010's implementation PRs (#154, #160, #162, #164, #166, #168) had merged.
 - **Decision 2** (spec 011): Accepted on 2026-11-10, once spec 011's implementation PRs had merged: #200, #202, #204, #206, #208, #210, #212, #214, #216, #218, #220, #222, #224, #226 and #228.
-- **Decision 3** (spec 012): Accepted on 2026-11-09. Implemented by #180, #182, #184, #186 and #188; spec 012's quickstart items 1–7 were run against the live lab in #195. Two defects it found are in this decision's metrics, and neither changes the decision: #191 (a series' first observation is invisible to `rate()`) and #192 (the default buckets make the gNMI p95 a constant 480 ms). Both are fixed: #191 in the dashboard's queries (spec 012 data-model, `R(x)`), #192 by bucket overrides on the worker.
+- **Decision 3** (spec 012): Accepted on 2026-11-09. Implemented by #180, #182, #184, #186 and #188; spec 012's quickstart items 1–7 were run against the live lab in #195. Two defects it found are in this decision's metrics, and neither changes the decision: #191 (a series' first observation is invisible to `rate()`) and #192 (the default buckets make the gNMI p95 a constant 480 ms). Both are fixed: #191 in the dashboard's queries (spec 012 data-model, `R(x)`), #192 by bucket overrides on the worker. Spec 015 extends it without changing it (see "Spec 015 additions" under Decision 3): #271, #273, #276, #278, #280, #282, #285, #288, #293, #295 and its PR G. Its counters and scan steps have not yet been run against the live lab (spec 015 tasks T037, T044, T049, T050).
 
 ## Date
 
@@ -70,6 +70,19 @@ Prometheus runs in the Compose stack on 18090. It scrapes:
 - **Loopback is reachable from Compose on OrbStack (R2).** Prometheus in a container scraped a server bound to `127.0.0.1` on the host through `host.docker.internal`, so the worker binds `127.0.0.1:18091` and stays off the LAN.
 - **A taken port fails at `Runtime()` construction (R3)**, with `ValueError: … Address already in use`, before any client connects. The worker catches it, logs a warning, and runs without metrics.
 - **`timedelta` histograms are exported in milliseconds (R4)**. The three histograms the dashboard charts get their own bucket bounds (`HISTOGRAM_BUCKETS_MS` in `worker/metrics.py`), because the runtime's defaults made the gNMI p95 a constant 480 ms (#192); the rest keep the defaults. The gNMI metric is named `snapl_gnmi_call_duration`, with no unit suffix, and the unit is stated in its description and in the dashboard's views.
+
+**Spec 015 additions** (`specs/015-more-metrics/contracts/metrics-views.md`). The same Prometheus, the same worker endpoint, and no new dependency:
+- **Seven views over families already exported**: `workflow-mean`, `gnmi-mean`, `workflows-completed`, `activity-time`, `worker-slots`, `server-request-time` and `source-fetch-time`.
+- **Three counters the worker now records**, through the same runtime as R1, and three views over them:
+  - `snapl_scan_results_total`, labelled `device`, `use_case` and `state`. The state is one of `in_sync`, `missing`, `undesired`, `missing_and_undesired`, `error` or `unknown`.
+  - `snapl_drift_paths_total`, labelled `device`, `use_case` and `kind` (`missing`, `undesired` or `unclassified`).
+  - `snapl_deploy_ends_total`, labelled `device`, `use_case`, `outcome` and `reason`.
+
+  The scan counters count a scheduled or operator scan's drift checks, not a deploy's verification. Every label value is bounded, with no paths or error text in labels (spec 012 SC-006).
+- **A `count` unit**: a count's point covers its window, and points are never added up, because neighbouring windows can overlap.
+- **Not from Prometheus**: four history series, the drift summary, and a scan's steps all come from the audit trail.
+  - The steps a scan now records are reading intent for the use case and collecting each device. They sit behind the workflow patch `scan-drift-record-steps`, so the loop strip can show a scan's blocks.
+- **The snapshot exports the ten new views at a coarser step**. That is 3 h for seven days, and each view's note says so. At the page's step, they would have almost tripled a seven-day snapshot (spec 015 research R8).
 
 **Linux caveat (not measured).** On Linux Docker, `host.docker.internal` needs `extra_hosts: host-gateway` (the Compose service carries it) and reaches the bridge address, not loopback. A Linux host must start the worker with `WORKER_METRICS_BIND=0.0.0.0` (or the bridge IP), and the dashboard with a matching `DASHBOARD_HOST`, for Prometheus to scrape them. Nothing automates this.
 

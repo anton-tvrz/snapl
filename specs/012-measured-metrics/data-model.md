@@ -2,6 +2,8 @@
 
 New pydantic models live in `snapl_presentation/dashboard/models.py`, next to 010's, and follow its rules (frozen, `extra="forbid"`, aware UTC datetimes). They are part of the v1 contract and appear in the OpenAPI snapshot.
 
+Spec 015 adds ten views, three worker counters, a `count` unit, four history series, the drift summary route and a scan's audit steps: see `specs/015-more-metrics/contracts/metrics-views.md` and that spec's `data-model.md`.
+
 ## Recorded in the worker
 
 ### `snapl_gnmi_call_duration` (histogram, milliseconds)

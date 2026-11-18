@@ -158,10 +158,10 @@ A slice that changes the contract also regenerates the OpenAPI snapshot and the 
 
 **Goal**: the files stay small and the words match.
 
-- [ ] T045 [US5] Measure a seven-day snapshot on the test fixtures before and after the new views (research R8). If it grows by 60% or more, export the new views at no more than 120 points per series in `snapshot.py`, with the step named in each view's note, tests first. Record both sizes in research.md.
-- [ ] T046 [P] Update `specs/012-measured-metrics/data-model.md` with a pointer to this spec's contract, `dev/adr/0005-dashboard-and-metrics-stack.md` Decision 3 with the new views and counters, and `CLAUDE.md` "Recent Changes".
-- [ ] T047 [P] Update `README.md` and `docs/demo-scenarios.md`: what the dashboard measures now, and a scenario for "what did the loop do today?". Claim only what the lab has shown; say the device telemetry is not there.
-- [ ] T048 Finish `changelog/249.added.md` as one readable paragraph.
+- [x] T045 [US5] Measure a seven-day snapshot on the test fixtures before and after the new views (research R8). If it grows by 60% or more, export the new views at no more than 120 points per series in `snapshot.py`, with the step named in each view's note, tests first. Record both sizes in research.md.
+- [x] T046 [P] Update `specs/012-measured-metrics/data-model.md` with a pointer to this spec's contract, `dev/adr/0005-dashboard-and-metrics-stack.md` Decision 3 with the new views and counters, and `CLAUDE.md` "Recent Changes".
+- [x] T047 [P] Update `README.md` and `docs/demo-scenarios.md`: what the dashboard measures now, and a scenario for "what did the loop do today?". Claim only what the lab has shown; say the device telemetry is not there.
+- [x] T048 Finish `changelog/249.added.md` as one readable paragraph.
 - [ ] T049 **Needs the lab**: quickstart item 8 (recapture the Prometheus fixtures for the new views, an archive, a snapshot and its size).
 - [ ] T050 **Needs the lab**: write the live evidence for the counters and the scan steps into the spec's folder, as spec 012's evidence was (#195).
 

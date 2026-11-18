@@ -120,3 +120,5 @@ Projections that select scan records keep selecting `detect_drift` only.
 ## Archive and snapshot
 
 `history.archive` and `--snapshot` export every `MetricsViewName`, the new series and the drift summary. An archive made before this feature answers the new views and the summary as "not in this archive".
+
+A snapshot asks the ten new views for at most 60 points per series, at the smallest step on a fixed ladder that keeps under it (3 h for seven days), and adds "one point every <step> in this snapshot, to keep the file small" to each view's note (PR G, research R8). The six earlier views keep the page's step. An archive is not affected.
