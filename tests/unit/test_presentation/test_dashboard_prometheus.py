@@ -538,6 +538,46 @@ async def test_a_view_answers_with_series_from_the_capture() -> None:
     assert data.note is None
 
 
+# Spec 015's views, captured live on 2026-11-18 (T049): the unit and the series
+# labels each must give, as contracts/metrics-views.md lists them.
+SPEC_015_CAPTURES = [
+    (MetricsViewName.WORKFLOW_MEAN, "range_workflow_mean", "ms", {"workflow_type"}),
+    (MetricsViewName.GNMI_MEAN, "range_gnmi_mean", "ms", {"device", "operation"}),
+    (MetricsViewName.WORKFLOWS_COMPLETED, "range_workflows_completed", "count", {"workflow_type"}),
+    (MetricsViewName.ACTIVITY_TIME, "range_activity_time", "ms", {"activity_type"}),
+    (MetricsViewName.WORKER_SLOTS, "range_worker_slots", "count", {"worker_type"}),
+    (MetricsViewName.SERVER_REQUEST_TIME, "range_server_request_time", "ms", set()),
+    (MetricsViewName.SOURCE_FETCH_TIME, "range_source_fetch_time", "ms", {"source"}),
+    (MetricsViewName.SCAN_RESULTS, "range_scan_results", "count", {"device", "state"}),
+    (MetricsViewName.DRIFT_PATHS, "range_drift_paths", "count", {"device", "kind"}),
+    (MetricsViewName.DEPLOY_OUTCOMES, "range_deploy_outcomes", "count", {"outcome", "reason"}),
+]
+
+
+@pytest.mark.parametrize(("view", "name", "unit", "labels"), SPEC_015_CAPTURES, ids=[c[1] for c in SPEC_015_CAPTURES])
+async def test_each_spec_015_view_reads_its_live_capture(view, name, unit, labels) -> None:
+    data = await source(FakeProm(fixture(name))).query(view, an_hour())
+
+    assert data.view is view
+    assert data.unit == unit
+    assert data.series, f"{name} has no series"
+    assert all(set(s.labels) == labels for s in data.series)
+
+
+async def test_the_live_capture_counts_the_drift_the_lab_was_given() -> None:
+    """T037 gave leaf-01 one undesired interface, then repaired it; T058 left spine-01 missing a path."""
+    paths = await source(FakeProm(fixture("range_drift_paths"))).query(MetricsViewName.DRIFT_PATHS, an_hour())
+    scans = await source(FakeProm(fixture("range_scan_results"))).query(MetricsViewName.SCAN_RESULTS, an_hour())
+    deploys = await source(FakeProm(fixture("range_deploy_outcomes"))).query(MetricsViewName.DEPLOY_OUTCOMES, an_hour())
+
+    assert {(s.labels["device"], s.labels["kind"]) for s in paths.series} == {
+        ("leaf-01", "undesired"),
+        ("spine-01", "missing"),
+    }
+    assert ("leaf-01", "undesired") in {(s.labels["device"], s.labels["state"]) for s in scans.series}
+    assert {(s.labels["outcome"], s.labels["reason"]) for s in deploys.series} == {("succeeded", "none")}
+
+
 async def test_no_data_in_range_is_a_note_not_an_error() -> None:
     prom = FakeProm(fixture("range_absent_metric"))
 

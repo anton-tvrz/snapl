@@ -132,7 +132,7 @@ A slice that changes the contract also regenerates the OpenAPI snapshot and the 
 - [x] T034 [US3] Call the recorders: scan results and paths in `activities/observability.py` after the drift is evaluated, deploy ends in `workflows/deploy_intent.py` through `workflow.metric_meter()` where the workflow records its end.
 - [x] T035 [US3] Tests first, then add the views `scan-results`, `drift-paths` and `deploy-outcomes` to `models.py`, `prometheus.py`, the fixture server, the plain page and `lib/metrics.ts`. Regenerate the OpenAPI snapshot and the types.
 - [x] T036 [US3] Run the look check. Since #290 only The loop's timing is open by default: `full-light.png` shows that group's 5 panels and `firstMetricsChartTop` stays under 2000 px (spec 014 SC-003), and `open-light.png` (every fold open) shows 16 metrics panels with data, What the loop did holding 5. Append to the changelog.
-- [ ] T037 [US3] **Needs the lab**: quickstart items 5 and 6.
+- [x] T037 [US3] **Needs the lab**: quickstart items 5 and 6. *Done 2026-11-18, see `evidence.md`: the labels match the contract; one undesired path on leaf-01 counted `undesired` twice (the operator's scan and `reconcile --drifted`'s own), 4 paths and 1 deploy success.*
 
 **Checkpoint**: SC-003 holds in the label tests.
 
@@ -148,7 +148,7 @@ A slice that changes the contract also regenerates the OpenAPI snapshot and the 
 - [x] T041 [US4] Add the two names to `STEP_BLOCKS` and change `project_steps` in `projections.py`.
 - [x] T042 [US4] FR-019: run the whole existing projection, app, archive and snapshot test suites against the captured trail with the new events added to it, without changing what any test expects. Add that augmented trail as a fixture and one test that compares each existing answer with and without the new events.
 - [x] T043 [US4] Update `components/LoopStrip.test.tsx` and its fixtures for a scan with recorded steps. Run the look check on the `loop` view. Append to the changelog.
-- [ ] T044 [US4] **Needs the lab**: quickstart item 7, with the scan's duration before and after.
+- [x] T044 [US4] **Needs the lab**: quickstart item 7, with the scan's duration before and after. *Done 2026-11-18: a scheduled scan records intent, collect and drift check per device, and the strip shows them; the median scan went from 1.44 s to 1.54 s.*
 
 **Checkpoint**: SC-005 on the fixtures.
 
@@ -162,8 +162,8 @@ A slice that changes the contract also regenerates the OpenAPI snapshot and the 
 - [x] T046 [P] Update `specs/012-measured-metrics/data-model.md` with a pointer to this spec's contract, `dev/adr/0005-dashboard-and-metrics-stack.md` Decision 3 with the new views and counters, and `CLAUDE.md` "Recent Changes".
 - [x] T047 [P] Update `README.md` and `docs/demo-scenarios.md`: what the dashboard measures now, and a scenario for "what did the loop do today?". Claim only what the lab has shown; say the device telemetry is not there.
 - [x] T048 Finish `changelog/249.added.md` as one readable paragraph.
-- [ ] T049 **Needs the lab**: quickstart item 8 (recapture the Prometheus fixtures for the new views, an archive, a snapshot and its size).
-- [ ] T050 **Needs the lab**: write the live evidence for the counters and the scan steps into the spec's folder, as spec 012's evidence was (#195).
+- [x] T049 **Needs the lab**: quickstart item 8 (recapture the Prometheus fixtures for the new views, an archive, a snapshot and its size). *Done 2026-11-18: ten new captures, read by a test; a 4.2 MB archive; a 3.2 MB snapshot, of which spec 015's parts are at most 11% of the data. Both leave out the newest step of metrics (#306).*
+- [x] T050 **Needs the lab**: write the live evidence for the counters and the scan steps into the spec's folder, as spec 012's evidence was (#195). *Done: `evidence.md`.*
 
 ---
 

@@ -18,6 +18,6 @@ node packages/presentation/ui/e2e/look.mjs http://127.0.0.1:18932 /tmp/look
 ## With the lab
 
 5. **The counters.** With the demo up and the worker restarted, run `snapl scan`, then `curl -s localhost:18091/metrics | grep '^snapl_'`. The three new families are present with only the labels in the contract. **Needs the lab.**
-6. **A drift, counted.** Induce one undesired path on leaf-01 and scan. `scan-results` shows leaf-01 as `undesired` once, `drift-paths` shows one `undesired` path. Reconcile, and `deploy-outcomes` shows one success. **Needs the lab.**
+6. **A drift, counted.** Induce one undesired path on leaf-01 and scan. `scan-results` shows leaf-01 as `undesired`, `drift-paths` its `undesired` paths. Reconcile with `snapl reconcile --drifted --yes`, and `deploy-outcomes` shows one success. That reconcile runs its own scan first, so leaf-01 is counted `undesired` twice, and a description set on an unconfigured port gives two paths per scan (`description` and `enabled`). Remove the path by hand afterwards: reconcile doesn't remove undesired config (#65). **Needs the lab.**
 7. **Scan steps.** After a scheduled scan, the loop strip shows Intent, Collector and Observability as done. Compare the scan's duration with the one before this feature. **Needs the lab.**
 8. **Fixtures and files.** Recapture the Prometheus fixtures for the new views (`dev/scripts/capture_prometheus_fixtures.py`), run `invoke history.archive`, open it with `snapl dashboard --archive`, and write a seven-day snapshot and record its size. **Needs the lab.**
