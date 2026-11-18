@@ -34,7 +34,8 @@ export function LoopStrip({ steps }: Props) {
   const isDim = (status: string) => status === "not_reached" || status === "not_recorded";
 
   return (
-    <div className="flex flex-col gap-4">
+    // 8 px between the run's chip and its blocks, which read as one strip (spec 014 SC-003).
+    <div className="flex flex-col gap-2">
       <p
         role="status"
         aria-label="The run shown"
@@ -73,9 +74,12 @@ export function LoopStrip({ steps }: Props) {
                   {glyph(state.status, dim, "h-8 w-8")}
                   <span className="font-semibold">{name}</span>
                 </div>
-                <p>
-                  {encoding.label}
-                  {state.t && <span className="block text-meta text-muted">{utcText(new Date(state.t)).slice(11)}</span>}
+                {/* The time on the status's line, not one of its own: a scan that
+                    records its steps draws these tiles, and a second line
+                    pushed the first metrics chart past 2000 px (spec 014 SC-003). */}
+                <p className="flex flex-wrap items-baseline gap-x-2">
+                  <span>{encoding.label}</span>
+                  {state.t && <span className="text-meta text-muted">{utcText(new Date(state.t)).slice(11)}</span>}
                 </p>
                 {state.reason && <p className="text-meta break-words">{state.reason}</p>}
               </li>
