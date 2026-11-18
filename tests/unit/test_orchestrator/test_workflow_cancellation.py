@@ -8,10 +8,13 @@ behaviour (reason=CANCELLED / WORKFLOW_CANCELLED audit event).
 from __future__ import annotations
 
 import asyncio
+from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 import pydantic_core  # noqa: F401 — pre-import to keep workflow sandbox quiet
 import pytest
+from temporalio import workflow
+from temporalio.api.enums.v1 import EventType, PendingActivityState
 from temporalio.contrib.pydantic import pydantic_data_converter
 from temporalio.testing import WorkflowEnvironment
 from temporalio.worker import Worker
@@ -50,12 +53,12 @@ def teardown_function() -> None:
     a._activities = None
 
 
-def _install_blocking_intent(state, audit, started: asyncio.Event) -> None:
-    """Install activities whose intent fetch blocks until cancelled."""
+def _install_blocking_intent(state, audit, started: asyncio.Event, release: asyncio.Event) -> None:
+    """Install activities whose intent fetch is held until the test releases it."""
 
     async def _get(*, device_id=None, use_case=None):
         started.set()
-        await asyncio.sleep(30)  # released by cancellation / worker shutdown
+        await release.wait()  # set by _start_block_cancel before the worker shuts down
         return [state]
 
     intent_store = MagicMock()
@@ -71,43 +74,97 @@ def _install_blocking_intent(state, audit, started: asyncio.Event) -> None:
     )
 
 
-async def _start_block_cancel(workflow_run, arg, *, workflows, started, task_queue, wf_id, ready=None):
+async def _within(awaitable, seconds: float, what: str):
+    """Await with a deadline; on a miss, fail naming the step instead of hanging (#298)."""
+    try:
+        return await asyncio.wait_for(awaitable, timeout=seconds)
+    except TimeoutError:
+        raise AssertionError(f"{what} did not finish within {seconds:g} s") from None
+
+
+async def _where_it_stopped(handle) -> str:
+    """The run's status, pending activities and last history events, for a failure message."""
+    try:
+        desc = await _within(handle.describe(), 5, "describing the run")
+        history = await _within(handle.fetch_history(), 5, "fetching the run's history")
+    except AssertionError as err:
+        return str(err)
+    pending = [
+        (p.activity_type.name, PendingActivityState.Name(p.state)) for p in desc.raw_description.pending_activities
+    ]
+    last = [EventType.Name(e.event_type).removeprefix("EVENT_TYPE_") for e in history.events[-12:]]
+    return f"status {desc.status.name if desc.status else None}; pending activities {pending}; last events {last}"
+
+
+async def _start_block_cancel(
+    workflow_run,
+    arg,
+    *,
+    workflows,
+    started,
+    release,
+    task_queue,
+    wf_id,
+    ready=None,
+    result_within: float = 20,
+):
     """Start a workflow, wait until its activity has begun, cancel, return the outcome.
 
     ``ready``, when given, is awaited (with a deadline) after the activity has
     begun and before the cancel, for a test that cancels at a later point.
+    The held activity stays in flight while the cancel is handled, then
+    ``release`` lets it return before the worker shuts down, so the shutdown
+    never depends on cancelling it.
+
+    Every wait has a deadline (#298): a run that does not finish after its
+    cancel fails with its status, pending activities and last events, and a
+    stuck worker or test server shutdown fails naming which one.
 
     Returns the workflow result, or the raised exception for workflows that
     audit and re-raise on cancellation (reconcile) — callers can then assert
     the audit trail regardless of how the workflow terminates.
     """
-    async with (
-        await WorkflowEnvironment.start_time_skipping(data_converter=pydantic_data_converter) as env,
-        Worker(
+    env = await WorkflowEnvironment.start_time_skipping(data_converter=pydantic_data_converter)
+    try:
+        worker = Worker(
             env.client,
             task_queue=task_queue,
             workflows=workflows,
             workflow_runner=build_workflow_runner(),
             activities=_DEPLOY_ACTIVITIES,
-        ),
-    ):
-        handle = await env.client.start_workflow(workflow_run, arg, id=wf_id, task_queue=task_queue)
-        await asyncio.wait_for(started.wait(), timeout=10)
-        if ready is not None:
-            await ready()
-        await handle.cancel()
+        )
+        running = asyncio.create_task(worker.run())
         try:
-            return await handle.result()
-        except Exception as exc:
-            return exc
+            handle = await env.client.start_workflow(workflow_run, arg, id=wf_id, task_queue=task_queue)
+            await _within(started.wait(), 10, "the held activity's start")
+            if ready is not None:
+                await ready()
+            await handle.cancel()
+            try:
+                return await asyncio.wait_for(handle.result(), timeout=result_within)
+            except TimeoutError:
+                raise AssertionError(
+                    f"{wf_id} did not finish within {result_within:g} s after its cancel: "
+                    f"{await _where_it_stopped(handle)}"
+                ) from None
+            except Exception as exc:
+                return exc
+        finally:
+            release.set()
+            try:
+                await _within(worker.shutdown(), 15, "the worker's shutdown")
+            finally:
+                running.cancel()
+    finally:
+        await _within(env.shutdown(), 15, "the test server's shutdown")
 
 
 @pytest.mark.asyncio
 async def test_deploy_intent_cancellation_records_cancelled_event(dcfabric_desired_state) -> None:
     device = dcfabric_desired_state.device
     audit = InMemoryAuditLog()
-    started = asyncio.Event()
-    _install_blocking_intent(dcfabric_desired_state, audit, started)
+    started, release = asyncio.Event(), asyncio.Event()
+    _install_blocking_intent(dcfabric_desired_state, audit, started, release)
 
     wf_id = f"deploy-cancel-{device.id}"
     result = await _start_block_cancel(
@@ -115,6 +172,7 @@ async def test_deploy_intent_cancellation_records_cancelled_event(dcfabric_desir
         device.id,
         workflows=[DeployIntentWorkflow],
         started=started,
+        release=release,
         task_queue="test-cancel-deploy",
         wf_id=wf_id,
     )
@@ -127,8 +185,8 @@ async def test_deploy_intent_cancellation_records_cancelled_event(dcfabric_desir
 @pytest.mark.asyncio
 async def test_scan_drift_cancellation_records_cancelled_event(make_desired) -> None:
     audit = InMemoryAuditLog()
-    started = asyncio.Event()
-    _install_blocking_intent(make_desired("spine-01"), audit, started)
+    started, release = asyncio.Event(), asyncio.Event()
+    _install_blocking_intent(make_desired("spine-01"), audit, started, release)
 
     wf_id = "scan-cancel-dcfabric"
     result = await _start_block_cancel(
@@ -136,6 +194,7 @@ async def test_scan_drift_cancellation_records_cancelled_event(make_desired) -> 
         "dcfabric",
         workflows=[ScanDriftWorkflow],
         started=started,
+        release=release,
         task_queue="test-cancel-scan",
         wf_id=wf_id,
     )
@@ -151,8 +210,8 @@ async def test_reconcile_cancellation_propagates_to_children(make_desired) -> No
     state = make_desired("spine-01")
     device_id = state.device.id
     audit = InMemoryAuditLog()
-    started = asyncio.Event()
-    _install_blocking_intent(state, audit, started)
+    started, release = asyncio.Event(), asyncio.Event()
+    _install_blocking_intent(state, audit, started, release)
 
     wf_id = f"reconcile-cancel-{device_id}"
     await _start_block_cancel(
@@ -160,12 +219,54 @@ async def test_reconcile_cancellation_propagates_to_children(make_desired) -> No
         [device_id],
         workflows=[ReconcileDevicesWorkflow, DeployIntentWorkflow],
         started=started,
+        release=release,
         task_queue="test-cancel-reconcile",
         wf_id=wf_id,
     )
 
     types = [e.event_type for e in await audit.query_by_workflow(wf_id)]
     assert AuditEventType.WORKFLOW_CANCELLED in types
+
+
+@workflow.defn(name="IgnoresItsCancel")
+class _IgnoresItsCancel:
+    """Starts the held intent fetch, then never finishes once cancelled."""
+
+    @workflow.run
+    async def run(self, device_id: str) -> None:
+        try:
+            await workflow.execute_activity(
+                fetch_desired_state, device_id, start_to_close_timeout=timedelta(seconds=30)
+            )
+        except BaseException:
+            await workflow.wait_condition(lambda: False)
+
+
+@pytest.mark.asyncio
+async def test_a_workflow_that_never_ends_after_its_cancel_fails_in_seconds(make_desired) -> None:
+    """A run that stalls after the cancel fails with what it was doing, instead of
+    hanging the job until its timeout (#298)."""
+    state = make_desired("spine-01")
+    audit = InMemoryAuditLog()
+    started, release = asyncio.Event(), asyncio.Event()
+    _install_blocking_intent(state, audit, started, release)
+
+    began = asyncio.get_running_loop().time()
+    with pytest.raises(AssertionError, match=r"did not finish within 2 s after its cancel") as failure:
+        await _start_block_cancel(
+            _IgnoresItsCancel.run,
+            str(state.device.id),
+            workflows=[_IgnoresItsCancel],
+            started=started,
+            release=release,
+            task_queue="test-cancel-never-ends",
+            wf_id="cancel-never-ends",
+            result_within=2,
+        )
+
+    assert asyncio.get_running_loop().time() - began < 30
+    assert "RUNNING" in str(failure.value)
+    assert release.is_set()
 
 
 @pytest.mark.asyncio
@@ -180,7 +281,7 @@ async def test_a_cancelled_scan_keeps_the_reports_that_completed(make_desired) -
 
     done, blocked = make_desired("spine-01"), make_desired("spine-02")
     audit = InMemoryAuditLog()
-    started = asyncio.Event()
+    started, release = asyncio.Event(), asyncio.Event()
 
     async def _get(*, device_id=None, use_case=None):
         if use_case is not None:
@@ -188,7 +289,7 @@ async def test_a_cancelled_scan_keeps_the_reports_that_completed(make_desired) -
         if device_id == done.device.id:
             return [done]
         started.set()
-        await asyncio.sleep(30)  # spine-02 is held until the cancel / worker shutdown
+        await release.wait()  # spine-02 is held until the outcome is in
         return [blocked]
 
     async def spine_01_checked() -> None:
@@ -240,6 +341,7 @@ async def test_a_cancelled_scan_keeps_the_reports_that_completed(make_desired) -
         "dcfabric",
         workflows=[ScanDriftWorkflow],
         started=started,
+        release=release,
         task_queue="test-cancel-scan-partial",
         wf_id=wf_id,
         ready=spine_01_checked,
