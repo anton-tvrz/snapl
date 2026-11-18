@@ -214,6 +214,10 @@ markers = [
 addopts = "-v --strict-markers --tb=short"
 asyncio_mode = "auto"
 timeout = 300
+# The thread method dumps every thread, the event loop's included, then ends the
+# run. The signal method skipped that thread, and its error was swallowed inside
+# the loop, so a hung test ran until the job was cancelled (#298).
+timeout_method = "thread"
 
 # =============================================================================
 # Coverage — code coverage reporting
