@@ -91,6 +91,9 @@ exclude = [
     "*.egg-info",
     "dist",
     "build",
+    # The dashboard UI's npm packages ship Python files of their own
+    # (flatted/python). This list replaces ruff's defaults, which skip it.
+    "node_modules",
 ]
 
 [tool.ruff.lint]
@@ -293,5 +296,5 @@ showcontent = true
 # =============================================================================
 
 [tool.bandit]
-exclude_dirs = ["tests", ".venv"]
+exclude_dirs = ["tests", ".venv", "node_modules"]
 skips = ["B101", "B105", "B107", "B701"]
