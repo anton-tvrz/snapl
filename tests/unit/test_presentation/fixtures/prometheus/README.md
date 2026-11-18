@@ -12,6 +12,16 @@ These were captured on 2026-11-09 (task T043) from the real dev stack: **Prometh
 
 The first capture (2026-11-08) was synthetic: a stand-in worker with randomised durations and `get`/`set` operations. Its shapes still hold. The counts the tests assert changed with this capture.
 
+## Spec 015's views (captured 2026-11-18, task T049)
+
+The ten `range_<view>.json` files for spec 015 were captured from the same lab on main 2279d70, an hour after the worker restarted with the new counters (19:29 UTC). That hour held:
+
+- scheduled report-mode scans every 5 minutes, and until 19:41 the integration tests' `query-leaf-01` and `query-spine-01` in intent, scanned as `error` (#307);
+- one undesired interface on leaf-01 (`description` and `enabled`), scanned twice and repaired by an operator's reconcile, so `range_deploy_outcomes.json` holds one series, `succeeded`/`none`;
+- spine-01's ethernet-1/1 disabled for two scans and repaired, so `range_drift_paths.json` holds `leaf-01`/`undesired` and `spine-01`/`missing`.
+
+`test_each_spec_015_view_reads_its_live_capture` checks each file's unit and labels against `contracts/metrics-views.md`. The spec 012 files above were not re-captured: this hour had no gNMI errors, and they hold the paused leaf-04's.
+
 ## Files
 
 | file | request | shows |
@@ -32,7 +42,7 @@ The first capture (2026-11-08) was synthetic: a stand-in worker with randomised 
 
 ## Re-capturing
 
-`dev/scripts/capture_prometheus_fixtures.py` asks a running Prometheus everything above, using the dashboard's own view queries (`render_query`), and rewrites these files. It also asks spec 015's seven views and writes them as `range_<view>.json` (for example `range_workflow_mean.json`); those are not captured yet (spec 015 T049, which needs the lab), so the tests build their answers by hand:
+`dev/scripts/capture_prometheus_fixtures.py` asks a running Prometheus everything above, using the dashboard's own view queries (`render_query`), and rewrites these files. It also asks spec 015's ten views and writes them as `range_<view>.json` (for example `range_workflow_mean.json`). Re-running it rewrites every file, so to refresh one set, restore the others with `git checkout`:
 
 ```bash
 uv run invoke dev.deps                       # Prometheus on 18090; run the worker and snapl dashboard too
