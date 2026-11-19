@@ -7,9 +7,10 @@ fields.
 
 from __future__ import annotations
 
-from datetime import datetime  # noqa: TC003
+from collections.abc import Mapping  # noqa: TC003 — pydantic resolves field types at runtime
+from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Self
 from uuid import UUID  # noqa: TC003
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -175,3 +176,113 @@ class AuditEntry(BaseModel):
     outcome: AuditOutcome
     detail: dict[str, Any] = Field(default_factory=dict)
     timestamp: datetime
+
+
+# ---------------------------------------------------------------------------
+# Device health (spec 016)
+# ---------------------------------------------------------------------------
+
+
+class DeviceHealthState(StrEnum):
+    HEALTHY = "healthy"
+    UNHEALTHY = "unhealthy"
+    UNKNOWN = "unknown"
+
+
+class HealthReasonKind(StrEnum):
+    INTERFACE = "interface"
+    BGP_SESSION = "bgp_session"
+    NO_TELEMETRY = "no_telemetry"
+
+
+class HealthReason(BaseModel):
+    """Why a device is not healthy. Built by the constructors, which render the fixed texts.
+
+    The dashboard, the CLI and the audit trail all show ``text``, so they say the same thing.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: HealthReasonKind
+    item: str | None = None
+    expected: str | None = None
+    actual: str | None = None
+    text: str
+
+    @classmethod
+    def interface(cls, name: str, *, actual: str, expected: str) -> Self:
+        """``<name> <actual> (expected <expected>)``; ``actual`` is ``up``, ``down`` or ``absent``."""
+        return cls(
+            kind=HealthReasonKind.INTERFACE,
+            item=name,
+            expected=expected,
+            actual=actual,
+            text=f"{name} {actual} (expected {expected})",
+        )
+
+    @classmethod
+    def bgp_session(cls, peer: str, *, actual: str) -> Self:
+        """``BGP <peer> <actual> (expected established)``."""
+        return cls(
+            kind=HealthReasonKind.BGP_SESSION,
+            item=peer,
+            expected="established",
+            actual=actual,
+            text=f"BGP {peer} {actual} (expected established)",
+        )
+
+    @classmethod
+    def no_telemetry(cls, since: datetime | None) -> Self:
+        """``no telemetry since <ISO time>``, or ``no telemetry yet``."""
+        if since is None:
+            return cls(kind=HealthReasonKind.NO_TELEMETRY, text="no telemetry yet")
+        when = since.astimezone(UTC).isoformat(timespec="seconds")
+        return cls(kind=HealthReasonKind.NO_TELEMETRY, text=f"no telemetry since {when}")
+
+
+class HealthExpectation(BaseModel):
+    """What intent expects of one device's interfaces and BGP sessions."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    device_name: str
+    interfaces_up: frozenset[str]
+    interfaces_down: frozenset[str]
+    sessions_established: frozenset[str]
+
+    @model_validator(mode="after")
+    def _up_and_down_are_apart(self) -> HealthExpectation:
+        both = self.interfaces_up & self.interfaces_down
+        if both:
+            raise ValueError(f"interfaces expected both up and down: {sorted(both)}")
+        return self
+
+
+class ObservedItem(BaseModel):
+    """An item's latest state, and when it was first read in that state."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    state: str
+    since: datetime
+
+
+class HealthObservation(BaseModel):
+    """What the device's telemetry has shown. ``last_sample_at`` is ``None`` until a sample arrives."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    last_sample_at: datetime | None
+    interfaces: Mapping[str, ObservedItem] = Field(default_factory=dict)
+    sessions: Mapping[str, ObservedItem] = Field(default_factory=dict)
+
+
+class DeviceHealth(BaseModel):
+    """One device's health at ``evaluated_at``. ``reasons`` is empty when healthy."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    device_name: str
+    state: DeviceHealthState
+    reasons: tuple[HealthReason, ...] = ()
+    evaluated_at: datetime

@@ -349,3 +349,145 @@ class TestAuditEntry:
             timestamp=_NOW,
         )
         assert e.device_id is None
+
+
+# ---------------------------------------------------------------------------
+# Spec 016 T010 — health models
+# ---------------------------------------------------------------------------
+
+
+class TestHealthEnums:
+    def test_device_health_states(self):
+        from snapl_observability.models import DeviceHealthState
+
+        assert [s.value for s in DeviceHealthState] == ["healthy", "unhealthy", "unknown"]
+
+    def test_health_reason_kinds(self):
+        from snapl_observability.models import HealthReasonKind
+
+        assert [k.value for k in HealthReasonKind] == ["interface", "bgp_session", "no_telemetry"]
+
+
+class TestHealthReason:
+    def test_interface_text(self):
+        from snapl_observability.models import HealthReason, HealthReasonKind
+
+        reason = HealthReason.interface("ethernet-1/49", actual="down", expected="up")
+        assert reason.kind is HealthReasonKind.INTERFACE
+        assert (reason.item, reason.expected, reason.actual) == ("ethernet-1/49", "up", "down")
+        assert reason.text == "ethernet-1/49 down (expected up)"
+
+    def test_absent_interface_text(self):
+        from snapl_observability.models import HealthReason
+
+        assert HealthReason.interface("ethernet-1/9", actual="absent", expected="up").text == (
+            "ethernet-1/9 absent (expected up)"
+        )
+
+    def test_bgp_session_text(self):
+        from snapl_observability.models import HealthReason, HealthReasonKind
+
+        reason = HealthReason.bgp_session("10.10.1.1", actual="active")
+        assert reason.kind is HealthReasonKind.BGP_SESSION
+        assert (reason.item, reason.expected, reason.actual) == ("10.10.1.1", "established", "active")
+        assert reason.text == "BGP 10.10.1.1 active (expected established)"
+
+    def test_no_telemetry_since_text(self):
+        from snapl_observability.models import HealthReason, HealthReasonKind
+
+        reason = HealthReason.no_telemetry(datetime(2026, 11, 19, 21, 0, 5, 123456, tzinfo=UTC))
+        assert reason.kind is HealthReasonKind.NO_TELEMETRY
+        assert (reason.item, reason.expected, reason.actual) == (None, None, None)
+        assert reason.text == "no telemetry since 2026-11-19T21:00:05+00:00"
+
+    def test_no_telemetry_yet_text(self):
+        from snapl_observability.models import HealthReason
+
+        assert HealthReason.no_telemetry(None).text == "no telemetry yet"
+
+    def test_is_frozen(self):
+        from snapl_observability.models import HealthReason
+
+        reason = HealthReason.no_telemetry(None)
+        with pytest.raises(ValidationError):
+            reason.text = "x"  # type: ignore[misc]
+
+
+class TestHealthExpectation:
+    def test_holds_the_sets(self):
+        from snapl_observability.models import HealthExpectation
+
+        e = HealthExpectation(
+            device_name="leaf-01",
+            interfaces_up=frozenset({"ethernet-1/49"}),
+            interfaces_down=frozenset({"ethernet-1/50"}),
+            sessions_established=frozenset({"10.10.1.0"}),
+        )
+        assert e.interfaces_up == frozenset({"ethernet-1/49"})
+
+    def test_an_interface_cannot_be_expected_up_and_down(self):
+        from snapl_observability.models import HealthExpectation
+
+        with pytest.raises(ValidationError, match="both up and down"):
+            HealthExpectation(
+                device_name="leaf-01",
+                interfaces_up=frozenset({"ethernet-1/49"}),
+                interfaces_down=frozenset({"ethernet-1/49"}),
+                sessions_established=frozenset(),
+            )
+
+    def test_rejects_extra_fields(self):
+        from snapl_observability.models import HealthExpectation
+
+        with pytest.raises(ValidationError):
+            HealthExpectation(
+                device_name="leaf-01",
+                interfaces_up=frozenset(),
+                interfaces_down=frozenset(),
+                sessions_established=frozenset(),
+                cpu_max=90,
+            )
+
+
+class TestHealthObservation:
+    def test_never_sampled(self):
+        from snapl_observability.models import HealthObservation
+
+        o = HealthObservation(last_sample_at=None)
+        assert o.interfaces == {}
+        assert o.sessions == {}
+
+    def test_holds_observed_items(self):
+        from snapl_observability.models import HealthObservation, ObservedItem
+
+        item = ObservedItem(state="up", since=_NOW)
+        o = HealthObservation(last_sample_at=_NOW, interfaces={"lo0": item}, sessions={})
+        assert o.interfaces["lo0"] == item
+
+
+class TestDeviceHealth:
+    def test_holds_state_and_reasons(self):
+        from snapl_observability.models import DeviceHealth, DeviceHealthState, HealthReason
+
+        h = DeviceHealth(
+            device_name="spine-01",
+            state=DeviceHealthState.UNHEALTHY,
+            reasons=(HealthReason.bgp_session("10.10.1.1", actual="active"),),
+            evaluated_at=_NOW,
+        )
+        assert h.state == "unhealthy"
+        assert h.reasons[0].text == "BGP 10.10.1.1 active (expected established)"
+
+    def test_models_are_exported(self):
+        import snapl_observability
+
+        for name in (
+            "DeviceHealthState",
+            "HealthReasonKind",
+            "HealthReason",
+            "HealthExpectation",
+            "ObservedItem",
+            "HealthObservation",
+            "DeviceHealth",
+        ):
+            assert hasattr(snapl_observability, name), name

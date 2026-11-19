@@ -550,3 +550,52 @@ class TestPerformance:
         assert batch.errored == 2
         for desired, _ in pairs:
             assert desired.device.id in batch.reports
+
+
+# ---------------------------------------------------------------------------
+# Spec 016 T013 — StructuralObserver.evaluate_health applies the rule
+# ---------------------------------------------------------------------------
+
+
+class TestEvaluateHealth:
+    def test_applies_the_health_rule(self):
+        from datetime import UTC, datetime, timedelta
+
+        from snapl_observability import StructuralObserver
+        from snapl_observability.health import evaluate_health
+        from snapl_observability.models import HealthExpectation, HealthObservation, ObservedItem
+
+        now = datetime(2026, 11, 19, 22, 0, tzinfo=UTC)
+        expectation = HealthExpectation(
+            device_name="spine-01",
+            interfaces_up=frozenset({"ethernet-1/1"}),
+            interfaces_down=frozenset(),
+            sessions_established=frozenset({"10.10.1.1"}),
+        )
+        observation = HealthObservation(
+            last_sample_at=now - timedelta(seconds=5),
+            interfaces={"ethernet-1/1": ObservedItem(state="up", since=now - timedelta(hours=1))},
+            sessions={"10.10.1.1": ObservedItem(state="active", since=now - timedelta(hours=1))},
+        )
+        health = StructuralObserver().evaluate_health(expectation, observation, now=now, interval_s=10)
+        assert health == evaluate_health(expectation, observation, now=now, interval_s=10)
+        assert [r.text for r in health.reasons] == ["BGP 10.10.1.1 active (expected established)"]
+
+    def test_writes_no_audit_entry(self):
+        """Pure: recording a change is the runner's job (research R7)."""
+        from datetime import UTC, datetime
+
+        from snapl_observability import StructuralObserver
+        from snapl_observability.models import HealthExpectation, HealthObservation
+
+        observer = StructuralObserver()
+        expectation = HealthExpectation(
+            device_name="leaf-01",
+            interfaces_up=frozenset(),
+            interfaces_down=frozenset(),
+            sessions_established=frozenset(),
+        )
+        observer.evaluate_health(
+            expectation, HealthObservation(last_sample_at=None), now=datetime(2026, 11, 19, tzinfo=UTC), interval_s=10
+        )
+        assert observer.audit_log.all() == []

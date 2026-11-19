@@ -79,11 +79,11 @@ A slice that changes the contract also regenerates the OpenAPI snapshot and the 
 
 **Goal**: `Observer.evaluate_health` says healthy, unhealthy or unknown, with reasons, from intent's expectations and what was observed.
 
-- [ ] T010 [P] [US2] Tests first in `tests/unit/test_observability/test_models.py`: `DeviceHealthState`, `HealthReasonKind`, `HealthReason`, `HealthExpectation`, `ObservedItem`, `HealthObservation`, `DeviceHealth` (data-model.md); reasons render the fixed texts.
-- [ ] T011 [US2] Add them to `packages/observability/snapl_observability/models.py`.
-- [ ] T012 [US2] Table tests first in a new `tests/unit/test_observability/test_health.py`, one row per rule in research R6: never sampled → `unknown` "no telemetry yet"; last sample 31 s ago at 10 s → `unknown` with its time; 29 s ago → judged; an interface expected up and down for 5 s → healthy (debounce); for 11 s → unhealthy with `ethernet-1/49 down (expected up)`; an interface intended down and up → healthy; intended down and down → healthy; an expected item never reported → `absent`; a session `active` for 11 s → `BGP 10.10.1.1 active (expected established)`; a link down and its session down → both reasons, interfaces first; CPU and memory are not inputs at all (FR-008); reasons are ordered.
-- [ ] T013 [US2] Implement `packages/observability/snapl_observability/health.py` (pure, no clock) and add `evaluate_health(expectation, observation, *, now, interval_s)` to the `Observer` ABC in `abc.py`, implemented by `StructuralObserver` by calling it. Tests first in `test_abc.py` and `test_observer.py`.
-- [ ] T014 Append to the changelog.
+- [x] T010 [P] [US2] Tests first in `tests/unit/test_observability/test_models.py`: `DeviceHealthState`, `HealthReasonKind`, `HealthReason`, `HealthExpectation`, `ObservedItem`, `HealthObservation`, `DeviceHealth` (data-model.md); reasons render the fixed texts.
+- [x] T011 [US2] Add them to `packages/observability/snapl_observability/models.py`.
+- [x] T012 [US2] Table tests first in a new `tests/unit/test_observability/test_health.py`, one row per rule in research R6: never sampled → `unknown` "no telemetry yet"; last sample 31 s ago at 10 s → `unknown` with its time; 29 s ago → judged; an interface expected up and down for 5 s → healthy (debounce); for 11 s → unhealthy with `ethernet-1/49 down (expected up)`; an interface intended down and up → healthy; intended down and down → healthy; an expected item never reported → `absent`; a session `active` for 11 s → `BGP 10.10.1.1 active (expected established)`; a link down and its session down → both reasons, interfaces first; CPU and memory are not inputs at all (FR-008); reasons are ordered.
+- [x] T013 [US2] Implement `packages/observability/snapl_observability/health.py` (pure, no clock) and add `evaluate_health(expectation, observation, *, now, interval_s)` to the `Observer` ABC in `abc.py`, implemented by `StructuralObserver` by calling it. Tests first in `test_abc.py` and `test_observer.py`.
+- [x] T014 Append to the changelog.
 
 **Checkpoint**: the table covers every row of research R6.
 
