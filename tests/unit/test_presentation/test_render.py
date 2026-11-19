@@ -373,3 +373,56 @@ def test_a_cancelled_scan_exits_as_an_error_even_when_what_it_finished_was_clean
     cancelled = scan_result().model_copy(update={"cancelled": True})
 
     assert build_renderer(as_json=as_json).scan_code(cancelled) == ExitCode.ERROR
+
+
+class TestHealthRendering:
+    """Spec 016 (contracts/telemetry.md)."""
+
+    def _event(self, reasons: list[dict], before: str = "healthy", after: str = "unhealthy"):
+        from snapl_orchestrator.models import AuditEvent, AuditEventType
+
+        return AuditEvent(
+            event_id=uuid4(),
+            workflow_id="telemetry:leaf-01",
+            workflow_type="DeviceTelemetry",
+            target_id=uuid4(),
+            event_type=AuditEventType.HEALTH_CHANGED,
+            payload={"before": before, "after": after, "reasons": reasons, "last_sample_at": None},
+            timestamp=datetime(2026, 11, 19, 22, 0, tzinfo=UTC),
+            actor="worker",
+        )
+
+    def test_a_health_change_shows_the_change_and_each_reason_on_its_own_line(self) -> None:
+        console, _ = _capture()
+        reasons = [{"kind": "interface", "text": "ethernet-1/49 down (expected up)"}, {"kind": "x", "text": "second"}]
+        HumanRenderer(console).audit([self._event(reasons)])
+        lines = _text(console).splitlines()
+        assert any("healthy→unhealthy" in line and "worker" in line for line in lines)
+        assert [line.strip() for line in lines if line.strip() in {"ethernet-1/49 down (expected up)", "second"}] == [
+            "ethernet-1/49 down (expected up)",
+            "second",
+        ]
+
+    def test_a_recovery_has_no_reason_lines(self) -> None:
+        console, _ = _capture()
+        HumanRenderer(console).audit([self._event([], before="unhealthy", after="healthy")])
+        assert "unhealthy→healthy" in _text(console)
+
+    def test_the_status_health_line_names_the_unhealthy(self) -> None:
+        from snapl_presentation.render import FabricHealthSummary
+
+        console, _ = _capture()
+        summary = FabricHealthSummary(healthy=["a", "b"], unhealthy=["spine-01"], unknown=["c"])
+        HumanRenderer(console).status([("temporal", True, "x")], [], health=summary)
+        text = _text(console)
+        assert "fabric health   2 healthy, 1 unhealthy (spine-01), 1 unknown" in text
+        assert text.index("temporal") < text.index("fabric health")
+
+    def test_json_status_health_is_null_when_nothing_was_recorded(self) -> None:
+        from snapl_presentation.render import FabricHealthSummary
+
+        console = Console(record=True, width=200, force_terminal=False, no_color=True)
+        JsonRenderer(console).status(
+            [], [], health=FabricHealthSummary(healthy=[], unhealthy=[], unknown=["a"], recorded=False)
+        )
+        assert json.loads(console.export_text())["health"] is None

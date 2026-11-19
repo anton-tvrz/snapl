@@ -58,6 +58,8 @@ REQUESTS = {
     "history.json": "/api/v1/history",
     # Spec 015: drift by device over the server's default range.
     "drift-summary.json": "/api/v1/drift-summary",
+    # Spec 016: each device's health and its unhealthy episodes over the default range.
+    "health.json": "/api/v1/health",
     # Spec 015: the fabric history's four series, named.
     "fabric-history.json": (
         "/api/v1/history?series=in_sync_devices&series=open_drifts&series=runs&series=repair_duration"
@@ -224,3 +226,50 @@ def test_there_is_no_fixture_file_without_a_request():
     assert found == (
         set(REQUESTS) | set(UP_REQUESTS) | set(ARCHIVE_REQUESTS) | set(SCAN_STEPS_REQUESTS) | {"snapshot/bundle.json"}
     )
+
+
+# --- Health (spec 016 T033) ---------------------------------------------------------
+
+
+def test_the_fixture_server_shows_todays_lab_health(client: TestClient):
+    """spine-01 and spine-02 unhealthy for their sessions, leaf-01 unhealthy for an
+    hour then healthy, leaf-03 unknown for two minutes, the rest healthy."""
+    health = client.get("/api/v1/health").json()["health"]["data"]
+    by_name = {device["name"]: device for device in health["devices"]}
+
+    assert list(by_name) == ["leaf-01", "leaf-02", "leaf-03", "leaf-04", "spine-01", "spine-02"]
+    for spine, subnet in (("spine-01", "10.10.1"), ("spine-02", "10.10.2")):
+        current = by_name[spine]["current"]
+        assert current["state"] == "unhealthy"
+        assert [r["text"] for r in current["reasons"]] == [
+            f"BGP {subnet}.{n} active (expected established)" for n in (1, 3, 5, 7)
+        ]
+        [episode] = by_name[spine]["episodes"]
+        assert episode["closed_at"] is None
+    [episode] = by_name["leaf-01"]["episodes"]
+    assert episode["duration_s"] == 3600
+    assert [r["text"] for r in episode["reasons"]] == ["ethernet-1/49 down (expected up)"]
+    for name in ("leaf-01", "leaf-02", "leaf-03", "leaf-04"):
+        assert by_name[name]["current"]["state"] == "healthy", name
+    assert by_name["leaf-03"]["episodes"] == []  # unknown opens no episode
+
+
+def test_the_fixture_health_has_leaf_03_unknown_for_two_minutes():
+    from tests.unit.test_presentation.dashboard_fakes import ARC, health_events
+
+    leaf_03 = [e for e in health_events() if e.target_id == ARC["leaf-03"][1]]
+
+    assert [e.payload["after"] for e in leaf_03] == ["healthy", "unknown", "healthy"]
+    assert (leaf_03[2].timestamp - leaf_03[1].timestamp).total_seconds() == 120
+    assert [r["kind"] for r in leaf_03[1].payload["reasons"]] == ["no_telemetry"]
+
+
+def test_the_fixture_health_is_shaped_like_the_runners():
+    """Each event is what TelemetryRunner records: its workflow, actor and payload keys."""
+    from tests.unit.test_presentation.dashboard_fakes import health_events
+
+    for event in health_events():
+        assert event.workflow_type == "DeviceTelemetry"
+        assert event.workflow_id.startswith("telemetry:")
+        assert event.actor == "worker"
+        assert set(event.payload) == {"before", "after", "reasons", "last_sample_at"}

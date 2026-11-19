@@ -31,7 +31,7 @@ from snapl_presentation.exceptions import CliError, ConnectionCliError, first_li
 from snapl_presentation.exit_codes import ExitCode
 from snapl_presentation.probes import connect as _connect
 from snapl_presentation.probes import count_pollers, identify_sot
-from snapl_presentation.render import build_renderer
+from snapl_presentation.render import FabricHealthSummary, build_renderer
 from snapl_presentation.resolve import build_store, load_states, resolve_device, resolve_devices
 from snapl_presentation.settings import CliSettings
 
@@ -329,6 +329,7 @@ async def status(use_case: UseCaseOpt = DEFAULT_USE_CASE, as_json: JsonOpt = Fal
         else:
             checks.append(_schedule_status_row(view, use_case))
 
+    states: list[Any] | None = None
     try:
         states = await load_states(build_store(settings), settings, use_case=use_case)
     except CliError as exc:
@@ -340,8 +341,37 @@ async def status(use_case: UseCaseOpt = DEFAULT_USE_CASE, as_json: JsonOpt = Fal
         checks.append(("source of truth is snapl's", not identity.is_foreign, identity.detail))
         checks.append((f"'{use_case}' seeded", bool(states), f"{len(states)} devices"))
 
-    build_renderer(as_json=as_json).status(checks, running)
+    health = await _fabric_health(settings, states) if states is not None else None
+    build_renderer(as_json=as_json).status(checks, running, health)
     return ExitCode.OK if all(ok for _, ok, _ in checks) else ExitCode.ERROR
+
+
+async def _fabric_health(settings: CliSettings, states: list[Any]) -> FabricHealthSummary:
+    """Each intent device's latest recorded health (spec 016, contracts/telemetry.md).
+
+    It reports the network, not snapl: an unreadable trail is said on the line
+    and never fails a check.
+    """
+    from snapl_presentation.dashboard.projections import latest_health  # noqa: PLC0415
+
+    try:
+        log = await _open_audit_log(settings)
+    except CliError as exc:
+        return FabricHealthSummary(healthy=[], unhealthy=[], unknown=[], error=exc.message)
+    try:
+        events = [event for state in states for event in await log.query_by_device(state.device.id)]
+    except Exception as exc:
+        return FabricHealthSummary(healthy=[], unhealthy=[], unknown=[], error=first_line(str(exc)))
+    finally:
+        await log.close()
+    latest = latest_health(events)
+    by_state: dict[str, list[str]] = {"healthy": [], "unhealthy": [], "unknown": []}
+    for name, device_id in sorted((state.device.name, state.device.id) for state in states):
+        health = latest.get(device_id)
+        by_state[health.state.value if health is not None else "unknown"].append(name)
+    return FabricHealthSummary(
+        healthy=by_state["healthy"], unhealthy=by_state["unhealthy"], unknown=by_state["unknown"], recorded=bool(latest)
+    )
 
 
 # ---------------------------------------------------------------------------

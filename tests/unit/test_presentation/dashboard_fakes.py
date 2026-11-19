@@ -4,6 +4,8 @@
   topology tests run against the interfaces and peers snapl actually seeds.
 - ``arc_events`` reads the audit trail captured from a live demo arc
   (fixtures/README.md), and ``ARC`` names its devices.
+- ``health_events`` are the health changes the fixture server adds to the arc
+  (spec 016 T033): today's lab, as TelemetryRunner would record it.
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ from uuid import NAMESPACE_DNS, UUID, uuid4, uuid5
 import yaml
 
 from snapl_intent.models import DesiredState, Device, Interface
+from snapl_observability.models import DeviceHealthState, HealthReason
 from snapl_orchestrator.audit.sqlite import SqliteAuditLog
 from snapl_orchestrator.models import AuditEvent, AuditEventType
 
@@ -150,6 +153,72 @@ async def write_arc_with_scan_steps(path: Path) -> Path:
     await log.initialize()
     try:
         for event in with_scan_steps(await arc_events()):
+            await log.append(event)
+    finally:
+        await log.close()
+    return path
+
+
+# The fixture server's clock (dev/scripts/serve_dashboard_fixtures.py).
+FIXTURE_NOW = SCAN_3_END + timedelta(seconds=30)
+
+
+def _health_change(
+    name: str,
+    at: timedelta,
+    before: DeviceHealthState,
+    after: DeviceHealthState,
+    reasons: tuple[HealthReason, ...] = (),
+) -> AuditEvent:
+    """One health change ``at`` before the fixture server's clock, as TelemetryRunner records it."""
+    t = FIXTURE_NOW - at
+    # The rule judged a sample read this tick; an unknown device's last sample is older.
+    last = t - timedelta(seconds=40) if after is DeviceHealthState.UNKNOWN else t
+    return AuditEvent(
+        event_id=uuid5(NAMESPACE_DNS, f"health.{name}.{t.isoformat()}"),
+        workflow_id=f"telemetry:{name}",
+        workflow_type="DeviceTelemetry",
+        target_id=ARC[name][1],
+        event_type=AuditEventType.HEALTH_CHANGED,
+        payload={
+            "before": before.value,
+            "after": after.value,
+            "reasons": [reason.model_dump(mode="json") for reason in reasons],
+            "last_sample_at": last.isoformat(),
+        },
+        timestamp=t,
+        actor="worker",
+    )
+
+
+def health_events() -> list[AuditEvent]:
+    """Today's lab: both spines unhealthy for their sessions, leaf-01 unhealthy for
+    an hour with its uplink down, leaf-03 unknown for two minutes, the rest healthy."""
+    healthy, unhealthy, unknown = DeviceHealthState.HEALTHY, DeviceHealthState.UNHEALTHY, DeviceHealthState.UNKNOWN
+    hours, minutes = (lambda n: timedelta(hours=n)), (lambda n: timedelta(minutes=n))
+    events = [_health_change(name, hours(3), unknown, healthy) for name in ARC]
+    uplink = HealthReason.interface("ethernet-1/49", actual="down", expected="up")
+    events += [
+        _health_change("leaf-01", hours(2.5), healthy, unhealthy, (uplink,)),
+        _health_change("leaf-01", hours(1.5), unhealthy, healthy),
+    ]
+    for spine, subnet in (("spine-01", "10.10.1"), ("spine-02", "10.10.2")):
+        sessions = tuple(HealthReason.bgp_session(f"{subnet}.{n}", actual="active") for n in (1, 3, 5, 7))
+        events.append(_health_change(spine, hours(1), healthy, unhealthy, sessions))
+    silent = HealthReason.no_telemetry(FIXTURE_NOW - minutes(10) - timedelta(seconds=40))
+    events += [
+        _health_change("leaf-03", minutes(10), healthy, unknown, (silent,)),
+        _health_change("leaf-03", minutes(8), unknown, healthy),
+    ]
+    return sorted(events, key=lambda e: e.timestamp)
+
+
+async def write_arc_with_health(path: Path) -> Path:
+    """Write the arc with ``health_events`` added to a new SQLite trail."""
+    log = SqliteAuditLog(database_url=str(path))
+    await log.initialize()
+    try:
+        for event in sorted([*await arc_events(), *health_events()], key=lambda e: e.timestamp):
             await log.append(event)
     finally:
         await log.close()

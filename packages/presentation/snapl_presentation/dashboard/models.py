@@ -16,6 +16,8 @@ from uuid import UUID  # noqa: TC003 — pydantic resolves field types at runtim
 
 from pydantic import AfterValidator, AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
+# The health contract's enum is the observability block's, re-exported (spec 016).
+from snapl_observability.models import DeviceHealthState  # noqa: TC001 — runtime field type
 from snapl_orchestrator.models import DriftScheduleView, WorkflowReason  # noqa: TC001 — runtime field types
 
 
@@ -104,6 +106,68 @@ class DeployOutcome(_Model):
     ended_at: UtcDatetime
 
 
+# --- Device health (spec 016, contracts/telemetry.md) ----------------------------
+
+
+class HealthReasonView(_Model):
+    """Why a device is not healthy, as the worker recorded it."""
+
+    # "interface", "bgp_session" or "no_telemetry"; a newer kind is passed through.
+    kind: str
+    item: str | None = None
+    expected: str | None = None
+    actual: str | None = None
+    text: str
+
+
+class DeviceHealthView(_Model):
+    state: DeviceHealthState
+    # Empty when healthy.
+    reasons: list[HealthReasonView] = Field(default_factory=list)
+    # When this state was recorded.
+    since: UtcDatetime
+    last_sample_at: UtcDatetime | None = None
+
+
+class HealthEpisode(_Model):
+    """One device unhealthy: from the change to unhealthy to the change away from it."""
+
+    opened_at: UtcDatetime
+    # None while the episode is open.
+    closed_at: UtcDatetime | None = None
+    duration_s: int | None = None
+    # The reasons recorded when it opened; later changes are in the audit trail.
+    reasons: list[HealthReasonView]
+
+    @model_validator(mode="after")
+    def _check(self) -> HealthEpisode:
+        if (self.closed_at is None) != (self.duration_s is None):
+            raise ValueError("duration_s must be set exactly when the episode is closed")
+        return self
+
+
+class DeviceHealthEntry(_Model):
+    device_id: UUID
+    name: str
+    # At the range's end. None when nothing was recorded for the device by then.
+    current: DeviceHealthView | None = None
+    # Unhealthy spans overlapping the range, oldest first.
+    episodes: list[HealthEpisode] = Field(default_factory=list)
+
+
+class FabricHealth(_Model):
+    start: UtcDatetime
+    end: UtcDatetime
+    # Devices in intent, by name.
+    devices: list[DeviceHealthEntry]
+    # The first health event in the trail.
+    first_event_at: UtcDatetime | None = None
+
+
+class HealthResponse(Envelope):
+    health: View[FabricHealth]
+
+
 class DeviceView(_Model):
     device_id: UUID
     name: str
@@ -123,6 +187,8 @@ class DeviceView(_Model):
     # whose removal is not automatic (#65); `note` says so.
     suggested_command: str | None = None
     note: str | None = None
+    # Spec 016: from the device's latest health_changed event; None when there is none.
+    health: DeviceHealthView | None = None
 
     @model_validator(mode="after")
     def _check(self) -> DeviceView:
@@ -259,7 +325,8 @@ class Series(_Model):
     bucket: Bucket | None
     points: list[Point]
     markers: list[Marker]
-    # The oldest audit event, so a UI can say "history starts here".
+    # The oldest audit event, so a UI can say "history starts here". Health
+    # changes (spec 016) are left out: they are not the loop's history.
     first_event_at: UtcDatetime | None = None
 
     @model_validator(mode="after")

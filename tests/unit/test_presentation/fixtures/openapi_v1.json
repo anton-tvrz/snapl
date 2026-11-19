@@ -427,6 +427,90 @@
         "title": "DeviceDriftSummary",
         "type": "object"
       },
+      "DeviceHealthEntry": {
+        "additionalProperties": false,
+        "properties": {
+          "current": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DeviceHealthView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "device_id": {
+            "format": "uuid",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "episodes": {
+            "items": {
+              "$ref": "#/components/schemas/HealthEpisode"
+            },
+            "title": "Episodes",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_id",
+          "name"
+        ],
+        "title": "DeviceHealthEntry",
+        "type": "object"
+      },
+      "DeviceHealthState": {
+        "enum": [
+          "healthy",
+          "unhealthy",
+          "unknown"
+        ],
+        "title": "DeviceHealthState",
+        "type": "string"
+      },
+      "DeviceHealthView": {
+        "additionalProperties": false,
+        "properties": {
+          "last_sample_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Sample At"
+          },
+          "reasons": {
+            "items": {
+              "$ref": "#/components/schemas/HealthReasonView"
+            },
+            "title": "Reasons",
+            "type": "array"
+          },
+          "since": {
+            "format": "date-time",
+            "title": "Since",
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/DeviceHealthState"
+          }
+        },
+        "required": [
+          "state",
+          "since"
+        ],
+        "title": "DeviceHealthView",
+        "type": "object"
+      },
       "DeviceLane": {
         "additionalProperties": false,
         "properties": {
@@ -481,6 +565,16 @@
               }
             ],
             "title": "Error"
+          },
+          "health": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DeviceHealthView"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "in_intent": {
             "title": "In Intent",
@@ -983,6 +1077,47 @@
         "title": "EpisodeClose",
         "type": "object"
       },
+      "FabricHealth": {
+        "additionalProperties": false,
+        "properties": {
+          "devices": {
+            "items": {
+              "$ref": "#/components/schemas/DeviceHealthEntry"
+            },
+            "title": "Devices",
+            "type": "array"
+          },
+          "end": {
+            "format": "date-time",
+            "title": "End",
+            "type": "string"
+          },
+          "first_event_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Event At"
+          },
+          "start": {
+            "format": "date-time",
+            "title": "Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start",
+          "end",
+          "devices"
+        ],
+        "title": "FabricHealth",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -994,6 +1129,136 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HealthEpisode": {
+        "additionalProperties": false,
+        "description": "One device unhealthy: from the change to unhealthy to the change away from it.",
+        "properties": {
+          "closed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closed At"
+          },
+          "duration_s": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration S"
+          },
+          "opened_at": {
+            "format": "date-time",
+            "title": "Opened At",
+            "type": "string"
+          },
+          "reasons": {
+            "items": {
+              "$ref": "#/components/schemas/HealthReasonView"
+            },
+            "title": "Reasons",
+            "type": "array"
+          }
+        },
+        "required": [
+          "opened_at",
+          "reasons"
+        ],
+        "title": "HealthEpisode",
+        "type": "object"
+      },
+      "HealthReasonView": {
+        "additionalProperties": false,
+        "description": "Why a device is not healthy, as the worker recorded it.",
+        "properties": {
+          "actual": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual"
+          },
+          "expected": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected"
+          },
+          "item": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Item"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "text"
+        ],
+        "title": "HealthReasonView",
+        "type": "object"
+      },
+      "HealthResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "contract_version": {
+            "const": "1",
+            "default": "1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "health": {
+            "$ref": "#/components/schemas/View_FabricHealth_"
+          },
+          "use_case": {
+            "title": "Use Case",
+            "type": "string"
+          }
+        },
+        "required": [
+          "use_case",
+          "generated_at",
+          "health"
+        ],
+        "title": "HealthResponse",
         "type": "object"
       },
       "HistoryResponse": {
@@ -2872,6 +3137,73 @@
         "title": "View[DriftTimeline]",
         "type": "object"
       },
+      "View_FabricHealth_": {
+        "additionalProperties": false,
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FabricHealth"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fetched_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fetched At"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "remedy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remedy"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SourceName"
+          },
+          "stale": {
+            "default": false,
+            "title": "Stale",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "source",
+          "available"
+        ],
+        "title": "View[FabricHealth]",
+        "type": "object"
+      },
       "View_LabEvidence_": {
         "additionalProperties": false,
         "properties": {
@@ -3808,6 +4140,93 @@
           }
         },
         "summary": "Drift Timeline"
+      }
+    },
+    "/api/v1/health": {
+      "get": {
+        "description": "Each device's health and its unhealthy episodes over a range (spec 016).",
+        "operationId": "health_api_v1_health_get",
+        "parameters": [
+          {
+            "description": "Defaults to the server's --use-case.",
+            "in": "query",
+            "name": "use_case",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to the server's --use-case.",
+              "title": "Use Case"
+            }
+          },
+          {
+            "description": "Defaults to end - 24h.",
+            "in": "query",
+            "name": "start",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to end - 24h.",
+              "title": "Start"
+            }
+          },
+          {
+            "description": "Defaults to now.",
+            "in": "query",
+            "name": "end",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to now.",
+              "title": "End"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Health"
       }
     },
     "/api/v1/history": {

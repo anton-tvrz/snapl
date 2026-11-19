@@ -28,6 +28,8 @@ from snapl_presentation.dashboard.models import (
     Bucket,
     DeployOutcome,
     DeviceDriftSummary,
+    DeviceHealthEntry,
+    DeviceHealthView,
     DeviceLane,
     DeviceView,
     DriftEpisode,
@@ -35,6 +37,9 @@ from snapl_presentation.dashboard.models import (
     DriftSummary,
     DriftTimeline,
     EpisodeClose,
+    FabricHealth,
+    HealthEpisode,
+    HealthReasonView,
     LinkEnd,
     Marker,
     NafBlock,
@@ -111,6 +116,14 @@ def tier_key(role: str | None, name: str) -> tuple:
 # and CI measures coverage (#287). `operator.eq` rather than `"x".__eq__`, which
 # answers NotImplemented, a true value, for None.
 _BY_TIME = attrgetter("timestamp")
+
+
+def _first_loop_event_at(events: Iterable[AuditEvent]) -> datetime | None:
+    """The oldest event of the loop. Health changes are left out: the worker
+    records them from start-up, before any run (spec 016 SC-007)."""
+    return min((e.timestamp for e in events if e.event_type is not AuditEventType.HEALTH_CHANGED), default=None)
+
+
 _ACTIVITY = attrgetter("activity_name")
 _WORKFLOW_TYPE = attrgetter("workflow_type")
 _WORKFLOW_ID = attrgetter("workflow_id")
@@ -233,9 +246,11 @@ def project_devices(
     last_scan: dict[UUID, AuditEvent] = {}
     last_deploy: dict[UUID, AuditEvent] = {}
     seen: set[UUID] = set()
+    health = latest_health(events)
     for event in sorted(events, key=lambda e: e.timestamp):
         device_id = _device_id(event)
-        if device_id is None:
+        # A health event names a device but says nothing of its drift (FR-010).
+        if device_id is None or event.event_type is AuditEventType.HEALTH_CHANGED:
             continue
         seen.add(device_id)
         if _is_scan_record(event):
@@ -256,6 +271,7 @@ def project_devices(
             role=role,
             in_intent=in_intent,
             last_deploy=_deploy_outcome(last_deploy.get(device_id)),
+            health=health.get(device_id),
             **_scan_fields(last_scan.get(device_id), name),
         )
         for device_id, name, role, in_intent in devices
@@ -928,7 +944,7 @@ def project_series(
         bucket=None if name in _UNBUCKETED else bucket,
         points=points,
         markers=_markers_of(runs, scheduled, start, end),
-        first_event_at=min(map(_BY_TIME, events), default=None),
+        first_event_at=_first_loop_event_at(events),
     )
 
 
@@ -1171,7 +1187,7 @@ def project_timeline(
         markers=_markers_of(runs, scheduled, start, end),
         latest_closed=build(latest) if latest is not None else None,
         open_count=len(spans) - len(closed_spans),
-        first_event_at=min(map(_BY_TIME, events), default=None),
+        first_event_at=_first_loop_event_at(events),
     )
 
 
@@ -1455,3 +1471,124 @@ def project_steps(run: RunView, events: Sequence[AuditEvent], scan_events: Seque
         else:
             loop.append(BlockState(block=block, status=BlockStatus.NOT_REACHED))
     return RunSteps(run=run, recorded=True, steps=steps, blocks=[*loop, *tail])
+
+
+# --- health (spec 016, contracts/telemetry.md) ------------------------------------
+
+
+def _health_events(events: Iterable[AuditEvent]) -> list[AuditEvent]:
+    """The health changes with a device, oldest first."""
+    found = [e for e in events if e.event_type is AuditEventType.HEALTH_CHANGED and isinstance(e.target_id, UUID)]
+    return sorted(found, key=_BY_TIME)
+
+
+def _health_reasons(event: AuditEvent) -> list[HealthReasonView]:
+    return [HealthReasonView.model_validate(reason) for reason in event.payload.get("reasons") or []]
+
+
+def _health_view(event: AuditEvent) -> DeviceHealthView:
+    raw = event.payload.get("last_sample_at")
+    return DeviceHealthView(
+        state=event.payload["after"],
+        reasons=_health_reasons(event),
+        since=event.timestamp,
+        last_sample_at=datetime.fromisoformat(raw) if raw else None,
+    )
+
+
+def latest_health(events: Iterable[AuditEvent]) -> dict[UUID, DeviceHealthView]:
+    """Each device's health, from its latest ``health_changed`` event."""
+    latest: dict[UUID, AuditEvent] = {}
+    for event in _health_events(events):
+        latest[event.target_id] = event  # type: ignore[index]  # _health_events keeps UUID targets only
+    return {device_id: _health_view(event) for device_id, event in latest.items()}
+
+
+def _health_episodes(changes: Sequence[AuditEvent]) -> list[HealthEpisode]:
+    """Unhealthy spans: opened by a change to unhealthy, closed by the next change away from it."""
+    episodes: list[HealthEpisode] = []
+    opened: AuditEvent | None = None
+    for change in changes:
+        unhealthy = change.payload.get("after") == "unhealthy"
+        if unhealthy and opened is None:
+            opened = change
+        elif not unhealthy and opened is not None:
+            episodes.append(
+                HealthEpisode(
+                    opened_at=opened.timestamp,
+                    closed_at=change.timestamp,
+                    duration_s=int((change.timestamp - opened.timestamp).total_seconds()),
+                    reasons=_health_reasons(opened),
+                )
+            )
+            opened = None
+    if opened is not None:
+        episodes.append(HealthEpisode(opened_at=opened.timestamp, reasons=_health_reasons(opened)))
+    return episodes
+
+
+def project_health(
+    events: Sequence[AuditEvent],
+    states: Sequence[DesiredState | IntentDevice] | None,
+    names: Mapping[UUID, str],
+    start: datetime,
+    end: datetime,
+    *,
+    max_events: int = MAX_SCAN_POINTS,
+) -> FabricHealth:
+    """Each device's health at ``end`` and its unhealthy episodes overlapping ``[start, end]``.
+
+    Nothing recorded after ``end`` is used. An episode opens when a device
+    becomes ``unhealthy`` and closes when it becomes anything else: ``unknown``
+    closes one (nothing is known any more) and opens none.
+
+    Args:
+        states: the devices in intent, or None when the Source of Truth could
+            not be read. Then the devices are those the health trail names.
+        names: device names from the last successful SoT read.
+
+    Raises:
+        ValueError: ``start >= end``.
+        TimelineTooLongError: more than ``max_events`` health events in the range.
+    """
+    if start >= end:
+        raise ValueError("start must be before end")
+    changes = _health_events(events_until(events, end))
+    in_range = sum(1 for change in changes if change.timestamp >= start)
+    if in_range > max_events:
+        raise TimelineTooLongError(
+            f"the range holds {in_range} health events; one answer carries at most {max_events}. "
+            "Ask for a shorter range."
+        )
+    by_device: dict[UUID, list[AuditEvent]] = {}
+    for change in changes:
+        by_device.setdefault(change.target_id, []).append(change)  # type: ignore[arg-type]
+
+    devices: list[tuple[UUID, str]]
+    if states is not None:
+        devices = [(device.id, device.name) for device in intent_devices(states)]
+    else:
+        devices = [(device_id, names.get(device_id, str(device_id))) for device_id in by_device]
+
+    entries = []
+    for device_id, name in devices:
+        of_device = by_device.get(device_id, [])
+        episodes = [
+            episode
+            for episode in _health_episodes(of_device)
+            if episode.opened_at <= end and (episode.closed_at is None or episode.closed_at >= start)
+        ]
+        entries.append(
+            DeviceHealthEntry(
+                device_id=device_id,
+                name=name,
+                current=_health_view(of_device[-1]) if of_device else None,
+                episodes=episodes,
+            )
+        )
+    return FabricHealth(
+        start=start,
+        end=end,
+        devices=sorted(entries, key=lambda entry: entry.name),
+        first_event_at=changes[0].timestamp if changes else None,
+    )

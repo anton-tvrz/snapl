@@ -74,6 +74,8 @@ CONTRACT_ROUTES = {
     ("/api/v1/mode", "GET"),
     # Spec 015 (contracts/metrics-views.md).
     ("/api/v1/drift-summary", "GET"),
+    # Spec 016 (contracts/telemetry.md).
+    ("/api/v1/health", "GET"),
     ("/api/v1/openapi.json", "GET"),
     ("/api/v1/openapi.json", "HEAD"),
     # Prometheus text format for scrapers, outside /api/v1 (spec 012 R8).
@@ -316,6 +318,7 @@ def test_every_route_only_reads_and_matches_the_contract():
         "/api/v1/drift-timeline",
         "/api/v1/runs/steps",
         "/api/v1/mode",
+        "/api/v1/health",
     ],
 )
 @pytest.mark.parametrize("method", ["HEAD", "POST", "PUT", "PATCH", "DELETE"])
@@ -1749,3 +1752,169 @@ def test_mode_names_the_archive_it_serves():
     assert (body["mode"], body["now"]) == ("archive", "2026-11-07T21:00:00Z")
     assert body["archive"]["name"] == "snapl-history-20261101T090000Z.tar.gz"
     assert body["archive"]["parts"][1] == {"name": "metrics", "present": False, "reason": "not up"}
+
+
+# --- Health (spec 016 T029, contracts/telemetry.md) --------------------------------
+
+_SESSION_DOWN = "BGP 10.10.1.1 active (expected established)"
+
+
+def _health_event(device_id, t, after, *, before="unknown", reasons=(), name="spine-01") -> AuditEvent:
+    return AuditEvent(
+        event_id=uuid4(),
+        workflow_id=f"telemetry:{name}",
+        workflow_type="DeviceTelemetry",
+        target_id=device_id,
+        event_type=AuditEventType.HEALTH_CHANGED,
+        payload={
+            "before": before,
+            "after": after,
+            "reasons": [
+                {"kind": "bgp_session", "item": "10.10.1.1", "expected": "established", "actual": "active", "text": r}
+                for r in reasons
+            ],
+            "last_sample_at": t.isoformat(),
+        },
+        timestamp=t,
+        actor="worker",
+    )
+
+
+def _audit_with_health() -> View[Any]:
+    events = [
+        _drifted_scan(),
+        _health_event(SPINE.device.id, T0 - timedelta(hours=2), "unhealthy", reasons=(_SESSION_DOWN,)),
+    ]
+    return View(source=SourceName.AUDIT, available=True, fetched_at=T0, data=events)
+
+
+def _temporal_without_pollers() -> View[Any]:
+    return View(
+        source=SourceName.TEMPORAL,
+        available=True,
+        fetched_at=T0,
+        data=TemporalSnapshot(running=[], pollers=0, schedule=None),
+    )
+
+
+def _by_device_name(view: dict) -> dict:
+    return {device["name"]: device for device in view["data"]}
+
+
+def test_devices_carry_their_recorded_health():
+    devices = _by_device_name(_client(audit=_audit_with_health()).get("/api/v1/devices").json()["devices"])
+
+    assert devices["leaf-01"]["health"] is None
+    health = devices["spine-01"]["health"]
+    assert health["state"] == "unhealthy"
+    assert [r["text"] for r in health["reasons"]] == [_SESSION_DOWN]
+    assert health["since"] == "2026-11-07T19:00:00Z"
+    assert health["last_sample_at"] == "2026-11-07T19:00:00Z"
+
+
+def test_with_no_worker_polling_a_recorded_health_reads_unknown():
+    devices = _by_device_name(
+        _client(audit=_audit_with_health(), temporal=_temporal_without_pollers())
+        .get("/api/v1/devices")
+        .json()["devices"]
+    )
+
+    health = devices["spine-01"]["health"]
+    assert health["state"] == "unknown"
+    assert health["reasons"] == [
+        {"kind": "no_telemetry", "item": None, "expected": None, "actual": None, "text": "the worker is not running"}
+    ]
+    assert health["since"] == "2026-11-07T21:00:00Z"  # the worker view's time
+    assert health["last_sample_at"] == "2026-11-07T19:00:00Z"
+    assert devices["leaf-01"]["health"] is None  # nothing recorded stays nothing
+
+
+def test_with_temporal_down_the_recorded_health_is_shown():
+    down = View(source=SourceName.TEMPORAL, available=False, reason="Temporal unreachable", remedy=STACK_REMEDY)
+
+    devices = _by_device_name(
+        _client(audit=_audit_with_health(), temporal=down).get("/api/v1/devices").json()["devices"]
+    )
+
+    assert devices["spine-01"]["health"]["state"] == "unhealthy"
+
+
+def test_the_overview_devices_carry_health_with_the_same_rule():
+    body = _client(audit=_audit_with_health(), temporal=_temporal_without_pollers()).get("/api/v1/overview").json()
+
+    assert _by_device_name(body["devices"])["spine-01"]["health"]["state"] == "unknown"
+
+
+def test_devices_as_of_a_time_show_the_health_recorded_by_then():
+    params = {"at": "2026-11-07T18:00:00Z"}
+
+    devices = _by_device_name(
+        _client(audit=_audit_with_health()).get("/api/v1/devices", params=params).json()["devices"]
+    )
+
+    assert devices["spine-01"]["health"] is None
+
+
+def test_an_unhealthy_device_changes_no_drift_figure():
+    """FR-010: the drift fields and the in-sync count ignore health."""
+
+    def drift(audit):
+        devices = _client(audit=audit).get("/api/v1/overview").json()["devices"]["data"]
+        return [{k: v for k, v in d.items() if k != "health"} for d in devices]
+
+    assert drift(_audit_with_health()) == drift(_audit_ok())
+    in_sync = [d for d in drift(_audit_with_health()) if d["drift_state"] == "in_sync"]
+    assert in_sync == [d for d in drift(_audit_ok()) if d["drift_state"] == "in_sync"]
+
+
+def test_health_defaults_to_the_24_hours_before_now():
+    body = _client(audit=_audit_with_health()).get("/api/v1/health").json()
+
+    view = body["health"]
+    assert (view["source"], view["available"]) == ("audit", True)
+    health = view["data"]
+    assert (health["start"], health["end"]) == ("2026-11-06T21:00:05Z", "2026-11-07T21:00:05Z")
+    assert [d["name"] for d in health["devices"]] == ["leaf-01", "spine-01"]
+    spine = health["devices"][1]
+    assert spine["current"]["state"] == "unhealthy"
+    assert [(e["opened_at"], e["closed_at"]) for e in spine["episodes"]] == [("2026-11-07T19:00:00Z", None)]
+    assert health["first_event_at"] == "2026-11-07T19:00:00Z"
+
+
+def test_health_takes_a_range():
+    params = {"start": "2026-11-07T17:00:00Z", "end": "2026-11-07T18:00:00Z"}
+
+    health = _client(audit=_audit_with_health()).get("/api/v1/health", params=params).json()["health"]["data"]
+
+    assert all(d["current"] is None and d["episodes"] == [] for d in health["devices"])
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"start": "2026-11-07T21:00:00Z", "end": "2026-11-07T21:00:00Z"},
+        {"start": "2026-11-07T22:00:00Z", "end": "2026-11-07T21:00:00Z"},
+        {"start": "2026-11-07T21:00:00"},
+        {"use_case": "site_edge"},
+    ],
+)
+def test_health_rejects_a_bad_request(params: dict[str, str]):
+    assert _client().get("/api/v1/health", params=params).status_code == 422
+
+
+def test_health_refuses_a_range_with_too_many_events(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr("snapl_presentation.dashboard.app.MAX_SCAN_POINTS", 0)
+
+    response = _client(audit=_audit_with_health()).get("/api/v1/health")
+
+    assert response.status_code == 422
+    assert "1 health events" in response.json()["detail"]
+
+
+def test_health_with_the_audit_trail_down_says_so():
+    down = View(source=SourceName.AUDIT, available=False, reason="unable to open database file", remedy="snapl scan")
+
+    view = _client(audit=down).get("/api/v1/health").json()["health"]
+
+    assert (view["available"], view["reason"], view["remedy"]) == (False, "unable to open database file", "snapl scan")
+    assert view["data"] is None

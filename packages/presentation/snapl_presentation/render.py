@@ -11,6 +11,7 @@ drops colour and animation, which satisfies FR-013 without a flag.
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from rich.console import Console
@@ -98,6 +99,34 @@ def _run_line(run: ScheduledRunInfo) -> str:
     return f"{head}  {s.total} devices: {s.clean} clean, {s.drifted} drifted, {s.errored} errored   {_wrote(s)}"
 
 
+@dataclass(frozen=True)
+class FabricHealthSummary:
+    """The fabric's recorded health, by device name, for `snapl status` (spec 016).
+
+    A device with nothing recorded is ``unknown``. ``error`` says why the
+    audit trail could not be read; then the lists are empty.
+    """
+
+    healthy: list[str]
+    unhealthy: list[str]
+    unknown: list[str]
+    recorded: bool = True
+    error: str | None = None
+
+    def line(self) -> str:
+        if self.error:
+            return f"could not read: {self.error}"
+        if not self.recorded:
+            return "no telemetry recorded"
+        unhealthy = f" ({', '.join(self.unhealthy)})" if self.unhealthy else ""
+        return f"{len(self.healthy)} healthy, {len(self.unhealthy)} unhealthy{unhealthy}, {len(self.unknown)} unknown"
+
+    def as_json(self) -> dict[str, list[str]] | None:
+        if self.error or not self.recorded:
+            return None
+        return {"healthy": self.healthy, "unhealthy": self.unhealthy, "unknown": self.unknown}
+
+
 def _audit_outcome(event: AuditEvent) -> str:
     """What the outcome column says. Schedule events carry their meaning in the
     payload, so a bare event type would hide which policy changed (spec 009)."""
@@ -111,6 +140,10 @@ def _audit_outcome(event: AuditEvent) -> str:
         return change
     if event.event_type.value == "drift_response":
         return str(payload.get("decision") or payload.get("mode") or event.outcome or "")
+    if event.event_type.value == "health_changed":
+        # The change, then each reason on its own line (spec 016).
+        reasons = [str(reason.get("text", "")) for reason in payload.get("reasons") or []]
+        return "\n".join([f"{payload.get('before')}→{payload.get('after')}", *reasons])
     return event.outcome or ""
 
 
@@ -167,7 +200,9 @@ class Renderer:
     def audit(self, events: list[AuditEvent]) -> None:
         raise NotImplementedError
 
-    def status(self, checks: list[tuple[str, bool, str]], running: list[Any]) -> None:
+    def status(
+        self, checks: list[tuple[str, bool, str]], running: list[Any], health: FabricHealthSummary | None = None
+    ) -> None:
         raise NotImplementedError
 
     def schedule(self, view: DriftScheduleView) -> None:
@@ -238,10 +273,15 @@ class HumanRenderer(Renderer):
             )
         self._console.print(table)
 
-    def status(self, checks: list[tuple[str, bool, str]], running: list[Any]) -> None:
+    def status(
+        self, checks: list[tuple[str, bool, str]], running: list[Any], health: FabricHealthSummary | None = None
+    ) -> None:
         for name, ok, detail in checks:
             mark = "[green]ok[/]" if ok else "[red]FAIL[/]"
             self._console.print(f"  {mark} {_esc(name)}{f' — {_esc(detail)}' if detail else ''}")
+        if health is not None:
+            # The network's state, not snapl's: never marked ok or FAIL.
+            self._console.print(f"\nfabric health   {_esc(health.line())}")
         if running:
             self._console.print(f"\n{len(running)} workflow(s) running:")
             for info in running:
@@ -298,13 +338,16 @@ class JsonRenderer(Renderer):
     def audit(self, events: list[AuditEvent]) -> None:
         self._emit([_dump(event) for event in events])
 
-    def status(self, checks: list[tuple[str, bool, str]], running: list[Any]) -> None:
+    def status(
+        self, checks: list[tuple[str, bool, str]], running: list[Any], health: FabricHealthSummary | None = None
+    ) -> None:
         self._emit(
             {
                 "checks": [{"name": n, "ok": ok, "detail": d} for n, ok, d in checks],
                 "running_workflows": [
                     {"workflow_id": i.workflow_id, "workflow_type": i.workflow_type} for i in running
                 ],
+                "health": health.as_json() if health is not None else None,
             }
         )
 

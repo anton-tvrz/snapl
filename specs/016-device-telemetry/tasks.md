@@ -131,14 +131,14 @@ A slice that changes the contract also regenerates the OpenAPI snapshot and the 
 
 **Goal**: the server and the CLI say each device's health and its history.
 
-- [ ] T027 [US2] Tests first in `tests/unit/test_presentation/test_dashboard_projections.py`: the latest health per device from built `health_changed` events; `null` with none; health episodes opened by `unhealthy`, closed by `healthy` or `unknown`, clipped to the range, with the opening reasons; and **SC-007**: every existing projection (devices, runs, steps, drift timeline, drift summary, series) answers the same on the captured trail with health events interleaved as without them.
-- [ ] T028 [US2] Add `DeviceHealthState` (re-exported from observability), `HealthReasonView`, `DeviceHealthView`, `HealthEpisode`, `DeviceHealthEntry`, `FabricHealth`, `HealthResponse`, and `DeviceView.health` to `packages/presentation/snapl_presentation/dashboard/models.py`; the projections to `projections.py`.
-- [ ] T029 [US2] Tests first in `test_dashboard_app.py`: `/api/v1/devices` carries `health`; with the worker view showing no pollers, a recorded state reads `unknown`, "the worker is not running"; `GET /api/v1/health` defaults to 24 h, honours `start` and `end`, `422` for `start >= end` and an over-long range, unavailable when the audit trail is; HEAD is `405`; every drift figure and the in-sync count are the same with an unhealthy device (FR-010).
-- [ ] T030 [US2] Add the route and the field to `app.py`.
-- [ ] T031 [US2] Tests first in `tests/unit/test_presentation/test_cli.py` and `test_render.py`: `snapl status` prints the `fabric health` line and `--json` the `health` key; it never changes the exit code; with nothing recorded it says `no telemetry recorded`; `snapl audit --device` renders a `health_changed` event with its reasons on one line each.
-- [ ] T032 [US2] Implement T031 in `cli.py` and `render.py`.
-- [ ] T033 [US2] Add health events to the fixture server in `dev/scripts/serve_dashboard_fixtures.py`: spine-01 and spine-02 unhealthy for their sessions (today's lab), leaf-01 unhealthy for an hour with `ethernet-1/49 down (expected up)` then healthy, leaf-03 `unknown` for 2 minutes. Tests first in `test_ui_fixtures.py`.
-- [ ] T034 Regenerate the OpenAPI snapshot and the UI's types. Append to the changelog.
+- [x] T027 [US2] Tests first in `tests/unit/test_presentation/test_dashboard_projections.py`: the latest health per device from built `health_changed` events; `null` with none; health episodes opened by `unhealthy`, closed by `healthy` or `unknown`, clipped to the range, with the opening reasons; and **SC-007**: every existing projection (devices, runs, steps, drift timeline, drift summary, series) answers the same on the captured trail with health events interleaved as without them.
+- [x] T028 [US2] Add `DeviceHealthState` (re-exported from observability), `HealthReasonView`, `DeviceHealthView`, `HealthEpisode`, `DeviceHealthEntry`, `FabricHealth`, `HealthResponse`, and `DeviceView.health` to `packages/presentation/snapl_presentation/dashboard/models.py`; the projections to `projections.py`.
+- [x] T029 [US2] Tests first in `test_dashboard_app.py`: `/api/v1/devices` carries `health`; with the worker view showing no pollers, a recorded state reads `unknown`, "the worker is not running"; `GET /api/v1/health` defaults to 24 h, honours `start` and `end`, `422` for `start >= end` and an over-long range, unavailable when the audit trail is; HEAD is `405`; every drift figure and the in-sync count are the same with an unhealthy device (FR-010).
+- [x] T030 [US2] Add the route and the field to `app.py`.
+- [x] T031 [US2] Tests first in `tests/unit/test_presentation/test_cli.py` and `test_render.py`: `snapl status` prints the `fabric health` line and `--json` the `health` key; it never changes the exit code; with nothing recorded it says `no telemetry recorded`; `snapl audit --device` renders a `health_changed` event with its reasons on one line each.
+- [x] T032 [US2] Implement T031 in `cli.py` and `render.py`.
+- [x] T033 [US2] Add health events to the fixture server in `dev/scripts/serve_dashboard_fixtures.py`: spine-01 and spine-02 unhealthy for their sessions (today's lab), leaf-01 unhealthy for an hour with `ethernet-1/49 down (expected up)` then healthy, leaf-03 `unknown` for 2 minutes. Tests first in `test_ui_fixtures.py`.
+- [x] T034 Regenerate the OpenAPI snapshot and the UI's types. Append to the changelog.
 
 **Checkpoint**: the fixture server's `/api/v1/health` shows leaf-01's episode.
 
