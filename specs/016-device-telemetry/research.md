@@ -92,6 +92,8 @@ def stream_telemetry(self, target: TelemetryTarget, *, interval_s: int) -> Async
 
 **Settle in PR C1**: the labels the runtime adds to a runtime-level meter (an activity's meter adds `activity_type`, `namespace`, `task_queue`; this one may add only `service_name`), and that a counter keeps its `_total` name (spec 015 R6 says the runtime adds none).
 
+**Settled in PR C1 (#323)**, measured on a `temporalio` 1.25 runtime: the runtime's own meter adds one label, `service_name="temporal-core-sdk"`, and nothing else. A counter is served under the name it is created with, `snapl_interface_octets_total`, with no second `_total`. Every family is typed as created (`# TYPE … gauge` or `counter`). `test_worker_metrics.py` holds all three.
+
 ## R6. The health rule
 
 **Decision**: evaluated by the runner every interval (a tick, not only on a sample, so silence is noticed), by `Observer.evaluate_health`:

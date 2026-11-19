@@ -713,3 +713,67 @@ def test_drift_schedule_view_dumps_interval_as_seconds() -> None:
             status="completed",
             unknown=1,  # type: ignore[call-arg]
         )
+
+
+# ---------------------------------------------------------------------------
+# Spec 016 T015 — the health_changed audit event (research R7)
+# ---------------------------------------------------------------------------
+
+
+def _health_event(**overrides) -> AuditEvent:
+    fields = {
+        "event_id": uuid4(),
+        "workflow_id": "telemetry:spine-01",
+        "workflow_type": "DeviceTelemetry",
+        "target_id": uuid4(),
+        "event_type": AuditEventType.HEALTH_CHANGED,
+        "payload": {
+            "before": "unknown",
+            "after": "unhealthy",
+            "reasons": [
+                {
+                    "kind": "bgp_session",
+                    "item": "10.10.1.1",
+                    "expected": "established",
+                    "actual": "active",
+                    "text": "BGP 10.10.1.1 active (expected established)",
+                }
+            ],
+            "last_sample_at": "2026-11-19T22:00:00+00:00",
+        },
+        "timestamp": _NOW,
+        "actor": "worker",
+    }
+    fields.update(overrides)
+    return AuditEvent(**fields)
+
+
+def test_health_changed_value() -> None:
+    assert AuditEventType.HEALTH_CHANGED.value == "health_changed"
+
+
+def test_health_changed_event_with_actor_and_known_states_is_valid() -> None:
+    event = _health_event()
+    assert (event.payload["before"], event.payload["after"]) == ("unknown", "unhealthy")
+
+
+def test_health_changed_event_requires_actor() -> None:
+    with pytest.raises(ValidationError, match="health_changed requires actor"):
+        _health_event(actor=None)
+
+
+@pytest.mark.parametrize("key", ["before", "after"])
+@pytest.mark.parametrize("value", [None, "sick", ""])
+def test_health_changed_event_requires_known_states(key: str, value: str | None) -> None:
+    payload = {"before": "healthy", "after": "unhealthy"}
+    if value is None:
+        del payload[key]
+    else:
+        payload[key] = value
+    with pytest.raises(ValidationError, match=f"payload\\['{key}'\\]"):
+        _health_event(payload=payload)
+
+
+def test_health_changed_event_leaves_other_payload_keys_free() -> None:
+    event = _health_event(payload={"before": "healthy", "after": "unknown", "anything": [1, 2]})
+    assert event.payload["anything"] == [1, 2]

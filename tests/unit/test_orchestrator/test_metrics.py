@@ -311,3 +311,200 @@ class TestRecordDeployEnd:
 
     def test_outside_a_workflow_it_does_nothing(self) -> None:
         record_deploy_end("leaf-01", "dcfabric", WorkflowReason.SUCCEEDED)
+
+
+# ---------------------------------------------------------------------------
+# Spec 016 T017 — the eight telemetry families (research R5, contracts/telemetry.md)
+# ---------------------------------------------------------------------------
+
+
+class TestTelemetryFamilies:
+    """One test per family holds its name, its type and its label set (FR-013)."""
+
+    @staticmethod
+    def _interface(**values):
+        from snapl_collector.models import InterfaceSample
+
+        return InterfaceSample(name="ethernet-1/49", **values)
+
+    def test_interface_up_is_a_gauge_of_one_or_zero(self, make_device) -> None:
+        from snapl_orchestrator.metrics import INTERFACE_UP, CounterTotals, record_interface
+
+        meter = FakeMeter()
+        device = make_device("leaf-01")
+        record_interface(meter, device, self._interface(oper_up=True), CounterTotals())
+        record_interface(meter, device, self._interface(oper_up=False), CounterTotals())
+
+        assert INTERFACE_UP == "snapl_interface_up"
+        labels = {"device": "leaf-01", "use_case": device.use_case, "interface": "ethernet-1/49"}
+        assert meter.sets(INTERFACE_UP) == [(INTERFACE_UP, 1, labels), (INTERFACE_UP, 0, labels)]
+        assert meter.adds() == []
+
+    @pytest.mark.parametrize(
+        ("family", "name", "fields"),
+        [
+            ("INTERFACE_OCTETS", "snapl_interface_octets_total", ("in_octets", "out_octets")),
+            ("INTERFACE_ERRORS", "snapl_interface_errors_total", ("in_errors", "out_errors")),
+            ("INTERFACE_DISCARDS", "snapl_interface_discards_total", ("in_discards", "out_discards")),
+        ],
+    )
+    def test_interface_counters_carry_a_direction(self, make_device, family, name, fields) -> None:
+        import snapl_orchestrator.metrics as m
+
+        meter = FakeMeter()
+        device = make_device("leaf-01")
+        totals = m.CounterTotals()
+        m.record_interface(meter, device, self._interface(**dict.fromkeys(fields, 100)), totals)
+        m.record_interface(meter, device, self._interface(**dict.fromkeys(fields, 130)), totals)
+
+        assert getattr(m, family) == name
+        base = {"device": "leaf-01", "use_case": device.use_case, "interface": "ethernet-1/49"}
+        assert meter.adds(name) == [
+            (name, 0, {**base, "direction": "in"}),
+            (name, 0, {**base, "direction": "out"}),
+            (name, 30, {**base, "direction": "in"}),
+            (name, 30, {**base, "direction": "out"}),
+        ]
+        assert meter.sets() == []
+
+    def test_direction_is_an_enum(self) -> None:
+        from snapl_orchestrator.metrics import Direction
+
+        assert [d.value for d in Direction] == ["in", "out"]
+
+    def test_a_leaf_the_message_did_not_carry_records_nothing(self, make_device) -> None:
+        from snapl_orchestrator.metrics import CounterTotals, record_interface
+
+        meter = FakeMeter()
+        record_interface(meter, make_device("leaf-01"), self._interface(), CounterTotals())
+
+        assert meter.adds() == []
+        assert meter.sets() == []
+
+    def test_bgp_session_established_is_a_gauge_of_one_or_zero(self, make_device) -> None:
+        from snapl_collector.models import BgpSessionSample
+        from snapl_orchestrator.metrics import BGP_SESSION_ESTABLISHED, record_session
+
+        meter = FakeMeter()
+        device = make_device("spine-01")
+        record_session(meter, device, BgpSessionSample(peer="10.10.1.1", state="established"))
+        record_session(meter, device, BgpSessionSample(peer="10.10.1.1", state="active"))
+
+        assert BGP_SESSION_ESTABLISHED == "snapl_bgp_session_established"
+        labels = {"device": "spine-01", "use_case": device.use_case, "peer": "10.10.1.1"}
+        assert meter.sets(BGP_SESSION_ESTABLISHED) == [
+            (BGP_SESSION_ESTABLISHED, 1, labels),
+            (BGP_SESSION_ESTABLISHED, 0, labels),
+        ]
+
+    def test_bgp_prefixes_received_is_a_gauge(self, make_device) -> None:
+        from snapl_collector.models import BgpSessionSample
+        from snapl_orchestrator.metrics import BGP_PREFIXES_RECEIVED, record_session
+
+        meter = FakeMeter()
+        device = make_device("spine-01")
+        record_session(meter, device, BgpSessionSample(peer="10.10.1.1", prefixes_received=12))
+
+        assert BGP_PREFIXES_RECEIVED == "snapl_bgp_prefixes_received"
+        assert meter.sets() == [
+            (BGP_PREFIXES_RECEIVED, 12, {"device": "spine-01", "use_case": device.use_case, "peer": "10.10.1.1"})
+        ]
+
+    @pytest.mark.parametrize(
+        ("family", "name", "field"),
+        [
+            ("DEVICE_CPU_PERCENT", "snapl_device_cpu_percent", "cpu_percent"),
+            ("DEVICE_MEMORY_PERCENT", "snapl_device_memory_percent", "memory_percent"),
+        ],
+    )
+    def test_cpu_and_memory_are_gauges_by_device(self, make_device, family, name, field) -> None:
+        import snapl_orchestrator.metrics as m
+        from snapl_collector.models import PlatformSample
+
+        meter = FakeMeter()
+        device = make_device("leaf-01")
+        m.record_platform(meter, device, PlatformSample(**{field: 42}))
+
+        assert getattr(m, family) == name
+        assert meter.sets() == [(name, 42, {"device": "leaf-01", "use_case": device.use_case})]
+
+    def test_every_family_is_listed_once(self) -> None:
+        from snapl_orchestrator.metrics import TELEMETRY_FAMILIES
+
+        assert TELEMETRY_FAMILIES == {
+            "snapl_interface_up": "gauge",
+            "snapl_interface_octets_total": "counter",
+            "snapl_interface_errors_total": "counter",
+            "snapl_interface_discards_total": "counter",
+            "snapl_bgp_session_established": "gauge",
+            "snapl_bgp_prefixes_received": "gauge",
+            "snapl_device_cpu_percent": "gauge",
+            "snapl_device_memory_percent": "gauge",
+        }
+
+
+class TestCounterTotals:
+    """Research R5: the device sends totals, the meter takes increments (FR-014)."""
+
+    def test_the_first_total_adds_zero(self) -> None:
+        from snapl_orchestrator.metrics import CounterTotals
+
+        assert CounterTotals().delta("leaf-01", "ethernet-1/49", "in_octets", 2925084) == 0
+
+    def test_a_rise_adds_the_difference(self) -> None:
+        from snapl_orchestrator.metrics import CounterTotals
+
+        totals = CounterTotals()
+        totals.delta("leaf-01", "ethernet-1/49", "in_octets", 100)
+        assert totals.delta("leaf-01", "ethernet-1/49", "in_octets", 130) == 30
+        assert totals.delta("leaf-01", "ethernet-1/49", "in_octets", 130) == 0
+
+    def test_a_fall_adds_the_new_total(self) -> None:
+        """The device's counter restarted: everything since then is new."""
+        from snapl_orchestrator.metrics import CounterTotals
+
+        totals = CounterTotals()
+        totals.delta("leaf-01", "ethernet-1/49", "in_octets", 1000)
+        assert totals.delta("leaf-01", "ethernet-1/49", "in_octets", 40) == 40
+
+    def test_series_are_kept_apart(self) -> None:
+        from snapl_orchestrator.metrics import CounterTotals
+
+        totals = CounterTotals()
+        totals.delta("leaf-01", "ethernet-1/49", "in_octets", 100)
+        assert totals.delta("leaf-01", "ethernet-1/49", "out_octets", 500) == 0
+        assert totals.delta("leaf-02", "ethernet-1/49", "in_octets", 900) == 0
+
+    def test_a_stream_restart_resets_that_devices_totals(self) -> None:
+        from snapl_orchestrator.metrics import CounterTotals
+
+        totals = CounterTotals()
+        totals.delta("leaf-01", "ethernet-1/49", "in_octets", 100)
+        totals.delta("leaf-02", "ethernet-1/49", "in_octets", 100)
+        totals.reset("leaf-01")
+        assert totals.delta("leaf-01", "ethernet-1/49", "in_octets", 5000) == 0
+        assert totals.delta("leaf-02", "ethernet-1/49", "in_octets", 150) == 50
+
+
+class TestTelemetryRecordersNeverRaise:
+    def test_interface(self, make_device, caplog) -> None:
+        from snapl_collector.models import InterfaceSample
+        from snapl_orchestrator.metrics import CounterTotals, record_interface
+
+        sample = InterfaceSample(name="ethernet-1/49", oper_up=True, in_octets=5, out_octets=7)
+        with caplog.at_level("WARNING", logger="snapl_orchestrator.metrics"):
+            record_interface(ExplodingMeter(), make_device("leaf-01"), sample, CounterTotals())  # type: ignore[arg-type]
+        assert any("leaf-01" in r.getMessage() for r in caplog.records)
+
+    def test_session(self, make_device) -> None:
+        from snapl_collector.models import BgpSessionSample
+        from snapl_orchestrator.metrics import record_session
+
+        sample = BgpSessionSample(peer="10.10.1.1", state="active", prefixes_received=0)
+        record_session(ExplodingMeter(), make_device("spine-01"), sample)  # type: ignore[arg-type]
+
+    def test_platform(self, make_device) -> None:
+        from snapl_collector.models import PlatformSample
+        from snapl_orchestrator.metrics import record_platform
+
+        record_platform(ExplodingMeter(), make_device("leaf-01"), PlatformSample(cpu_percent=5, memory_percent=94))  # type: ignore[arg-type]

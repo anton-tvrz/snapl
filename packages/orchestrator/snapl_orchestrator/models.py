@@ -14,7 +14,7 @@ from uuid import UUID  # noqa: TC003
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
-from snapl_observability.models import DriftItem, DriftReport, DriftStatus
+from snapl_observability.models import DeviceHealthState, DriftItem, DriftReport, DriftStatus
 
 # ---------------------------------------------------------------------------
 # Enums
@@ -47,6 +47,7 @@ class AuditEventType(StrEnum):
     WORKFLOW_CANCELLED = "workflow_cancelled"
     SCHEDULE_CHANGED = "schedule_changed"
     DRIFT_RESPONSE = "drift_response"
+    HEALTH_CHANGED = "health_changed"  # spec 016: a device's health changed (research R7)
 
 
 class DriftResponseMode(StrEnum):
@@ -223,6 +224,17 @@ class AuditEvent(BaseModel):
                     f"schedule_changed requires payload['change'] in {sorted(ScheduleChange)}, "
                     f"got {self.payload.get('change')!r}"
                 )
+        if self.event_type == AuditEventType.HEALTH_CHANGED:
+            # Written by the worker's telemetry runner (spec 016, R7). Only the
+            # change itself is held here; the reasons and the sample time are free.
+            if not self.actor:
+                raise ValueError("health_changed requires actor")
+            states = {s.value for s in DeviceHealthState}
+            for key in ("before", "after"):
+                if self.payload.get(key) not in states:
+                    raise ValueError(
+                        f"health_changed requires payload['{key}'] in {sorted(states)}, got {self.payload.get(key)!r}"
+                    )
         return self
 
 

@@ -93,12 +93,12 @@ A slice that changes the contract also regenerates the OpenAPI snapshot and the 
 
 **Goal**: the worker can record a health change and export every figure, each with a fixed label set.
 
-- [ ] T015 [US2] Tests first in `tests/unit/test_orchestrator/test_models.py`: `AuditEventType.HEALTH_CHANGED` requires an `actor` and `payload.before` and `payload.after` from `DeviceHealthState`; other payload keys are free; the SQLite log stores and reads it back (`test_audit_sqlite.py`).
-- [ ] T016 [US2] Add the value and its validation to `packages/orchestrator/snapl_orchestrator/models.py`.
-- [ ] T017 [US1] Tests first in `tests/unit/test_orchestrator/test_metrics.py`, with the fakes in `metric_fakes.py`: one test per family holds its name, type and label set (contracts/telemetry.md); `direction` is an enum; the counter-delta rule (research R5): the first total adds 0, a rise adds the difference, a fall adds the new total, a restart of the stream resets the last totals; no recorder raises when the meter does.
-- [ ] T018 [US1] Implement the recorders in `packages/orchestrator/snapl_orchestrator/metrics.py`, taking a `MetricMeter` argument (the runtime's, not an activity's), and a small `CounterTotals` class for the delta rule.
-- [ ] T019 [US1] Tests first in `tests/unit/test_orchestrator/test_worker_metrics.py`: with a real runtime on a free port, record one sample of each family through `Runtime.metric_meter` and read the endpoint: each family appears under its name with its labels. Write the labels the runtime adds into research R5 and contracts/telemetry.md (settles R5's open point).
-- [ ] T020 Append to the changelog.
+- [x] T015 [US2] Tests first in `tests/unit/test_orchestrator/test_models.py`: `AuditEventType.HEALTH_CHANGED` requires an `actor` and `payload.before` and `payload.after` from `DeviceHealthState`; other payload keys are free; the SQLite log stores and reads it back (`test_audit_sqlite.py`).
+- [x] T016 [US2] Add the value and its validation to `packages/orchestrator/snapl_orchestrator/models.py`.
+- [x] T017 [US1] Tests first in `tests/unit/test_orchestrator/test_metrics.py`, with the fakes in `metric_fakes.py`: one test per family holds its name, type and label set (contracts/telemetry.md); `direction` is an enum; the counter-delta rule (research R5): the first total adds 0, a rise adds the difference, a fall adds the new total, a restart of the stream resets the last totals; no recorder raises when the meter does.
+- [x] T018 [US1] Implement the recorders in `packages/orchestrator/snapl_orchestrator/metrics.py`, taking a `MetricMeter` argument (the runtime's, not an activity's), and a small `CounterTotals` class for the delta rule.
+- [x] T019 [US1] Tests first in `tests/unit/test_orchestrator/test_worker_metrics.py`: with a real runtime on a free port, record one sample of each family through `Runtime.metric_meter` and read the endpoint: each family appears under its name with its labels. Write the labels the runtime adds into research R5 and contracts/telemetry.md (settles R5's open point).
+- [x] T020 Append to the changelog.
 
 **Checkpoint**: `curl` on the test runtime's endpoint shows all eight families.
 

@@ -18,7 +18,7 @@ Every addition is **compatible** under 010's versioning rules: an optional field
 | `snapl_device_memory_percent` | gauge | `device`, `use_case` |
 
 - `device`, `interface` and `peer` come from intent. `direction` is `in` or `out`. Nothing else is a label (FR-013).
-- The runtime's own added labels are settled in PR C1 and written here.
+- The runtime adds one label to every family: `service_name="temporal-core-sdk"` (settled in PR C1). Counters are served under the names above, with no second `_total`.
 - Budget for dcfabric: 16 links × 7 + 6 loopbacks × 1 + 16 session ends × 2 + 6 devices × 2 = 162 series measured from R1's shapes, under the spec's ceiling of 198 (a loopback has no counters).
 
 ## `MetricsViewName` (new values)

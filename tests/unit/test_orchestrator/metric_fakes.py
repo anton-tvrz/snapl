@@ -1,4 +1,4 @@
-"""Fake Temporal metric meters for the worker metrics tests (spec 012, spec 015)."""
+"""Fake Temporal metric meters for the worker metrics tests (spec 012, spec 015, spec 016)."""
 
 from __future__ import annotations
 
@@ -28,12 +28,24 @@ class FakeCounter:
         self.adds.append((value, dict(additional_attributes or {})))
 
 
+class FakeGauge:
+    def __init__(self, name: str, description: str | None, unit: str | None) -> None:
+        self.name = name
+        self.description = description
+        self.unit = unit
+        self.sets: list[tuple[int, dict[str, Any]]] = []
+
+    def set(self, value: int, additional_attributes: dict[str, Any] | None = None) -> None:
+        self.sets.append((value, dict(additional_attributes or {})))
+
+
 class FakeMeter:
     """The slice of temporalio.common.MetricMeter that the recorders use."""
 
     def __init__(self) -> None:
         self.histograms: list[FakeHistogram] = []
         self.counters: list[FakeCounter] = []
+        self.gauges: list[FakeGauge] = []
         # What the SDK adds for the activity (namespace, task_queue,
         # activity_type). Kept apart: the real runtime merges them at export.
         self.runtime_attributes: dict[str, Any] = {}
@@ -54,6 +66,16 @@ class FakeMeter:
         self.counters.append(counter)
         return counter
 
+    def create_gauge(self, name: str, description: str | None = None, unit: str | None = None) -> FakeGauge:
+        gauge = FakeGauge(name, description, unit)
+        self.gauges.append(gauge)
+        return gauge
+
+    def sets(self, name: str | None = None) -> list[tuple[str, int, dict[str, Any]]]:
+        return [
+            (g.name, value, attrs) for g in self.gauges if name is None or g.name == name for value, attrs in g.sets
+        ]
+
     def samples(self) -> list[tuple[str, str | None, timedelta, dict[str, Any]]]:
         return [(h.name, h.unit, value, attrs) for h in self.histograms for value, attrs in h.samples]
 
@@ -71,4 +93,7 @@ class ExplodingMeter:
         raise RuntimeError("meter is broken")
 
     def create_counter(self, *_args: object, **_kwargs: object) -> FakeCounter:
+        raise RuntimeError("meter is broken")
+
+    def create_gauge(self, *_args: object, **_kwargs: object) -> FakeGauge:
         raise RuntimeError("meter is broken")
