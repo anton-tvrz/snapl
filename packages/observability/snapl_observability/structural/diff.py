@@ -14,6 +14,7 @@ the Collector).
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from functools import cache
 from typing import TYPE_CHECKING, Any
 
@@ -76,6 +77,17 @@ ENTITY_FIELD_MAP: dict[str, dict[str, Any]] = {
         "value_fields": ("peer_asn", "peer_group"),
         "protected": (),
     },
+    # A subinterface's membership of the default network instance, without
+    # which its address is not routed (#315). Intent has no entity for it: every
+    # interface with an address implies one, on subinterface 0, as the
+    # executor's templates render it (see ``_routed_interfaces``).
+    "routed_interface": {
+        "fields": ["name"],
+        "path_template": "/network-instance[name=default]/interface[name={name}]",
+        "key_field": "name",
+        "value_fields": ("name",),
+        "protected": (),
+    },
     # No device-level entry: the executor manages no /system fields, and a
     # compared-but-never-rendered field is permanent phantom drift (#59).
     # Every field listed here must be rendered by the executor's templates —
@@ -126,6 +138,12 @@ def diff_desired_vs_actual(
     for session in desired.bgp_sessions:
         items.extend(_diff_entity(session, bgp_spec, actual_data, kind="bgp_session"))
 
+    # subinterfaces in the default network instance (#315)
+    routed_spec = ENTITY_FIELD_MAP["routed_interface"]
+    routed = _routed_interfaces(desired)
+    for binding in routed:
+        items.extend(_diff_entity(binding, routed_spec, actual_data, kind="routed_interface"))
+
     # The reverse direction: entities the device carries that intent never
     # asked for (#54). Runs after the desired-driven pass so a report reads
     # "what is missing or wrong" before "what should not be here".
@@ -146,8 +164,26 @@ def diff_desired_vs_actual(
             desired_keys={session.peer_address for session in desired.bgp_sessions},
         )
     )
+    items.extend(
+        _undesired_entities(
+            routed_spec,
+            actual_data,
+            kind="routed_interface",
+            desired_keys={binding.name for binding in routed},
+        )
+    )
 
     return items
+
+
+@dataclass(frozen=True)
+class _RoutedInterface:
+    name: str
+
+
+def _routed_interfaces(desired: DesiredState) -> list[_RoutedInterface]:
+    """The subinterfaces intent implies in the default instance: one per addressed interface."""
+    return [_RoutedInterface(name=f"{iface.name}.0") for iface in desired.interfaces if iface.ip_address]
 
 
 def _address_view(iface: Any, entry: Any) -> tuple[Any, list[dict[str, str]]]:

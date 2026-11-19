@@ -25,9 +25,14 @@ from typing import Any
 DRIFT_PATHS: tuple[str, ...] = (
     "/interface",
     "/network-instance[name=default]/protocols/bgp",
+    "/network-instance[name=default]/interface",
 )
 
 _BGP_PATH = "/network-instance[name=default]/protocols/bgp"
+_INSTANCE = "/network-instance[name=default]"
+# SR Linux (v26.3.1) answers a GET of the instance's interface list keyed by the
+# instance entry, not by the path asked for (measured, #315). Both are read.
+_BINDING_KEYS = (_INSTANCE, f"{_INSTANCE}/interface")
 
 
 def _local_name(key: str) -> str:
@@ -123,5 +128,11 @@ def normalize_srlinux_state(data: dict[str, Any]) -> dict[str, Any]:
         peer = _get_local(neighbor, "peer-address")
         if peer is not None:
             out[f"{_BGP_PATH}/neighbor[peer-address={peer}]"] = _normalize_neighbor(neighbor)
+
+    for key in _BINDING_KEYS:
+        for binding in _get_local(data.get(key), "interface", []) or []:
+            name = _get_local(binding, "name")
+            if name is not None:
+                out[f"{_INSTANCE}/interface[name={name}]"] = {"name": name}
 
     return out

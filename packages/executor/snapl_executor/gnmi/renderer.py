@@ -74,14 +74,19 @@ class ConfigRenderer:
         # Intent-first: no synthetic entities — the seeded lo0 is the loopback,
         # a hardcoded one collided with it and carried the wrong address (#78).
         payload: dict[str, Any] = {"interface": ifaces_raw}
+        # An address is routed only once its subinterface belongs to a network
+        # instance. interfaces.j2 puts each address on subinterface 0, so that is
+        # the one that joins (#315). Without it the fabric's /31s are unreachable
+        # and no session comes up.
+        instance: dict[str, Any] = {"name": "default"}
+        routed = [{"name": f"{iface.name}.0"} for iface in desired.interfaces if iface.ip_address]
+        if routed:
+            instance["interface"] = routed
         if desired.bgp_sessions:
             bgp_raw: dict = json.loads(self._env.get_template("bgp.j2").render(**ctx))
-            payload["network-instance"] = [
-                {
-                    "name": "default",
-                    "protocols": {"bgp": bgp_raw},
-                }
-            ]
+            instance["protocols"] = {"bgp": bgp_raw}
+        if len(instance) > 1:
+            payload["network-instance"] = [instance]
         return payload
 
     def render_safe(self, desired: DesiredState) -> dict[str, Any]:
