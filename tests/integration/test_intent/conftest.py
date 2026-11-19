@@ -20,6 +20,7 @@ Env overrides (defaults match ``development/.env``):
 from __future__ import annotations
 
 import os
+from typing import TYPE_CHECKING
 
 import httpx
 import pytest
@@ -29,6 +30,9 @@ from snapl_intent.infrahub.client import (
     build_client,
 )
 from snapl_intent.infrahub.store import InfrahubIntentStore
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
 
 DEFAULT_TOKEN = "06438eb2-8019-4776-878c-0941b1f1d1ec"  # pragma: allowlist secret  # noqa: S105
 
@@ -137,30 +141,42 @@ async def _query_devices_seeded(
     infrahub_reachable: bool,
     _seeded_once: bool,
     _test_edge_seeded_once: bool,
-) -> bool:
+) -> AsyncIterator[bool]:
+    """Create the query-test devices for the session, and delete them after it.
+
+    They join dcfabric's intent, so a device left behind is scanned with every
+    fabric scan afterwards and fails it (no dial target, #307).
+    """
     if not (infrahub_reachable and _seeded_once):
-        return False
+        yield False
+        return
     client = build_client(address=infrahub_address, api_token=_resolved_token())
     locations = await client.filters(kind="LocationSite", shortname__value="local-lab")
     if not locations:
-        return False
+        yield False
+        return
     location = locations[0]
-    for device_data in _QUERY_TEST_DEVICES:
-        existing = await client.filters(kind="DcimDevice", name__value=device_data["name"])
-        if existing:
-            continue
-        node = await client.create(
-            kind="DcimDevice",
-            data={
-                "name": device_data["name"],
-                "status": "active",
-                "role": device_data["role"],
-                "use_case": device_data["use_case"],
-                "location": location.id,
-            },
-        )
-        await node.save()
-    return True
+    try:
+        for device_data in _QUERY_TEST_DEVICES:
+            existing = await client.filters(kind="DcimDevice", name__value=device_data["name"])
+            if existing:
+                continue
+            node = await client.create(
+                kind="DcimDevice",
+                data={
+                    "name": device_data["name"],
+                    "status": "active",
+                    "role": device_data["role"],
+                    "use_case": device_data["use_case"],
+                    "location": location.id,
+                },
+            )
+            await node.save()
+        yield True
+    finally:
+        for device_data in _QUERY_TEST_DEVICES:
+            for node in await client.filters(kind="DcimDevice", name__value=device_data["name"]):
+                await node.delete()
 
 
 @pytest.fixture
