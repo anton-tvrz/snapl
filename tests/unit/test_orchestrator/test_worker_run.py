@@ -14,6 +14,12 @@ from snapl_orchestrator.worker.run import _build_collector, _build_executor, _bu
 pytestmark = pytest.mark.unit
 
 
+@pytest.fixture(autouse=True)
+def _no_telemetry_by_default(monkeypatch):
+    """The bootstrap tests below pass mock blocks; only TestTelemetryRunner starts a runner."""
+    monkeypatch.setenv("SNAPL_TELEMETRY", "off")
+
+
 class TestBuildExecutor:
     def test_has_no_fixed_host(self, monkeypatch):
         monkeypatch.setenv("SRLINUX_PASSWORD", "pw")
@@ -299,3 +305,137 @@ class TestWorkerMetrics:
         assert connect.await_args.kwargs["runtime"] is None
         assert len(workers) == 1
         assert "metrics off: WORKER_METRICS_PORT=off" in [r.getMessage() for r in caplog.records]
+
+
+class TestTelemetryRunner:
+    """Spec 016 T023: run_worker starts the telemetry runner beside the Temporal worker (research R3)."""
+
+    @staticmethod
+    def _patch(monkeypatch, *, runner_error: Exception | None = None):
+        import asyncio
+        from unittest.mock import AsyncMock, MagicMock
+
+        import snapl_orchestrator.worker.run as run_mod
+
+        monkeypatch.setattr(run_mod.Client, "connect", AsyncMock(return_value=MagicMock()))
+        seen: dict = {"runners": [], "started": asyncio.Event(), "stopped": False, "worker_ran": False}
+
+        class _FakeRunner:
+            def __init__(self, **kwargs):
+                seen["runners"].append(kwargs)
+
+            async def run(self):
+                seen["started"].set()
+                if runner_error is not None:
+                    raise runner_error
+                try:
+                    await asyncio.Event().wait()
+                finally:
+                    seen["stopped"] = True
+
+        class _FakeWorker:
+            def __init__(self, _client, **_kwargs):
+                pass
+
+            async def run(self):
+                # The worker runs until the runner has had its chance to start.
+                await asyncio.wait_for(seen["started"].wait(), timeout=5)
+                await asyncio.sleep(0)
+                seen["worker_ran"] = True
+
+        monkeypatch.setattr(run_mod, "TelemetryRunner", _FakeRunner)
+        monkeypatch.setattr(run_mod, "Worker", _FakeWorker)
+        return run_mod, seen
+
+    @staticmethod
+    def _activities():
+        from unittest.mock import MagicMock
+
+        return MagicMock()
+
+    async def test_starts_the_runner_with_the_workers_blocks_and_the_runtimes_meter(self, monkeypatch) -> None:
+        import socket
+
+        from temporalio.runtime import Runtime
+
+        run_mod, seen = self._patch(monkeypatch)
+        monkeypatch.delenv("SNAPL_TELEMETRY")
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("127.0.0.1", 0))
+            port = s.getsockname()[1]
+        monkeypatch.setenv("WORKER_METRICS_PORT", str(port))
+        runtimes: list = []
+        real_build = run_mod.build_runtime
+
+        def _build(**kwargs):
+            runtime = real_build(**kwargs)
+            runtimes.append(runtime)
+            return runtime
+
+        monkeypatch.setattr(run_mod, "build_runtime", _build)
+        activities = self._activities()
+
+        await run_mod.run_worker(activities=activities)
+
+        [kwargs] = seen["runners"]
+        assert kwargs["audit_log"] is activities.audit_log
+        assert kwargs["collector"] is activities.collector
+        assert kwargs["observer"] is activities.observer
+        assert kwargs["intent_store"] is activities.intent_store
+        assert isinstance(runtimes[0], Runtime)
+        assert kwargs["meter"] is runtimes[0].metric_meter
+
+    async def test_stopping_the_worker_stops_the_runner(self, monkeypatch) -> None:
+        run_mod, seen = self._patch(monkeypatch)
+        monkeypatch.setenv("SNAPL_TELEMETRY", "on")
+        monkeypatch.setenv("WORKER_METRICS_PORT", "off")
+
+        await run_mod.run_worker(activities=self._activities())
+
+        assert seen["worker_ran"]
+        assert seen["stopped"]
+
+    @pytest.mark.parametrize("raw", ["off", "OFF", " off "])
+    async def test_off_starts_no_runner(self, monkeypatch, caplog, raw: str) -> None:
+        import asyncio
+        import logging
+
+        run_mod, seen = self._patch(monkeypatch)
+        monkeypatch.setenv("SNAPL_TELEMETRY", raw)
+        monkeypatch.setenv("WORKER_METRICS_PORT", "off")
+        seen["started"].set()  # the fake worker must not wait for a runner that never comes
+        await asyncio.sleep(0)
+
+        with caplog.at_level(logging.INFO, logger="snapl_orchestrator.worker.run"):
+            await run_mod.run_worker(activities=self._activities())
+
+        assert seen["runners"] == []
+        assert seen["worker_ran"]
+        assert "telemetry off: SNAPL_TELEMETRY=off" in [r.getMessage() for r in caplog.records]
+
+    async def test_a_runner_that_raises_is_logged_and_the_worker_carries_on(self, monkeypatch, caplog) -> None:
+        import logging
+
+        run_mod, seen = self._patch(monkeypatch, runner_error=RuntimeError("intent store exploded"))
+        monkeypatch.setenv("SNAPL_TELEMETRY", "on")
+        monkeypatch.setenv("WORKER_METRICS_PORT", "off")
+
+        with caplog.at_level(logging.INFO, logger="snapl_orchestrator.worker.run"):
+            await run_mod.run_worker(activities=self._activities())
+
+        assert seen["worker_ran"]
+        errors = [r for r in caplog.records if r.levelno >= logging.ERROR]
+        assert any("telemetry" in r.getMessage() for r in errors)
+        assert any("intent store exploded" in str(r.exc_info[1]) for r in errors if r.exc_info)
+
+    async def test_with_metrics_off_the_runner_records_into_a_noop_meter(self, monkeypatch) -> None:
+        from temporalio.common import MetricMeter
+
+        run_mod, seen = self._patch(monkeypatch)
+        monkeypatch.setenv("SNAPL_TELEMETRY", "on")
+        monkeypatch.setenv("WORKER_METRICS_PORT", "off")
+
+        await run_mod.run_worker(activities=self._activities())
+
+        [kwargs] = seen["runners"]
+        assert kwargs["meter"] is MetricMeter.noop

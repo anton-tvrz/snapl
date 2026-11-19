@@ -239,6 +239,11 @@ class HealthReason(BaseModel):
         when = since.astimezone(UTC).isoformat(timespec="seconds")
         return cls(kind=HealthReasonKind.NO_TELEMETRY, text=f"no telemetry since {when}")
 
+    @classmethod
+    def telemetry_stopped(cls) -> Self:
+        """``telemetry stopped``: the worker stopped its streams cleanly (research R6)."""
+        return cls(kind=HealthReasonKind.NO_TELEMETRY, text="telemetry stopped")
+
 
 class HealthExpectation(BaseModel):
     """What intent expects of one device's interfaces and BGP sessions."""

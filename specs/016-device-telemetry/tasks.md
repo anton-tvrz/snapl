@@ -108,7 +108,7 @@ A slice that changes the contract also regenerates the OpenAPI snapshot and the 
 
 **Goal**: a worker streams every device in intent, exports the figures and records health changes.
 
-- [ ] T021 [US1] Tests first in a new `tests/unit/test_orchestrator/test_telemetry_runner.py`, with a fake `Collector` whose streams are driven by the test, a fake intent store, a fake `Observer` or the real rule, the in-memory audit log and the metric fakes. Time is driven by the test, not slept:
+- [x] T021 [US1] Tests first in a new `tests/unit/test_orchestrator/test_telemetry_runner.py`, with a fake `Collector` whose streams are driven by the test, a fake intent store, a fake `Observer` or the real rule, the in-memory audit log and the metric fakes. Time is driven by the test, not slept:
   - one stream per device in intent, each with the target built from `DesiredState` (interfaces by name, sessions by peer address)
   - a sample updates the figures (via T018's recorders) and the observed items' `since`
   - a stream that raises moves to `broken`, retries after 1, 2, 4 … 30 s, and resets the backoff on `streaming`; other devices' streams carry on (FR-003)
@@ -117,10 +117,10 @@ A slice that changes the contract also regenerates the OpenAPI snapshot and the 
   - at start, the last recorded health per device is read back, so an unchanged state writes nothing
   - a clean stop records `unknown` "telemetry stopped" for each device whose last state was something else, and stops every thread
   - an intent store that fails keeps the current streams and retries at the next refresh
-- [ ] T022 [US1] Implement `packages/orchestrator/snapl_orchestrator/telemetry/runner.py` and `telemetry/__init__.py` (data-model.md's runner). The interval is the module constant `SAMPLE_INTERVAL_S = 10`.
-- [ ] T023 [US1] Tests first in `tests/unit/test_orchestrator/test_worker_run.py`: `run_worker` starts the runner beside `worker.run()` with the same audit log instance, the collector, the observer and the runtime's meter; stopping the worker stops the runner; `SNAPL_TELEMETRY=off` starts none; a runner that raises is logged and does not stop the worker; with metrics off, the runner records into a no-op meter.
-- [ ] T024 [US1] Wire it in `packages/orchestrator/snapl_orchestrator/worker/run.py`, and document `SNAPL_TELEMETRY` in its docstring and in `tasks/orchestrator.py`'s env list.
-- [ ] T025 Check `tests/unit/test_orchestrator/test_vendor_seams.py` still passes with the new package. Append to the changelog.
+- [x] T022 [US1] Implement `packages/orchestrator/snapl_orchestrator/telemetry/runner.py` and `telemetry/__init__.py` (data-model.md's runner). The interval is the module constant `SAMPLE_INTERVAL_S = 10`.
+- [x] T023 [US1] Tests first in `tests/unit/test_orchestrator/test_worker_run.py`: `run_worker` starts the runner beside `worker.run()` with the same audit log instance, the collector, the observer and the runtime's meter; stopping the worker stops the runner; `SNAPL_TELEMETRY=off` starts none; a runner that raises is logged and does not stop the worker; with metrics off, the runner records into a no-op meter.
+- [x] T024 [US1] Wire it in `packages/orchestrator/snapl_orchestrator/worker/run.py`, and document `SNAPL_TELEMETRY` in its docstring and in `tasks/orchestrator.py`'s env list.
+- [x] T025 Check `tests/unit/test_orchestrator/test_vendor_seams.py` still passes with the new package. Append to the changelog.
 - [ ] T026 **Needs the lab**: quickstart items 2 and 3 (six streams, the series count, the spines flagged and the leaves not). Write them into `specs/016-device-telemetry/evidence.md`.
 
 **Checkpoint**: a test worker with two fake devices streams, flags one and records the change once.

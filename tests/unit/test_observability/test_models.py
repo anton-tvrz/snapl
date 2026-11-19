@@ -405,6 +405,15 @@ class TestHealthReason:
 
         assert HealthReason.no_telemetry(None).text == "no telemetry yet"
 
+    def test_telemetry_stopped_text(self):
+        """Spec 016 R6: a clean stop of the worker records this for each device."""
+        from snapl_observability.models import HealthReason, HealthReasonKind
+
+        reason = HealthReason.telemetry_stopped()
+        assert reason.kind is HealthReasonKind.NO_TELEMETRY
+        assert (reason.item, reason.expected, reason.actual) == (None, None, None)
+        assert reason.text == "telemetry stopped"
+
     def test_is_frozen(self):
         from snapl_observability.models import HealthReason
 
