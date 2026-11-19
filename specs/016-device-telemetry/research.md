@@ -34,6 +34,8 @@ Each entry gives the decision, why, and what else was weighed. R1 was measured o
 
 **Why**: pygnmi is already the gNMI library (constitution, Technology Stack), and its subscription is a blocking generator. Six devices are six threads; each spends its time blocked on the socket.
 
+**Amended in PR A (#319)**: pygnmi's stream subscriber reads the gRPC stream in a thread of its own. When the stream fails, that thread records the error on `subscriber.error` and stops, but a reader blocked on `next()` is never woken; a device that stops answering without closing the socket (a paused container) wakes nobody either. So the bridge does not block on the iterator. Its thread polls the subscriber's `peek()` and `error` every 100 ms and stops on a flag, which also makes a stop independent of `CANCELLED`. The async side raises `TelemetryStreamError` when no message arrives for the dial timeout plus three intervals (60 s at the defaults). The health rule's 30 s staleness (R6) is unaffected: it reads the last sample's time, not the stream's state.
+
 **Alternatives**:
 - *gnmic in Compose, exporting to Prometheus*: a new container and a new config language, and health could then only be computed by reading Prometheus back. Rejected.
 - *A Temporal workflow per device with a long-running, heartbeating activity*: every sample would be activity heartbeat traffic, a worker restart would replay, and a stream is not a durable business process. Rejected.

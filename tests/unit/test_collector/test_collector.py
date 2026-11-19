@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import json
+import logging
+from datetime import UTC, datetime
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 from uuid import UUID
 
@@ -796,3 +800,262 @@ class TestCollectBatchConcurrencyCap:
 
         with pytest.raises(CollectorConfigError, match="max_concurrency"):
             GnmiCollector(password="test", max_concurrency=bad)  # pragma: allowlist secret
+
+
+# ---------------------------------------------------------------------------
+# Spec 016 T007 — stream_telemetry, replaying the captured subscriptions
+# ---------------------------------------------------------------------------
+
+_TELEMETRY_FIXTURES = Path(__file__).parent / "fixtures" / "telemetry"
+_LEAF01_IFS = ("ethernet-1/49", "lo0")
+_SPINE01_IFS = ("ethernet-1/1",)
+_SPINE01_PEERS = ("10.10.1.1",)
+
+
+def _capture(name: str) -> list[dict]:
+    return [entry["msg"] for entry in json.loads((_TELEMETRY_FIXTURES / name).read_text())]
+
+
+def _replay(messages: list[dict], calls: list[dict] | None = None):
+    """A stand-in for subscribe_sample that yields the captured messages, then ends."""
+
+    async def _fake_subscribe_sample(**kwargs):
+        if calls is not None:
+            calls.append(kwargs)
+        for message in messages:
+            yield message
+
+    return patch("snapl_collector.gnmi.collector.subscribe_sample", _fake_subscribe_sample)
+
+
+async def _samples(collector, target, messages, calls=None):
+    with _replay(messages, calls):
+        return [s async for s in collector.stream_telemetry(target, interval_s=10)]
+
+
+def _target(make_device, name, interfaces=(), peers=(), **device_kwargs):
+    from snapl_collector.models import TelemetryTarget
+
+    return TelemetryTarget(device=make_device(name, **device_kwargs), interfaces=interfaces, peers=peers)
+
+
+def _upd(path: str, val, *, sync: bool = False, timestamp: int = 1795097375288928413) -> dict:
+    message: dict = {"update": {"update": [{"path": path, "val": val}], "timestamp": timestamp}}
+    if sync:
+        message["sync_response"] = True
+    return message
+
+
+class TestStreamTelemetryPaths:
+    async def test_one_path_per_item_plus_cpu_and_memory(self, make_device):
+        target = _target(make_device, "spine-01", interfaces=("ethernet-1/1", "lo0"), peers=("10.10.1.1",))
+        calls: list[dict] = []
+        await _samples(_make_collector(), target, [], calls)
+        assert calls[0]["paths"] == [
+            "/interface[name=ethernet-1/1]/oper-state",
+            "/interface[name=ethernet-1/1]/statistics",
+            "/interface[name=lo0]/oper-state",
+            "/interface[name=lo0]/statistics",
+            "/network-instance[name=default]/protocols/bgp/neighbor[peer-address=10.10.1.1]/session-state",
+            "/network-instance[name=default]/protocols/bgp/neighbor[peer-address=10.10.1.1]"
+            "/afi-safi[afi-safi-name=ipv4-unicast]/received-routes",
+            "/platform/control[slot=A]/cpu[index=all]/total/instant",
+            "/platform/control[slot=A]/memory/utilization",
+        ]
+        assert calls[0]["interval_s"] == 10
+
+    async def test_dials_the_device_as_collect_does(self, make_device):
+        target = _target(make_device, "leaf-01", interfaces=("lo0",), address="10.0.0.13", lab_node_name="172.20.21.13")
+        calls: list[dict] = []
+        await _samples(_make_collector(host="fallback"), target, [], calls)
+        assert calls[0]["host"] == "172.20.21.13"
+        assert calls[0]["port"] == 57400
+        assert calls[0]["username"] == "admin"
+        assert calls[0]["insecure"] is True
+        assert calls[0]["timeout"] == 30
+
+    async def test_no_dial_target_raises_a_stream_error(self, make_device):
+        from snapl_collector import TelemetryStreamError
+        from snapl_collector.gnmi.collector import GnmiCollector
+
+        collector = GnmiCollector(password="test")  # pragma: allowlist secret
+        target = _target(make_device, "leaf-01", interfaces=("lo0",), address="")
+        with pytest.raises(TelemetryStreamError, match="no gNMI dial target"):
+            await _samples(collector, target, [])
+
+
+class TestStreamTelemetryLeafCapture:
+    async def test_the_first_sample_is_sync_and_carries_every_item(self, make_device):
+        from snapl_collector.models import InterfaceSample, PlatformSample
+
+        target = _target(make_device, "leaf-01", interfaces=_LEAF01_IFS)
+        samples = await _samples(_make_collector(), target, _capture("srlinux_v26_3_1_leaf01_sample.json"))
+        first = samples[0]
+        assert first.sync is True
+        assert first.device_name == "leaf-01"
+        assert first.interfaces == (
+            InterfaceSample(
+                name="ethernet-1/49",
+                oper_up=True,
+                in_octets=2925084,
+                out_octets=2953436,
+                in_errors=0,
+                out_errors=0,
+                in_discards=140,
+                out_discards=0,
+            ),
+            InterfaceSample(name="lo0", oper_up=True),
+        )
+        assert first.sessions == ()
+        assert first.platform == PlatformSample(cpu_percent=5, memory_percent=94)
+
+    async def test_the_device_timestamp_becomes_the_sample_time(self, make_device):
+        target = _target(make_device, "leaf-01", interfaces=_LEAF01_IFS)
+        samples = await _samples(_make_collector(), target, _capture("srlinux_v26_3_1_leaf01_sample.json"))
+        expected = datetime.fromtimestamp(1795097375288928413 / 1e9, tz=UTC)
+        assert abs((samples[0].timestamp - expected).total_seconds()) < 1e-3
+        assert samples[0].timestamp.tzinfo is not None
+        assert samples[1].timestamp > samples[0].timestamp
+
+    async def test_later_samples_carry_one_item_each(self, make_device):
+        target = _target(make_device, "leaf-01", interfaces=_LEAF01_IFS)
+        samples = await _samples(_make_collector(), target, _capture("srlinux_v26_3_1_leaf01_sample.json"))
+        assert len(samples) == 20
+        for sample in samples[1:]:
+            assert sample.sync is False
+            items = len(sample.interfaces) + len(sample.sessions) + (sample.platform is not None)
+            assert items == 1
+
+    async def test_a_state_message_carries_no_counters_and_a_counter_message_no_state(self, make_device):
+        target = _target(make_device, "leaf-01", interfaces=_LEAF01_IFS)
+        samples = await _samples(_make_collector(), target, _capture("srlinux_v26_3_1_leaf01_sample.json"))
+        state, counters = samples[1].interfaces[0], samples[2].interfaces[0]
+        assert (state.name, state.oper_up, state.in_octets) == ("ethernet-1/49", True, None)
+        assert (counters.name, counters.oper_up, counters.in_octets) == ("ethernet-1/49", None, 2925312)
+
+    async def test_lo0_has_state_and_no_counters(self, make_device):
+        target = _target(make_device, "leaf-01", interfaces=_LEAF01_IFS)
+        samples = await _samples(_make_collector(), target, _capture("srlinux_v26_3_1_leaf01_sample.json"))
+        lo0 = [i for s in samples for i in s.interfaces if i.name == "lo0"]
+        assert lo0
+        assert all(i.in_octets is None and i.out_errors is None and i.in_discards is None for i in lo0)
+        assert any(i.oper_up is True for i in lo0)
+
+
+class TestStreamTelemetrySpineCapture:
+    async def test_the_session_reads_active_with_no_prefixes(self, make_device):
+        from snapl_collector.models import BgpSessionSample
+
+        target = _target(make_device, "spine-01", interfaces=_SPINE01_IFS, peers=_SPINE01_PEERS)
+        samples = await _samples(_make_collector(), target, _capture("srlinux_v26_3_1_spine01_sample.json"))
+        assert samples[0].sync is True
+        assert samples[0].sessions == (BgpSessionSample(peer="10.10.1.1", state="active", prefixes_received=0),)
+        later = [s for sample in samples[1:] for s in sample.sessions]
+        assert BgpSessionSample(peer="10.10.1.1", state="active") in later
+        assert BgpSessionSample(peer="10.10.1.1", prefixes_received=0) in later
+
+    async def test_cpu_and_memory_parse(self, make_device):
+        target = _target(make_device, "spine-01", interfaces=_SPINE01_IFS, peers=_SPINE01_PEERS)
+        samples = await _samples(_make_collector(), target, _capture("srlinux_v26_3_1_spine01_sample.json"))
+        platforms = [s.platform for s in samples if s.platform is not None]
+        assert any(p.cpu_percent is not None and 0 <= p.cpu_percent <= 100 for p in platforms)
+        assert any(p.memory_percent == 94 for p in platforms)
+
+    async def test_items_outside_the_target_are_dropped(self, make_device):
+        # Ask for the interface only: the capture's session updates are not ours.
+        target = _target(make_device, "spine-01", interfaces=_SPINE01_IFS)
+        samples = await _samples(_make_collector(), target, _capture("srlinux_v26_3_1_spine01_sample.json"))
+        assert all(s.sessions == () for s in samples)
+
+
+class TestStreamTelemetryParsing:
+    async def test_an_interface_outside_the_target_is_dropped(self, make_device):
+        target = _target(make_device, "leaf-01", interfaces=("lo0",))
+        messages = [
+            _upd("srl_nokia-interfaces:interface[name=mgmt0]", {"oper-state": "up"}, sync=True),
+            _upd("srl_nokia-interfaces:interface[name=lo0]", {"oper-state": "down"}),
+        ]
+        samples = await _samples(_make_collector(), target, messages)
+        assert samples[0].interfaces == ()
+        assert [(i.name, i.oper_up) for i in samples[1].interfaces] == [("lo0", False)]
+
+    async def test_a_value_that_does_not_parse_is_none_and_logged_once(self, make_device, caplog):
+        target = _target(make_device, "leaf-01", interfaces=("ethernet-1/49",))
+        bad = {"in-octets": "lots", "out-octets": "7"}
+        messages = [
+            _upd("srl_nokia-interfaces:interface[name=ethernet-1/49]/statistics", bad, sync=True),
+            _upd("srl_nokia-interfaces:interface[name=ethernet-1/49]/statistics", bad),
+        ]
+        with caplog.at_level(logging.WARNING, logger="snapl_collector.gnmi.collector"):
+            samples = await _samples(_make_collector(), target, messages)
+        assert [(i.in_octets, i.out_octets) for s in samples for i in s.interfaces] == [(None, 7), (None, 7)]
+        warnings = [r for r in caplog.records if "in-octets" in r.getMessage()]
+        assert len(warnings) == 1
+        assert "leaf-01" in warnings[0].getMessage()
+
+    async def test_an_unknown_oper_state_is_none(self, make_device, caplog):
+        target = _target(make_device, "leaf-01", interfaces=("lo0",))
+        messages = [_upd("srl_nokia-interfaces:interface[name=lo0]", {"oper-state": "testing"}, sync=True)]
+        with caplog.at_level(logging.WARNING, logger="snapl_collector.gnmi.collector"):
+            samples = await _samples(_make_collector(), target, messages)
+        assert samples[0].interfaces[0].oper_up is None
+        assert any("oper-state" in r.getMessage() for r in caplog.records)
+
+    async def test_the_session_state_is_lower_cased(self, make_device):
+        target = _target(make_device, "spine-01", peers=("10.10.1.1",))
+        path = (
+            "srl_nokia-network-instance:network-instance[name=default]"
+            "/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]"
+        )
+        samples = await _samples(_make_collector(), target, [_upd(path, {"session-state": "Established"}, sync=True)])
+        assert samples[0].sessions[0].state == "established"
+
+    async def test_a_value_given_at_the_leaf_path_parses(self, make_device):
+        """A device may cut the path at the leaf rather than at the list entry."""
+        target = _target(make_device, "leaf-01", interfaces=("lo0",))
+        samples = await _samples(
+            _make_collector(),
+            target,
+            [
+                _upd("interface[name=lo0]/oper-state", "up", sync=True),
+                _upd("platform/control[slot=A]/memory/utilization", 51),
+            ],
+        )
+        assert samples[0].interfaces[0].oper_up is True
+        assert samples[1].platform is not None
+        assert samples[1].platform.memory_percent == 51
+
+    async def test_module_prefixed_keys_in_a_value_parse(self, make_device):
+        target = _target(make_device, "leaf-01", interfaces=("lo0",))
+        messages = [_upd("interface[name=lo0]", {"srl_nokia-interfaces:oper-state": "up"}, sync=True)]
+        samples = await _samples(_make_collector(), target, messages)
+        assert samples[0].interfaces[0].oper_up is True
+
+    async def test_a_message_without_updates_yields_an_empty_sample(self, make_device):
+        target = _target(make_device, "leaf-01", interfaces=("lo0",))
+        samples = await _samples(_make_collector(), target, [{"sync_response": True}])
+        assert len(samples) == 1
+        assert samples[0].sync is True
+        assert samples[0].interfaces == ()
+        assert samples[0].timestamp.tzinfo is not None
+
+    async def test_a_stream_error_propagates(self, make_device):
+        from snapl_collector import TelemetryStreamError
+
+        async def _broken(**kwargs):
+            yield _upd("interface[name=lo0]", {"oper-state": "up"}, sync=True)
+            raise TelemetryStreamError("telemetry from 172.20.21.13:57400: UNAVAILABLE")
+
+        target = _target(make_device, "leaf-01", interfaces=("lo0",))
+        got = []
+
+        async def _drain():
+            async for sample in _make_collector().stream_telemetry(target, interval_s=10):
+                got.append(sample)
+
+        with (
+            patch("snapl_collector.gnmi.collector.subscribe_sample", _broken),
+            pytest.raises(TelemetryStreamError, match="UNAVAILABLE"),
+        ):
+            await _drain()
+        assert len(got) == 1
