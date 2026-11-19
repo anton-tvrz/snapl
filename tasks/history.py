@@ -32,7 +32,7 @@ from pathlib import Path
 import httpx
 from invoke import Exit, task
 
-from snapl_presentation.dashboard.models import MetricsViewName, SeriesName
+from snapl_presentation.dashboard.models import NETWORK_VIEWS, MetricsViewName, SeriesName
 from snapl_presentation.settings import CliSettings
 
 from .dev import PROMETHEUS_DATA
@@ -200,7 +200,12 @@ def _dashboard_export(dashboard: str, staging: Path, now: datetime) -> Part:
     ]
     # Every series, not only `/history`'s default four (spec 015).
     wanted[_EXPORTS.index("history")][2]["series"] = [name.value for name in SeriesName]
-    wanted += [(f"metrics/{v.value}.json", f"/api/v1/metrics/{v.value}", {"start": start}) for v in MetricsViewName]
+    # Spec 016's views join in its PR F (NETWORK_VIEWS).
+    wanted += [
+        (f"metrics/{v.value}.json", f"/api/v1/metrics/{v.value}", {"start": start})
+        for v in MetricsViewName
+        if v not in NETWORK_VIEWS
+    ]
     out = staging / "export"
     failed: list[str] = []
     with httpx.Client(base_url=dashboard, timeout=30) as client:

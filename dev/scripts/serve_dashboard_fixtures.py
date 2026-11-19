@@ -59,7 +59,7 @@ from snapl_presentation.dashboard.models import (  # noqa: E402
     SourceName,
     View,
 )
-from snapl_presentation.dashboard.prometheus import VIEWS, RangePlan, window_note  # noqa: E402
+from snapl_presentation.dashboard.prometheus import VIEWS, NetworkSample, RangePlan, window_note  # noqa: E402
 from snapl_presentation.dashboard.sources import AuditSource, Sources, TemporalSnapshot  # noqa: E402
 from snapl_presentation.settings import CliSettings  # noqa: E402
 from tests.unit.test_presentation.dashboard_fakes import (  # noqa: E402
@@ -105,6 +105,9 @@ class _Down:
         from snapl_presentation.dashboard.sources import SourceUnavailable  # noqa: PLC0415
 
         raise SourceUnavailable("prometheus is not part of the fixture server", REMEDIES[SourceName.PROMETHEUS])
+
+    async def network(self) -> Any:
+        return await self.query()
 
 
 class _Up:
@@ -310,6 +313,68 @@ _SERIES: dict[MetricsViewName, list[tuple[dict[str, str], Any]]] = {
 }
 
 
+# Spec 016: the network, as today's lab reads (research R1). Traffic on every
+# link, errors on leaf-02's first uplink, the spines' sessions down, and CPU and
+# memory as the containers report the host VM: 94 % memory everywhere, CPU 3 to 5.
+_DEVICES = ("spine-01", "spine-02", "leaf-01", "leaf-02", "leaf-03", "leaf-04")
+_ERRING = ("leaf-02", "ethernet-1/49")
+
+
+def _cpu(k: int, i: int = 0) -> float:
+    return 3.0 + (k + i) % 3
+
+
+_SERIES[MetricsViewName.INTERFACE_TRAFFIC] = [
+    ({"device": device, "direction": direction}, lambda i, k=k, d=d: 4000.0 + 150 * k + 90 * d + 40 * (i % 12))
+    for k, device in enumerate(_DEVICES)
+    for d, direction in enumerate(("in", "out"))
+]
+# Every link end intent names has an error and a discard series, as the worker exports them.
+_LINKS = [(st.device.name, i.name) for st in arc_states() for i in st.interfaces if i.name != "lo0"]
+_SERIES[MetricsViewName.INTERFACE_ERRORS] = [
+    (
+        {"device": device, "interface": name},
+        lambda i, erring=(device, name) == _ERRING: 0.2 if erring and i >= 120 else 0.0,
+    )
+    for device, name in _LINKS
+]
+_SERIES[MetricsViewName.INTERFACE_DISCARDS] = [
+    ({"device": device, "interface": name}, lambda _: 0.0) for device, name in _LINKS
+]
+# The spines' sessions are down; each leaf has its two.
+_ESTABLISHED = {device: 0.0 if device.startswith("spine") else 2.0 for device in _DEVICES}
+_SERIES[MetricsViewName.BGP_ESTABLISHED] = [
+    ({"device": device}, lambda _, n=established: n) for device, established in _ESTABLISHED.items()
+]
+_SERIES[MetricsViewName.DEVICE_CPU] = [
+    ({"device": device}, lambda i, k=k: _cpu(k, i)) for k, device in enumerate(_DEVICES)
+]
+_SERIES[MetricsViewName.DEVICE_MEMORY] = [({"device": device}, lambda _: 94.0) for device in _DEVICES]
+
+
+def _network_up() -> NetworkSample:
+    """The same lab at NOW, for /network, over intent's own interfaces and sessions."""
+    sample = NetworkSample(at=NOW)
+    for k, state in enumerate(arc_states()):
+        device = state.device.name
+        spine = state.device.role == "spine"
+        for n, interface in enumerate(state.interfaces):
+            sample.interface_up[(device, interface.name)] = 1.0
+            if interface.name == "lo0":
+                continue  # a loopback has no counters
+            for d, direction in enumerate(("in", "out")):
+                key = (device, interface.name, direction)
+                sample.octets[key] = 1000.0 + 60 * k + 15 * n + 7 * d
+                sample.errors[key] = 0.2 if (device, interface.name) == _ERRING and direction == "in" else 0.0
+                sample.discards[key] = 0.0
+        for session in state.bgp_sessions:
+            sample.established[(device, session.peer_address)] = 0.0 if spine else 1.0
+            sample.prefixes[(device, session.peer_address)] = 0.0 if spine else 2.0
+        sample.cpu[(device,)] = _cpu(k)
+        sample.memory[(device,)] = 94.0
+    return sample
+
+
 def _source_up(source: str, i: int) -> float | None:
     if source == "temporal" and 30 <= i < 45:
         return 0.0
@@ -338,8 +403,12 @@ class _PrometheusUp:
             end=plan.end,
             step=plan.step,
             series=series,
-            note="; ".join(note for note in (plan.note, window_note(view, plan.step)) if note) or None,
+            note="; ".join(note for note in (plan.note, window_note(view, plan.step), VIEWS[view].note) if note)
+            or None,
         )
+
+    async def network(self) -> NetworkSample:
+        return _network_up()
 
 
 def build_app(ui_dir: Path | None = None, *, up: bool = False, audit_path: Path | None = None):

@@ -18,7 +18,7 @@ import pytest
 from typer.testing import CliRunner
 
 from snapl_presentation import cli
-from snapl_presentation.dashboard.models import MetricsViewName
+from snapl_presentation.dashboard.models import NETWORK_VIEWS, MetricsViewName
 from snapl_presentation.dashboard.snapshot import (
     COARSE_POINTS,
     COARSE_VIEWS,
@@ -179,7 +179,8 @@ def test_a_seven_day_snapshot_has_spec_015_views_at_three_hours_and_says_so(bund
 
 def test_a_seven_day_snapshot_keeps_the_earlier_views_at_their_step(bundle: dict):
     for view in MetricsViewName:
-        if view not in COARSE_VIEWS:
+        # Spec 016's views join in its PR F, at the coarse step.
+        if view not in COARSE_VIEWS | NETWORK_VIEWS:
             data = _data(bundle, view.value)
             assert data["step"] == 2520, view
             assert "in this snapshot" not in (data["note"] or ""), view

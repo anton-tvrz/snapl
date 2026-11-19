@@ -32,7 +32,7 @@ if TYPE_CHECKING:
     from snapl_orchestrator.models import AuditEvent, DriftScheduleView
     from snapl_orchestrator.worker.client import RunningWorkflowInfo
     from snapl_presentation.dashboard.models import MetricsData, MetricsViewName
-    from snapl_presentation.dashboard.prometheus import RangePlan
+    from snapl_presentation.dashboard.prometheus import NetworkSample, RangePlan
     from snapl_presentation.settings import CliSettings
 
     Clock = Callable[[], datetime]
@@ -72,6 +72,9 @@ class MetricsSource(ViewSource, Protocol):
     """``refresh`` feeds /sources; ``query`` the metrics routes (spec 012)."""
 
     async def query(self, view: MetricsViewName, plan: RangePlan) -> MetricsData: ...
+
+    # Spec 016: every network family now, for /network.
+    async def network(self) -> NetworkSample: ...
 
 
 @dataclass(frozen=True)

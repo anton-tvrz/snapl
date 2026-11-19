@@ -48,7 +48,7 @@ if TYPE_CHECKING:
 
     from fastapi import FastAPI
 
-    from snapl_presentation.dashboard.prometheus import RangePlan
+    from snapl_presentation.dashboard.prometheus import NetworkSample, RangePlan
 
 FORMAT = "snapl-history/1"
 NOT_IN_ARCHIVE = "not in this archive"
@@ -264,6 +264,10 @@ class ArchivedMetrics:
     def exported_range(self, view: MetricsViewName) -> tuple[datetime, datetime] | None:
         data = self._data.get(view)
         return (data.start, data.end) if data is not None else None
+
+    async def network(self) -> NetworkSample:
+        """An archive holds no network figures yet (spec 016 PR F carries them)."""
+        raise SourceUnavailable(NOT_IN_ARCHIVE, ARCHIVE_REMEDY)
 
     async def query(self, view: MetricsViewName, plan: RangePlan) -> MetricsData:
         data = self._data.get(view)

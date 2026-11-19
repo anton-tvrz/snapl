@@ -544,6 +544,62 @@
         "title": "DeviceLane",
         "type": "object"
       },
+      "DeviceNetwork": {
+        "additionalProperties": false,
+        "properties": {
+          "cpu_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpu Percent"
+          },
+          "device_id": {
+            "format": "uuid",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "interfaces": {
+            "items": {
+              "$ref": "#/components/schemas/InterfaceState"
+            },
+            "title": "Interfaces",
+            "type": "array"
+          },
+          "memory_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Percent"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "sessions": {
+            "items": {
+              "$ref": "#/components/schemas/SessionState"
+            },
+            "title": "Sessions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "device_id",
+          "name"
+        ],
+        "title": "DeviceNetwork",
+        "type": "object"
+      },
       "DeviceView": {
         "additionalProperties": false,
         "properties": {
@@ -1118,6 +1174,29 @@
         "title": "FabricHealth",
         "type": "object"
       },
+      "FabricNetwork": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "devices": {
+            "items": {
+              "$ref": "#/components/schemas/DeviceNetwork"
+            },
+            "title": "Devices",
+            "type": "array"
+          }
+        },
+        "required": [
+          "at",
+          "devices"
+        ],
+        "title": "FabricNetwork",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -1293,6 +1372,107 @@
           "series"
         ],
         "title": "HistoryResponse",
+        "type": "object"
+      },
+      "InterfaceState": {
+        "additionalProperties": false,
+        "description": "One interface intent names, with its latest figures. A figure with no series is null, never 0.",
+        "properties": {
+          "expected": {
+            "enum": [
+              "up",
+              "down"
+            ],
+            "title": "Expected",
+            "type": "string"
+          },
+          "in_bps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "In Bps"
+          },
+          "in_discards_ps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "In Discards Ps"
+          },
+          "in_errors_ps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "In Errors Ps"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "out_bps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Out Bps"
+          },
+          "out_discards_ps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Out Discards Ps"
+          },
+          "out_errors_ps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Out Errors Ps"
+          },
+          "up": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Up"
+          }
+        },
+        "required": [
+          "name",
+          "expected"
+        ],
+        "title": "InterfaceState",
         "type": "object"
       },
       "JobResult": {
@@ -1828,7 +2008,9 @@
               "ms",
               "per_second",
               "up",
-              "count"
+              "count",
+              "bytes_per_second",
+              "percent"
             ],
             "title": "Unit",
             "type": "string"
@@ -1895,7 +2077,13 @@
           "source-fetch-time",
           "scan-results",
           "drift-paths",
-          "deploy-outcomes"
+          "deploy-outcomes",
+          "interface-traffic",
+          "interface-errors",
+          "interface-discards",
+          "bgp-established",
+          "device-cpu",
+          "device-memory"
         ],
         "title": "MetricsViewName",
         "type": "string"
@@ -1962,6 +2150,36 @@
         ],
         "title": "NafBlock",
         "type": "string"
+      },
+      "NetworkResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "contract_version": {
+            "const": "1",
+            "default": "1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "network": {
+            "$ref": "#/components/schemas/View_FabricNetwork_"
+          },
+          "use_case": {
+            "title": "Use Case",
+            "type": "string"
+          }
+        },
+        "required": [
+          "use_case",
+          "generated_at",
+          "network"
+        ],
+        "title": "NetworkResponse",
+        "type": "object"
       },
       "Overview": {
         "additionalProperties": false,
@@ -2685,6 +2903,54 @@
         "title": "SeriesName",
         "type": "string"
       },
+      "SessionState": {
+        "additionalProperties": false,
+        "properties": {
+          "established": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Established"
+          },
+          "expected": {
+            "anyOf": [
+              {
+                "const": "established",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected"
+          },
+          "peer": {
+            "title": "Peer",
+            "type": "string"
+          },
+          "prefixes_received": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prefixes Received"
+          }
+        },
+        "required": [
+          "peer"
+        ],
+        "title": "SessionState",
+        "type": "object"
+      },
       "SourceName": {
         "enum": [
           "audit",
@@ -3202,6 +3468,73 @@
           "available"
         ],
         "title": "View[FabricHealth]",
+        "type": "object"
+      },
+      "View_FabricNetwork_": {
+        "additionalProperties": false,
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FabricNetwork"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fetched_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fetched At"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "remedy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remedy"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SourceName"
+          },
+          "stale": {
+            "default": false,
+            "title": "Stale",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "source",
+          "available"
+        ],
+        "title": "View[FabricNetwork]",
         "type": "object"
       },
       "View_LabEvidence_": {
@@ -4474,7 +4807,13 @@
                 "source-fetch-time",
                 "scan-results",
                 "drift-paths",
-                "deploy-outcomes"
+                "deploy-outcomes",
+                "interface-traffic",
+                "interface-errors",
+                "interface-discards",
+                "bgp-established",
+                "device-cpu",
+                "device-memory"
               ],
               "title": "View",
               "type": "string"
@@ -4628,6 +4967,55 @@
           }
         },
         "summary": "Mode"
+      }
+    },
+    "/api/v1/network": {
+      "get": {
+        "description": "Each device's interfaces and sessions from intent, with their latest figures (spec 016).",
+        "operationId": "network_api_v1_network_get",
+        "parameters": [
+          {
+            "description": "Defaults to the server's --use-case.",
+            "in": "query",
+            "name": "use_case",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Defaults to the server's --use-case.",
+              "title": "Use Case"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetworkResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Network"
       }
     },
     "/api/v1/overview": {

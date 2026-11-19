@@ -506,6 +506,13 @@ const METRIC_VIEWS = [
   { name: "server-request-time", title: "Temporal request time (mean)" },
   { name: "source-health", title: "Dashboard sources up" },
   { name: "source-fetch-time", title: "Dashboard source read time (current value)" },
+  // Spec 016: the network, from the worker's telemetry.
+  { name: "interface-traffic", title: "Interface traffic (rate)" },
+  { name: "interface-errors", title: "Interface errors (rate)" },
+  { name: "interface-discards", title: "Interface discards (rate)" },
+  { name: "bgp-established", title: "BGP sessions established (count)" },
+  { name: "device-cpu", title: "Device CPU (current value)" },
+  { name: "device-memory", title: "Device memory (current value)" },
 ];
 const RANGES = { "1h": 3600, "24h": 86400, "7d": 604800 };
 const RANGE_KEY = "snapl.metrics.range";
@@ -545,6 +552,8 @@ function formatValue(value, unit) {
   // A count of events is extrapolated by Prometheus, so it can be fractional: show it whole.
   if (unit === "count") return Math.round(value).toString();
   if (unit === "up") return value >= 1 ? "up" : "down";
+  if (unit === "bytes_per_second") return Math.round(value) + " B/s";
+  if (unit === "percent") return Math.round(value) + "%";
   return value + " " + unit;
 }
 

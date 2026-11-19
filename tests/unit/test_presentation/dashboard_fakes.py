@@ -17,7 +17,7 @@ from uuid import NAMESPACE_DNS, UUID, uuid4, uuid5
 
 import yaml
 
-from snapl_intent.models import DesiredState, Device, Interface
+from snapl_intent.models import BGPSession, DesiredState, Device, Interface
 from snapl_observability.models import DeviceHealthState, HealthReason
 from snapl_orchestrator.audit.sqlite import SqliteAuditLog
 from snapl_orchestrator.models import AuditEvent, AuditEventType
@@ -67,17 +67,32 @@ def state(name: str, role: str, device_id: UUID | None = None, links: list[tuple
 
 
 def seed_states(use_case: str, ids: dict[str, UUID] | None = None) -> list[DesiredState]:
-    """The use case's devices and interfaces, as its seed file declares them."""
+    """The use case's devices, interfaces and BGP sessions, as its seed file declares them."""
     seed = yaml.safe_load((SEEDS / use_case / "topology.yml").read_text())
     by_device: dict[str, list[tuple]] = {}
     for interface in seed["interfaces"]:
         by_device.setdefault(interface["device"], []).append(
             (interface["name"], interface.get("peer_device"), interface.get("peer_interface"))
         )
-    return [
+    states = [
         state(device["name"], device["role"], (ids or {}).get(device["name"]), by_device.get(device["name"]))
         for device in seed["devices"]
     ]
+    # Each session is seeded on both ends (#311): a row is its local device's.
+    for desired in states:
+        desired.bgp_sessions.extend(
+            BGPSession(
+                id=uuid5(NAMESPACE_DNS, f"{row['local_device']}:{row['remote_ip']}"),
+                device_id=desired.device.id,
+                local_asn=row["local_as"],
+                peer_address=row["remote_ip"].split("/")[0],
+                peer_asn=row["remote_as"],
+                peer_group=row.get("peer_group"),
+            )
+            for row in seed.get("bgp_sessions", [])
+            if row["local_device"] == desired.device.name
+        )
+    return states
 
 
 def arc_states() -> list[DesiredState]:

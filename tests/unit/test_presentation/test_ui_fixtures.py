@@ -72,6 +72,8 @@ REQUESTS = {
 UP_REQUESTS = {
     "up/overview.json": "/api/v1/overview",
     "up/sources.json": "/api/v1/sources",
+    # Spec 016: intent's interfaces and sessions with the store's synthetic figures.
+    "up/network.json": "/api/v1/network",
     # Each metrics view over the server's default range: the hour before NOW.
     **{f"up/metrics-{view.value}.json": f"/api/v1/metrics/{view.value}" for view in MetricsViewName},
 }
@@ -203,7 +205,27 @@ def test_the_up_server_answers_every_view_with_its_own_labels_and_unit(client_up
     assert data["unit"] == VIEWS[view].unit
     assert data["series"]
     assert all(set(series["labels"]) == set(VIEWS[view].labels) for series in data["series"])
-    assert len(data["series"]) <= 6  # the palette's limit (research R2)
+    assert len(data["series"]) <= _SERIES_ON_DCFABRIC.get(view, 6)  # the palette's limit (research R2)
+
+
+# Spec 016's network views over dcfabric, with the label sets contracts/telemetry.md
+# gives: more series than the palette's six slots for three of them. How the page
+# draws those is left to the UI slice (PR E2).
+_SERIES_ON_DCFABRIC = {
+    MetricsViewName.INTERFACE_TRAFFIC: 12,  # 6 devices x 2 directions
+    MetricsViewName.INTERFACE_ERRORS: 16,  # 8 links, both ends
+    MetricsViewName.INTERFACE_DISCARDS: 16,
+    MetricsViewName.BGP_ESTABLISHED: 6,
+    MetricsViewName.DEVICE_CPU: 6,
+    MetricsViewName.DEVICE_MEMORY: 6,
+}
+
+
+@pytest.mark.parametrize("view", sorted(_SERIES_ON_DCFABRIC))
+def test_the_up_server_draws_the_network_views_with_the_contracts_series(client_up: TestClient, view):
+    data = client_up.get(f"/api/v1/metrics/{view.value}").json()["metrics"]["data"]
+
+    assert len(data["series"]) == _SERIES_ON_DCFABRIC[view]
 
 
 def test_the_up_server_says_the_window_of_a_count(client_up: TestClient):
@@ -273,3 +295,67 @@ def test_the_fixture_health_is_shaped_like_the_runners():
         assert event.workflow_id.startswith("telemetry:")
         assert event.actor == "worker"
         assert set(event.payload) == {"before", "after", "reasons", "last_sample_at"}
+
+
+# --- The network (spec 016 T039) ------------------------------------------------------
+
+
+def _network(client: TestClient) -> dict:
+    return {d["name"]: d for d in client.get("/api/v1/network").json()["network"]["data"]["devices"]}
+
+
+def test_the_up_server_lists_spine_01s_five_interfaces_and_four_sessions(client_up: TestClient):
+    """The phase's checkpoint."""
+    spine = _network(client_up)["spine-01"]
+
+    assert [i["name"] for i in spine["interfaces"]] == [
+        "ethernet-1/1",
+        "ethernet-1/2",
+        "ethernet-1/3",
+        "ethernet-1/4",
+        "lo0",
+    ]
+    assert [s["peer"] for s in spine["sessions"]] == ["10.10.1.1", "10.10.1.3", "10.10.1.5", "10.10.1.7"]
+
+
+def test_the_up_server_has_traffic_on_every_link_and_errors_on_one_interface(client_up: TestClient):
+    network = _network(client_up)
+    links = [(d, i) for d, device in network.items() for i in device["interfaces"] if i["name"] != "lo0"]
+
+    assert len(links) == 16  # 8 links, both ends
+    assert all(i["up"] and i["in_bps"] > 0 and i["out_bps"] > 0 for _, i in links)
+    erring = [(d, i["name"]) for d, i in links if (i["in_errors_ps"] or 0) > 0 or (i["out_errors_ps"] or 0) > 0]
+    assert erring == [("leaf-02", "ethernet-1/49")]
+    loopbacks = [i for device in network.values() for i in device["interfaces"] if i["name"] == "lo0"]
+    assert all(i["up"] and i["in_bps"] is None for i in loopbacks)  # a loopback has no counters
+
+
+def test_the_up_server_has_the_spines_sessions_down(client_up: TestClient):
+    network = _network(client_up)
+
+    for name, device in network.items():
+        established = {s["established"] for s in device["sessions"]}
+        assert established == ({False} if name.startswith("spine") else {True}), name
+    assert all(s["prefixes_received"] == 0 for s in network["spine-01"]["sessions"])
+
+
+def test_the_up_server_has_cpu_and_memory_as_the_lab_reports_them(client_up: TestClient):
+    """The containers report the host VM: memory 94 % on every node, CPU 3 to 5 (research R1)."""
+    network = _network(client_up)
+
+    assert {d["memory_percent"] for d in network.values()} == {94.0}
+    assert all(3 <= d["cpu_percent"] <= 5 for d in network.values())
+
+
+def test_the_up_server_draws_the_spines_at_zero_sessions(client_up: TestClient):
+    series = client_up.get("/api/v1/metrics/bgp-established").json()["metrics"]["data"]["series"]
+    last = {s["labels"]["device"]: s["points"][-1]["value"] for s in series}
+
+    assert last == {"spine-01": 0, "spine-02": 0, "leaf-01": 2, "leaf-02": 2, "leaf-03": 2, "leaf-04": 2}
+
+
+def test_the_default_server_has_no_network(client: TestClient):
+    view = client.get("/api/v1/network").json()["network"]
+
+    assert (view["available"], view["data"]) == (False, None)
+    assert view["reason"] == "prometheus is not part of the fixture server"
