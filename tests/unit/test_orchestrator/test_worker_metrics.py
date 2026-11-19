@@ -171,3 +171,84 @@ class TestHistogramBuckets:
 
         assert list(bounds) == sorted(set(bounds))
         assert len(bounds) >= 12
+
+
+class TestTelemetryFamiliesOnTheEndpoint:
+    """Spec 016 T019: the runtime's own meter serves the eight families (research R5)."""
+
+    @staticmethod
+    def _series(exposition: str) -> dict[str, list[dict[str, str]]]:
+        series: dict[str, list[dict[str, str]]] = {}
+        for line in exposition.splitlines():
+            if not line.startswith("snapl_") or "{" not in line:
+                continue
+            name, rest = line.split("{", 1)
+            body = rest.rsplit("}", 1)[0]
+            labels = dict(pair.split("=", 1) for pair in body.split(","))
+            series.setdefault(name, []).append({k: v.strip('"') for k, v in labels.items()})
+        return series
+
+    @staticmethod
+    def _types(exposition: str) -> dict[str, str]:
+        return {
+            parts[2]: parts[3]
+            for parts in (line.split() for line in exposition.splitlines() if line.startswith("# TYPE snapl_"))
+        }
+
+    def test_each_family_appears_under_its_name_with_its_labels(self, make_device) -> None:
+        import urllib.request
+
+        from snapl_collector.models import BgpSessionSample, InterfaceSample, PlatformSample
+        from snapl_orchestrator.metrics import (
+            TELEMETRY_FAMILIES,
+            CounterTotals,
+            record_interface,
+            record_platform,
+            record_session,
+        )
+
+        port = _free_port()
+        runtime = build_runtime(port=port, bind="127.0.0.1")
+        assert runtime is not None
+        meter = runtime.metric_meter
+        device = make_device("leaf-01")
+        totals = CounterTotals()
+        for total in (100, 130):
+            values = dict.fromkeys(
+                ("in_octets", "out_octets", "in_errors", "out_errors", "in_discards", "out_discards"), total
+            )
+            record_interface(meter, device, InterfaceSample(name="ethernet-1/49", oper_up=True, **values), totals)
+        record_session(meter, device, BgpSessionSample(peer="10.10.1.1", state="active", prefixes_received=0))
+        record_platform(meter, device, PlatformSample(cpu_percent=5, memory_percent=94))
+
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/metrics", timeout=5) as response:
+            exposition = response.read().decode()
+
+        series = self._series(exposition)
+        types = self._types(exposition)
+        runtime_labels = {"service_name"}  # the only label the runtime adds to its own meter
+        expected_labels = {
+            "snapl_interface_up": {"device", "use_case", "interface"},
+            "snapl_interface_octets_total": {"device", "use_case", "interface", "direction"},
+            "snapl_interface_errors_total": {"device", "use_case", "interface", "direction"},
+            "snapl_interface_discards_total": {"device", "use_case", "interface", "direction"},
+            "snapl_bgp_session_established": {"device", "use_case", "peer"},
+            "snapl_bgp_prefixes_received": {"device", "use_case", "peer"},
+            "snapl_device_cpu_percent": {"device", "use_case"},
+            "snapl_device_memory_percent": {"device", "use_case"},
+        }
+        assert set(expected_labels) == set(TELEMETRY_FAMILIES)
+        for name, labels in expected_labels.items():
+            assert name in series, f"{name} missing from the endpoint"
+            assert types[name] == TELEMETRY_FAMILIES[name]
+            for one in series[name]:
+                assert set(one) == labels | runtime_labels, name
+        # The counter keeps its name: no second _total (spec 015 R6), and the first total added 0.
+        assert "snapl_interface_octets_total_total" not in exposition
+        octets_in = [s for s in series["snapl_interface_octets_total"] if s["direction"] == "in"]
+        assert len(octets_in) == 1
+        assert 'direction="in",interface="ethernet-1/49"' in exposition
+        assert any(
+            line.startswith("snapl_interface_octets_total{") and 'direction="in"' in line and line.endswith(" 30")
+            for line in exposition.splitlines()
+        )

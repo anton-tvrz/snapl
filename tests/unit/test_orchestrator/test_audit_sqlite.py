@@ -388,3 +388,38 @@ def test_read_only_memory_database_is_refused() -> None:
     """A read-only in-memory log could never hold anything: refuse it up front."""
     with pytest.raises(ValueError, match="memory"):
         SqliteAuditLog(database_url=":memory:", read_only=True)
+
+
+@pytest.mark.asyncio
+async def test_a_health_changed_event_is_stored_and_read_back(tmp_db_path: str) -> None:
+    """Spec 016 T015: the SQLite log keeps a health change by device (research R7)."""
+    log = SqliteAuditLog(database_url=tmp_db_path)
+    await log.initialize()
+    device_id = uuid4()
+    event = AuditEvent(
+        event_id=uuid4(),
+        workflow_id="telemetry:leaf-01",
+        workflow_type="DeviceTelemetry",
+        target_id=device_id,
+        event_type=AuditEventType.HEALTH_CHANGED,
+        payload={
+            "before": "healthy",
+            "after": "unhealthy",
+            "reasons": [
+                {
+                    "kind": "interface",
+                    "item": "ethernet-1/49",
+                    "expected": "up",
+                    "actual": "down",
+                    "text": "ethernet-1/49 down (expected up)",
+                }
+            ],
+            "last_sample_at": "2026-11-19T22:00:00+00:00",
+        },
+        timestamp=datetime(2026, 11, 19, 22, 0, 5, tzinfo=UTC),
+        actor="worker",
+    )
+    await log.append(event)
+    [stored] = await log.query_by_device(device_id)
+    assert stored == event
+    assert stored.event_type is AuditEventType.HEALTH_CHANGED
