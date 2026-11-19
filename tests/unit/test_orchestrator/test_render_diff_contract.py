@@ -14,6 +14,7 @@ terminating VERIFICATION_FAILED forever.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -114,7 +115,12 @@ def _replay_through_adapter(payload: dict) -> dict:
     """
     data: dict = {"/interface": {"interface": payload["interface"]}}
     if "network-instance" in payload:
-        data[_BGP_PATH] = payload["network-instance"][0]["protocols"]["bgp"]
+        instance = payload["network-instance"][0]
+        if "protocols" in instance:
+            data[_BGP_PATH] = instance["protocols"]["bgp"]
+        if "interface" in instance:
+            # Keyed by the instance entry, as SR Linux answers (#315).
+            data["/network-instance[name=default]"] = {"interface": instance["interface"]}
     return normalize_srlinux_state(data)
 
 
@@ -128,6 +134,7 @@ def test_fixture_exercises_every_diff_field() -> None:
     entities: dict[str, list] = {
         "interface": list(desired.interfaces),
         "bgp_session": list(desired.bgp_sessions),
+        "routed_interface": [SimpleNamespace(name=f"{i.name}.0") for i in desired.interfaces if i.ip_address],
     }
     for kind, spec in ENTITY_FIELD_MAP.items():
         pool = entities[kind]
@@ -159,3 +166,6 @@ def test_every_desired_entity_is_rendered() -> None:
     for session in desired.bgp_sessions:
         key = f"{_BGP_PATH}/neighbor[peer-address={session.peer_address}]"
         assert key in normalized, f"neighbor {session.peer_address} missing from rendered payload"
+    for iface in (i for i in desired.interfaces if i.ip_address):
+        key = f"/network-instance[name=default]/interface[name={iface.name}.0]"
+        assert key in normalized, f"{iface.name}.0 missing from the default instance (#315)"

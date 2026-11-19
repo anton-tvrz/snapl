@@ -62,6 +62,12 @@ def _matching_actual_data(desired):
             "peer_group": bgp.peer_group,
             "enabled": bgp.enabled,
         },
+        # An addressed interface's subinterface is in the default instance (#315).
+        **{
+            f"/network-instance[name=default]/interface[name={i.name}.0]": {"name": f"{i.name}.0"}
+            for i in desired.interfaces
+            if i.ip_address
+        },
     }
 
 

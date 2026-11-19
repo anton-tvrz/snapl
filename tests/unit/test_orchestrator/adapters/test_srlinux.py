@@ -2,6 +2,10 @@
 
 Driven by a fixture captured from a live dcfabric SR Linux node, so the adapter
 is validated against the real device shape rather than a hand-idealized one.
+
+The ``/network-instance[name=default]`` entry was read from the same node on
+2026-11-19, after #315's deploy, and kept to the fixture's three addressed
+interfaces (the node also binds ethernet-1/3.0 and ethernet-1/4.0).
 """
 
 from __future__ import annotations
@@ -231,4 +235,79 @@ def test_an_extra_address_listed_first_does_not_read_as_a_wrong_intended_address
 
     assert [(item.path, item.undesired) for item in items] == [
         ("/interface[name=ethernet-1/1]/subinterface[index=0]/ipv4/address[ip-prefix=10.1.0.1/31]", True)
+    ]
+
+
+# --- #315: subinterfaces in the default network instance ---------------------
+
+# Measured on SR Linux v26.3.1 (2026-11-19): a GET of
+# /network-instance[name=<ni>]/interface comes back keyed by the instance entry,
+# with state leaves beside the name. An instance with no binding comes back empty.
+_BOUND = {
+    "/network-instance[name=default]": {
+        "interface": [
+            {"name": "ethernet-1/1.0", "oper-state": "up", "index": "1"},
+            {"name": "lo0.0", "oper-state": "up", "index": "2"},
+        ]
+    }
+}
+
+
+def test_drift_paths_collect_the_default_instances_interfaces() -> None:
+    assert "/network-instance[name=default]/interface" in DRIFT_PATHS
+
+
+def test_each_bound_subinterface_normalizes_to_its_own_entry() -> None:
+    out = normalize_srlinux_state(_BOUND)
+
+    assert out["/network-instance[name=default]/interface[name=ethernet-1/1.0]"] == {"name": "ethernet-1/1.0"}
+    assert out["/network-instance[name=default]/interface[name=lo0.0]"] == {"name": "lo0.0"}
+
+
+def test_bindings_keyed_by_the_requested_path_are_read_too() -> None:
+    data = {"/network-instance[name=default]/interface": _BOUND["/network-instance[name=default]"]}
+
+    assert "/network-instance[name=default]/interface[name=lo0.0]" in normalize_srlinux_state(data)
+
+
+def test_an_instance_with_no_binding_normalizes_to_nothing() -> None:
+    out = normalize_srlinux_state({})
+
+    assert not [key for key in out if key.startswith("/network-instance[name=default]/interface")]
+
+
+def _addressed(name: str, ip: str, length: int) -> Interface:
+    return Interface(id=uuid4(), device_id=uuid4(), name=name, ip_address=ip, prefix_length=length, enabled=True)
+
+
+def _desired_with(interfaces: list[Interface]) -> DesiredState:
+    device = Device(id=uuid4(), name="spine-01", management_address="10.0.0.1", role="spine", use_case="dcfabric")
+    return DesiredState(device=device, interfaces=interfaces)
+
+
+def test_a_missing_binding_is_drift() -> None:
+    desired = _desired_with([_addressed("ethernet-1/1", "10.10.1.0", 31)])
+    actual = normalize_srlinux_state({"/interface": {"interface": []}})
+
+    items = [i for i in diff_desired_vs_actual(desired, actual) if i.entity_kind == "routed_interface"]
+
+    assert [(i.path, i.desired, i.actual, i.undesired) for i in items] == [
+        ("/network-instance[name=default]/interface[name=ethernet-1/1.0]/name", "ethernet-1/1.0", None, False)
+    ]
+
+
+def test_a_binding_intent_never_asked_for_is_undesired() -> None:
+    desired = _desired_with([_addressed("ethernet-1/1", "10.10.1.0", 31)])
+    actual = normalize_srlinux_state(
+        {
+            "/network-instance[name=default]": {
+                "interface": [{"name": "ethernet-1/1.0"}, {"name": "ethernet-1/9.0"}],
+            }
+        }
+    )
+
+    items = [i for i in diff_desired_vs_actual(desired, actual) if i.entity_kind == "routed_interface"]
+
+    assert [(i.path, i.actual, i.undesired) for i in items] == [
+        ("/network-instance[name=default]/interface[name=ethernet-1/9.0]/name", "ethernet-1/9.0", True)
     ]

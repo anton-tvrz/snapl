@@ -124,6 +124,13 @@ def _prune(data: dict) -> dict:
         b["group"] = [{k: v for k, v in g.items() if k in ("group-name", "admin-state")} for g in b["group"]]
     out[bgp_key] = b
 
+    # The subinterfaces in the default instance (#315). SR Linux answers this GET
+    # keyed by the instance entry, not by the requested path.
+    instance_key = "/network-instance[name=default]"
+    bound = (data.get(instance_key) or {}).get("interface") or []
+    b_keep = ("name", "oper-state", "index")
+    out[instance_key] = {"interface": [{k: v for k, v in i.items() if k in b_keep} for i in bound]}
+
     return out
 
 

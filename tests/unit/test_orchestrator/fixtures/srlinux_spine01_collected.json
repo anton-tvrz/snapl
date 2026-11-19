@@ -436,5 +436,24 @@
     "srl_nokia-system-name:name": {
       "host-name": "spine-01"
     }
+  },
+  "/network-instance[name=default]": {
+    "interface": [
+      {
+        "name": "ethernet-1/1.0",
+        "oper-state": "up",
+        "index": "2"
+      },
+      {
+        "name": "ethernet-1/2.0",
+        "oper-state": "up",
+        "index": "3"
+      },
+      {
+        "name": "lo0.0",
+        "oper-state": "up",
+        "index": "6"
+      }
+    ]
   }
 }

@@ -219,3 +219,47 @@ class TestConfigRendererBgp:
     def test_bgp_is_admin_enabled(self, dcfabric_desired_state):
         bgp = self._bgp(dcfabric_desired_state)
         assert bgp["admin-state"] == "enable"
+
+
+class TestConfigRendererDefaultInstance:
+    """An address is routed only when its subinterface belongs to a network
+    instance, so every addressed interface joins ``default`` (#315). Without it,
+    ``ping`` over a configured /31 says "Network is unreachable" and no session
+    ever comes up."""
+
+    def _instance(self, desired_state):
+        payload = ConfigRenderer(use_case="dcfabric").render(desired_state)
+        instances = payload["network-instance"]
+        assert [ni["name"] for ni in instances] == ["default"]
+        return instances[0]
+
+    def test_every_addressed_interface_joins_the_default_instance(self, dcfabric_desired_state):
+        addressed = [i.name for i in dcfabric_desired_state.interfaces if i.ip_address]
+        assert addressed, "fixture has no addressed interface"
+
+        instance = self._instance(dcfabric_desired_state)
+
+        assert instance["interface"] == [{"name": f"{name}.0"} for name in addressed]
+
+    def test_an_interface_without_an_address_does_not_join(self, dcfabric_desired_state):
+        dcfabric_desired_state.interfaces.append(_iface(name="ethernet-1/10"))
+
+        names = [entry["name"] for entry in self._instance(dcfabric_desired_state)["interface"]]
+
+        assert "ethernet-1/10.0" not in names
+
+    def test_a_device_without_sessions_still_routes_its_addresses(self, dcfabric_desired_state):
+        dcfabric_desired_state.bgp_sessions.clear()
+
+        instance = self._instance(dcfabric_desired_state)
+
+        assert instance["interface"]
+        assert "protocols" not in instance
+
+    def test_a_device_with_no_address_and_no_session_renders_no_instance(self, dcfabric_desired_state):
+        dcfabric_desired_state.bgp_sessions.clear()
+        dcfabric_desired_state.interfaces[:] = [_iface(name="ethernet-1/10")]
+
+        payload = ConfigRenderer(use_case="dcfabric").render(dcfabric_desired_state)
+
+        assert "network-instance" not in payload
