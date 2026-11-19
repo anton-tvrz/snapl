@@ -1,0 +1,97 @@
+{
+  "interface": [
+    {
+      "name": "lo1",
+      "admin-state": "enable",
+      "subinterface": [
+        {
+          "index": 0,
+          "admin-state": "enable",
+          "ipv4": {
+            "admin-state": "enable",
+            "address": [
+              {
+                "ip-prefix": "172.16.0.1/32"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "bfd": {
+    "subinterface": [
+      {
+        "id": "lo1.0",
+        "admin-state": "enable",
+        "desired-minimum-transmit-interval": 1000000,
+        "required-minimum-receive": 1000000,
+        "detection-multiplier": 3
+      }
+    ]
+  },
+  "routing-policy": {
+    "policy": [
+      {
+        "name": "reject-all",
+        "default-action": {
+          "policy-result": "reject"
+        }
+      }
+    ]
+  },
+  "network-instance": [
+    {
+      "name": "corp",
+      "interface": [
+        {
+          "name": "lo1.0"
+        }
+      ],
+      "protocols": {
+        "bgp": {
+          "admin-state": "enable",
+          "autonomous-system": 65011,
+          "router-id": "172.16.0.1",
+          "afi-safi": [
+            {
+              "afi-safi-name": "ipv4-unicast",
+              "admin-state": "enable"
+            }
+          ],
+          "group": [
+            {
+              "group-name": "in-tunnel",
+              "admin-state": "enable",
+              "import-policy": [
+                "reject-all"
+              ],
+              "export-policy": [
+                "reject-all"
+              ],
+              "failure-detection": {
+                "enable-bfd": true,
+                "fast-failover": true
+              },
+              "multihop": {
+                "admin-state": "enable",
+                "maximum-hops": 3
+              },
+              "transport": {
+                "local-address": "172.16.0.1"
+              }
+            }
+          ],
+          "neighbor": [
+            {
+              "peer-address": "172.16.0.0",
+              "peer-as": 65000,
+              "peer-group": "in-tunnel",
+              "admin-state": "enable"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
