@@ -973,6 +973,35 @@ class TestRepoSeedContent:
         assert mtu_attr.get("optional") is True, "mtu must be optional — loopbacks cannot carry one (#78)"
         assert "default_value" not in mtu_attr, "an mtu default poisons mtu-less seed rows in the SoT (#78)"
 
+    def test_every_session_between_seeded_devices_is_seeded_on_both_ends(self):
+        """A session reaches only its ``local_device`` (the store groups by it), so a
+        peer in intent needs its own, mirrored row, or it is never configured and
+        the session never comes up (#311)."""
+        checked = 0
+        for topo in sorted(self._package_root().glob("seed/*/topology.yml")):
+            data = yaml.safe_load(topo.read_text())
+            devices = {row["name"] for row in data.get("devices", [])}
+            ends = {(s["local_device"], s["local_ip"]): s for s in data.get("bgp_sessions", [])}
+            for session in data.get("bgp_sessions", []):
+                if session.get("remote_device") not in devices:
+                    continue  # a peer outside intent (a carrier) has no row to mirror
+                checked += 1
+                where = f"{topo.parent.name}: {session['description']}"
+                mirror = ends.get((session["remote_device"], session["remote_ip"]))
+                assert mirror is not None, f"{where}: no session on {session['remote_device']}"
+                assert mirror["remote_device"] == session["local_device"], where
+                assert mirror["remote_ip"] == session["local_ip"], where
+                assert (mirror["local_as"], mirror["remote_as"]) == (session["remote_as"], session["local_as"]), where
+                assert mirror.get("peer_group") == session.get("peer_group"), where
+        assert checked, "no session between seeded devices found: glob broken?"
+
+    def test_session_descriptions_are_unique(self):
+        """The seed upserts a session by its description, so two rows sharing one
+        would overwrite each other (#311)."""
+        for topo in sorted(self._package_root().glob("seed/*/topology.yml")):
+            descriptions = [s["description"] for s in yaml.safe_load(topo.read_text()).get("bgp_sessions", [])]
+            assert len(descriptions) == len(set(descriptions)), topo.parent.name
+
 
 # ---------------------------------------------------------------------------
 # #62: branch on every lookup, domain errors only, no silent skips
