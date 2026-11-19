@@ -3,19 +3,34 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 import time
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 import grpc
 
 from snapl_collector.abc import Collector
-from snapl_collector.exceptions import CollectorConfigError
+from snapl_collector.exceptions import CollectorConfigError, TelemetryStreamError
 from snapl_collector.gnmi.client import gnmi_get
-from snapl_collector.models import BatchCollectResult, CollectResult
+from snapl_collector.gnmi.subscribe import subscribe_sample
+from snapl_collector.models import (
+    BatchCollectResult,
+    BgpSessionSample,
+    CollectResult,
+    InterfaceSample,
+    PlatformSample,
+    TelemetrySample,
+    TelemetryTarget,
+)
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
     from snapl_intent.models import Device
+
+_logger = logging.getLogger(__name__)
 
 
 # How many devices one batch dials at once (#55). Each collect holds a gRPC
@@ -156,20 +171,7 @@ class GnmiCollector(Collector):
         """
         if not path or path == "/":
             return "/"
-        elements: list[str] = []
-        depth = 0
-        start = 0
-        for i, char in enumerate(path):
-            if char == "[":
-                depth += 1
-            elif char == "]":
-                depth -= 1
-            elif char == "/" and depth == 0:
-                elements.append(path[start:i])
-                start = i + 1
-        elements.append(path[start:])
-        stripped = [re.sub(r"^[\w.-]+:", "", el, count=1) for el in elements if el]
-        return "/" + "/".join(stripped)
+        return "/" + "/".join(_path_elements(path))
 
     def _classify_error(self, exc: Exception, timeout: int, target: str | None = None) -> str:
         """Turn an exception into a reason an operator can act on.
@@ -248,6 +250,22 @@ class GnmiCollector(Collector):
     async def get_running_config(self, device: Device) -> CollectResult:
         return await self.collect(device, paths=["/"])
 
+    async def stream_telemetry(self, target: TelemetryTarget, *, interval_s: int) -> AsyncIterator[TelemetrySample]:
+        device = target.device
+        host = self._dial_host(device)
+        if not host:
+            raise TelemetryStreamError(
+                f"no gNMI dial target for device {device.name!r}: "
+                "lab_node_name and management_address are empty and no fallback host is configured"
+            )
+        parser = _TelemetryParser(target)
+        stream = subscribe_sample(**self._conn_kwargs(host), paths=_telemetry_paths(target), interval_s=interval_s)
+        try:
+            async for message in stream:
+                yield parser.parse(message)
+        finally:
+            await stream.aclose()
+
     async def collect_batch(
         self,
         devices: list[Device],
@@ -287,4 +305,161 @@ class GnmiCollector(Collector):
             total=len(devices),
             succeeded=succeeded,
             failed=failed,
+        )
+
+
+# ── Telemetry (spec 016, research R1) ────────────────────────────────────
+
+_MODULE_PREFIX = re.compile(r"^[\w.-]+:")
+_LIST_KEY = re.compile(r"\[([^=\]]+)=([^\]]*)\]")
+_BGP_NEIGHBOR = "/network-instance[name=default]/protocols/bgp/neighbor[peer-address={peer}]"
+_RECEIVED_ROUTES = "afi-safi[afi-safi-name=ipv4-unicast]/received-routes"
+_CPU_PATH = "/platform/control[slot=A]/cpu[index=all]/total/instant"
+_MEMORY_PATH = "/platform/control[slot=A]/memory/utilization"
+
+# InterfaceSample field <- leaf under the interface's statistics.
+_INTERFACE_COUNTERS = {
+    "in_octets": "statistics/in-octets",
+    "out_octets": "statistics/out-octets",
+    "in_errors": "statistics/in-error-packets",
+    "out_errors": "statistics/out-error-packets",
+    "in_discards": "statistics/in-discarded-packets",
+    "out_discards": "statistics/out-discarded-packets",
+}
+
+
+def _path_elements(path: str) -> list[str]:
+    """Split a gNMI path at the slashes outside ``[key=value]`` and drop each element's module prefix."""
+    elements: list[str] = []
+    depth = 0
+    start = 0
+    for i, char in enumerate(path):
+        if char == "[":
+            depth += 1
+        elif char == "]":
+            depth -= 1
+        elif char == "/" and depth == 0:
+            elements.append(path[start:i])
+            start = i + 1
+    elements.append(path[start:])
+    return [_MODULE_PREFIX.sub("", el, count=1) for el in elements if el]
+
+
+def _telemetry_paths(target: TelemetryTarget) -> list[str]:
+    """One path per leaf intent asks for, so nothing else is sent (research R1)."""
+    paths: list[str] = []
+    for name in target.interfaces:
+        paths += [f"/interface[name={name}]/oper-state", f"/interface[name={name}]/statistics"]
+    for peer in target.peers:
+        neighbor = _BGP_NEIGHBOR.format(peer=peer)
+        paths += [f"{neighbor}/session-state", f"{neighbor}/{_RECEIVED_ROUTES}"]
+    return [*paths, _CPU_PATH, _MEMORY_PATH]
+
+
+def _flatten(value: Any, prefix: str, out: dict[str, Any]) -> None:
+    """Leaves of ``value`` keyed by their path below the list entry, module prefixes dropped."""
+    if isinstance(value, dict):
+        for key, child in value.items():
+            name = _MODULE_PREFIX.sub("", str(key), count=1)
+            _flatten(child, f"{prefix}/{name}" if prefix else name, out)
+    elif prefix:
+        out[prefix] = value
+
+
+def _sample_time(timestamp: Any) -> datetime:
+    if isinstance(timestamp, int) and not isinstance(timestamp, bool) and timestamp > 0:
+        seconds, nanos = divmod(timestamp, 1_000_000_000)
+        return datetime.fromtimestamp(seconds, tz=UTC) + timedelta(microseconds=nanos // 1000)
+    return datetime.now(tz=UTC)
+
+
+class _TelemetryParser:
+    """Turns one stream's messages into samples. Keyed on the list entry, so module prefixes don't matter."""
+
+    def __init__(self, target: TelemetryTarget) -> None:
+        self._device = target.device.name
+        self._interfaces = set(target.interfaces)
+        self._peers = set(target.peers)
+        self._warned: set[tuple[str, str]] = set()
+
+    def parse(self, message: dict[str, Any]) -> TelemetrySample:
+        notification = message.get("update") or {}
+        interfaces: dict[str, dict[str, Any]] = {}
+        sessions: dict[str, dict[str, Any]] = {}
+        platform: dict[str, Any] = {}
+        has_platform = False
+        for update in notification.get("update") or []:
+            elements = _path_elements(str(update.get("path") or ""))
+            for index, element in enumerate(elements):
+                name, _, _ = element.partition("[")
+                key = _LIST_KEY.search(element)
+                rest = "/".join(elements[index + 1 :])
+                if name == "interface" and key and key.group(1) == "name":
+                    if key.group(2) in self._interfaces:
+                        _flatten(update.get("val"), rest, interfaces.setdefault(key.group(2), {}))
+                    break
+                if name == "neighbor" and key and key.group(1) == "peer-address":
+                    if key.group(2) in self._peers:
+                        _flatten(update.get("val"), rest, sessions.setdefault(key.group(2), {}))
+                    break
+                if name in ("cpu", "memory"):
+                    has_platform = True
+                    _flatten(update.get("val"), f"{name}/{rest}" if rest else name, platform)
+                    break
+        return TelemetrySample(
+            device_name=self._device,
+            timestamp=_sample_time(notification.get("timestamp")),
+            interfaces=tuple(self._interface(n, leaves) for n, leaves in sorted(interfaces.items())),
+            sessions=tuple(self._session(p, leaves) for p, leaves in sorted(sessions.items())),
+            platform=self._platform(platform) if has_platform else None,
+            sync=bool(message.get("sync_response")),
+        )
+
+    def _interface(self, name: str, leaves: dict[str, Any]) -> InterfaceSample:
+        counters = {field: self._int(leaves.get(leaf), name, leaf) for field, leaf in _INTERFACE_COUNTERS.items()}
+        return InterfaceSample(name=name, oper_up=self._oper_up(leaves.get("oper-state"), name), **counters)
+
+    def _session(self, peer: str, leaves: dict[str, Any]) -> BgpSessionSample:
+        state = leaves.get("session-state")
+        if state is not None and not isinstance(state, str):
+            self._warn(peer, "session-state", state)
+            state = None
+        return BgpSessionSample(
+            peer=peer,
+            state=state.lower() if state is not None else None,
+            prefixes_received=self._int(leaves.get(_RECEIVED_ROUTES), peer, "received-routes"),
+        )
+
+    def _platform(self, leaves: dict[str, Any]) -> PlatformSample:
+        return PlatformSample(
+            cpu_percent=self._int(leaves.get("cpu/total/instant"), "cpu", "instant"),
+            memory_percent=self._int(leaves.get("memory/utilization"), "memory", "utilization"),
+        )
+
+    def _oper_up(self, value: Any, item: str) -> bool | None:
+        if value is None:
+            return None
+        word = str(value).lower()
+        if word in ("up", "down"):
+            return word == "up"
+        self._warn(item, "oper-state", value)
+        return None
+
+    def _int(self, value: Any, item: str, leaf: str) -> int | None:
+        if value is None:
+            return None
+        if isinstance(value, int) and not isinstance(value, bool):
+            return value
+        if isinstance(value, str) and value.strip().isdigit():
+            return int(value)
+        self._warn(item, leaf, value)
+        return None
+
+    def _warn(self, item: str, leaf: str, value: Any) -> None:
+        """Log a value that does not parse, once per stream for each item and leaf."""
+        if (item, leaf) in self._warned:
+            return
+        self._warned.add((item, leaf))
+        _logger.warning(
+            "telemetry from %s: %s %s = %.40r does not parse; read as no value", self._device, item, leaf, value
         )
