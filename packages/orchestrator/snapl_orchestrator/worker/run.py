@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 import os
 
 from temporalio.client import Client
+from temporalio.common import MetricMeter
 from temporalio.contrib.pydantic import pydantic_data_converter
 from temporalio.worker import Worker
 
@@ -29,6 +32,7 @@ from snapl_orchestrator.activities.observability import detect_drift
 from snapl_orchestrator.activities.schedule import stand_down_schedule
 from snapl_orchestrator.audit.sqlite import SqliteAuditLog
 from snapl_orchestrator.exceptions import OrchestratorConfigError
+from snapl_orchestrator.telemetry import TelemetryRunner
 from snapl_orchestrator.worker.client import DEFAULT_NAMESPACE, DEFAULT_TEMPORAL_HOST
 from snapl_orchestrator.worker.metrics import build_runtime, metrics_settings_from_env
 from snapl_orchestrator.worker.sandbox import build_workflow_runner
@@ -72,6 +76,8 @@ async def run_worker(*, activities: Activities | None = None) -> None:
     Env vars (always):
         WORKER_METRICS_PORT     — Prometheus endpoint port (default 18091; 'off' disables)
         WORKER_METRICS_BIND     — its bind address (default 127.0.0.1)
+        SNAPL_TELEMETRY         — 'off' starts no device telemetry (spec 016); anything
+                                  else, or unset, streams every device in intent
     """
     temporal_host = os.environ.get("TEMPORAL_HOST", DEFAULT_TEMPORAL_HOST)
     namespace = os.environ.get("TEMPORAL_NAMESPACE", DEFAULT_NAMESPACE)
@@ -129,7 +135,44 @@ async def run_worker(*, activities: Activities | None = None) -> None:
         task_queue,
         audit_db,
     )
-    await worker.run()
+
+    # Device telemetry runs beside the Temporal worker, in this process, with the
+    # same blocks and the one audit writer (spec 016 R3). Without a metrics
+    # runtime the figures go to a no-op meter; health is still recorded.
+    telemetry: asyncio.Task[None] | None = None
+    if telemetry_enabled():
+        runner = TelemetryRunner(
+            intent_store=activities.intent_store,
+            collector=activities.collector,
+            observer=activities.observer,
+            audit_log=activities.audit_log,
+            meter=runtime.metric_meter if runtime is not None else MetricMeter.noop,
+        )
+        telemetry = asyncio.create_task(_run_telemetry(runner), name="snapl-telemetry")
+    else:
+        logger.info("telemetry off: SNAPL_TELEMETRY=off")
+    try:
+        await worker.run()
+    finally:
+        if telemetry is not None:
+            telemetry.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await telemetry
+
+
+def telemetry_enabled() -> bool:
+    """Device telemetry runs unless ``SNAPL_TELEMETRY`` is ``off``."""
+    return os.environ.get("SNAPL_TELEMETRY", "").strip().lower() != "off"
+
+
+async def _run_telemetry(runner: TelemetryRunner) -> None:
+    """Run the telemetry runner; a failure is logged and never stops the worker (FR-003)."""
+    try:
+        await runner.run()
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logger.exception("telemetry runner stopped; the worker carries on without device telemetry")
 
 
 async def _build_default_activities(*, audit_db: str) -> Activities:
