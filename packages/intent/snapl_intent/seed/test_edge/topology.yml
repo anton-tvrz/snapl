@@ -95,3 +95,6 @@ bgp_peer_groups:
 
 bgp_sessions:
   - {description: "edge-01 <-> edge-02 eBGP", session_type: EXTERNAL, role: backbone, local_device: edge-01, remote_device: edge-02, local_as: 65100, remote_as: 65101, local_ip: "10.210.0.0/30", remote_ip: "10.210.0.1/30", peer_group: edge-underlay-ipv4}
+  # The other end of each session above: a session reaches only its local_device,
+  # so each peer in intent needs its own row or it is never configured (#311).
+  - {description: "edge-02 <-> edge-01 eBGP", session_type: EXTERNAL, role: backbone, local_device: edge-02, remote_device: edge-01, local_as: 65101, remote_as: 65100, local_ip: "10.210.0.1/30", remote_ip: "10.210.0.0/30", peer_group: edge-underlay-ipv4}
