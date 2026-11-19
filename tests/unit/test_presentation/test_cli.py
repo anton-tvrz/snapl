@@ -426,6 +426,153 @@ class TestStatus:
         assert "drift schedule — could not inspect: deadline exceeded" in result.output
 
 
+class TestStatusHealth:
+    """Spec 016 (contracts/telemetry.md): one `fabric health` line after the checks."""
+
+    @staticmethod
+    def _health(device_id, after, *, name, reasons=()):
+        from datetime import UTC, datetime
+        from uuid import uuid4
+
+        from snapl_orchestrator.models import AuditEvent, AuditEventType
+
+        return AuditEvent(
+            event_id=uuid4(),
+            workflow_id=f"telemetry:{name}",
+            workflow_type="DeviceTelemetry",
+            target_id=device_id,
+            event_type=AuditEventType.HEALTH_CHANGED,
+            payload={"before": "unknown", "after": after, "reasons": list(reasons), "last_sample_at": None},
+            timestamp=datetime(2026, 11, 19, 22, 0, tzinfo=UTC),
+            actor="worker",
+        )
+
+    @staticmethod
+    def _audit_db(tmp_path, monkeypatch, events) -> None:
+        import asyncio
+
+        from snapl_orchestrator.audit.sqlite import SqliteAuditLog
+
+        path = tmp_path / "audit.sqlite"
+
+        async def write() -> None:
+            log = SqliteAuditLog(database_url=str(path))
+            await log.initialize()
+            for event in events:
+                await log.append(event)
+            await log.close()
+
+        asyncio.run(write())
+        monkeypatch.setenv("SNAPL_AUDIT_DB", str(path))
+
+    def _status(self, temporal_client, *args: str, pollers: int = 1):
+        with (
+            patch.object(cli, "_connect", new=AsyncMock(return_value=temporal_client())),
+            patch.object(cli, "count_pollers", new=AsyncMock(return_value=pollers)),
+            patch.object(cli, "list_running_workflows", new=AsyncMock(return_value=[]), create=True),
+        ):
+            return _invoke(["status", *args])
+
+    def _record(self, tmp_path, monkeypatch, device_ids) -> None:
+        down = {"kind": "bgp_session", "item": "10.10.1.1", "expected": "established", "actual": "active", "text": "x"}
+        self._audit_db(
+            tmp_path,
+            monkeypatch,
+            [
+                self._health(device_ids["leaf-01"], "healthy", name="leaf-01"),
+                self._health(device_ids["spine-02"], "unhealthy", name="spine-02", reasons=[down]),
+                self._health(device_ids["spine-01"], "healthy", name="spine-01"),
+                self._health(device_ids["spine-01"], "unhealthy", name="spine-01", reasons=[down]),
+            ],
+        )
+
+    def test_prints_the_fabric_health_line(self, sot, temporal_client, tmp_path, monkeypatch, device_ids) -> None:
+        self._record(tmp_path, monkeypatch, device_ids)
+
+        result = self._status(temporal_client)
+
+        assert result.exit_code == ExitCode.OK
+        assert "fabric health   1 healthy, 2 unhealthy (spine-01, spine-02), 0 unknown" in result.output
+
+    def test_json_adds_the_health_key_by_device_name(
+        self, sot, temporal_client, tmp_path, monkeypatch, device_ids
+    ) -> None:
+        import json
+
+        self._record(tmp_path, monkeypatch, device_ids)
+
+        result = self._status(temporal_client, "--json")
+
+        assert json.loads(result.stdout)["health"] == {
+            "healthy": ["leaf-01"],
+            "unhealthy": ["spine-01", "spine-02"],
+            "unknown": [],
+        }
+
+    def test_an_unhealthy_fabric_never_changes_the_exit_code(
+        self, sot, temporal_client, tmp_path, monkeypatch, device_ids
+    ) -> None:
+        self._record(tmp_path, monkeypatch, device_ids)
+        assert self._status(temporal_client).exit_code == ExitCode.OK
+        # And a failed check still fails, health or not.
+        assert self._status(temporal_client, pollers=0).exit_code == ExitCode.ERROR
+
+    def test_a_device_with_nothing_recorded_counts_as_unknown(
+        self, sot, temporal_client, tmp_path, monkeypatch, device_ids
+    ) -> None:
+        self._audit_db(tmp_path, monkeypatch, [self._health(device_ids["leaf-01"], "healthy", name="leaf-01")])
+
+        result = self._status(temporal_client)
+
+        assert "fabric health   1 healthy, 0 unhealthy, 2 unknown" in result.output
+
+    def test_nothing_recorded_says_so(self, sot, temporal_client, tmp_path, monkeypatch) -> None:
+        self._audit_db(tmp_path, monkeypatch, [])
+
+        result = self._status(temporal_client)
+
+        assert result.exit_code == ExitCode.OK
+        assert "fabric health   no telemetry recorded" in result.output
+
+    def test_no_audit_log_says_why_and_changes_no_exit_code(self, sot, temporal_client, tmp_path, monkeypatch) -> None:
+        monkeypatch.setenv("SNAPL_AUDIT_DB", str(tmp_path / "nope.sqlite"))
+
+        result = self._status(temporal_client)
+
+        assert result.exit_code == ExitCode.OK
+        assert "fabric health   could not read: no audit log at" in result.output
+
+    def test_audit_device_renders_health_reasons_one_per_line(self, sot, tmp_path, monkeypatch, device_ids) -> None:
+        reasons = [
+            {
+                "kind": "interface",
+                "item": "e1",
+                "expected": "up",
+                "actual": "down",
+                "text": "ethernet-1/49 down (expected up)",
+            },
+            {
+                "kind": "bgp_session",
+                "item": "p",
+                "expected": "established",
+                "actual": "idle",
+                "text": "BGP 10.10.1.0 idle (expected established)",
+            },
+        ]
+        self._audit_db(
+            tmp_path, monkeypatch, [self._health(device_ids["leaf-01"], "unhealthy", name="leaf-01", reasons=reasons)]
+        )
+
+        # A real terminal's width: at the runner's 80 columns Rich folds each cell.
+        result = runner.invoke(cli.app, ["audit", "--device", "leaf-01"], env={"COLUMNS": "200"})
+
+        assert result.exit_code == ExitCode.OK
+        lines = result.output.splitlines()
+        assert any("health_changed" in line and "unknown→unhealthy" in line for line in lines)
+        assert any(line.strip() == "ethernet-1/49 down (expected up)" for line in lines)
+        assert any(line.strip() == "BGP 10.10.1.0 idle (expected established)" for line in lines)
+
+
 class TestErrorMessageBrevity:
     def test_multiline_sdk_errors_are_reduced_to_one_line(self) -> None:
         """SDK errors embed whole GraphQL documents; pasting that into a

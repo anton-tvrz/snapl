@@ -1399,3 +1399,233 @@ def test_devices_sort_by_role_tier_then_natural_name():
     states = [_state(uuid4(), name, role) for name, role in devices]
 
     assert [view.name for view in project_devices([], states, {})] == ["spine-1", "leaf-2", "leaf-10"]
+
+
+# =============================================================================
+# Health from the trail (spec 016 T027, contracts/telemetry.md)
+# =============================================================================
+
+
+def _health(
+    device_id: UUID,
+    t: datetime,
+    after: str,
+    before: str = "unknown",
+    reasons: tuple[str, ...] = (),
+    last_sample_at: datetime | None = None,
+    name: str = "leaf-01",
+) -> AuditEvent:
+    return AuditEvent(
+        event_id=uuid4(),
+        workflow_id=f"telemetry:{name}",
+        workflow_type="DeviceTelemetry",
+        target_id=device_id,
+        event_type=AuditEventType.HEALTH_CHANGED,
+        payload={
+            "before": before,
+            "after": after,
+            "reasons": [
+                {"kind": "interface", "item": text.split()[0], "expected": "up", "actual": "down", "text": text}
+                for text in reasons
+            ],
+            "last_sample_at": (last_sample_at or t).isoformat(),
+        },
+        timestamp=t,
+        actor="worker",
+    )
+
+
+_DOWN = "ethernet-1/49 down (expected up)"
+
+
+class TestLatestHealth:
+    def test_a_device_with_no_health_event_has_none(self):
+        views = _by_name(project_devices([_scan(LEAF, T0)], [_state(LEAF, "leaf-01", "leaf")], {}))
+        assert views["leaf-01"].health is None
+
+    def test_the_latest_event_gives_the_devices_health(self):
+        from snapl_observability.models import DeviceHealthState
+
+        events = [
+            _scan(LEAF, T0),
+            _health(LEAF, T0 + timedelta(minutes=1), "healthy"),
+            _health(LEAF, T0 + timedelta(minutes=5), "unhealthy", "healthy", (_DOWN,), T0 + timedelta(minutes=4)),
+        ]
+        view = _by_name(project_devices(events, [_state(LEAF, "leaf-01", "leaf")], {}))["leaf-01"]
+
+        assert view.health is not None
+        assert view.health.state is DeviceHealthState.UNHEALTHY
+        assert [r.text for r in view.health.reasons] == [_DOWN]
+        assert view.health.reasons[0].kind == "interface"
+        assert view.health.since == T0 + timedelta(minutes=5)
+        assert view.health.last_sample_at == T0 + timedelta(minutes=4)
+
+    def test_health_never_changes_the_drift_fields(self):
+        """FR-010."""
+        scans = [_scan(LEAF, T0, status="drifted", paths=["/a"])]
+        states = [_state(LEAF, "leaf-01", "leaf")]
+        without = project_devices(scans, states, {})
+        with_health = project_devices([*scans, _health(LEAF, T0, "unhealthy", reasons=(_DOWN,))], states, {})
+
+        assert [v.model_dump(exclude={"health"}) for v in with_health] == [
+            v.model_dump(exclude={"health"}) for v in without
+        ]
+        assert with_health[0].health is not None
+
+    def test_a_health_event_does_not_add_a_device_to_the_degraded_list(self):
+        other = uuid4()
+        views = project_devices([_scan(LEAF, T0), _health(other, T0, "healthy")], None, {LEAF: "leaf-01"})
+        assert [v.name for v in views] == ["leaf-01"]
+
+
+class TestProjectHealth:
+    START = T0
+    END = T0 + timedelta(hours=24)
+
+    def _project(self, events, *, start=None, end=None, states=None, **kw):
+        from snapl_presentation.dashboard.projections import project_health
+
+        return project_health(
+            events,
+            [_state(LEAF, "leaf-01", "leaf"), _state(SPINE, "spine-01", "spine")] if states is None else states,
+            {},
+            start or self.START,
+            end or self.END,
+            **kw,
+        )
+
+    def test_devices_in_intent_by_name_with_their_current_health(self):
+        health = self._project([_health(LEAF, T0 + timedelta(hours=1), "healthy")])
+
+        assert [(d.name, d.device_id) for d in health.devices] == [("leaf-01", LEAF), ("spine-01", SPINE)]
+        assert health.devices[0].current is not None
+        assert health.devices[0].current.state == "healthy"
+        assert health.devices[1].current is None
+        assert health.first_event_at == T0 + timedelta(hours=1)
+        assert (health.start, health.end) == (self.START, self.END)
+
+    def test_an_episode_opens_on_unhealthy_and_closes_on_healthy(self):
+        events = [
+            _health(LEAF, T0 + timedelta(hours=1), "healthy"),
+            _health(LEAF, T0 + timedelta(hours=2), "unhealthy", "healthy", (_DOWN,)),
+            _health(LEAF, T0 + timedelta(hours=3), "healthy", "unhealthy"),
+        ]
+        [episode] = self._project(events).devices[0].episodes
+
+        assert episode.opened_at == T0 + timedelta(hours=2)
+        assert episode.closed_at == T0 + timedelta(hours=3)
+        assert episode.duration_s == 3600
+        assert [r.text for r in episode.reasons] == [_DOWN]
+
+    def test_unknown_closes_an_episode_and_opens_none(self):
+        events = [
+            _health(LEAF, T0 + timedelta(hours=2), "unhealthy", reasons=(_DOWN,)),
+            _health(LEAF, T0 + timedelta(hours=3), "unknown", "unhealthy"),
+            _health(LEAF, T0 + timedelta(hours=4), "healthy", "unknown"),
+        ]
+        [episode] = self._project(events).devices[0].episodes
+        assert episode.closed_at == T0 + timedelta(hours=3)
+
+    def test_an_episode_keeps_the_reasons_it_opened_with(self):
+        second = "BGP 10.10.1.0 idle (expected established)"
+        events = [
+            _health(LEAF, T0 + timedelta(hours=2), "unhealthy", reasons=(_DOWN,)),
+            _health(LEAF, T0 + timedelta(hours=2, minutes=1), "unhealthy", "unhealthy", (_DOWN, second)),
+        ]
+        [episode] = self._project(events).devices[0].episodes
+        assert [r.text for r in episode.reasons] == [_DOWN]
+        assert (episode.closed_at, episode.duration_s) == (None, None)
+
+    def test_an_episode_still_open_at_the_end_is_open(self):
+        events = [
+            _health(LEAF, T0 + timedelta(hours=2), "unhealthy", reasons=(_DOWN,)),
+            _health(LEAF, T0 + timedelta(hours=30), "healthy", "unhealthy"),  # after the end: not used
+        ]
+        health = self._project(events)
+        [episode] = health.devices[0].episodes
+        assert episode.closed_at is None
+        assert health.devices[0].current is not None
+        assert health.devices[0].current.state == "unhealthy"
+
+    def test_episodes_are_those_overlapping_the_range(self):
+        events = [
+            _health(LEAF, T0 - timedelta(hours=5), "unhealthy", reasons=(_DOWN,)),
+            _health(LEAF, T0 - timedelta(hours=4), "healthy", "unhealthy"),  # before the range
+            _health(LEAF, T0 - timedelta(hours=1), "unhealthy", "healthy", (_DOWN,)),
+            _health(LEAF, T0 + timedelta(hours=1), "healthy", "unhealthy"),  # overlaps the start
+            _health(LEAF, T0 + timedelta(hours=2), "unhealthy", "healthy", (_DOWN,)),  # inside, still open
+        ]
+        episodes = self._project(events).devices[0].episodes
+        assert [e.opened_at for e in episodes] == [T0 - timedelta(hours=1), T0 + timedelta(hours=2)]
+
+    def test_start_must_be_before_end(self):
+        with pytest.raises(ValueError, match="start must be before end"):
+            self._project([], start=T0, end=T0)
+
+    def test_too_many_events_in_the_range_is_refused(self):
+        events = [_health(LEAF, T0 + timedelta(minutes=m), "healthy" if m % 2 else "unknown") for m in range(5)]
+        with pytest.raises(TimelineTooLongError, match="5 health events"):
+            self._project(events, max_events=4)
+
+    def test_with_the_sot_down_devices_come_from_the_trail(self):
+        from snapl_presentation.dashboard.projections import project_health
+
+        health = project_health(
+            [_health(LEAF, T0 + timedelta(hours=1), "healthy")], None, {LEAF: "leaf-01"}, self.START, self.END
+        )
+        assert [d.name for d in health.devices] == ["leaf-01"]
+
+
+class TestHealthLeavesEveryProjectionAlone:
+    """SC-007: the captured trail answers the same with health events interleaved."""
+
+    async def test_every_existing_projection_answers_the_same(self):
+        from snapl_presentation.dashboard.projections import (
+            project_steps,
+            project_timeline,
+            run_events,
+        )
+        from tests.unit.test_presentation.dashboard_fakes import ARC, arc_events, arc_states
+
+        events = await arc_events()
+        states = arc_states()
+        first = min(e.timestamp for e in events)
+        last = max(e.timestamp for e in events)
+        start, end = first - timedelta(hours=1), last + timedelta(hours=1)
+        step = (last - first) / 40
+        health: list[AuditEvent] = []
+        for i in range(40):
+            for name, (_, device_id) in ARC.items():
+                after = ("healthy", "unhealthy", "unknown")[(i + len(name)) % 3]
+                health.append(_health(device_id, first + step * i, after, reasons=(_DOWN,), name=name))
+        # The worker records health from before the first scan: no first_event_at may move.
+        spine = ARC["spine-01"][1]
+        health.append(_health(spine, first - timedelta(minutes=30), "healthy", name="spine-01"))
+        mixed = sorted([*events, *health], key=lambda e: e.timestamp)
+        names = {device_id: name for name, (_, device_id) in ARC.items()}
+
+        def devices(trail):
+            return [v.model_dump(exclude={"health"}) for v in project_devices(trail, states, names)]
+
+        def runs(trail):
+            return project_runs(trail, set(), end, names=names, ui_address=UI, namespace="default", limit=500)
+
+        def degraded(trail):
+            return [v.model_dump(exclude={"health"}) for v in project_devices(trail, None, names)]
+
+        assert devices(mixed) == devices(events)
+        assert degraded(mixed) == degraded(events)
+        assert runs(mixed) == runs(events)
+        for run in runs(events):
+            assert project_steps(run, run_events(mixed, run.workflow_id, run.started_at)) == project_steps(
+                run, run_events(events, run.workflow_id, run.started_at)
+            )
+        assert project_timeline(mixed, states, names, start, end) == project_timeline(events, states, names, start, end)
+        assert project_drift_summary(mixed, states, names, start, end) == project_drift_summary(
+            events, states, names, start, end
+        )
+        for series in SeriesName:
+            for bucket in (Bucket.HOUR, Bucket.DAY):
+                assert project_series(mixed, series, start, end, bucket, states=states, names=names) == project_series(
+                    events, series, start, end, bucket, states=states, names=names
+                ), (series, bucket)

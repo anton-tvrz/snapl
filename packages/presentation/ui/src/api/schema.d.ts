@@ -81,6 +81,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Health
+         * @description Each device's health and its unhealthy episodes over a range (spec 016).
+         */
+        get: operations["health_api_v1_health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/history": {
         parameters: {
             query?: never;
@@ -459,6 +479,37 @@ export interface components {
             /** Open */
             open: number;
         };
+        /** DeviceHealthEntry */
+        DeviceHealthEntry: {
+            current?: components["schemas"]["DeviceHealthView"] | null;
+            /**
+             * Device Id
+             * Format: uuid
+             */
+            device_id: string;
+            /** Episodes */
+            episodes?: components["schemas"]["HealthEpisode"][];
+            /** Name */
+            name: string;
+        };
+        /**
+         * DeviceHealthState
+         * @enum {string}
+         */
+        DeviceHealthState: "healthy" | "unhealthy" | "unknown";
+        /** DeviceHealthView */
+        DeviceHealthView: {
+            /** Last Sample At */
+            last_sample_at?: string | null;
+            /** Reasons */
+            reasons?: components["schemas"]["HealthReasonView"][];
+            /**
+             * Since
+             * Format: date-time
+             */
+            since: string;
+            state: components["schemas"]["DeviceHealthState"];
+        };
         /** DeviceLane */
         DeviceLane: {
             /**
@@ -483,6 +534,7 @@ export interface components {
             drift_state: components["schemas"]["DriftState"];
             /** Error */
             error?: string | null;
+            health?: components["schemas"]["DeviceHealthView"] | null;
             /** In Intent */
             in_intent: boolean;
             last_deploy?: components["schemas"]["DeployOutcome"] | null;
@@ -683,10 +735,77 @@ export interface components {
             /** Workflow Id */
             workflow_id: string;
         };
+        /** FabricHealth */
+        FabricHealth: {
+            /** Devices */
+            devices: components["schemas"]["DeviceHealthEntry"][];
+            /**
+             * End
+             * Format: date-time
+             */
+            end: string;
+            /** First Event At */
+            first_event_at?: string | null;
+            /**
+             * Start
+             * Format: date-time
+             */
+            start: string;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /**
+         * HealthEpisode
+         * @description One device unhealthy: from the change to unhealthy to the change away from it.
+         */
+        HealthEpisode: {
+            /** Closed At */
+            closed_at?: string | null;
+            /** Duration S */
+            duration_s?: number | null;
+            /**
+             * Opened At
+             * Format: date-time
+             */
+            opened_at: string;
+            /** Reasons */
+            reasons: components["schemas"]["HealthReasonView"][];
+        };
+        /**
+         * HealthReasonView
+         * @description Why a device is not healthy, as the worker recorded it.
+         */
+        HealthReasonView: {
+            /** Actual */
+            actual?: string | null;
+            /** Expected */
+            expected?: string | null;
+            /** Item */
+            item?: string | null;
+            /** Kind */
+            kind: string;
+            /** Text */
+            text: string;
+        };
+        /** HealthResponse */
+        HealthResponse: {
+            /**
+             * Contract Version
+             * @default 1
+             * @constant
+             */
+            contract_version: "1";
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            health: components["schemas"]["View_FabricHealth_"];
+            /** Use Case */
+            use_case: string;
         };
         /** HistoryResponse */
         HistoryResponse: {
@@ -1383,6 +1502,24 @@ export interface components {
              */
             stale: boolean;
         };
+        /** View[FabricHealth] */
+        View_FabricHealth_: {
+            /** Available */
+            available: boolean;
+            data?: components["schemas"]["FabricHealth"] | null;
+            /** Fetched At */
+            fetched_at?: string | null;
+            /** Reason */
+            reason?: string | null;
+            /** Remedy */
+            remedy?: string | null;
+            source: components["schemas"]["SourceName"];
+            /**
+             * Stale
+             * @default false
+             */
+            stale: boolean;
+        };
         /** View[LabEvidence] */
         View_LabEvidence_: {
             /** Available */
@@ -1695,6 +1832,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DriftTimelineResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    health_api_v1_health_get: {
+        parameters: {
+            query?: {
+                /** @description Defaults to the server's --use-case. */
+                use_case?: string | null;
+                /** @description Defaults to end - 24h. */
+                start?: string | null;
+                /** @description Defaults to now. */
+                end?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HealthResponse"];
                 };
             };
             /** @description Validation Error */

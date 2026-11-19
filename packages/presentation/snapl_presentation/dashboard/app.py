@@ -33,12 +33,17 @@ from snapl_presentation.dashboard.models import (
     ArchiveInfo,
     Bucket,
     CiStatus,
+    DeviceHealthState,
+    DeviceHealthView,
     DeviceView,
     DriftSummary,
     DriftSummaryResponse,
     DriftTimeline,
     DriftTimelineResponse,
     Envelope,
+    FabricHealth,
+    HealthReasonView,
+    HealthResponse,
     LabEvidence,
     Link,
     LinkGroup,
@@ -68,6 +73,7 @@ from snapl_presentation.dashboard.projections import (
     latest_pause,
     project_devices,
     project_drift_summary,
+    project_health,
     project_repeated_failures,
     project_running,
     project_runs,
@@ -352,6 +358,35 @@ def compose_devices(audit: View[Any], sot: View[Any], names: dict) -> View[list[
     return View(source=SourceName.SOT, available=True, fetched_at=sot.fetched_at, data=devices)
 
 
+WORKER_NOT_RUNNING = "the worker is not running"
+
+
+def with_worker_state(devices: View[list[DeviceView]], temporal: View[Any]) -> View[list[DeviceView]]:
+    """Recorded health read as ``unknown`` when Temporal says no worker polls (spec 016).
+
+    Only a worker records health, so with none running a recorded state is
+    old news, not the device's state. Temporal down says nothing about the
+    worker: the recorded health is shown as it is.
+    """
+    snapshot = temporal.data
+    if not temporal.available or snapshot is None or snapshot.pollers > 0 or not devices.data:
+        return devices
+    since = temporal.fetched_at
+
+    def unknown(device: DeviceView) -> DeviceView:
+        if device.health is None or since is None:
+            return device
+        health = DeviceHealthView(
+            state=DeviceHealthState.UNKNOWN,
+            reasons=[HealthReasonView(kind="no_telemetry", text=WORKER_NOT_RUNNING)],
+            since=since,
+            last_sample_at=device.health.last_sample_at,
+        )
+        return device.model_copy(update={"health": health})
+
+    return devices.model_copy(update={"data": [unknown(device) for device in devices.data]})
+
+
 def _from_temporal[T](temporal: View[Any], data: T | None) -> View[T]:
     """A view of Temporal-derived data, carrying Temporal's availability and age."""
     return View(
@@ -627,12 +662,14 @@ def create_app(
     async def devices(requested: UseCaseQuery = None, at: AtQuery = None) -> DevicesResponse:
         served = _check_use_case(requested)
         _check_at(at)
-        audit, sot = await reader.read_all(SourceName.AUDIT, SourceName.SOT)
-        return DevicesResponse(
-            use_case=served,
-            generated_at=clock(),
-            devices=compose_devices(_as_of(audit, at), sot, sources.sot.names),
-        )
+        if at is not None or exported is not None:
+            # A past state, or an archive: the health as recorded.
+            audit, sot = await reader.read_all(SourceName.AUDIT, SourceName.SOT)
+            devices = compose_devices(_as_of(audit, at), sot, sources.sot.names)
+        else:
+            audit, sot, temporal = await reader.read_all(SourceName.AUDIT, SourceName.SOT, SourceName.TEMPORAL)
+            devices = with_worker_state(compose_devices(audit, sot, sources.sot.names), temporal)
+        return DevicesResponse(use_case=served, generated_at=clock(), devices=devices)
 
     @router.get("/topology", response_model=TopologyResponse)
     async def topology(requested: UseCaseQuery = None) -> TopologyResponse:
@@ -797,6 +834,43 @@ def create_app(
         )
         return DriftSummaryResponse(use_case=served, generated_at=clock(), summary=view)
 
+    @router.get("/health", response_model=HealthResponse)
+    async def health(
+        requested: UseCaseQuery = None,
+        start: Annotated[AwareDatetime | None, Query(description="Defaults to end - 24h.")] = None,
+        end: Annotated[AwareDatetime | None, Query(description="Defaults to now.")] = None,
+    ) -> HealthResponse:
+        """Each device's health and its unhealthy episodes over a range (spec 016)."""
+        served = _check_use_case(requested)
+        range_end = end or clock()
+        range_start = start or range_end - timedelta(hours=24)
+        audit, sot = await reader.read_all(SourceName.AUDIT, SourceName.SOT)
+        fabric: FabricHealth | None = None
+        if audit.data is not None:
+            try:
+                fabric = project_health(
+                    audit.data,
+                    sot.data if sot.available else None,
+                    _device_names(sot, sources.sot.names),
+                    range_start,
+                    range_end,
+                    max_events=MAX_SCAN_POINTS,
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+        elif range_start >= range_end:
+            raise HTTPException(status_code=422, detail="start must be before end")
+        view: View[FabricHealth] = View(
+            source=SourceName.AUDIT,
+            available=audit.available,
+            stale=audit.stale,
+            fetched_at=audit.fetched_at,
+            reason=audit.reason,
+            remedy=audit.remedy,
+            data=fabric,
+        )
+        return HealthResponse(use_case=served, generated_at=clock(), health=view)
+
     @router.get("/mode", response_model=ModeResponse)
     async def mode(requested: UseCaseQuery = None) -> ModeResponse:
         """Whether this server shows the live stack or a history archive (spec 011)."""
@@ -904,7 +978,11 @@ def create_app(
         return Overview(
             use_case=served,
             generated_at=now,
-            devices=compose_devices(audit, sot, sources.sot.names),
+            devices=(
+                compose_devices(audit, sot, sources.sot.names)
+                if exported is not None
+                else with_worker_state(compose_devices(audit, sot, sources.sot.names), temporal)
+            ),
             runs=runs_view,
             running=running_view,
             schedule=schedule_view,

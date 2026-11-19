@@ -8,6 +8,9 @@ The real app, with:
   `--sources up` the other sources answering with canned data (an active
   schedule, one worker, a scan running, CI on main and two PRs, lab runs of
   both suites, and synthetic metrics over any range), for the panels that read them;
+- the device health changes of today's lab added to that trail (spec 016: both
+  spines unhealthy for their sessions, leaf-01 unhealthy for an hour, leaf-03
+  unknown for two minutes);
 - the clock fixed just after the arc's last scan, so ages and default ranges are stable;
 - with `--scan-steps`, the arc with the step events a scan records since spec 015
   added (FR-016), so a scan's loop strip shows its blocks.
@@ -60,13 +63,13 @@ from snapl_presentation.dashboard.prometheus import VIEWS, RangePlan, window_not
 from snapl_presentation.dashboard.sources import AuditSource, Sources, TemporalSnapshot  # noqa: E402
 from snapl_presentation.settings import CliSettings  # noqa: E402
 from tests.unit.test_presentation.dashboard_fakes import (  # noqa: E402
-    ARC_FIXTURE,
-    SCAN_3_END,
+    FIXTURE_NOW,
     arc_states,
+    write_arc_with_health,
     write_arc_with_scan_steps,
 )
 
-NOW = SCAN_3_END + timedelta(seconds=30)
+NOW = FIXTURE_NOW
 REMEDIES = {
     SourceName.TEMPORAL: "uv run invoke dev.deps",
     SourceName.CI: "export GITHUB_TOKEN=…",
@@ -339,7 +342,10 @@ class _PrometheusUp:
         )
 
 
-def build_app(ui_dir: Path | None = None, *, up: bool = False, audit_path: Path = ARC_FIXTURE):
+def build_app(ui_dir: Path | None = None, *, up: bool = False, audit_path: Path | None = None):
+    """The app over the fixtures. ``audit_path`` defaults to the arc with today's health added."""
+    if audit_path is None:
+        audit_path = asyncio.run(write_arc_with_health(Path(tempfile.mkdtemp()) / "arc-with-health.sqlite"))
     sources = Sources(
         audit=AuditSource(str(audit_path), clock=lambda: NOW),
         sot=_Intent(),
@@ -358,7 +364,7 @@ def main() -> None:
     parser.add_argument("--sources", choices=["down", "up"], default="down")
     parser.add_argument("--scan-steps", action="store_true", help="serve the arc with a scan's step events (spec 015)")
     args = parser.parse_args()
-    audit_path = ARC_FIXTURE
+    audit_path = None
     if args.scan_steps:
         audit_path = asyncio.run(write_arc_with_scan_steps(Path(tempfile.mkdtemp()) / "arc-with-scan-steps.sqlite"))
     app = build_app(up=args.sources == "up", audit_path=audit_path)
