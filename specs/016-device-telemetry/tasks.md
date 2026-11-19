@@ -148,12 +148,12 @@ A slice that changes the contract also regenerates the OpenAPI snapshot and the 
 
 **Goal**: six named views and a fabric-wide `/network`.
 
-- [ ] T035 [US1] Tests first in `test_dashboard_prometheus.py` and `test_dashboard_models.py`: the six view names, their queries, units and series labels (contracts/telemetry.md); `bytes_per_second` and `percent` units; synthetic range answers in the shape of spec 012's fixtures parse; `bgp-established` has no window note.
-- [ ] T036 [US1] Add the views to `MetricsViewName` and `VIEWS` in `prometheus.py`, and the units to `MetricUnit` in `models.py`.
-- [ ] T037 [US1] Tests first for `/api/v1/network` in `test_dashboard_app.py`, with a stub Prometheus: items come from intent in name and peer order; values from instant queries; an item with no series is `null`, never 0; an interface intended disabled has `expected: "down"`; a disabled session has `expected: null`; the store down → unavailable with reason and remedy (US1 scenario 4); the SoT down → the devices it last named, as `/devices` does.
-- [ ] T038 [US1] Add `InterfaceState`, `SessionState`, `DeviceNetwork`, `FabricNetwork`, `NetworkResponse` to `models.py`, the instant queries to `prometheus.py`, and the route to `app.py`.
-- [ ] T039 [US1] Synthetic network series in the fixture server: traffic on every link, errors on one interface, the spines' sessions at 0 established, CPU and memory with the lab note. Tests first in `test_ui_fixtures.py`.
-- [ ] T040 Regenerate the OpenAPI snapshot and the UI's types. Append to the changelog.
+- [x] T035 [US1] Tests first in `test_dashboard_prometheus.py` and `test_dashboard_models.py`: the six view names, their queries, units and series labels (contracts/telemetry.md); `bytes_per_second` and `percent` units; synthetic range answers in the shape of spec 012's fixtures parse; `bgp-established` has no window note.
+- [x] T036 [US1] Add the views to `MetricsViewName` and `VIEWS` in `prometheus.py`, and the units to `MetricUnit` in `models.py`.
+- [x] T037 [US1] Tests first for `/api/v1/network` in `test_dashboard_app.py`, with a stub Prometheus: items come from intent in name and peer order; values from instant queries; an item with no series is `null`, never 0; an interface intended disabled has `expected: "down"`; a disabled session has `expected: null`; the store down → unavailable with reason and remedy (US1 scenario 4); the SoT down → the devices it last named, as `/devices` does.
+- [x] T038 [US1] Add `InterfaceState`, `SessionState`, `DeviceNetwork`, `FabricNetwork`, `NetworkResponse` to `models.py`, the instant queries to `prometheus.py`, and the route to `app.py`.
+- [x] T039 [US1] Synthetic network series in the fixture server: traffic on every link, errors on one interface, the spines' sessions at 0 established, CPU and memory with the lab note. Tests first in `test_ui_fixtures.py`.
+- [x] T040 Regenerate the OpenAPI snapshot and the UI's types. Append to the changelog.
 
 **Checkpoint**: `curl /api/v1/network` on the fixture server lists spine-01's 5 interfaces and 4 sessions.
 

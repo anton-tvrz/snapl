@@ -76,6 +76,7 @@ CONTRACT_ROUTES = {
     ("/api/v1/drift-summary", "GET"),
     # Spec 016 (contracts/telemetry.md).
     ("/api/v1/health", "GET"),
+    ("/api/v1/network", "GET"),
     ("/api/v1/openapi.json", "GET"),
     ("/api/v1/openapi.json", "HEAD"),
     # Prometheus text format for scrapers, outside /api/v1 (spec 012 R8).
@@ -95,10 +96,19 @@ class FakeSource:
 class FakePrometheus:
     """A metrics source: ready for /sources, and canned or failing range queries."""
 
-    def __init__(self, ready: View[Any] | None = None, *, fail: Exception | None = None) -> None:
+    def __init__(self, ready: View[Any] | None = None, *, fail: Exception | None = None, sample: Any = None) -> None:
         self.ready = ready or View(source=SourceName.PROMETHEUS, available=True, fetched_at=T0)
         self.fail = fail
         self.plans: list = []
+        self.sample = sample
+
+    async def network(self) -> Any:
+        """Spec 016: the instant figures /network reads."""
+        if self.fail is not None:
+            raise self.fail
+        from snapl_presentation.dashboard.prometheus import NetworkSample
+
+        return self.sample or NetworkSample(at=T0)
 
     async def refresh(self) -> View[Any]:
         return self.ready
@@ -319,6 +329,7 @@ def test_every_route_only_reads_and_matches_the_contract():
         "/api/v1/runs/steps",
         "/api/v1/mode",
         "/api/v1/health",
+        "/api/v1/network",
     ],
 )
 @pytest.mark.parametrize("method", ["HEAD", "POST", "PUT", "PATCH", "DELETE"])
@@ -1378,6 +1389,14 @@ def test_page_fetches_every_metrics_view():
         assert f'"{view.value}"' in page, view
 
 
+def test_page_shows_the_network_units():
+    """Spec 016: traffic in bytes per second, CPU and memory in percent."""
+    page = _client().get("/").text
+
+    assert 'if (unit === "bytes_per_second") return Math.round(value) + " B/s";' in page
+    assert 'if (unit === "percent") return Math.round(value) + "%";' in page
+
+
 def test_page_shows_a_count_rounded_and_an_unknown_unit_raw():
     """Spec 015: `count` reads as a whole number; only `up` reads as up or down."""
     page = _client().get("/").text
@@ -1918,3 +1937,138 @@ def test_health_with_the_audit_trail_down_says_so():
 
     assert (view["available"], view["reason"], view["remedy"]) == (False, "unable to open database file", "snapl scan")
     assert view["data"] is None
+
+
+# --- Network (spec 016 T037, contracts/telemetry.md) -------------------------------
+
+
+def _network_states() -> list[DesiredState]:
+    from snapl_intent.models import BGPSession, Interface
+
+    device = SPINE.device
+
+    def interface(name: str, *, enabled: bool = True) -> Interface:
+        return Interface(id=uuid4(), device_id=device.id, name=name, enabled=enabled)
+
+    def session(peer: str, *, enabled: bool = True) -> BGPSession:
+        return BGPSession(
+            id=uuid4(), device_id=device.id, local_asn=65000, peer_address=peer, peer_asn=65001, enabled=enabled
+        )
+
+    spine = DesiredState(
+        device=device,
+        interfaces=[interface("lo0"), interface("ethernet-1/2", enabled=False), interface("ethernet-1/1")],
+        bgp_sessions=[session("10.10.1.3"), session("10.10.1.1"), session("10.10.1.5", enabled=False)],
+    )
+    return [LEAF, spine]
+
+
+def _sample():
+    from snapl_presentation.dashboard.prometheus import NetworkSample
+
+    return NetworkSample(
+        at=T0,
+        interface_up={("spine-01", "ethernet-1/1"): 1.0, ("spine-01", "ethernet-1/2"): 0.0},
+        octets={("spine-01", "ethernet-1/1", "in"): 1250.5, ("spine-01", "ethernet-1/1", "out"): 980.0},
+        errors={("spine-01", "ethernet-1/1", "in"): 0.2, ("spine-01", "ethernet-1/1", "out"): 0.0},
+        discards={("spine-01", "ethernet-1/1", "in"): 0.0, ("spine-01", "ethernet-1/1", "out"): 0.0},
+        established={("spine-01", "10.10.1.1"): 1.0, ("spine-01", "10.10.1.3"): 0.0},
+        prefixes={("spine-01", "10.10.1.1"): 3.0},
+        cpu={("spine-01",): 4.0},
+        memory={("spine-01",): 94.0},
+    )
+
+
+def _network(**kw) -> dict:
+    sot = kw.pop("sot", View(source=SourceName.SOT, available=True, fetched_at=T0, data=_network_states()))
+    prometheus = kw.pop("prometheus", FakePrometheus(sample=_sample()))
+    return _client(sot=sot, prometheus=prometheus, **kw).get("/api/v1/network").json()
+
+
+def test_network_lists_intents_items_with_their_figures():
+    body = _network()
+
+    view = body["network"]
+    assert (view["source"], view["available"]) == ("prometheus", True)
+    network = view["data"]
+    assert network["at"] == "2026-11-07T21:00:00Z"
+    assert [d["name"] for d in network["devices"]] == ["spine-01", "leaf-01"]  # the page's order, as /devices
+    spine = network["devices"][0]
+    assert spine["device_id"] == str(SPINE.device.id)
+    assert [i["name"] for i in spine["interfaces"]] == ["ethernet-1/1", "ethernet-1/2", "lo0"]
+    assert spine["interfaces"][0] == {
+        "name": "ethernet-1/1",
+        "expected": "up",
+        "up": True,
+        "in_bps": 1250.5,
+        "out_bps": 980.0,
+        "in_errors_ps": 0.2,
+        "out_errors_ps": 0.0,
+        "in_discards_ps": 0.0,
+        "out_discards_ps": 0.0,
+    }
+    assert [s["peer"] for s in spine["sessions"]] == ["10.10.1.1", "10.10.1.3", "10.10.1.5"]
+    assert spine["sessions"][0] == {
+        "peer": "10.10.1.1",
+        "expected": "established",
+        "established": True,
+        "prefixes_received": 3,
+    }
+    assert (spine["cpu_percent"], spine["memory_percent"]) == (4.0, 94.0)
+
+
+def test_network_an_item_with_no_series_is_null_never_zero():
+    spine = _network()["network"]["data"]["devices"][0]
+
+    lo0 = spine["interfaces"][2]
+    assert lo0["up"] is None
+    assert all(lo0[k] is None for k in ("in_bps", "out_bps", "in_errors_ps", "out_errors_ps"))
+    assert spine["sessions"][1]["established"] is False  # 0 is a value
+    assert spine["sessions"][1]["prefixes_received"] is None
+    leaf = _network()["network"]["data"]["devices"][1]
+    assert (leaf["interfaces"], leaf["sessions"], leaf["cpu_percent"], leaf["memory_percent"]) == ([], [], None, None)
+
+
+def test_network_an_interface_intended_disabled_is_expected_down_and_a_disabled_session_expects_nothing():
+    spine = _network()["network"]["data"]["devices"][0]
+
+    assert spine["interfaces"][1]["expected"] == "down"
+    assert spine["interfaces"][1]["up"] is False
+    assert spine["sessions"][2] == {
+        "peer": "10.10.1.5",
+        "expected": None,
+        "established": None,
+        "prefixes_received": None,
+    }
+
+
+def test_network_with_the_store_down_is_unavailable_with_reason_and_remedy():
+    """US1 scenario 4."""
+    from snapl_presentation.dashboard.sources import SourceUnavailable
+
+    down = FakePrometheus(
+        fail=SourceUnavailable("Prometheus not reachable at http://localhost:9090: refused", STACK_REMEDY)
+    )
+
+    view = _network(prometheus=down)["network"]
+
+    assert view["available"] is False
+    assert view["source"] == "prometheus"
+    assert view["reason"] == "Prometheus not reachable at http://localhost:9090: refused"
+    assert view["remedy"] == STACK_REMEDY
+    assert view["data"] is None
+
+
+def test_network_with_the_sot_down_lists_the_devices_it_last_named():
+    down = View(source=SourceName.SOT, available=False, reason="Infrahub unreachable", remedy=STACK_REMEDY)
+
+    view = _network(sot=down, names={SPINE.device.id: "spine-01"})["network"]
+
+    assert (view["source"], view["available"], view["reason"]) == ("sot", False, "Infrahub unreachable")
+    [spine] = view["data"]["devices"]
+    assert (spine["name"], spine["interfaces"], spine["sessions"]) == ("spine-01", [], [])
+    assert spine["cpu_percent"] == 4.0
+
+
+def test_network_rejects_another_use_case():
+    assert _client().get("/api/v1/network", params={"use_case": "campus"}).status_code == 422

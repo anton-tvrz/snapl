@@ -27,7 +27,7 @@ from invoke import Context, Exit
 
 from snapl_orchestrator.audit.sqlite import SqliteAuditLog
 from snapl_orchestrator.models import AuditEvent, AuditEventType
-from snapl_presentation.dashboard.models import MetricsViewName, SeriesName
+from snapl_presentation.dashboard.models import NETWORK_VIEWS, MetricsViewName, SeriesName
 from tasks import history, ns
 
 pytestmark = pytest.mark.unit
@@ -190,7 +190,8 @@ def test_archive_holds_every_part_and_exits_0(stub: Stub, tmp_path: Path, capsys
         f"prometheus/{SNAPSHOT_NAME}/01HBLOCK/chunks",
         "test-runs/20261108T101500Z-e2e/run.json",
         *(f"export/{name}.json" for name in EXPORTS),
-        *(f"export/metrics/{view.value}.json" for view in MetricsViewName),
+        # Spec 016's views join in its PR F.
+        *(f"export/metrics/{view.value}.json" for view in MetricsViewName if view not in NETWORK_VIEWS),
     }
     assert expected <= set(members)
     out = capsys.readouterr().out
@@ -317,7 +318,7 @@ def test_the_export_covers_the_last_7_days(stub: Stub) -> None:
         "/api/v1/history",
         "/api/v1/drift-timeline",
         "/api/v1/drift-summary",
-        *(f"/api/v1/metrics/{v.value}" for v in MetricsViewName),
+        *(f"/api/v1/metrics/{v.value}" for v in MetricsViewName if v not in NETWORK_VIEWS),
     )
     for path in ranged:
         [query] = stub.asked("GET", path)

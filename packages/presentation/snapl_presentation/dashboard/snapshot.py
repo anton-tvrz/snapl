@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import httpx
 
 from snapl_presentation.dashboard.app import waiting_in_full
-from snapl_presentation.dashboard.models import DEFAULT_SERIES, MetricsViewName, SeriesName
+from snapl_presentation.dashboard.models import DEFAULT_SERIES, NETWORK_VIEWS, MetricsViewName, SeriesName
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -166,7 +166,8 @@ async def _collect(app: FastAPI, days: int, commit: str | None, source: str) -> 
             "steps": steps,
             "links": await get("links"),
             "sources": sources,
-            "metrics": {view.value: await metrics(view) for view in MetricsViewName},
+            # Spec 016's views join in its PR F, at the coarse step (NETWORK_VIEWS).
+            "metrics": {view.value: await metrics(view) for view in MetricsViewName if view not in NETWORK_VIEWS},
         }
 
 

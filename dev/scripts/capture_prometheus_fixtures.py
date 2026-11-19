@@ -59,6 +59,13 @@ VIEW_FILES = {
     MetricsViewName.SCAN_RESULTS: "range_scan_results.json",
     MetricsViewName.DRIFT_PATHS: "range_drift_paths.json",
     MetricsViewName.DEPLOY_OUTCOMES: "range_deploy_outcomes.json",
+    # Spec 016: the network, from the worker's telemetry.
+    MetricsViewName.INTERFACE_TRAFFIC: "range_interface_traffic.json",
+    MetricsViewName.INTERFACE_ERRORS: "range_interface_errors.json",
+    MetricsViewName.INTERFACE_DISCARDS: "range_interface_discards.json",
+    MetricsViewName.BGP_ESTABLISHED: "range_bgp_established.json",
+    MetricsViewName.DEVICE_CPU: "range_device_cpu.json",
+    MetricsViewName.DEVICE_MEMORY: "range_device_memory.json",
 }
 
 

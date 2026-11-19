@@ -39,6 +39,13 @@ EXPECTED_FILES = {
     "range_scan_results.json",
     "range_drift_paths.json",
     "range_deploy_outcomes.json",
+    # Spec 016: the network.
+    "range_interface_traffic.json",
+    "range_interface_errors.json",
+    "range_interface_discards.json",
+    "range_bgp_established.json",
+    "range_device_cpu.json",
+    "range_device_memory.json",
     "range_absent_metric.json",
     "instant_up.json",
     "error_bad_query.json",

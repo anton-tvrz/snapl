@@ -1,0 +1,416 @@
+{
+  "contract_version": "1",
+  "generated_at": "2026-11-07T21:20:48.919877Z",
+  "network": {
+    "available": true,
+    "data": {
+      "at": "2026-11-07T21:20:48.919877Z",
+      "devices": [
+        {
+          "cpu_percent": 3.0,
+          "device_id": "18e29d6d-e0c5-0ba7-32d1-c510fc3ef077",
+          "interfaces": [
+            {
+              "expected": "up",
+              "in_bps": 1000.0,
+              "in_discards_ps": 0.0,
+              "in_errors_ps": 0.0,
+              "name": "ethernet-1/1",
+              "out_bps": 1007.0,
+              "out_discards_ps": 0.0,
+              "out_errors_ps": 0.0,
+              "up": true
+            },
+            {
+              "expected": "up",
+              "in_bps": 1015.0,
+              "in_discards_ps": 0.0,
+              "in_errors_ps": 0.0,
+              "name": "ethernet-1/2",
+              "out_bps": 1022.0,
+              "out_discards_ps": 0.0,
+              "out_errors_ps": 0.0,
+              "up": true
+            },
+            {
+              "expected": "up",
+              "in_bps": 1030.0,
+              "in_discards_ps": 0.0,
+              "in_errors_ps": 0.0,
+              "name": "ethernet-1/3",
+              "out_bps": 1037.0,
+              "out_discards_ps": 0.0,
+              "out_errors_ps": 0.0,
+              "up": true
+            },
+            {
+              "expected": "up",
+              "in_bps": 1045.0,
+              "in_discards_ps": 0.0,
+              "in_errors_ps": 0.0,
+              "name": "ethernet-1/4",
+              "out_bps": 1052.0,
+              "out_discards_ps": 0.0,
+              "out_errors_ps": 0.0,
+              "up": true
+            },
+            {
+              "expected": "up",
+              "in_bps": null,
+              "in_discards_ps": null,
+              "in_errors_ps": null,
+              "name": "lo0",
+              "out_bps": null,
+              "out_discards_ps": null,
+              "out_errors_ps": null,
+              "up": true
+            }
+          ],
+          "memory_percent": 94.0,
+          "name": "spine-01",
+          "sessions": [
+            {
+              "established": false,
+              "expected": "established",
+              "peer": "10.10.1.1",
+              "prefixes_received": 0
+            },
+            {
+              "established": false,
+              "expected": "established",
+              "peer": "10.10.1.3",
+              "prefixes_received": 0
+            },
+            {
+              "established": false,
+              "expected": "established",
+              "peer": "10.10.1.5",
+              "prefixes_received": 0
+            },
+            {
+              "established": false,
+              "expected": "established",
+              "peer": "10.10.1.7",
+              "prefixes_received": 0
+            }
+          ]
+        },
+        {
+          "cpu_percent": 4.0,
+          "device_id": "18e29d6e-1959-3451-32dc-c51d9065aa58",
+          "interfaces": [
+            {
+              "expected": "up",
+              "in_bps": 1060.0,
+              "in_discards_ps": 0.0,
+              "in_errors_ps": 0.0,
+              "name": "ethernet-1/1",
+              "out_bps": 1067.0,
+              "out_discards_ps": 0.0,
+              "out_errors_ps": 0.0,
+              "up": true
+            },
+            {
+              "expected": "up",
+              "in_bps": 1075.0,
+              "in_discards_ps": 0.0,
+              "in_errors_ps": 0.0,
+              "name": "ethernet-1/2",
+              "out_bps": 1082.0,
+              "out_discards_ps": 0.0,
+              "out_errors_ps": 0.0,
+              "up": true
+            },
+            {
+              "expected": "up",
+              "in_bps": 1090.0,
+              "in_discards_ps": 0.0,
+              "in_errors_ps": 0.0,
+              "name": "ethernet-1/3",
+              "out_bps": 1097.0,
+              "out_discards_ps": 0.0,
+              "out_errors_ps": 0.0,
+              "up": true
+            },
+            {
+              "expected": "up",
+              "in_bps": 1105.0,
+              "in_discards_ps": 0.0,
+              "in_errors_ps": 0.0,
+              "name": "ethernet-1/4",
+              "out_bps": 1112.0,
+              "out_discards_ps": 0.0,
+              "out_errors_ps": 0.0,
+              "up": true
+            },
+            {
+              "expected": "up",
+              "in_bps": null,
+              "in_discards_ps": null,
+              "in_errors_ps": null,
+              "name": "lo0",
+              "out_bps": null,
+              "out_discards_ps": null,
+              "out_errors_ps": null,
+              "up": true
+            }
+          ],
+          "memory_percent": 94.0,
+          "name": "spine-02",
+          "sessions": [
+            {
+              "established": false,
+              "expected": "established",
+              "peer": "10.10.2.1",
+              "prefixes_received": 0
+            },
+            {
+              "established": false,
+              "expected": "established",
+              "peer": "10.10.2.3",
+              "prefixes_received": 0
+            },
+            {
+              "established": false,
+              "expected": "established",
+              "peer": "10.10.2.5",
+              "prefixes_received": 0
+            },
+            {
+              "established": false,
+              "expected": "established",
+              "peer": "10.10.2.7",
+              "prefixes_received": 0
+            }
+          ]
+        },
+        {
+          "cpu_percent": 5.0,
+          "device_id": "18e29d6e-246e-5cd1-32d2-c51d13d4de9e",
+          "interfaces": [
+            {
+              "expected": "up",
+              "in_bps": 1120.0,
+              "in_discards_ps": 0.0,
+              "in_errors_ps": 0.0,
+              "name": "ethernet-1/49",
+              "out_bps": 1127.0,
+              "out_discards_ps": 0.0,
+              "out_errors_ps": 0.0,
+              "up": true
+            },
+            {
+              "expected": "up",
+              "in_bps": 1135.0,
+              "in_discards_ps": 0.0,
+              "in_errors_ps": 0.0,
+              "name": "ethernet-1/50",
+              "out_bps": 1142.0,
+              "out_discards_ps": 0.0,
+              "out_errors_ps": 0.0,
+              "up": true
+            },
+            {
+              "expected": "up",
+              "in_bps": null,
+              "in_discards_ps": null,
+              "in_errors_ps": null,
+              "name": "lo0",
+              "out_bps": null,
+              "out_discards_ps": null,
+              "out_errors_ps": null,
+              "up": true
+            }
+          ],
+          "memory_percent": 94.0,
+          "name": "leaf-01",
+          "sessions": [
+            {
+              "established": true,
+              "expected": "established",
+              "peer": "10.10.1.0",
+              "prefixes_received": 2
+            },
+            {
+              "established": true,
+              "expected": "established",
+              "peer": "10.10.2.0",
+              "prefixes_received": 2
+            }
+          ]
+        },
+        {
+          "cpu_percent": 3.0,
+          "device_id": "18e29d6e-2e5b-c496-32da-c510ade043a0",
+          "interfaces": [
+            {
+              "expected": "up",
+              "in_bps": 1180.0,
+              "in_discards_ps": 0.0,
+              "in_errors_ps": 0.2,
+              "name": "ethernet-1/49",
+              "out_bps": 1187.0,
+              "out_discards_ps": 0.0,
+              "out_errors_ps": 0.0,
+              "up": true
+            },
+            {
+              "expected": "up",
+              "in_bps": 1195.0,
+              "in_discards_ps": 0.0,
+              "in_errors_ps": 0.0,
+              "name": "ethernet-1/50",
+              "out_bps": 1202.0,
+              "out_discards_ps": 0.0,
+              "out_errors_ps": 0.0,
+              "up": true
+            },
+            {
+              "expected": "up",
+              "in_bps": null,
+              "in_discards_ps": null,
+              "in_errors_ps": null,
+              "name": "lo0",
+              "out_bps": null,
+              "out_discards_ps": null,
+              "out_errors_ps": null,
+              "up": true
+            }
+          ],
+          "memory_percent": 94.0,
+          "name": "leaf-02",
+          "sessions": [
+            {
+              "established": true,
+              "expected": "established",
+              "peer": "10.10.1.2",
+              "prefixes_received": 2
+            },
+            {
+              "established": true,
+              "expected": "established",
+              "peer": "10.10.2.2",
+              "prefixes_received": 2
+            }
+          ]
+        },
+        {
+          "cpu_percent": 4.0,
+          "device_id": "18e29d6e-3794-c788-32d5-c519c5f18e3a",
+          "interfaces": [
+            {
+              "expected": "up",
+              "in_bps": 1240.0,
+              "in_discards_ps": 0.0,
+              "in_errors_ps": 0.0,
+              "name": "ethernet-1/49",
+              "out_bps": 1247.0,
+              "out_discards_ps": 0.0,
+              "out_errors_ps": 0.0,
+              "up": true
+            },
+            {
+              "expected": "up",
+              "in_bps": 1255.0,
+              "in_discards_ps": 0.0,
+              "in_errors_ps": 0.0,
+              "name": "ethernet-1/50",
+              "out_bps": 1262.0,
+              "out_discards_ps": 0.0,
+              "out_errors_ps": 0.0,
+              "up": true
+            },
+            {
+              "expected": "up",
+              "in_bps": null,
+              "in_discards_ps": null,
+              "in_errors_ps": null,
+              "name": "lo0",
+              "out_bps": null,
+              "out_discards_ps": null,
+              "out_errors_ps": null,
+              "up": true
+            }
+          ],
+          "memory_percent": 94.0,
+          "name": "leaf-03",
+          "sessions": [
+            {
+              "established": true,
+              "expected": "established",
+              "peer": "10.10.1.4",
+              "prefixes_received": 2
+            },
+            {
+              "established": true,
+              "expected": "established",
+              "peer": "10.10.2.4",
+              "prefixes_received": 2
+            }
+          ]
+        },
+        {
+          "cpu_percent": 5.0,
+          "device_id": "18e29d6e-422b-a401-32d9-c5162961ffbe",
+          "interfaces": [
+            {
+              "expected": "up",
+              "in_bps": 1300.0,
+              "in_discards_ps": 0.0,
+              "in_errors_ps": 0.0,
+              "name": "ethernet-1/49",
+              "out_bps": 1307.0,
+              "out_discards_ps": 0.0,
+              "out_errors_ps": 0.0,
+              "up": true
+            },
+            {
+              "expected": "up",
+              "in_bps": 1315.0,
+              "in_discards_ps": 0.0,
+              "in_errors_ps": 0.0,
+              "name": "ethernet-1/50",
+              "out_bps": 1322.0,
+              "out_discards_ps": 0.0,
+              "out_errors_ps": 0.0,
+              "up": true
+            },
+            {
+              "expected": "up",
+              "in_bps": null,
+              "in_discards_ps": null,
+              "in_errors_ps": null,
+              "name": "lo0",
+              "out_bps": null,
+              "out_discards_ps": null,
+              "out_errors_ps": null,
+              "up": true
+            }
+          ],
+          "memory_percent": 94.0,
+          "name": "leaf-04",
+          "sessions": [
+            {
+              "established": true,
+              "expected": "established",
+              "peer": "10.10.1.6",
+              "prefixes_received": 2
+            },
+            {
+              "established": true,
+              "expected": "established",
+              "peer": "10.10.2.6",
+              "prefixes_received": 2
+            }
+          ]
+        }
+      ]
+    },
+    "fetched_at": "2026-11-07T21:20:48.919877Z",
+    "reason": null,
+    "remedy": null,
+    "source": "prometheus",
+    "stale": false
+  },
+  "use_case": "dcfabric"
+}

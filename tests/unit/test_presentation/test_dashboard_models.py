@@ -193,3 +193,14 @@ def test_an_unreadable_lab_run_says_what_is_wrong_with_it() -> None:
 
     run = LabRun(id="20261107T101500Z-e2e", suite="e2e", status=LabRunStatus.UNREADABLE, problem="format 2")
     assert run.problem == "format 2"
+
+
+@pytest.mark.parametrize("unit", ["bytes_per_second", "percent"])
+def test_the_network_units_are_metric_units(unit: str) -> None:
+    """Spec 016 (contracts/telemetry.md)."""
+    from snapl_presentation.dashboard.models import MetricsData, MetricsViewName
+
+    at = datetime(2026, 11, 19, 23, 0, tzinfo=UTC)
+    data = MetricsData(view=MetricsViewName.WORKER_UP, unit=unit, start=at, end=at, step=15, series=[])
+
+    assert data.unit == unit

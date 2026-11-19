@@ -747,10 +747,32 @@ class MetricsViewName(StrEnum):
     SCAN_RESULTS = "scan-results"
     DRIFT_PATHS = "drift-paths"
     DEPLOY_OUTCOMES = "deploy-outcomes"
+    # Spec 016 (contracts/telemetry.md): the network, from the worker's telemetry.
+    INTERFACE_TRAFFIC = "interface-traffic"
+    INTERFACE_ERRORS = "interface-errors"
+    INTERFACE_DISCARDS = "interface-discards"
+    BGP_ESTABLISHED = "bgp-established"
+    DEVICE_CPU = "device-cpu"
+    DEVICE_MEMORY = "device-memory"
+
+
+# Spec 016's views. Archives and snapshots carry them from spec 016 PR F, which
+# gives them spec 015's coarse snapshot step and measures the size (T050 to T052).
+NETWORK_VIEWS = frozenset(
+    {
+        MetricsViewName.INTERFACE_TRAFFIC,
+        MetricsViewName.INTERFACE_ERRORS,
+        MetricsViewName.INTERFACE_DISCARDS,
+        MetricsViewName.BGP_ESTABLISHED,
+        MetricsViewName.DEVICE_CPU,
+        MetricsViewName.DEVICE_MEMORY,
+    }
+)
 
 
 # `count` (spec 015): events in one window, or a gauge's current count.
-MetricUnit = Literal["ms", "per_second", "up", "count"]
+# `bytes_per_second` and `percent` (0 to 100) are spec 016's.
+MetricUnit = Literal["ms", "per_second", "up", "count", "bytes_per_second", "percent"]
 
 
 class MetricPoint(_Model):
@@ -779,3 +801,52 @@ class MetricsData(_Model):
 
 class MetricsResponse(Envelope):
     metrics: View[MetricsData]
+
+
+# --- The network (spec 016, contracts/telemetry.md) ----------------------------------
+
+
+class InterfaceState(_Model):
+    """One interface intent names, with its latest figures. A figure with no series is null, never 0."""
+
+    name: str
+    # "down" for an interface intent disables.
+    expected: Literal["up", "down"]
+    up: bool | None = None
+    # Bytes per second over the rate window.
+    in_bps: float | None = None
+    out_bps: float | None = None
+    in_errors_ps: float | None = None
+    out_errors_ps: float | None = None
+    in_discards_ps: float | None = None
+    out_discards_ps: float | None = None
+
+
+class SessionState(_Model):
+    peer: str
+    # None for a session intent disables: nothing is expected of it.
+    expected: Literal["established"] | None = None
+    established: bool | None = None
+    prefixes_received: int | None = None
+
+
+class DeviceNetwork(_Model):
+    device_id: UUID
+    name: str
+    # Intent's, by name.
+    interfaces: list[InterfaceState] = Field(default_factory=list)
+    # Intent's, by peer.
+    sessions: list[SessionState] = Field(default_factory=list)
+    cpu_percent: float | None = None
+    memory_percent: float | None = None
+
+
+class FabricNetwork(_Model):
+    # When the figures were read.
+    at: UtcDatetime
+    # The page's device order, as /devices.
+    devices: list[DeviceNetwork]
+
+
+class NetworkResponse(Envelope):
+    network: View[FabricNetwork]

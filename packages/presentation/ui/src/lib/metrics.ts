@@ -1,12 +1,13 @@
-// The metrics views of specs 012 and 015, their groups, and how their values read (spec 011 FR-029, FR-031).
+// The metrics views of specs 012, 015 and 016, their groups, and how their values read (spec 011 FR-029, FR-031).
 import type { MetricsData, MetricSeries, MetricsViewName } from "../api/types";
 import type { Range } from "./lanes";
 import { durationText } from "./time";
 
 /** What a view's value is: each title says it (spec 015). */
-export type MetricKind = "percentile" | "mean" | "events" | "current" | "rate" | "up";
+// `count` is a gauge's count (spec 016's sessions established): no window, unlike `events`.
+export type MetricKind = "percentile" | "mean" | "events" | "count" | "current" | "rate" | "up";
 
-export type MetricGroupId = "timing" | "work" | "worker" | "dashboard";
+export type MetricGroupId = "timing" | "work" | "worker" | "dashboard" | "network";
 
 /** The groups of spec 015 data-model.md "MetricGroup", in page order. */
 export const METRIC_GROUPS: readonly { id: MetricGroupId; label: string }[] = [
@@ -14,12 +15,15 @@ export const METRIC_GROUPS: readonly { id: MetricGroupId; label: string }[] = [
   { id: "work", label: "What the loop did" },
   { id: "worker", label: "The worker" },
   { id: "dashboard", label: "The dashboard" },
+  // Spec 016 data-model.md.
+  { id: "network", label: "The network" },
 ];
 
 const KIND_WORDS: Record<MetricKind, string | null> = {
   percentile: "95th percentile",
   mean: "mean",
   events: "count",
+  count: "count",
   current: "current value",
   rate: "rate",
   // Up or down names itself.
@@ -45,6 +49,12 @@ const VIEWS = {
   "server-request-time": { name: "Temporal request time", kind: "mean", group: "worker" },
   "source-health": { name: "Dashboard sources up", kind: "up", group: "dashboard" },
   "source-fetch-time": { name: "Dashboard source read time", kind: "current", group: "dashboard" },
+  "interface-traffic": { name: "Interface traffic", kind: "rate", group: "network" },
+  "interface-errors": { name: "Interface errors", kind: "rate", group: "network" },
+  "interface-discards": { name: "Interface discards", kind: "rate", group: "network" },
+  "bgp-established": { name: "BGP sessions established", kind: "count", group: "network" },
+  "device-cpu": { name: "Device CPU", kind: "current", group: "network" },
+  "device-memory": { name: "Device memory", kind: "current", group: "network" },
 } satisfies Record<MetricsViewName, { name: string; kind: MetricKind; group: MetricGroupId }>;
 
 export interface MetricViewInfo {

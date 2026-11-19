@@ -14,35 +14,47 @@ arrives.
 
 from __future__ import annotations
 
+import asyncio
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from snapl_presentation.dashboard.models import (
+    DeviceNetwork,
+    FabricNetwork,
+    InterfaceState,
     MetricPoint,
     MetricsData,
     MetricSeries,
     MetricsViewName,
     MetricUnit,
+    SessionState,
     SourceName,
     View,
 )
+from snapl_presentation.dashboard.projections import tier_key
 from snapl_presentation.dashboard.sources import STACK_REMEDY, SourceUnavailable, utcnow
 from snapl_presentation.exceptions import first_line
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterable, Mapping
+    from uuid import UUID
+
+    from snapl_intent.models import DesiredState
 
 __all__ = [
     "MAX_POINTS",
+    "NETWORK_QUERIES",
     "SCRAPE_INTERVAL_S",
     "VIEWS",
     "MetricsViewSpec",
+    "NetworkSample",
     "PrometheusSource",
     "RangePlan",
+    "build_network",
     "choose_step",
     "parse_matrix",
     "plan_range",
@@ -98,6 +110,8 @@ class MetricsViewSpec:
     labels: tuple[str, ...]
     # True for a count of events over the window, as opposed to a gauge's current count (research R4).
     counts_events: bool = False
+    # Said with every answer of the view.
+    note: str | None = None
 
 
 VIEWS: dict[MetricsViewName, MetricsViewSpec] = {
@@ -196,7 +210,165 @@ VIEWS: dict[MetricsViewName, MetricsViewSpec] = {
         ("outcome", "reason"),
         counts_events=True,
     ),
+    # Spec 016 (contracts/telemetry.md): the network, summed or maxed over the runtime's label.
+    MetricsViewName.INTERFACE_TRAFFIC: MetricsViewSpec(
+        f"sum by (device, direction) ({_rate('snapl_interface_octets_total{use_case="$uc"}')})",
+        "bytes_per_second",
+        ("device", "direction"),
+    ),
+    MetricsViewName.INTERFACE_ERRORS: MetricsViewSpec(
+        f"sum by (device, interface) ({_rate('snapl_interface_errors_total{use_case="$uc"}')})",
+        "per_second",
+        ("device", "interface"),
+    ),
+    MetricsViewName.INTERFACE_DISCARDS: MetricsViewSpec(
+        f"sum by (device, interface) ({_rate('snapl_interface_discards_total{use_case="$uc"}')})",
+        "per_second",
+        ("device", "interface"),
+    ),
+    # The runtime's meter cannot drop a series (016 research R5).
+    MetricsViewName.BGP_ESTABLISHED: MetricsViewSpec(
+        'sum by (device) (snapl_bgp_session_established{use_case="$uc"})',
+        "count",
+        ("device",),
+        note="a session removed from intent keeps counting until the worker restarts",
+    ),
+    MetricsViewName.DEVICE_CPU: MetricsViewSpec(
+        'max by (device) (snapl_device_cpu_percent{use_case="$uc"})', "percent", ("device",)
+    ),
+    MetricsViewName.DEVICE_MEMORY: MetricsViewSpec(
+        'max by (device) (snapl_device_memory_percent{use_case="$uc"})', "percent", ("device",)
+    ),
 }
+
+
+# Spec 016 (contracts/telemetry.md): the instant figures /network reads, one query
+# per family, each reduced to the labels intent names (the runtime adds `service_name`).
+NETWORK_QUERIES: dict[str, tuple[str, tuple[str, ...]]] = {
+    "interface_up": ('max by (device, interface) (snapl_interface_up{use_case="$uc"})', ("device", "interface")),
+    "octets": (
+        f"sum by (device, interface, direction) ({_rate('snapl_interface_octets_total{use_case="$uc"}')})",
+        ("device", "interface", "direction"),
+    ),
+    "errors": (
+        f"sum by (device, interface, direction) ({_rate('snapl_interface_errors_total{use_case="$uc"}')})",
+        ("device", "interface", "direction"),
+    ),
+    "discards": (
+        f"sum by (device, interface, direction) ({_rate('snapl_interface_discards_total{use_case="$uc"}')})",
+        ("device", "interface", "direction"),
+    ),
+    "established": ('max by (device, peer) (snapl_bgp_session_established{use_case="$uc"})', ("device", "peer")),
+    "prefixes": ('max by (device, peer) (snapl_bgp_prefixes_received{use_case="$uc"})', ("device", "peer")),
+    "cpu": ('max by (device) (snapl_device_cpu_percent{use_case="$uc"})', ("device",)),
+    "memory": ('max by (device) (snapl_device_memory_percent{use_case="$uc"})', ("device",)),
+}
+
+# Keyed by the query's labels in order: (device, interface[, direction]), (device, peer) or (device,).
+Figures = dict[tuple[str, ...], float | None]
+
+
+@dataclass(frozen=True)
+class NetworkSample:
+    """One read of every network family at ``at``. A key with no series is absent."""
+
+    at: datetime
+    interface_up: Figures = field(default_factory=dict)
+    octets: Figures = field(default_factory=dict)
+    errors: Figures = field(default_factory=dict)
+    discards: Figures = field(default_factory=dict)
+    established: Figures = field(default_factory=dict)
+    prefixes: Figures = field(default_factory=dict)
+    cpu: Figures = field(default_factory=dict)
+    memory: Figures = field(default_factory=dict)
+
+
+def _flag(value: float | None) -> bool | None:
+    return None if value is None else value >= 1
+
+
+def _interfaces(device: str, intended: Mapping[str, bool], sample: NetworkSample) -> list[InterfaceState]:
+    def per_second(figures: Figures, name: str, direction: str) -> float | None:
+        return figures.get((device, name, direction))
+
+    return [
+        InterfaceState(
+            name=name,
+            expected="up" if enabled else "down",
+            up=_flag(sample.interface_up.get((device, name))),
+            in_bps=per_second(sample.octets, name, "in"),
+            out_bps=per_second(sample.octets, name, "out"),
+            in_errors_ps=per_second(sample.errors, name, "in"),
+            out_errors_ps=per_second(sample.errors, name, "out"),
+            in_discards_ps=per_second(sample.discards, name, "in"),
+            out_discards_ps=per_second(sample.discards, name, "out"),
+        )
+        for name, enabled in sorted(intended.items())
+    ]
+
+
+def _sessions(device: str, intended: Mapping[str, bool], sample: NetworkSample) -> list[SessionState]:
+    states = []
+    for peer, enabled in sorted(intended.items()):
+        prefixes = sample.prefixes.get((device, peer))
+        states.append(
+            SessionState(
+                peer=peer,
+                expected="established" if enabled else None,
+                established=_flag(sample.established.get((device, peer))),
+                prefixes_received=None if prefixes is None else round(prefixes),
+            )
+        )
+    return states
+
+
+def build_network(
+    states: Iterable[DesiredState] | None, names: Mapping[UUID, str], sample: NetworkSample
+) -> FabricNetwork:
+    """Intent's interfaces and sessions with their latest figures (contracts/telemetry.md).
+
+    Items come from intent: what the store holds of anything else is not shown.
+    With ``states`` None (the SoT down), the devices are those it last named,
+    with no items. A device in two services is merged into one, as the worker does.
+    """
+    devices: dict[UUID, tuple[str, str | None]] = {}
+    interfaces: dict[UUID, dict[str, bool]] = {}
+    sessions: dict[UUID, dict[str, bool]] = {}
+    if states is None:
+        devices = {device_id: (name, None) for device_id, name in names.items()}
+    for state in states or ():
+        device_id = state.device.id
+        devices.setdefault(device_id, (state.device.name, state.device.role))
+        named = interfaces.setdefault(device_id, {})
+        for interface in state.interfaces:
+            named[interface.name] = named.get(interface.name, False) or interface.enabled
+        peers = sessions.setdefault(device_id, {})
+        for session in state.bgp_sessions:
+            peers[session.peer_address] = peers.get(session.peer_address, False) or session.enabled
+    ordered = sorted(devices.items(), key=lambda item: tier_key(item[1][1], item[1][0]))
+    return FabricNetwork(
+        at=sample.at,
+        devices=[
+            DeviceNetwork(
+                device_id=device_id,
+                name=name,
+                interfaces=_interfaces(name, interfaces.get(device_id, {}), sample),
+                sessions=_sessions(name, sessions.get(device_id, {}), sample),
+                cpu_percent=sample.cpu.get((name,)),
+                memory_percent=sample.memory.get((name,)),
+            )
+            for device_id, (name, _) in ordered
+        ],
+    )
+
+
+def parse_vector(body: dict[str, Any], labels: tuple[str, ...]) -> Figures:
+    """A ``query`` answer keyed by the query's labels. A result missing one is dropped."""
+    return {
+        tuple(result["metric"][key] for key in labels): _value(result["value"][1])
+        for result in body["data"]["result"]
+        if all(key in result["metric"] for key in labels)
+    }
 
 
 def _label_value(value: str) -> str:
@@ -205,9 +377,12 @@ def _label_value(value: str) -> str:
 
 
 def render_query(view: MetricsViewName, *, namespace: str, use_case: str, window_s: int) -> str:
-    spec = VIEWS[view]
+    return _render(VIEWS[view].query, namespace=namespace, use_case=use_case, window_s=window_s)
+
+
+def _render(query: str, *, namespace: str, use_case: str, window_s: int) -> str:
     return (
-        spec.query.replace("$ns", _label_value(namespace))
+        query.replace("$ns", _label_value(namespace))
         .replace("$uc", _label_value(use_case))
         .replace("$w", f"{window_s}s")
         .replace("$sec", str(window_s))
@@ -297,6 +472,7 @@ class PrometheusSource:
         self._clock = clock
         self._ttl = ttl
         self._cache: dict[tuple[MetricsViewName, RangePlan], tuple[datetime, MetricsData]] = {}
+        self._network: NetworkSample | None = None
         self._error_remedy = f"Run the view's query in Prometheus's own UI, {self._address}/query, to see more."
 
     def _client(self) -> httpx.AsyncClient:
@@ -353,7 +529,9 @@ class PrometheusSource:
 
         series = parse_matrix(body, spec.labels)
         notes = [
-            note for note in (plan.note, window_note(view, plan.step), None if series else "no data in range") if note
+            note
+            for note in (plan.note, window_note(view, plan.step), spec.note, None if series else "no data in range")
+            if note
         ]
         data = MetricsData(
             view=view,
@@ -367,7 +545,42 @@ class PrometheusSource:
         self._cache[(view, plan)] = (now, data)
         return data
 
-    def _body(self, response: httpx.Response) -> dict[str, Any]:
+    async def network(self) -> NetworkSample:
+        """Every network family now, by instant query (spec 016). Cached for one scrape interval.
+
+        Raises:
+            SourceUnavailable: as ``query``.
+        """
+        now = self._clock()
+        if self._network is not None and now - self._network.at < self._ttl:
+            return self._network
+        window = rate_window(SCRAPE_INTERVAL_S)
+        try:
+            async with self._client() as client:
+                responses = await asyncio.gather(
+                    *(
+                        client.get(
+                            "/api/v1/query",
+                            params={
+                                "query": _render(
+                                    query, namespace=self._namespace, use_case=self._use_case, window_s=window
+                                ),
+                                "time": str(now.timestamp()),
+                            },
+                        )
+                        for query, _ in NETWORK_QUERIES.values()
+                    )
+                )
+        except httpx.HTTPError as exc:
+            raise self._unreachable(exc) from exc
+        figures = {
+            name: parse_vector(self._body(response, "vector"), labels)
+            for (name, (_, labels)), response in zip(NETWORK_QUERIES.items(), responses, strict=True)
+        }
+        self._network = NetworkSample(at=now, **figures)
+        return self._network
+
+    def _body(self, response: httpx.Response, result_type: str = "matrix") -> dict[str, Any]:
         try:
             body = response.json()
         except ValueError:
@@ -378,7 +591,7 @@ class PrometheusSource:
             response.status_code != httpx.codes.OK
             or not isinstance(body, dict)
             or body.get("status") != "success"
-            or body.get("data", {}).get("resultType") != "matrix"
+            or body.get("data", {}).get("resultType") != result_type
         ):
             raise SourceUnavailable(
                 f"Prometheus at {self._address} gave an unexpected answer (HTTP {response.status_code})",

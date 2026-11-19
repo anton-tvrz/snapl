@@ -17,13 +17,38 @@ import {
 
 describe("metrics helpers", () => {
   // spec 015 data-model.md "MetricGroup".
-  it("puts the views in four groups, in order", () => {
+  // spec 016 data-model.md: "The network" after spec 015's four.
+  it("puts the views in five groups, in order", () => {
     expect(groupViews(Object.keys(METRICS)).map((group) => [group.label, group.views.map((v) => v.name)])).toEqual([
       ["The loop's timing", ["workflow-duration", "workflow-mean", "gnmi-duration", "gnmi-mean", "activity-time"]],
       ["What the loop did", ["workflows-completed", "scan-results", "drift-paths", "deploy-outcomes", "gnmi-errors"]],
       ["The worker", ["worker-up", "worker-lag", "worker-slots", "server-request-time"]],
       ["The dashboard", ["source-health", "source-fetch-time"]],
+      [
+        "The network",
+        [
+          "interface-traffic",
+          "interface-errors",
+          "interface-discards",
+          "bgp-established",
+          "device-cpu",
+          "device-memory",
+        ],
+      ],
     ]);
+  });
+
+  it("titles the network views as spec 016 names them", () => {
+    const title = (name: string) => METRIC_VIEWS.find((v) => v.name === name)!.title;
+
+    expect(title("interface-traffic")).toBe("Interface traffic (rate)");
+    expect(title("interface-errors")).toBe("Interface errors (rate)");
+    expect(title("interface-discards")).toBe("Interface discards (rate)");
+    // A gauge's count: no window to name, unlike a count of events.
+    expect(title("bgp-established")).toBe("BGP sessions established (count)");
+    expect(METRIC_VIEWS.find((v) => v.name === "bgp-established")!.kind).toBe("count");
+    expect(title("device-cpu")).toBe("Device CPU (current value)");
+    expect(title("device-memory")).toBe("Device memory (current value)");
   });
 
   it("has every view the server names in exactly one group", () => {
@@ -46,6 +71,7 @@ describe("metrics helpers", () => {
       percentile: "(95th percentile)",
       mean: "(mean)",
       events: "(count)",
+      count: "(count)",
       current: "(current value)",
       rate: "(rate)",
       up: null,

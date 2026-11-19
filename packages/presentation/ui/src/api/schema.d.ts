@@ -209,6 +209,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/network": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Network
+         * @description Each device's interfaces and sessions from intent, with their latest figures (spec 016).
+         */
+        get: operations["network_api_v1_network_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/overview": {
         parameters: {
             query?: never;
@@ -524,6 +544,24 @@ export interface components {
             /** Points */
             points: components["schemas"]["ScanPoint"][];
         };
+        /** DeviceNetwork */
+        DeviceNetwork: {
+            /** Cpu Percent */
+            cpu_percent?: number | null;
+            /**
+             * Device Id
+             * Format: uuid
+             */
+            device_id: string;
+            /** Interfaces */
+            interfaces?: components["schemas"]["InterfaceState"][];
+            /** Memory Percent */
+            memory_percent?: number | null;
+            /** Name */
+            name: string;
+            /** Sessions */
+            sessions?: components["schemas"]["SessionState"][];
+        };
         /** DeviceView */
         DeviceView: {
             /**
@@ -752,6 +790,16 @@ export interface components {
              */
             start: string;
         };
+        /** FabricNetwork */
+        FabricNetwork: {
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /** Devices */
+            devices: components["schemas"]["DeviceNetwork"][];
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -824,6 +872,33 @@ export interface components {
             series: components["schemas"]["Series"][];
             /** Use Case */
             use_case: string;
+        };
+        /**
+         * InterfaceState
+         * @description One interface intent names, with its latest figures. A figure with no series is null, never 0.
+         */
+        InterfaceState: {
+            /**
+             * Expected
+             * @enum {string}
+             */
+            expected: "up" | "down";
+            /** In Bps */
+            in_bps?: number | null;
+            /** In Discards Ps */
+            in_discards_ps?: number | null;
+            /** In Errors Ps */
+            in_errors_ps?: number | null;
+            /** Name */
+            name: string;
+            /** Out Bps */
+            out_bps?: number | null;
+            /** Out Discards Ps */
+            out_discards_ps?: number | null;
+            /** Out Errors Ps */
+            out_errors_ps?: number | null;
+            /** Up */
+            up?: boolean | null;
         };
         /**
          * JobResult
@@ -1007,7 +1082,7 @@ export interface components {
              * Unit
              * @enum {string}
              */
-            unit: "ms" | "per_second" | "up" | "count";
+            unit: "ms" | "per_second" | "up" | "count" | "bytes_per_second" | "percent";
             view: components["schemas"]["MetricsViewName"];
         };
         /** MetricsResponse */
@@ -1032,7 +1107,7 @@ export interface components {
          * @description The named PromQL views. A request picks one; it never supplies a query (FR-011).
          * @enum {string}
          */
-        MetricsViewName: "workflow-duration" | "gnmi-duration" | "gnmi-errors" | "worker-lag" | "worker-up" | "source-health" | "workflow-mean" | "gnmi-mean" | "workflows-completed" | "activity-time" | "worker-slots" | "server-request-time" | "source-fetch-time" | "scan-results" | "drift-paths" | "deploy-outcomes";
+        MetricsViewName: "workflow-duration" | "gnmi-duration" | "gnmi-errors" | "worker-lag" | "worker-up" | "source-health" | "workflow-mean" | "gnmi-mean" | "workflows-completed" | "activity-time" | "worker-slots" | "server-request-time" | "source-fetch-time" | "scan-results" | "drift-paths" | "deploy-outcomes" | "interface-traffic" | "interface-errors" | "interface-discards" | "bgp-established" | "device-cpu" | "device-memory";
         /** ModeResponse */
         ModeResponse: {
             archive?: components["schemas"]["ArchiveInfo"] | null;
@@ -1065,6 +1140,23 @@ export interface components {
          * @enum {string}
          */
         NafBlock: "intent" | "executor" | "collector" | "observability" | "orchestrator" | "presentation";
+        /** NetworkResponse */
+        NetworkResponse: {
+            /**
+             * Contract Version
+             * @default 1
+             * @constant
+             */
+            contract_version: "1";
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            network: components["schemas"]["View_FabricNetwork_"];
+            /** Use Case */
+            use_case: string;
+        };
         /** Overview */
         Overview: {
             ci: components["schemas"]["View_CiStatus_"];
@@ -1342,6 +1434,17 @@ export interface components {
          * @enum {string}
          */
         SeriesName: "drifted_devices" | "undesired_paths" | "deploys" | "repairs" | "in_sync_devices" | "open_drifts" | "runs" | "repair_duration";
+        /** SessionState */
+        SessionState: {
+            /** Established */
+            established?: boolean | null;
+            /** Expected */
+            expected?: "established" | null;
+            /** Peer */
+            peer: string;
+            /** Prefixes Received */
+            prefixes_received?: number | null;
+        };
         /**
          * SourceName
          * @enum {string}
@@ -1507,6 +1610,24 @@ export interface components {
             /** Available */
             available: boolean;
             data?: components["schemas"]["FabricHealth"] | null;
+            /** Fetched At */
+            fetched_at?: string | null;
+            /** Reason */
+            reason?: string | null;
+            /** Remedy */
+            remedy?: string | null;
+            source: components["schemas"]["SourceName"];
+            /**
+             * Stale
+             * @default false
+             */
+            stale: boolean;
+        };
+        /** View[FabricNetwork] */
+        View_FabricNetwork_: {
+            /** Available */
+            available: boolean;
+            data?: components["schemas"]["FabricNetwork"] | null;
             /** Fetched At */
             fetched_at?: string | null;
             /** Reason */
@@ -2000,7 +2121,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description A named view. Any other name is 404. */
-                view: "workflow-duration" | "gnmi-duration" | "gnmi-errors" | "worker-lag" | "worker-up" | "source-health" | "workflow-mean" | "gnmi-mean" | "workflows-completed" | "activity-time" | "worker-slots" | "server-request-time" | "source-fetch-time" | "scan-results" | "drift-paths" | "deploy-outcomes";
+                view: "workflow-duration" | "gnmi-duration" | "gnmi-errors" | "worker-lag" | "worker-up" | "source-health" | "workflow-mean" | "gnmi-mean" | "workflows-completed" | "activity-time" | "worker-slots" | "server-request-time" | "source-fetch-time" | "scan-results" | "drift-paths" | "deploy-outcomes" | "interface-traffic" | "interface-errors" | "interface-discards" | "bgp-established" | "device-cpu" | "device-memory";
             };
             cookie?: never;
         };
@@ -2045,6 +2166,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ModeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    network_api_v1_network_get: {
+        parameters: {
+            query?: {
+                /** @description Defaults to the server's --use-case. */
+                use_case?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetworkResponse"];
                 };
             };
             /** @description Validation Error */

@@ -42,6 +42,7 @@ from snapl_presentation.dashboard.models import (
     DriftTimelineResponse,
     Envelope,
     FabricHealth,
+    FabricNetwork,
     HealthReasonView,
     HealthResponse,
     LabEvidence,
@@ -52,6 +53,7 @@ from snapl_presentation.dashboard.models import (
     MetricsResponse,
     MetricsViewName,
     ModeResponse,
+    NetworkResponse,
     Overview,
     RunSteps,
     RunStepsResponse,
@@ -84,7 +86,7 @@ from snapl_presentation.dashboard.projections import (
     run_events,
     scan_of_response,
 )
-from snapl_presentation.dashboard.prometheus import SCRAPE_INTERVAL_S, plan_range
+from snapl_presentation.dashboard.prometheus import SCRAPE_INTERVAL_S, build_network, plan_range
 from snapl_presentation.dashboard.sources import AUDIT_REMEDY, STACK_REMEDY, Sources, SourceUnavailable, utcnow
 from snapl_presentation.exceptions import first_line
 
@@ -356,6 +358,36 @@ def compose_devices(audit: View[Any], sot: View[Any], names: dict) -> View[list[
             data=devices,
         )
     return View(source=SourceName.SOT, available=True, fetched_at=sot.fetched_at, data=devices)
+
+
+def compose_network(sot: View[Any], store: View[Any], names: dict) -> View[FabricNetwork]:
+    """The network view from intent and the store (spec 016, contracts/telemetry.md).
+
+    - The store down: unavailable with its reason and remedy, with its last
+      answer marked stale if there was one.
+    - The SoT down: the devices it last named, with no items, as /devices does.
+    """
+    sample = store.data
+    if sample is None:
+        return View(source=SourceName.PROMETHEUS, available=False, reason=store.reason, remedy=store.remedy)
+    if not sot.available:
+        return View(
+            source=SourceName.SOT,
+            available=False,
+            fetched_at=store.fetched_at,
+            reason=sot.reason,
+            remedy=sot.remedy,
+            data=build_network(None, names, sample),
+        )
+    return View(
+        source=SourceName.PROMETHEUS,
+        available=store.available,
+        stale=store.stale,
+        fetched_at=store.fetched_at,
+        reason=store.reason,
+        remedy=store.remedy,
+        data=build_network(sot.data or [], names, sample),
+    )
 
 
 WORKER_NOT_RUNNING = "the worker is not running"
@@ -870,6 +902,23 @@ def create_app(
             data=fabric,
         )
         return HealthResponse(use_case=served, generated_at=clock(), health=view)
+
+    @router.get("/network", response_model=NetworkResponse)
+    async def network(requested: UseCaseQuery = None) -> NetworkResponse:
+        """Each device's interfaces and sessions from intent, with their latest figures (spec 016)."""
+        served = _check_use_case(requested)
+
+        async def load() -> View[Any]:
+            sample = await sources.prometheus.network()
+            return View(source=SourceName.PROMETHEUS, available=True, fetched_at=clock(), data=sample)
+
+        sot, store = await asyncio.gather(
+            reader.read(SourceName.SOT),
+            reader.read_keyed((SourceName.PROMETHEUS, "network"), SourceName.PROMETHEUS, load),
+        )
+        return NetworkResponse(
+            use_case=served, generated_at=clock(), network=compose_network(sot, store, sources.sot.names)
+        )
 
     @router.get("/mode", response_model=ModeResponse)
     async def mode(requested: UseCaseQuery = None) -> ModeResponse:

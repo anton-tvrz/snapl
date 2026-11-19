@@ -153,6 +153,19 @@ EXPECTED_QUERIES = {
     MetricsViewName.DEPLOY_OUTCOMES: (
         f"sum by (outcome, reason) (({_rate('snapl_deploy_ends_total{use_case="dcfabric"}')} * 60))"
     ),
+    # Spec 016 (contracts/telemetry.md): the network.
+    MetricsViewName.INTERFACE_TRAFFIC: (
+        f"sum by (device, direction) ({_rate('snapl_interface_octets_total{use_case="dcfabric"}')})"
+    ),
+    MetricsViewName.INTERFACE_ERRORS: (
+        f"sum by (device, interface) ({_rate('snapl_interface_errors_total{use_case="dcfabric"}')})"
+    ),
+    MetricsViewName.INTERFACE_DISCARDS: (
+        f"sum by (device, interface) ({_rate('snapl_interface_discards_total{use_case="dcfabric"}')})"
+    ),
+    MetricsViewName.BGP_ESTABLISHED: 'sum by (device) (snapl_bgp_session_established{use_case="dcfabric"})',
+    MetricsViewName.DEVICE_CPU: 'max by (device) (snapl_device_cpu_percent{use_case="dcfabric"})',
+    MetricsViewName.DEVICE_MEMORY: 'max by (device) (snapl_device_memory_percent{use_case="dcfabric"})',
 }
 
 
@@ -201,6 +214,12 @@ def test_units_and_series_labels_follow_the_data_model() -> None:
         MetricsViewName.SCAN_RESULTS: "count",
         MetricsViewName.DRIFT_PATHS: "count",
         MetricsViewName.DEPLOY_OUTCOMES: "count",
+        MetricsViewName.INTERFACE_TRAFFIC: "bytes_per_second",
+        MetricsViewName.INTERFACE_ERRORS: "per_second",
+        MetricsViewName.INTERFACE_DISCARDS: "per_second",
+        MetricsViewName.BGP_ESTABLISHED: "count",
+        MetricsViewName.DEVICE_CPU: "percent",
+        MetricsViewName.DEVICE_MEMORY: "percent",
     }
     assert {v: spec.labels for v, spec in VIEWS.items()} == {
         MetricsViewName.WORKFLOW_DURATION: ("workflow_type",),
@@ -219,6 +238,12 @@ def test_units_and_series_labels_follow_the_data_model() -> None:
         MetricsViewName.SCAN_RESULTS: ("device", "state"),
         MetricsViewName.DRIFT_PATHS: ("device", "kind"),
         MetricsViewName.DEPLOY_OUTCOMES: ("outcome", "reason"),
+        MetricsViewName.INTERFACE_TRAFFIC: ("device", "direction"),
+        MetricsViewName.INTERFACE_ERRORS: ("device", "interface"),
+        MetricsViewName.INTERFACE_DISCARDS: ("device", "interface"),
+        MetricsViewName.BGP_ESTABLISHED: ("device",),
+        MetricsViewName.DEVICE_CPU: ("device",),
+        MetricsViewName.DEVICE_MEMORY: ("device",),
     }
 
 
@@ -424,6 +449,28 @@ HAND_BUILT: dict[MetricsViewName, tuple[list[tuple[dict[str, str], list[tuple[in
         ],
         [{"outcome": "succeeded", "reason": "none"}, {"outcome": "failed", "reason": "verification_failed"}],
     ),
+    # Spec 016: the label sets the worker writes (contracts/telemetry.md), after the sum or max.
+    MetricsViewName.INTERFACE_TRAFFIC: (
+        [
+            ({"device": "leaf-01", "direction": "in"}, [(_T, "1250.5")]),
+            ({"device": "leaf-01", "direction": "out"}, [(_T, "980")]),
+        ],
+        [{"device": "leaf-01", "direction": "in"}, {"device": "leaf-01", "direction": "out"}],
+    ),
+    MetricsViewName.INTERFACE_ERRORS: (
+        [({"device": "leaf-02", "interface": "ethernet-1/49"}, [(_T, "0.2")])],
+        [{"device": "leaf-02", "interface": "ethernet-1/49"}],
+    ),
+    MetricsViewName.INTERFACE_DISCARDS: (
+        [({"device": "leaf-02", "interface": "ethernet-1/50"}, [(_T, "0")])],
+        [{"device": "leaf-02", "interface": "ethernet-1/50"}],
+    ),
+    MetricsViewName.BGP_ESTABLISHED: (
+        [({"device": "spine-01"}, [(_T, "0")]), ({"device": "leaf-01"}, [(_T, "2")])],
+        [{"device": "spine-01"}, {"device": "leaf-01"}],
+    ),
+    MetricsViewName.DEVICE_CPU: ([({"device": "spine-01"}, [(_T, "4")])], [{"device": "spine-01"}]),
+    MetricsViewName.DEVICE_MEMORY: ([({"device": "spine-01"}, [(_T, "94")])], [{"device": "spine-01"}]),
 }
 
 
@@ -477,6 +524,17 @@ async def test_a_count_keeps_every_note_in_order() -> None:
     assert data.note.startswith("step raised to ")
     assert data.note.endswith("; no data in range")
     assert "events in the last" not in data.note  # the raised step is longer than four scrapes
+
+
+async def test_bgp_established_has_no_window_note_and_says_a_removed_session_still_counts() -> None:
+    """A gauge count (as worker-slots); the runtime's meter cannot drop a series (research R5)."""
+    results, _ = HAND_BUILT[MetricsViewName.BGP_ESTABLISHED]
+    prom = FakeProm({"http_status": 200, "body": _matrix(results)})
+
+    data = await source(prom).query(MetricsViewName.BGP_ESTABLISHED, an_hour())
+
+    assert not VIEWS[MetricsViewName.BGP_ESTABLISHED].counts_events
+    assert data.note == "a session removed from intent keeps counting until the worker restarts"
 
 
 async def test_a_gauge_count_has_no_window_note() -> None:
@@ -711,3 +769,109 @@ async def test_refresh_reports_a_prometheus_that_is_not_ready() -> None:
     assert view.available is False
     assert view.reason is not None
     assert "503" in view.reason
+
+
+# --- the network's instant figures (spec 016 T038) ----------------------------------
+
+
+def _vector(results: list[tuple[dict[str, str], str]]) -> dict[str, Any]:
+    return {
+        "status": "success",
+        "data": {"resultType": "vector", "result": [{"metric": m, "value": [_T, raw]} for m, raw in results]},
+    }
+
+
+class FakeInstant:
+    """Answers each instant query with the vector named for its family, recording the requests."""
+
+    def __init__(self, by_metric: dict[str, Any] | Exception) -> None:
+        self.by_metric = by_metric
+        self.requests: list[httpx.Request] = []
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(request)
+        if isinstance(self.by_metric, Exception):
+            raise self.by_metric
+        query = parse_qs(request.url.query.decode())["query"][0]
+        for metric, answer in self.by_metric.items():
+            if metric in query:
+                return httpx.Response(200, json=answer)
+        return httpx.Response(200, json=_vector([]))
+
+
+def _instant_source(fake: FakeInstant, clock: Clock | None = None) -> PrometheusSource:
+    return PrometheusSource(ADDRESS, "default", "dcfabric", transport=httpx.MockTransport(fake), clock=clock or Clock())
+
+
+async def test_the_network_asks_one_instant_query_per_family_at_now() -> None:
+    from snapl_presentation.dashboard.prometheus import NETWORK_QUERIES
+
+    fake = FakeInstant({})
+    await _instant_source(fake).network()
+
+    assert {r.url.path for r in fake.requests} == {"/api/v1/query"}
+    params = [parse_qs(r.url.query.decode()) for r in fake.requests]
+    assert [p["time"] for p in params] == [[str(T0.timestamp())]] * len(NETWORK_QUERIES)
+    queries = [p["query"][0] for p in params]
+    assert queries[0] == 'max by (device, interface) (snapl_interface_up{use_case="dcfabric"})'
+    assert queries[1] == (
+        f"sum by (device, interface, direction) ({_rate('snapl_interface_octets_total{use_case="dcfabric"}')})"
+    )
+    assert queries[-2:] == [
+        'max by (device) (snapl_device_cpu_percent{use_case="dcfabric"})',
+        'max by (device) (snapl_device_memory_percent{use_case="dcfabric"})',
+    ]
+    assert all("$" not in q for q in queries)
+
+
+async def test_the_network_keys_each_figure_by_its_labels() -> None:
+    fake = FakeInstant(
+        {
+            "snapl_interface_octets_total": _vector(
+                [
+                    ({"device": "leaf-01", "interface": "ethernet-1/49", "direction": "in"}, "1250.5"),
+                    ({"device": "leaf-01", "interface": "ethernet-1/49"}, "1"),  # no direction: dropped
+                ]
+            ),
+            "snapl_device_cpu_percent": _vector([({"device": "leaf-01"}, "NaN")]),
+            "snapl_bgp_session_established": _vector([({"device": "spine-01", "peer": "10.10.1.1"}, "0")]),
+        }
+    )
+
+    sample = await _instant_source(fake).network()
+
+    assert sample.at == T0
+    assert sample.octets == {("leaf-01", "ethernet-1/49", "in"): 1250.5}
+    assert sample.cpu == {("leaf-01",): None}
+    assert sample.established == {("spine-01", "10.10.1.1"): 0.0}
+    assert sample.memory == {}
+
+
+async def test_the_network_is_read_once_per_scrape_interval() -> None:
+    fake = FakeInstant({})
+    clock = Clock()
+    source_ = _instant_source(fake, clock)
+
+    await source_.network()
+    clock.now = T0 + timedelta(seconds=14)
+    await source_.network()
+    first = len(fake.requests)
+    clock.now = T0 + timedelta(seconds=15)
+    await source_.network()
+
+    assert len(fake.requests) == 2 * first
+
+
+async def test_the_network_with_prometheus_down_is_unavailable() -> None:
+    fake = FakeInstant(httpx.ConnectError("refused"))
+
+    with pytest.raises(SourceUnavailable, match=r"Prometheus not reachable at http://prom\.test:9090: refused"):
+        await _instant_source(fake).network()
+
+
+async def test_the_network_with_a_query_error_says_prometheus_s_error() -> None:
+    error = {"status": "error", "errorType": "bad_data", "error": "parse error"}
+    fake = FakeInstant({"snapl_interface_up": error})
+
+    with pytest.raises(SourceUnavailable, match="parse error"):
+        await _instant_source(fake).network()

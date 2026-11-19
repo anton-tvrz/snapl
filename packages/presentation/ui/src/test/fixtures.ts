@@ -53,6 +53,12 @@ import metricsSourceFetchTime from "./fixtures/up/metrics-source-fetch-time.json
 import metricsScanResults from "./fixtures/up/metrics-scan-results.json";
 import metricsDriftPaths from "./fixtures/up/metrics-drift-paths.json";
 import metricsDeployOutcomes from "./fixtures/up/metrics-deploy-outcomes.json";
+import metricsInterfaceTraffic from "./fixtures/up/metrics-interface-traffic.json";
+import metricsInterfaceErrors from "./fixtures/up/metrics-interface-errors.json";
+import metricsInterfaceDiscards from "./fixtures/up/metrics-interface-discards.json";
+import metricsBgpEstablished from "./fixtures/up/metrics-bgp-established.json";
+import metricsDeviceCpu from "./fixtures/up/metrics-device-cpu.json";
+import metricsDeviceMemory from "./fixtures/up/metrics-device-memory.json";
 import topology from "./fixtures/topology.json";
 
 export const MODE = mode as unknown as ModeResponse;
@@ -89,6 +95,12 @@ export const METRICS: Record<MetricsViewName, MetricsResponse> = {
   "scan-results": metricsScanResults as unknown as MetricsResponse,
   "drift-paths": metricsDriftPaths as unknown as MetricsResponse,
   "deploy-outcomes": metricsDeployOutcomes as unknown as MetricsResponse,
+  "interface-traffic": metricsInterfaceTraffic as unknown as MetricsResponse,
+  "interface-errors": metricsInterfaceErrors as unknown as MetricsResponse,
+  "interface-discards": metricsInterfaceDiscards as unknown as MetricsResponse,
+  "bgp-established": metricsBgpEstablished as unknown as MetricsResponse,
+  "device-cpu": metricsDeviceCpu as unknown as MetricsResponse,
+  "device-memory": metricsDeviceMemory as unknown as MetricsResponse,
 };
 export const TOPOLOGY = topology as unknown as TopologyResponse;
 export const DEVICES = devices as unknown as DevicesResponse;
