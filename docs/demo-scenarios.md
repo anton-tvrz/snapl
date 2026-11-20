@@ -372,8 +372,6 @@ Read the file before you share it: it includes the error text and paths recorded
 
 **Story:** "Not just the last run: a day of the loop's work, counted."
 
-> **Not yet run against the lab.** These views are checked in tests and on captured fixtures (spec 015). Its live checks (tasks T037, T044, T049 and T050) are still open. Rehearse this scenario before you show it.
-
 Leave the schedule running in report mode for a few hours (Scenario 9), or run beats 1 to 3 of the demo arc. Then open the dashboard with the range at 24 h.
 
 **Point at:**
@@ -476,9 +474,9 @@ node, or a port mismatch all show up there as a named failing line.
 
 - **Config removed from intent is not removed from the device** — apply is a
   merge-only gNMI update at `/` (#65).
-- **Config that exists only on the device is never flagged** — the drift diff
-  compares intent against live for paths intent knows about, so an
-  operator-added interface or BGP neighbor goes unreported (#54).
+- **Config that exists only on the device is flagged, never removed** — a scan
+  reports an operator-added interface or BGP neighbour as not in intent (#54),
+  and a reconcile leaves it on the device (#65).
 
 Together these mean "we converge to intent" is currently true for additions and
 changes, not deletions. Say it before the audience finds it.
