@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -40,13 +40,75 @@ describe("Topology", () => {
 
     const buttons = screen.getAllByRole("button");
     expect(buttons.map((button) => button.getAttribute("aria-label"))).toEqual([
-      "spine-01, spine, In sync",
-      "spine-02, spine, In sync",
-      "leaf-01, leaf, Undesired config",
-      "leaf-02, leaf, In sync",
-      "leaf-03, leaf, In sync",
-      "leaf-04, leaf, In sync",
+      "spine-01, spine, In sync, Unhealthy",
+      "spine-02, spine, In sync, Unhealthy",
+      "leaf-01, leaf, Undesired config, Healthy",
+      "leaf-02, leaf, In sync, Healthy",
+      "leaf-03, leaf, In sync, Healthy",
+      "leaf-04, leaf, In sync, Healthy",
     ]);
+  });
+
+  describe("health (spec 016)", () => {
+    const withHealth = (name: string, health: (typeof devices)[number]["health"]) =>
+      devices.map((device) => (device.name === name ? { ...device, health } : device));
+    const chip = (name: string) => screen.getByRole("button", { name: new RegExp(`^${name},`) });
+    const mark = (name: string) => chip(name).querySelector<SVGElement>("[data-health]");
+
+    it("marks an unhealthy device with a red ! beside its drift colour", () => {
+      draw();
+
+      expect(mark("spine-01")?.dataset.health).toBe("unhealthy");
+      expect(mark("spine-01")?.textContent).toBe("!");
+      expect(mark("spine-01")?.querySelector("circle")?.getAttribute("fill")).toBe("#d03b3b");
+    });
+
+    it("draws no mark on a healthy device, nor on one with no recorded health", () => {
+      draw({ devices: withHealth("leaf-02", null) });
+
+      expect(mark("leaf-01")).toBeNull();
+      expect(mark("leaf-02")).toBeNull();
+      expect(chip("leaf-02")).toHaveAccessibleName("leaf-02, leaf, In sync");
+    });
+
+    it("marks a device whose health is unknown with a grey ?", () => {
+      draw({ devices: withHealth("leaf-03", { state: "unknown", since: "2026-11-07T21:00:00Z", reasons: [] }) });
+
+      expect(mark("leaf-03")?.dataset.health).toBe("unknown");
+      expect(mark("leaf-03")?.textContent).toBe("?");
+      expect(chip("leaf-03")).toHaveAccessibleName("leaf-03, leaf, In sync, Health unknown");
+    });
+
+    it("leaves the drift state as it is: an unhealthy device in sync is drawn in sync", () => {
+      draw();
+
+      expect(chip("spine-01").dataset.shape).toBe("circle");
+      expect(chip("spine-02").dataset.shape).toBe(chip("leaf-02").dataset.shape);
+    });
+
+    it("names the reasons in the chip's title", () => {
+      draw();
+
+      expect(chip("spine-01").querySelector("title")?.textContent).toBe(
+        "Unhealthy: BGP 10.10.1.1 active (expected established); BGP 10.10.1.3 active (expected established); " +
+          "BGP 10.10.1.5 active (expected established); BGP 10.10.1.7 active (expected established)",
+      );
+      expect(chip("leaf-02").querySelector("title")).toBeNull();
+    });
+
+    it("explains the health marks shown, in the legend's row", () => {
+      const key = () => screen.queryByRole("list", { name: "Health marks shown" });
+      draw({ devices: withHealth("leaf-03", { state: "unknown", since: "2026-11-07T21:00:00Z", reasons: [] }) });
+      expect(within(key()!).getAllByRole("listitem").map((item) => item.textContent)).toEqual(["!Unhealthy", "?Health unknown"]);
+
+      cleanup();
+      draw();
+      expect(within(key()!).getAllByRole("listitem").map((item) => item.textContent)).toEqual(["!Unhealthy"]);
+
+      cleanup();
+      draw({ devices: devices.map((device) => ({ ...device, health: null })) });
+      expect(key()).not.toBeInTheDocument();
+    });
   });
 
   it("puts the top tier's names above their marks, where no link crosses them", () => {
@@ -87,7 +149,7 @@ describe("Topology", () => {
     const marked = links(container).filter((link) => link.dataset.marked === "true");
     expect(marked.map((link) => link.dataset.link)).toEqual([linkKey(topology.links[0]!)]);
     expect(within(container).getByText("leaf-01 ethernet-1/49 to spine-01 ethernet-1/1: carries drift")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^spine-01,/ })).toHaveAccessibleName("spine-01, spine, Missing intent");
+    expect(screen.getByRole("button", { name: /^spine-01,/ })).toHaveAccessibleName("spine-01, spine, Missing intent, Unhealthy");
   });
 
   it("marks no link when no drifted path names a linked interface", () => {
@@ -149,10 +211,10 @@ describe("Topology", () => {
     });
 
     expect(screen.getByRole("button", { name: /^leaf-02,/ })).toHaveAccessibleName(
-      "leaf-02, leaf, In sync, DeployIntent running",
+      "leaf-02, leaf, In sync, Healthy, DeployIntent running",
     );
     expect(screen.getByRole("button", { name: /^leaf-03,/ })).toHaveAccessibleName(
-      "leaf-03, leaf, In sync, DeployIntent just ended: Failed",
+      "leaf-03, leaf, In sync, Healthy, DeployIntent just ended: Failed",
     );
     expect(screen.getByRole("button", { name: /^leaf-02,/ }).querySelector("[data-activity='active']")).not.toBeNull();
   });
@@ -185,7 +247,7 @@ describe("Topology", () => {
     draw({ flagged: new Map([["leaf-04", 4]]) });
 
     expect(screen.getByRole("button", { name: /^leaf-04,/ })).toHaveAccessibleName(
-      "leaf-04, leaf, In sync, repair failed 4 times in a row",
+      "leaf-04, leaf, In sync, Healthy, repair failed 4 times in a row",
     );
   });
 
@@ -200,7 +262,7 @@ describe("Topology", () => {
 
     draw({ devices: odd as typeof devices });
 
-    expect(screen.getByRole("button", { name: /^leaf-02,/ })).toHaveAccessibleName("leaf-02, leaf, quarantined");
+    expect(screen.getByRole("button", { name: /^leaf-02,/ })).toHaveAccessibleName("leaf-02, leaf, quarantined, Healthy");
   });
 
   it("shows the device list in place of the drawing when there are too many devices", () => {

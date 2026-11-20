@@ -131,7 +131,7 @@ describe("App in a snapshot", () => {
     await userEvent.keyboard("{ArrowLeft}{ArrowLeft}");
     await settle();
 
-    expect(await screen.findByRole("button", { name: "spine-01, spine, Missing intent" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "spine-01, spine, Missing intent, Unhealthy" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Past time" })).toHaveTextContent("2026-11-07 21:20:15 UTC");
   });
 });

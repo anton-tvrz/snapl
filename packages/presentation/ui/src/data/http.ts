@@ -100,6 +100,12 @@ export class HttpProvider implements DataProvider {
       end: range?.end.toISOString(),
     });
 
+  health = (range?: Range) =>
+    this.#get<Awaited<ReturnType<DataProvider["health"]>>>("health", {
+      start: range?.start.toISOString(),
+      end: range?.end.toISOString(),
+    });
+
   steps = (run: RunId) =>
     this.#get<Awaited<ReturnType<DataProvider["steps"]>>>("runs/steps", {
       workflow_id: run.workflow_id,

@@ -163,10 +163,10 @@ A slice that changes the contract also regenerates the OpenAPI snapshot and the 
 
 **Goal**: health is visible next to drift without changing it.
 
-- [ ] T041 [US2] Tests first: `src/lib/` health helpers (mark per state, the number row's context "2 unhealthy" or "all healthy"); `NumberRow.test.tsx`; the fabric panel's chips in `components/topology/` (a mark beside the drift colour, the drift colour unchanged, a title naming the reasons); `DeviceDrawer.test.tsx` (a "Health" section first: state, reasons, since; "the worker is not running"; nothing when `health` is `null`).
-- [ ] T042 [US2] Implement T041. Add `health` to the data provider (`data/provider.ts`, `http.ts`, `inline.ts`).
-- [ ] T043 [US2] A health history strip under the drift timeline, from `/api/v1/health` episodes, in the timeline's frame. Tests first.
-- [ ] T044 [US2] The look check, with spine-01's drawer open. Append to the changelog.
+- [x] T041 [US2] Tests first: `src/lib/` health helpers (mark per state, the number row's context "2 unhealthy" or "all healthy"); `NumberRow.test.tsx`; the fabric panel's chips in `components/topology/` (a mark beside the drift colour, the drift colour unchanged, a title naming the reasons); `DeviceDrawer.test.tsx` (a "Health" section first: state, reasons, since; "the worker is not running"; nothing when `health` is `null`).
+- [x] T042 [US2] Implement T041. Add `health` to the data provider (`data/provider.ts`, `http.ts`, `inline.ts`).
+- [x] T043 [US2] A health history strip under the drift timeline, from `/api/v1/health` episodes, in the timeline's frame. Tests first. *Built as a line along the foot of each device's drift lane, on the lanes' axis (which now starts before the first health change in range), with its key in the lanes' legend line: a separate strip of any height pushed the first metrics chart past spec 014's SC-003 limit of 2000 px (1990 px before this PR, 2042 px with a one-row strip).*
+- [x] T044 [US2] The look check, with spine-01's drawer open. Append to the changelog.
 
 ---
 

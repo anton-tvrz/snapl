@@ -2,7 +2,9 @@ import { useEffect, useRef } from "react";
 
 import type { DeviceView, RunView } from "../api/types";
 import type { RunId } from "../data/provider";
-import { driftEncoding, runEncoding } from "../lib/encoding";
+import type { DeviceHealthView } from "../api/types";
+import { driftEncoding, runEncoding, TONES } from "../lib/encoding";
+import { healthMark } from "../lib/health";
 import { ageText, utcText } from "../lib/time";
 import { Command } from "./Command";
 import { StateMark } from "./topology/StateMark";
@@ -41,10 +43,44 @@ function Paths({ title, paths }: { title: string; paths: readonly string[] }) {
   );
 }
 
+/** The device's health (spec 016): its state, since when, and why. Beside the drift state, never instead of it. */
+function Health({ health, now }: { health: DeviceHealthView; now: Date }) {
+  const mark = healthMark(health.state);
+  const reasons = health.reasons ?? [];
+  return (
+    <section aria-label="Health" className="mt-4">
+      <h3 className="text-meta font-semibold text-muted">Health</h3>
+      <p className="mt-2 flex flex-wrap items-baseline gap-x-2">
+        {mark.glyph && (
+          <span
+            aria-hidden="true"
+            className="chip rounded px-1.5 font-semibold"
+            style={{ backgroundColor: TONES[mark.tone].fill, color: TONES[mark.tone].onFill }}
+          >
+            {mark.glyph}
+          </span>
+        )}
+        <span className="font-semibold">{mark.label}</span>
+        <span className="text-meta text-muted">since {ageText(health.since, now)}</span>
+      </p>
+      {reasons.length > 0 && (
+        <ul className="mt-2 space-y-2">
+          {reasons.map((reason) => (
+            <li key={reason.text} className="break-words">
+              {reason.text}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 /**
  * One device's detail (spec 011 FR-016): how it differs from intent, when it
  * was last scanned and deployed, its recent runs, and the command that would
  * reconcile it. Everything recorded from the device is rendered as text.
+ * Its health comes first (spec 016 FR-011).
  */
 export function DeviceDrawer({ device, runs, linkNotes, now, onClose, copy = true, onSelectRun, selectedRun }: Props) {
   const encoding = driftEncoding(device.drift_state);
@@ -91,6 +127,8 @@ export function DeviceDrawer({ device, runs, linkNotes, now, onClose, copy = tru
           ✕
         </button>
       </header>
+
+      {device.health && <Health health={device.health} now={now} />}
 
       {!device.in_intent && <p className="mt-4 text-muted">No longer in intent.</p>}
       {device.error && (

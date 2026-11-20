@@ -130,6 +130,15 @@ export function App({ provider }: Props) {
       ? `${range.start.toISOString()}/${range.end.toISOString()}`
       : "default",
   );
+  // Each device's unhealthy stretches over the same range (spec 016).
+  const health = usePolling(
+    () => provider.health(range),
+    every(HISTORY_MS),
+    range
+      ? `${range.start.toISOString()}/${range.end.toISOString()}`
+      : "default",
+  );
+  const healthView = health.data?.health;
 
   const historyAnswer = usePolling(
     () =>
@@ -293,9 +302,17 @@ export function App({ provider }: Props) {
   );
   const loop = steps.data?.steps;
 
+  // The health strip shares the lanes' axis, so it starts before the first health change too.
+  const healthChanges = useMemo(
+    () =>
+      (healthView?.data?.devices ?? []).flatMap((entry) =>
+        (entry.episodes ?? []).map((episode) => Date.parse(episode.opened_at)),
+      ),
+    [healthView],
+  );
   const domain = useMemo(
-    () => (lanesData ? domainOf(lanesData) : undefined),
-    [lanesData],
+    () => (lanesData ? domainOf(lanesData, healthChanges) : undefined),
+    [lanesData, healthChanges],
   );
   const stops = useMemo(
     () => (lanesData ? scanStops(lanesData.lanes) : []),
@@ -518,6 +535,7 @@ export function App({ provider }: Props) {
                     cursor={at}
                     error={timeline.error}
                     onSelectRun={onSelectRun}
+                    health={healthView}
                   />
                   {lanesData.lanes.length > 0 && (
                     <Scrubber

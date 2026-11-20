@@ -2,7 +2,8 @@ import type { KeyboardEvent } from "react";
 
 import type { DeviceView, Topology as TopologyData } from "../../api/types";
 import type { Activity, FabricActivity } from "../../lib/activity";
-import { driftEncoding, runEncoding } from "../../lib/encoding";
+import { driftEncoding, runEncoding, TONES } from "../../lib/encoding";
+import { healthMark, healthTitle } from "../../lib/health";
 import { layoutTiers } from "../../lib/layout";
 import { useReducedMotion } from "../../lib/useReducedMotion";
 import { DeviceList } from "./DeviceList";
@@ -29,6 +30,31 @@ function activityText(activity: Activity | undefined): string | null {
   if (!activity) return null;
   if (activity.kind === "active") return `${activity.workflowType} running`;
   return `${activity.workflowType} just ended: ${runEncoding(activity.outcome ?? "").label}`;
+}
+
+/** The health marks on screen, in the legend's row (spec 016). A healthy device has no mark. */
+function HealthKey({ states }: { states: readonly (string | undefined)[] }) {
+  const marks = [...new Set(states.filter((state): state is string => state !== undefined))]
+    .map(healthMark)
+    .filter((mark) => mark.glyph !== null)
+    .sort((a, b) => Number(a.tone !== "fail") - Number(b.tone !== "fail") || a.label.localeCompare(b.label));
+  if (marks.length === 0) return null;
+  return (
+    <ul aria-label="Health marks shown" className="flex flex-wrap gap-x-6 gap-y-2 text-meta text-muted">
+      {marks.map((mark) => (
+        <li key={mark.label} className="flex items-center gap-2">
+          <span
+            aria-hidden="true"
+            className="flex h-4 w-4 items-center justify-center rounded-full font-semibold"
+            style={{ backgroundColor: TONES[mark.tone].fill, color: TONES[mark.tone].onFill }}
+          >
+            {mark.glyph}
+          </span>
+          <span>{mark.label}</span>
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 /**
@@ -115,10 +141,14 @@ export function Topology({ topology, devices, activity, marked, flagged, selecte
           const encoding = driftEncoding(device?.drift_state ?? "never_scanned");
           const here = activity.devices.get(placed.name);
           const failures = flagged.get(placed.name);
+          // Health sits beside the drift state and never changes it (spec 016 FR-010).
+          const health = device?.health ?? null;
+          const mark = health ? healthMark(health.state) : null;
           const label = [
             placed.name,
             placed.role,
             encoding.label,
+            mark?.label,
             activityText(here),
             failures ? `repair failed ${failures} times in a row` : null,
           ]
@@ -138,6 +168,7 @@ export function Topology({ topology, devices, activity, marked, flagged, selecte
               onKeyDown={(event) => onKey(event, placed.name)}
               className="device cursor-pointer"
             >
+              {mark?.glyph && health && <title>{healthTitle(health)}</title>}
               {/* A surface disc under the mark, so links do not show through it. */}
               <circle r={R + 6} fill="var(--surface)" />
               {selected === placed.name && <circle r={R + 6} fill="none" stroke="var(--ink)" strokeWidth={2} />}
@@ -153,6 +184,15 @@ export function Topology({ topology, devices, activity, marked, flagged, selecte
                 />
               )}
               <StateMark encoding={encoding} r={R} />
+              {mark?.glyph && (
+                // Top left, opposite the repair failures' count.
+                <g transform={`translate(${-R} ${-R})`} aria-hidden="true" data-health={health?.state}>
+                  <circle r={8} fill={TONES[mark.tone].fill} stroke="var(--surface)" strokeWidth={1.5} />
+                  <text textAnchor="middle" dominantBaseline="central" fontSize={11} fontWeight={700} fill={TONES[mark.tone].onFill}>
+                    {mark.glyph}
+                  </text>
+                </g>
+              )}
               {failures && (
                 <g transform={`translate(${R} ${-R})`} aria-hidden="true">
                   <circle r={8} fill="var(--surface)" stroke="var(--ink)" strokeWidth={1.5} />
@@ -168,8 +208,9 @@ export function Topology({ topology, devices, activity, marked, flagged, selecte
           );
         })}
       </svg>
-      <div className="mt-2">
+      <div className="mt-2 flex flex-wrap gap-x-6 gap-y-2">
         <Legend states={layout.nodes.map((placed) => byName.get(placed.name)?.drift_state ?? "never_scanned")} />
+        <HealthKey states={layout.nodes.map((placed) => byName.get(placed.name)?.health?.state)} />
       </div>
     </div>
   );

@@ -1,10 +1,10 @@
 import { useId, useState } from "react";
 
-import type { DeviceLane, DriftTimeline, Marker } from "../../api/types";
+import type { DeviceLane, DriftTimeline, FabricHealth, Marker, View } from "../../api/types";
 import type { RunId } from "../../data/provider";
 import { driftEncoding, TONES } from "../../lib/encoding";
-import { NO_DATA, pointTime, type Range, type Segment, segments } from "../../lib/lanes";
-import { utcText } from "../../lib/time";
+import { type HealthStretch, healthStretches, stretchText, stretchTitle } from "../../lib/health";
+import { clock, NO_DATA, pointTime, position, type Range, type Segment, segments } from "../../lib/lanes";
 import { Command } from "../Command";
 import { StateMark } from "../topology/StateMark";
 
@@ -22,6 +22,8 @@ interface Props {
   selected?: string;
   /** Shows a marker's run as the loop. Without it, markers are not buttons. */
   onSelectRun?: (run: RunId) => void;
+  /** `/health` over the range (spec 016): each device's unhealthy stretches, drawn under its lane. */
+  health?: View<FabricHealth>;
 }
 
 /** The width of the name column, shared with the scrubber so their times line up. */
@@ -34,16 +36,6 @@ const MARKERS: Record<string, { tag: string; label: string }> = {
 };
 
 const TRIGGERS: Record<string, string> = { operator: "an operator", schedule: "the schedule" };
-
-function position(domain: Range, t: number): number {
-  const span = domain.end.getTime() - domain.start.getTime();
-  return Math.min(100, Math.max(0, ((t - domain.start.getTime()) / span) * 100));
-}
-
-function clock(domain: Range, t: Date): string {
-  const long = domain.end.getTime() - domain.start.getTime() > 86_400_000;
-  return long ? utcText(t) : utcText(t).slice(11);
-}
 
 /** A lane in words, for anyone not reading the drawing. */
 function described(lane: DeviceLane, drawn: readonly Segment[], domain: Range): string {
@@ -74,7 +66,7 @@ function markerLabel(marker: Marker, domain: Range): string {
   return `${kind}, started by ${who} at ${clock(domain, new Date(marker.t))}`;
 }
 
-function Lane({ lane, domain, now }: { lane: DeviceLane; domain: Range; now: Date }) {
+function Lane({ lane, domain, now, unhealthy = [] }: { lane: DeviceLane; domain: Range; now: Date; unhealthy?: readonly HealthStretch[] }) {
   const drawn = segments(lane.points, domain, now);
   return (
     <li aria-label={lane.name} className={LANE_GRID}>
@@ -85,6 +77,7 @@ function Lane({ lane, domain, now }: { lane: DeviceLane; domain: Range; now: Dat
       <span className="sr-only">
         {described(lane, drawn, domain)}
         {!lane.in_intent && ", no longer in intent"}
+        {unhealthy.length > 0 && `; ${unhealthy.map((stretch) => stretchText(stretch, domain)).join(", then ")}`}
       </span>
       <div className="relative h-6" aria-hidden="true">
         {drawn.map((segment) => {
@@ -121,6 +114,19 @@ function Lane({ lane, domain, now }: { lane: DeviceLane; domain: Range; now: Dat
             </svg>
           );
         })}
+        {/* Health under the drift (spec 016): a line along the lane's foot, never over the drift's colour. */}
+        {unhealthy.map((stretch) => {
+          const left = position(domain, stretch.start);
+          return (
+            <span
+              key={`health@${stretch.start}`}
+              data-health={stretch.open ? "open" : "closed"}
+              title={stretchTitle(stretch, domain)}
+              className="absolute bottom-0 h-1 min-w-0.5 rounded-sm"
+              style={{ left: `${left}%`, width: `${position(domain, stretch.end) - left}%`, backgroundColor: TONES.fail.fill }}
+            />
+          );
+        })}
       </div>
     </li>
   );
@@ -131,7 +137,7 @@ function Lane({ lane, domain, now }: { lane: DeviceLane; domain: Range; now: Dat
  * mark, held until the next scan for at most 15 minutes, stretches with no scan
  * as no data, and the runs that repair drift as markers.
  */
-export function Lanes({ timeline, domain, now, cursor, error, selected, onSelectRun }: Props) {
+export function Lanes({ timeline, domain, now, cursor, error, selected, onSelectRun, health }: Props) {
   const Tag = onSelectRun ? "button" : "span";
   // Devices that left intent are folded into one row (spec 014 FR-018): their
   // lanes are mostly hatching, and they must not take the panel over.
@@ -140,6 +146,10 @@ export function Lanes({ timeline, domain, now, cursor, error, selected, onSelect
   const [opened, setOpened] = useState(false);
   const open = opened || gone.some((lane) => lane.name === selected);
   const summary = useId();
+  const unhealthy = new Map(
+    (health?.data?.devices ?? []).map((entry) => [entry.device_id, healthStretches(entry.episodes ?? [], domain, now)]),
+  );
+  const anyUnhealthy = [...unhealthy.values()].some((drawn) => drawn.length > 0);
   return (
     <div>
       {error && (
@@ -160,7 +170,7 @@ export function Lanes({ timeline, domain, now, cursor, error, selected, onSelect
           <div className="relative pt-6">
           <ul aria-label="Drift lanes" className="flex flex-col gap-2">
             {current.map((lane) => (
-              <Lane key={lane.device_id} lane={lane} domain={domain} now={now} />
+              <Lane key={lane.device_id} lane={lane} domain={domain} now={now} unhealthy={unhealthy.get(lane.device_id)} />
             ))}
           </ul>
 
@@ -223,7 +233,7 @@ export function Lanes({ timeline, domain, now, cursor, error, selected, onSelect
               </summary>
               <ul aria-label="Drift lanes of devices no longer in intent" className="mt-2 flex flex-col gap-2 text-ink">
                 {gone.map((lane) => (
-                  <Lane key={lane.device_id} lane={lane} domain={domain} now={now} />
+                  <Lane key={lane.device_id} lane={lane} domain={domain} now={now} unhealthy={unhealthy.get(lane.device_id)} />
                 ))}
               </ul>
             </details>
@@ -231,6 +241,8 @@ export function Lanes({ timeline, domain, now, cursor, error, selected, onSelect
           <p className="mt-2 text-meta text-muted">
             <span className="font-semibold">R</span> reconcile · <span className="font-semibold">S</span> scheduled
             remediation · hatched: no scan
+            {anyUnhealthy && " · underline: unhealthy"}
+            {health && !health.available && ` · health: ${health.reason ?? "not read"}`}
           </p>
         </>
       )}

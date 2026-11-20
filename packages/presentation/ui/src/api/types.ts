@@ -38,6 +38,12 @@ export type SeriesName = Schemas["SeriesName"];
 export type DriftSummaryResponse = Schemas["DriftSummaryResponse"];
 export type DriftSummary = Schemas["DriftSummary"];
 export type DeviceDriftSummary = Schemas["DeviceDriftSummary"];
+// Spec 016: each device's health, now and over a range.
+export type HealthResponse = Schemas["HealthResponse"];
+export type FabricHealth = Schemas["FabricHealth"];
+export type DeviceHealthEntry = Schemas["DeviceHealthEntry"];
+export type HealthEpisode = Schemas["HealthEpisode"];
+export type DeviceHealthView = Schemas["DeviceHealthView"];
 
 export type DeviceView = Schemas["DeviceView"];
 export type RunView = Schemas["RunView"];

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { ApiError } from "./data/http";
 import type { DataProvider } from "./data/provider";
-import { DRIFT_SUMMARY, FABRIC_HISTORY, HISTORY, LINKS, METRICS, MODE, NOW, OVERVIEW, OVERVIEW_UP, SOURCES, STEPS_DEPLOY, TIMELINE, TOPOLOGY } from "./test/fixtures";
+import { DRIFT_SUMMARY, FABRIC_HISTORY, HEALTH, HISTORY, LINKS, METRICS, MODE, NOW, OVERVIEW, OVERVIEW_UP, SOURCES, STEPS_DEPLOY, TIMELINE, TOPOLOGY } from "./test/fixtures";
 
 // Every folded panel and group open (#290).
 const ALL_OPEN = "/?open=history,fabric-history,drift-by-device,metrics-timing,metrics-work,metrics-worker,metrics-dashboard";
@@ -25,6 +25,7 @@ function provider(overrides: Partial<DataProvider> = {}): DataProvider {
     timeline: async () => TIMELINE,
     history: async (_range?: unknown, _bucket?: unknown, series?: unknown) => (series ? FABRIC_HISTORY : HISTORY),
     driftSummary: async () => DRIFT_SUMMARY,
+    health: async () => HEALTH,
     steps: async () => STEPS_DEPLOY,
     metrics: async (view: keyof typeof METRICS) => METRICS[view],
     ...overrides,
@@ -46,8 +47,8 @@ describe("App", () => {
     render(<App provider={provider()} />);
 
     expect(await screen.findByRole("group", { name: "Fabric topology" })).toBeInTheDocument();
-    expect(device("leaf-01")).toHaveAccessibleName("leaf-01, leaf, Undesired config");
-    expect(device("spine-01")).toHaveAccessibleName("spine-01, spine, In sync");
+    expect(device("leaf-01")).toHaveAccessibleName("leaf-01, leaf, Undesired config, Healthy");
+    expect(device("spine-01")).toHaveAccessibleName("spine-01, spine, In sync, Unhealthy");
     expect(screen.getByRole("heading", { name: "Fabric" })).toBeInTheDocument();
   });
 
@@ -534,6 +535,30 @@ describe("App", () => {
 
     const panel = await screen.findByRole("region", { name: "Fabric history" });
     expect(await within(panel).findByRole("img", { name: /, against \d+ in intent now\./ })).toBeInTheDocument();
+  });
+
+  it("shows each device's health under its drift lane, asked over the chosen range (spec 016)", async () => {
+    const health = vi.fn(async () => HEALTH);
+    render(<App provider={provider({ health })} />);
+
+    const panel = await screen.findByRole("region", { name: "Drift over time" });
+    const lanes = within(panel).getByRole("list", { name: "Drift lanes" });
+    const leaf = await within(lanes).findByRole("listitem", { name: "leaf-01" });
+    expect(health).toHaveBeenLastCalledWith(undefined);
+    // The axis takes the health changes in: it starts before leaf-01's unhealthy hour.
+    await vi.waitFor(() => expect(leaf.querySelector<HTMLElement>("[data-health]")!.style.left).not.toBe("0%"));
+
+    await userEvent.click(screen.getByRole("button", { name: "7 d" }));
+
+    expect(health).toHaveBeenLastCalledWith({ start: new Date(NOW.getTime() - 7 * 86_400_000), end: NOW });
+  });
+
+  it("marks the unhealthy devices on the fabric and counts them in the number row", async () => {
+    render(<App provider={provider()} />);
+
+    expect(await screen.findByRole("button", { name: "spine-01, spine, In sync, Unhealthy" })).toBeInTheDocument();
+    const row = screen.getByRole("list", { name: "The fabric in numbers" });
+    expect(within(row).getByText(/2 unhealthy\.$/)).toBeInTheDocument();
   });
 
   it("has drift by device, asked over the chosen range, and opens a device from it", async () => {

@@ -153,6 +153,19 @@ describe("the demo arc", () => {
     expect(domainOf(early).start.getTime()).toBeLessThan(Date.parse("2026-11-07T21:19:30Z"));
   });
 
+  it("starts the drawing before an earlier health change, so the health strip shares its axis (spec 016)", () => {
+    const change = Date.parse("2026-11-07T18:50:48Z");
+    const domain = domainOf(timeline, [change]);
+
+    expect(domain.start.getTime()).toBeLessThan(change);
+    expect(domain.start.getTime()).toBeGreaterThanOrEqual(Date.parse(timeline.start));
+    expect(domain.end).toEqual(new Date(timeline.end));
+  });
+
+  it("never starts the drawing before the range for a health change before it", () => {
+    expect(domainOf(timeline, [Date.parse("2026-11-01T00:00:00Z")]).start).toEqual(new Date(timeline.start));
+  });
+
   it("draws the whole range when the first scan is before it", () => {
     const domain = domainOf({ ...timeline, start: "2026-11-07T21:20:14Z", first_event_at: "2026-01-01T00:00:00Z" });
 
