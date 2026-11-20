@@ -194,10 +194,10 @@ A slice that changes the contract also regenerates the OpenAPI snapshot and the 
 
 ## Phase 10: Docs and Governance — PR G
 
-- [ ] T053 [P] `dev/adr/0005-dashboard-and-metrics-stack.md`: a decision for device telemetry (streams in the worker, not workflows; health in the audit trail; the eight families). Amend 010's versioning rule with `DeviceHealthState` (`specs/010-dashboard-read-api/contracts/dashboard-api.md`).
-- [ ] T054 [P] `README.md`: replace "No device telemetry" and "Config-level verification only" with what the lab has shown so far, and only that (T026's evidence; leave the words for anything still unproven). Add the caveat on the eBGP underlay while #311 is open. `docs/demo-scenarios.md`: a scenario "in sync, and still broken" (the spines today).
-- [ ] T055 [P] `CLAUDE.md` "Recent Changes" and `AGENTS.md` if it lists the blocks' capabilities. `dev/knowledge/host-resource-registry.md` if anything new listens (nothing should).
-- [ ] T056 Finish `changelog/312.added.md` as one readable paragraph.
+- [x] T053 [P] `dev/adr/0005-dashboard-and-metrics-stack.md`: a decision for device telemetry (streams in the worker, not workflows; health in the audit trail; the eight families). Amend 010's versioning rule with `DeviceHealthState` (`specs/010-dashboard-read-api/contracts/dashboard-api.md`).
+- [ ] T054 [P] **Needs the lab** (after T026: its evidence is what the README may claim; amended 2026-11-20 in PR G) `README.md`: replace "No device telemetry" and "Config-level verification only" with what the lab has shown so far, and only that (T026's evidence; leave the words for anything still unproven). Add the caveat on the eBGP underlay while #311 is open. `docs/demo-scenarios.md`: a scenario "in sync, and still broken" (the spines today). *#311 closed on 2026-11-19 (#316, #318): the caveat is now #317's (sessions establish but exchange no routes), and whether any device is "in sync, and still broken" today is for T026 to show.*
+- [x] T055 [P] `CLAUDE.md` "Recent Changes" and `AGENTS.md` if it lists the blocks' capabilities. `dev/knowledge/host-resource-registry.md` if anything new listens (nothing should). *Nothing new listens: the streams dial out to each device's gNMI port, and the figures use the worker's existing 18091. `AGENTS.md`'s block table names device health and telemetry streams.*
+- [x] T056 Finish `changelog/312.added.md` as one readable paragraph. *The README's "No device telemetry" stays until T054, so the paragraph ends by saying none of this has been run on the lab.*
 
 ---
 
