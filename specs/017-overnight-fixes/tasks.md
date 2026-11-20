@@ -53,13 +53,13 @@
 
 ## Phase 4: The Flaky Cancellation Test (US4, #333) — PR D
 
-- [ ] T016 [US4] Reproduce:
+- [x] T016 [US4] Reproduce:
   - run `test_a_cancelled_scan_keeps_the_reports_that_completed` 50 times under CPU contention (a few `python -c "while True: pass"` beside it, stopped afterwards) and record the failures and durations in the report;
   - read the test's CI durations from recent PR Validation logs (`gh run view --log`).
-- [ ] T017 [US4] Find the cause from T016 and the SDK's handling of a cancel while an activity is held (the issue's leads). Write it in the PR body with the evidence.
-- [ ] T018 [US4] Fix what the evidence supports, tests first where code changes. A deadline may be raised only to a measured CI time with margin, said in the PR.
-- [ ] T019 [US4] Done when the test passes 50 runs in a row under the same contention and the cause is written down. If T017 found no cause, ship only what is supported, keep #333 open (`Refs`), and write what was ruled out in the report and on #333.
-- [ ] T020 [US4] `changelog/333.fixed.md` only if code or the test changed.
+- [x] T017 [US4] Find the cause from T016 and the SDK's handling of a cancel while an activity is held (the issue's leads). Write it in the PR body with the evidence.
+- [x] T018 [US4] Fix what the evidence supports, tests first where code changes. A deadline may be raised only to a measured CI time with margin, said in the PR.
+- [x] T019 [US4] Done when the test passes 50 runs in a row under the same contention and the cause is written down. If T017 found no cause, ship only what is supported, keep #333 open (`Refs`), and write what was ruled out in the report and on #333.
+- [x] T020 [US4] `changelog/333.fixed.md` only if code or the test changed.
 
 ---
 
