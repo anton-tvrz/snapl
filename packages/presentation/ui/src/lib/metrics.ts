@@ -277,3 +277,11 @@ export const PRESETS: readonly Preset[] = [
 export function presetRange(preset: Preset, now: Date): Range {
   return { start: new Date(now.getTime() - preset.ms), end: now };
 }
+
+/**
+ * Whether an archive holds a range at 15 s for the network views: it lies
+ * inside one of the windows around a fault (spec 016, #351).
+ */
+export function insideWindow(range: Range | undefined, windows: readonly Range[]): range is Range {
+  return range !== undefined && windows.some((w) => w.start <= range.start && range.end <= w.end);
+}

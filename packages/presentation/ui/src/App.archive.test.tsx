@@ -25,14 +25,14 @@ const ALL_OPEN = "/?open=history,fabric-history,drift-by-device,metrics-timing,m
 
 // The page on `snapl dashboard --archive` (spec 011 US5, T073, T077).
 
-function provider() {
+function provider(mode: typeof MODE_ARCHIVE = MODE_ARCHIVE) {
   const calls = {
     overview: vi.fn(async () => OVERVIEW_ARCHIVE),
     metrics: vi.fn(async (view: keyof typeof METRICS) => METRICS[view]),
     timeline: vi.fn(async () => TIMELINE),
   };
   const p = {
-    mode: async () => MODE_ARCHIVE,
+    mode: async () => mode,
     sources: async () => SOURCES,
     overview: calls.overview,
     topology: async () => TOPOLOGY,
@@ -173,5 +173,44 @@ describe("App on an archive", () => {
     expect(calls.timeline).toHaveBeenLastCalledWith(expect.objectContaining({ end: new Date(MODE_ARCHIVE.now) }));
     for (const call of calls.metrics.mock.calls) expect(call).toEqual([expect.any(String), undefined]);
     expect(screen.getByText(/an archive holds no other/)).toBeInTheDocument();
+  });
+
+  // Spec 016 T066 (#351): an archive holds the network views at 15 s around each fault.
+  const WINDOW = { start: "2026-11-07T10:00:15Z", end: "2026-11-07T10:12:00Z" };
+  const MODE_DETAIL = {
+    ...MODE_ARCHIVE,
+    archive: { ...MODE_ARCHIVE.archive!, metrics_windows: [WINDOW] },
+  } as typeof MODE_ARCHIVE;
+  const lastAsked = (calls: ReturnType<typeof provider>["calls"], view: string) =>
+    calls.metrics.mock.calls.filter((call) => call[0] === view).at(-1);
+
+  it("asks the network views for a window once it is picked, and the other views for the exported range", async () => {
+    history.replaceState(null, "", "/?open=metrics-network,metrics-worker");
+    const { p, calls } = provider(MODE_DETAIL);
+    render(<App provider={p} />);
+    await settle();
+    await screen.findByRole("region", { name: "Archive" });
+
+    await userEvent.click(screen.getByRole("button", { name: "2026-11-07 10:00 to 10:12 UTC" }));
+    await settle();
+
+    const picked = { start: new Date(WINDOW.start), end: new Date(WINDOW.end) };
+    for (const view of ["interface-traffic", "bgp-established", "device-cpu"]) {
+      expect(lastAsked(calls, view)).toEqual([view, picked]);
+    }
+    expect(lastAsked(calls, "worker-up")).toEqual(["worker-up", undefined]);
+  });
+
+  it("keeps the network views on the exported range for a range no window holds", async () => {
+    history.replaceState(null, "", "/?open=metrics-network");
+    const { p, calls } = provider(MODE_DETAIL);
+    render(<App provider={p} />);
+    await settle();
+    await screen.findByRole("region", { name: "Archive" });
+
+    await userEvent.click(screen.getByRole("button", { name: "24 h" }));
+    await settle();
+
+    expect(lastAsked(calls, "bgp-established")).toEqual(["bgp-established", undefined]);
   });
 });
