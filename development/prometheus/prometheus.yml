@@ -4,8 +4,10 @@
 # orchestrator.start`) and the dashboard (`snapl dashboard`). They are reached
 # through host.docker.internal, on the ports in
 # dev/knowledge/host-resource-registry.md. A target that isn't running shows as
-# `up == 0`; that is data, not an error. The dashboard's views and its 15 s
-# cache assume this interval.
+# `up == 0`; that is data, not an error. The dashboard's views and their 15 s
+# cache assume the global interval. The worker is scraped every 5 s, which the
+# network view's 5 s cache assumes, so a downed link or session shows within
+# 30 s (#348).
 #
 # Linux Docker reaches host.docker.internal on the bridge address, not
 # loopback: there, start the worker with WORKER_METRICS_BIND=0.0.0.0 (or the
@@ -17,6 +19,7 @@ global:
 
 scrape_configs:
   - job_name: snapl-worker
+    scrape_interval: 5s
     static_configs:
       - targets: ["host.docker.internal:18091"]
   - job_name: snapl-dashboard
