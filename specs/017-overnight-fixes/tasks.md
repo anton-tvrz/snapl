@@ -28,16 +28,16 @@
 
 ## Phase 2: An Export Keeps Its Newest Step (US2, #306) — PR B
 
-- [ ] T007 [US2] Tests first in `test_dashboard_prometheus.py` (or wherever `plan_range` is tested):
+- [x] T007 [US2] Tests first in `test_dashboard_prometheus.py` (or wherever `plan_range` is tested):
   - with `align_end=True`, the end is kept and the start is a whole number of steps before it, at 15 s, 30 s, 2520 s and 10800 s;
   - without it, both ends are floored as today.
-- [ ] T008 [US2] Tests first in `test_dashboard_app.py`: `/metrics/{view}` with an explicit `end` answers a range ending at it; without `end` it is floored.
-- [ ] T009 [US2] Tests first in `tests/unit/test_tasks/test_history.py`: every ranged export carries `end` equal to the archive's time. Tests first in `test_dashboard_archive.py`:
+- [x] T008 [US2] Tests first in `test_dashboard_app.py`: `/metrics/{view}` with an explicit `end` answers a range ending at it; without `end` it is floored.
+- [x] T009 [US2] Tests first in `tests/unit/test_tasks/test_history.py`: every ranged export carries `end` equal to the archive's time. Tests first in `test_dashboard_archive.py`:
   - an archive whose exported ranges end at its time opens and answers its default view;
   - one made before this spec (floored ranges, the existing fixtures) still does;
   - #351's detail windows still serve a sub-range.
-- [ ] T010 [US2] Implement in `prometheus.py`, `app.py` and `tasks/history.py`. Check `snapshot.py` passes `end` for every ranged view, and add a test if one doesn't.
-- [ ] T011 [US2] `changelog/306.fixed.md`.
+- [x] T010 [US2] Implement in `prometheus.py`, `app.py` and `tasks/history.py`. Check `snapshot.py` passes `end` for every ranged view, and add a test if one doesn't.
+- [x] T011 [US2] `changelog/306.fixed.md`.
 - [ ] T012 [US2] **Needs the lab**: SC-002. Make an archive and a snapshot, and check that every metrics view's exported `end` equals the archive's or snapshot's time.
 
 ## Phase 3: The Seed (US3, #62) — PR C

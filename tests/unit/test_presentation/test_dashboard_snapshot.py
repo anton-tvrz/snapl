@@ -10,7 +10,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import re
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -143,6 +143,13 @@ def test_the_views_cover_the_range(bundle: dict):
     assert next(d for d in health["devices"] if d["name"] == "spine-01")["episodes"]
     # The network's figures are the ones at the snapshot's end.
     assert bundle["network"]["network"]["data"]["at"] == bundle["manifest"]["end"]
+
+
+def test_every_metrics_view_ends_at_the_snapshots_time(bundle: dict):
+    """To the second, as Prometheus is asked, at the page's step and the coarser one alike (#306)."""
+    end = datetime.fromisoformat(bundle["manifest"]["end"]).replace(microsecond=0)
+    for view, answer in bundle["metrics"].items():
+        assert datetime.fromisoformat(answer["metrics"]["data"]["end"]) == end, view
 
 
 def _data(bundle: dict, view: str) -> dict:

@@ -417,9 +417,11 @@ def choose_step(start: datetime, end: datetime, requested: int) -> int:
 
 @dataclass(frozen=True)
 class RangePlan:
-    """A range as it is asked for: both ends rounded down to the step.
+    """A range as it is asked for, on whole steps.
 
-    Rounding makes nearby requests share one cache entry, and the step used is
+    A range following now has both ends rounded down to the step, so nearby
+    requests share one cache entry. A range with an explicit end keeps it, to
+    the second, and starts whole steps before it (#306). The step used is
     reported back with a note when it is coarser than requested (FR-013).
     """
 
@@ -434,9 +436,18 @@ def _floor(moment: datetime, step: int) -> datetime:
     return datetime.fromtimestamp(seconds - seconds % step, UTC)
 
 
-def plan_range(start: datetime, end: datetime, requested_step: int) -> RangePlan:
+def plan_range(start: datetime, end: datetime, requested_step: int, *, align_end: bool = False) -> RangePlan:
+    """``start`` to ``end`` on whole steps; ``align_end`` keeps an explicit end (#306).
+
+    Floored, a 7-day export at a 42 min step lost up to 42 min of its newest
+    data, which is often the incident it was made for.
+    """
     step = choose_step(start, end, requested_step)
     note = f"step raised to {step} s to stay under the point limit" if step > requested_step else None
+    if align_end:
+        last = _floor(end, 1)
+        steps = math.ceil((last - start).total_seconds() / step)
+        return RangePlan(start=last - timedelta(seconds=steps * step), end=last, step=step, note=note)
     return RangePlan(start=_floor(start, step), end=_floor(end, step), step=step, note=note)
 
 

@@ -478,6 +478,45 @@ def test_metrics_default_to_the_exported_range_and_refuse_another(served):
     assert other["reason"].startswith("an archive holds only the exported range")
 
 
+def _ending_at_its_time(view: MetricsViewName) -> bytes:
+    """A view as an archive made since #306 exports it: 7 days ending at the archive's time, to the second."""
+    answer = json.loads(EXPORTED[f"metrics/{view.value}.json"])
+    created = datetime.fromisoformat(CREATED)
+    answer["metrics"]["data"] |= {
+        "start": (created - timedelta(days=7)).isoformat(),
+        "end": created.isoformat(),
+        "step": 2520,
+    }
+    return json.dumps(answer).encode()
+
+
+def test_an_archive_whose_ranges_end_at_its_time_answers_every_default_view(tmp_path: Path):
+    """#306: the exported range ends at the archive's time, and the page's default request still matches it."""
+    replace = {f"metrics/{view.value}.json": _ending_at_its_time(view) for view in MetricsViewName}
+    with open_archive(build_archive(tmp_path, replace=replace)) as opened:
+        client = TestClient(create_archive_app(opened, ui_dir=None))
+        for view in MetricsViewName:
+            answer = client.get(f"/api/v1/metrics/{view.value}").json()["metrics"]
+
+            assert answer["available"] is True, view
+            assert datetime.fromisoformat(answer["data"]["end"]) == datetime.fromisoformat(CREATED), view
+            # The page names the exported range back when it asks it again (RangePicker).
+            again = client.get(
+                f"/api/v1/metrics/{view.value}",
+                params={"start": answer["data"]["start"], "end": answer["data"]["end"]},
+            ).json()["metrics"]
+            assert again["available"] is True, view
+
+
+def test_an_archive_made_before_306_still_answers_every_default_view(served):
+    """Its exported ranges are floored to their step (FR-006)."""
+    client, _ = served
+    for view in MetricsViewName:
+        answer = client.get(f"/api/v1/metrics/{view.value}").json()["metrics"]
+
+        assert answer["available"] is True, view
+
+
 def test_every_route_answers_with_no_network(served, monkeypatch: pytest.MonkeyPatch):
     import socket
 

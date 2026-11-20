@@ -22,6 +22,7 @@ Every addition below is **compatible** under 010's versioning rules: new routes,
   - Prometheus answers with an error: `available: false`, with Prometheus's `error` text as the reason.
   - In both cases the last good answer for the same view and range is kept as stale (010 FR-031).
 - **Caching:** the server caches each `(view, start, end, step)` for 15 s, after rounding `start` and `end` down to the step. Polling every 5 s therefore costs Prometheus at most one query per view per scrape interval.
+- **An explicit `end`** (amended by spec 017, #306): when the request gives `end`, the range ends at it, to the second, and its start is a whole number of steps before it, at or before the requested `start`. An export made at T therefore keeps its newest step instead of ending up to one step early. With no `end` (the page following now), both ends are rounded down as above.
 
 ## `GET /api/v1/sources` (amended)
 

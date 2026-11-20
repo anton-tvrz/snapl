@@ -354,6 +354,36 @@ def test_plan_range_rounds_both_ends_down_to_the_step() -> None:
     assert plan.note is None
 
 
+@pytest.mark.parametrize("step", [15, 30, 2520, 10800])
+def test_plan_range_keeps_an_explicit_end_and_takes_whole_steps_back_from_it(step: int) -> None:
+    """An export keeps its newest data (#306): the end stays, the start is whole steps before it."""
+    end = datetime(2026, 11, 20, 19, 44, 37, 250_000, tzinfo=UTC)
+    start = end - timedelta(days=1)  # short enough that no step here is raised
+
+    plan = plan_range(start, end, step, align_end=True)
+
+    assert plan.end == datetime(2026, 11, 20, 19, 44, 37, tzinfo=UTC)  # to the second, as Prometheus is asked
+    assert plan.step == step
+    assert (plan.end - plan.start).total_seconds() % step == 0
+    assert plan.start <= start < plan.start + timedelta(seconds=step)
+
+
+def test_plan_range_aligned_leaves_a_range_already_on_its_steps_alone() -> None:
+    """#351's detail windows and an archive made before #306 are already whole steps (FR-006)."""
+    plan = plan_range(datetime(2026, 11, 8, 19, 0, tzinfo=UTC), datetime(2026, 11, 8, 20, 0, 30, tzinfo=UTC), 15)
+
+    assert plan_range(plan.start, plan.end, plan.step, align_end=True) == plan
+
+
+def test_plan_range_without_align_end_still_floors_both_ends() -> None:
+    end = datetime(2026, 11, 20, 19, 44, 37, tzinfo=UTC)
+
+    plan = plan_range(end - timedelta(days=7), end, 2520)
+
+    assert plan.end == datetime(2026, 11, 20, 19, 24, tzinfo=UTC)  # 20 min of the newest data dropped
+    assert plan.start.timestamp() % 2520 == 0
+
+
 def test_plan_range_says_when_it_raised_the_step() -> None:
     plan = plan_range(T0 - timedelta(days=400), T0, 1)
 
