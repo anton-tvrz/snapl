@@ -42,6 +42,8 @@ An archive made at 19:44 exported metrics ending at 19:06, because a 7-day range
 
 **Independent Test**: unit tests with the seed module's fake Infrahub client.
 
+**Amended in PR C**: the code showed PR #241 (`cd22360`) had already fixed all three problems, with tests, without closing #62. Every lookup goes through `SeedIngester._find`, which passes the branch. The namespace lookup runs inside the translated block. A missed session address raises, and an unused peer group warns. One gap was left: the seed copied the store's SDK-error translation instead of sharing it. PR C moves that rule into `snapl_intent/infrahub/sdk_errors.py`, used by the store and the seed alike. It also adds the tests T013 names that #241 lacked: the branch on each kind of lookup, `OSError` and `TimeoutError` from any lookup, and each leaf's sessions.
+
 **Acceptance Scenarios**:
 1. **Given** `seed(branch="b")`, **When** it looks up an existing node or a relationship's peer, **Then** it looks on branch `b`.
 2. **Given** a connection failure or an Infrahub SDK error anywhere in a seed, **When** it happens, **Then** the caller gets `IntentConnectionError` or the store's existing SDK-error translation, never a raw exception.

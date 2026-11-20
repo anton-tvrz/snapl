@@ -20,12 +20,12 @@ from uuid import UUID
 from snapl_intent.abc import IntentStore
 from snapl_intent.exceptions import (
     IntentAttributionError,
-    IntentConnectionError,
     IntentDeletionError,
     IntentNotFoundError,
     IntentSchemaError,
 )
 from snapl_intent.infrahub.schema import SchemaLoader, discover_schema_batches
+from snapl_intent.infrahub.sdk_errors import sdk_errors_as_domain_errors
 from snapl_intent.infrahub.seed import SeedIngester
 from snapl_intent.models import (
     BGPSession,
@@ -331,19 +331,8 @@ class InfrahubIntentStore(IntentStore):
 
     async def _filters(self, **kwargs: Any) -> list[Any]:
         """Call ``client.filters`` translating SDK failures to domain errors."""
-        try:
+        with sdk_errors_as_domain_errors():
             return list(await self._client.filters(**kwargs) or [])
-        except (OSError, TimeoutError) as exc:
-            raise IntentConnectionError(f"Infrahub unreachable: {exc}") from exc
-        except IntentConnectionError:
-            raise
-        except Exception as exc:
-            # Any non-domain error escaping the SDK is treated as a connection
-            # problem for callers. SDK-specific exceptions that may be subclasses
-            # of IntentConnectionError pass through unchanged above.
-            if exc.__class__.__module__.startswith("infrahub"):
-                raise IntentConnectionError(f"Infrahub error: {exc}") from exc
-            raise
 
     # ------------------------------------------------------------------ Phase stubs
     # These raise NotImplementedError until later tasks add them, but they
@@ -353,14 +342,8 @@ class InfrahubIntentStore(IntentStore):
         # One schema serves every use case (``use_case`` is a text attribute on
         # the device), so there is no per-use-case schema to be missing. Whether
         # seed data ships for a use case says nothing about its schema (#68).
-        try:
+        with sdk_errors_as_domain_errors():
             registry = await self._client.schema.all(branch=self._default_branch)
-        except (OSError, TimeoutError) as exc:
-            raise IntentConnectionError(f"Infrahub unreachable: {exc}") from exc
-        except Exception as exc:
-            if exc.__class__.__module__.startswith("infrahub"):
-                raise IntentConnectionError(f"Infrahub error: {exc}") from exc
-            raise
 
         project_kinds = sorted(k for k in (registry or {}) if _is_project_kind(k))
         if not project_kinds:

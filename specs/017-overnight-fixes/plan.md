@@ -36,6 +36,8 @@ The spec 015 contract's window note paragraph is amended. Regenerate the UI fixt
 
 ### C. Seed (#62): `intent`
 
+Amended in PR C: #241 had already made every change below except the shared translation. See spec.md, User Story 3.
+
 `packages/intent/snapl_intent/infrahub/seed.py`:
 - Pass `branch` to every `client.filters(...)` and `client.get(...)`.
 - Move `_get_default_namespace_id` inside the translated `try`.
