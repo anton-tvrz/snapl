@@ -7,10 +7,13 @@ ABC and never import Infrahub SDK types directly.
 
 from __future__ import annotations
 
+import ipaddress
+import re
 from datetime import datetime  # noqa: TC003
+from typing import Literal
 from uuid import UUID  # noqa: TC003
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # ---------------------------------------------------------------------------
 # Core entities
@@ -71,6 +74,56 @@ class BGPSession(BaseModel):
     enabled: bool = True
 
 
+_MASK_RANGE = re.compile(r"^(\d+)\.\.(\d+)$")
+
+
+def _prefix_match(entry: str) -> str:
+    """Check one ``accept_prefixes`` entry and write it in the device's form.
+
+    ``"<prefix> <low>..<high>"`` matches the prefix's routes from /low to /high;
+    a bare prefix matches only itself, which SR Linux writes as ``exact``.
+    """
+    parts = entry.split()
+    if len(parts) not in (1, 2):
+        raise ValueError(f"{entry!r}: expected '<prefix>' or '<prefix> <low>..<high>'")
+    network = ipaddress.ip_network(parts[0], strict=True)
+    if len(parts) == 1 or parts[1] == "exact":
+        return f"{network} exact"
+    match = _MASK_RANGE.match(parts[1])
+    if match is None:
+        raise ValueError(f"{entry!r}: the mask length range must read '<low>..<high>' or 'exact'")
+    low, high = int(match.group(1)), int(match.group(2))
+    if not network.prefixlen <= low <= high <= network.max_prefixlen:
+        raise ValueError(
+            f"{entry!r}: the range must sit between /{network.prefixlen} and /{network.max_prefixlen}, low end first"
+        )
+    return f"{network} {low}..{high}"
+
+
+class RoutingPolicy(BaseModel):
+    """A route filter that BGP sessions name as their import or export policy.
+
+    It accepts the routes ``accept_prefixes`` lists and applies
+    ``default_action`` to everything else. A session with no policy gets SR
+    Linux's eBGP default, which advertises and accepts nothing (#317).
+    """
+
+    model_config = ConfigDict(frozen=False, extra="forbid")
+
+    name: str
+    description: str | None = None
+    accept_prefixes: list[str] = Field(default_factory=list)
+    """Each entry is ``"<prefix> <low>..<high>"`` (``"10.1.0.0/24 32..32"``: the
+    /32s inside the /24), or a bare prefix for that prefix alone. Kept sorted, so
+    the order an author or a device lists them in is never drift."""
+    default_action: Literal["accept", "reject"] = "reject"
+
+    @field_validator("accept_prefixes")
+    @classmethod
+    def _normalise_prefixes(cls, value: list[str]) -> list[str]:
+        return sorted(_prefix_match(entry) for entry in value)
+
+
 class DesiredState(BaseModel):
     """The complete intended configuration for a single device."""
 
@@ -79,6 +132,8 @@ class DesiredState(BaseModel):
     device: Device
     interfaces: list[Interface] = Field(default_factory=list)
     bgp_sessions: list[BGPSession] = Field(default_factory=list)
+    routing_policies: list[RoutingPolicy] = Field(default_factory=list)
+    """The policies this device's sessions name, and only those."""
 
 
 # ---------------------------------------------------------------------------

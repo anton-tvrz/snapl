@@ -311,3 +311,197 @@ def test_a_binding_intent_never_asked_for_is_undesired() -> None:
     assert [(i.path, i.actual, i.undesired) for i in items] == [
         ("/network-instance[name=default]/interface[name=ethernet-1/9.0]/name", "ethernet-1/9.0", True)
     ]
+
+
+# --- #317: routing policies, and the policies each neighbour names ------------
+
+_POLICY = {
+    "/routing-policy": {
+        "srl_nokia-routing-policy:routing-policy": {
+            "prefix-set": [
+                {"name": "underlay-loopbacks", "prefix": [{"ip-prefix": "10.1.0.0/24", "mask-length-range": "32..32"}]}
+            ],
+            "policy": [
+                {
+                    "name": "underlay-loopbacks",
+                    "default-action": {"policy-result": "reject"},
+                    "statement": [
+                        {
+                            "name": "accept",
+                            "match": {"prefix": {"prefix-set": "underlay-loopbacks"}},
+                            "action": {"policy-result": "accept"},
+                        }
+                    ],
+                }
+            ],
+        }
+    }
+}
+_POLICY_PATH = "/routing-policy/policy[name=underlay-loopbacks]"
+
+
+def _policy_container() -> dict:
+    return json.loads(json.dumps(_POLICY["/routing-policy"]["srl_nokia-routing-policy:routing-policy"]))
+
+
+def test_drift_paths_collect_the_routing_policies() -> None:
+    assert "/routing-policy" in DRIFT_PATHS
+
+
+def test_a_policy_normalizes_to_what_it_accepts_and_its_default() -> None:
+    out = normalize_srlinux_state(_POLICY)
+
+    assert out[_POLICY_PATH] == {
+        "name": "underlay-loopbacks",
+        "accept_prefixes": ["10.1.0.0/24 32..32"],
+        "default_action": "reject",
+    }
+
+
+def test_a_policy_answered_without_its_container_is_read_too() -> None:
+    assert _POLICY_PATH in normalize_srlinux_state({"/routing-policy": _policy_container()})
+
+
+def test_a_prefix_with_no_mask_length_range_matches_exactly() -> None:
+    container = _policy_container()
+    del container["prefix-set"][0]["prefix"][0]["mask-length-range"]
+
+    out = normalize_srlinux_state({"/routing-policy": container})
+
+    assert out[_POLICY_PATH]["accept_prefixes"] == ["10.1.0.0/24 exact"]
+
+
+def test_a_statement_intent_cannot_write_shows_as_itself() -> None:
+    """Intent writes one shape of statement: accept a prefix-set. Anything else
+    on the device changes what the policy does, so it must not vanish from the
+    view, or the policy would look in sync while it accepts more."""
+    container = _policy_container()
+    container["policy"][0]["statement"].append(
+        {"name": "everything-bgp", "match": {"protocol": "bgp"}, "action": {"policy-result": "accept"}}
+    )
+
+    out = normalize_srlinux_state({"/routing-policy": container})
+
+    assert out[_POLICY_PATH]["accept_prefixes"] == ["10.1.0.0/24 32..32", "statement everything-bgp"]
+
+
+def _neighbor(**extra) -> dict:
+    return {
+        "/network-instance[name=default]/protocols/bgp": {
+            "neighbor": [{"peer-address": "10.10.1.0", "peer-as": 65000, "admin-state": "enable", **extra}]
+        }
+    }
+
+
+def test_a_neighbours_policies_normalize_to_their_names() -> None:
+    out = normalize_srlinux_state(
+        _neighbor(**{"export-policy": ["underlay-loopbacks"], "import-policy": ["underlay-loopbacks"]})
+    )
+
+    entry = out["/network-instance[name=default]/protocols/bgp/neighbor[peer-address=10.10.1.0]"]
+    assert (entry["export_policy"], entry["import_policy"]) == ("underlay-loopbacks", "underlay-loopbacks")
+
+
+def test_a_neighbour_with_no_policy_normalizes_to_none() -> None:
+    out = normalize_srlinux_state(_neighbor())
+    entry = out["/network-instance[name=default]/protocols/bgp/neighbor[peer-address=10.10.1.0]"]
+
+    assert (entry["export_policy"], entry["import_policy"]) == (None, None)
+
+
+def test_a_neighbour_with_two_policies_shows_both() -> None:
+    entry = normalize_srlinux_state(_neighbor(**{"export-policy": ["a", "b"]}))[
+        "/network-instance[name=default]/protocols/bgp/neighbor[peer-address=10.10.1.0]"
+    ]
+
+    assert entry["export_policy"] == "a, b"
+
+
+def _desired_with_policy() -> DesiredState:
+    from snapl_intent.models import RoutingPolicy
+
+    device = Device(id=uuid4(), name="leaf-01", management_address="10.0.0.11", role="leaf", use_case="dcfabric")
+    session = BGPSession(
+        id=uuid4(),
+        device_id=device.id,
+        local_asn=65011,
+        peer_address="10.10.1.0",
+        peer_asn=65000,
+        export_policy="underlay-loopbacks",
+        import_policy="underlay-loopbacks",
+    )
+    policy = RoutingPolicy(name="underlay-loopbacks", accept_prefixes=["10.1.0.0/24 32..32"])
+    return DesiredState(device=device, bgp_sessions=[session], routing_policies=[policy])
+
+
+def test_a_device_without_the_policy_drifts_on_the_policy_and_each_neighbour() -> None:
+    """The lab before #317's deploy: sessions up, no policy anywhere."""
+    items = diff_desired_vs_actual(_desired_with_policy(), normalize_srlinux_state(_neighbor()))
+
+    assert sorted((i.entity_kind, i.path, i.desired, i.actual) for i in items) == [
+        (
+            "bgp_session",
+            "/network-instance[name=default]/protocols/bgp/neighbor[peer-address=10.10.1.0]/export_policy",
+            "underlay-loopbacks",
+            None,
+        ),
+        (
+            "bgp_session",
+            "/network-instance[name=default]/protocols/bgp/neighbor[peer-address=10.10.1.0]/import_policy",
+            "underlay-loopbacks",
+            None,
+        ),
+        ("routing_policy", f"{_POLICY_PATH}/accept_prefixes", ["10.1.0.0/24 32..32"], None),
+        ("routing_policy", f"{_POLICY_PATH}/default_action", "reject", None),
+    ]
+
+
+def test_a_device_with_the_policy_is_in_sync() -> None:
+    actual = normalize_srlinux_state(
+        {
+            **_POLICY,
+            **_neighbor(**{"export-policy": ["underlay-loopbacks"], "import-policy": ["underlay-loopbacks"]}),
+        }
+    )
+
+    assert diff_desired_vs_actual(_desired_with_policy(), actual) == []
+
+
+def test_a_policy_intent_never_asked_for_is_undesired() -> None:
+    container = _policy_container()
+    container["policy"].append({"name": "hand-made", "default-action": {"policy-result": "accept"}})
+    actual = normalize_srlinux_state(
+        {
+            "/routing-policy": container,
+            **_neighbor(**{"export-policy": ["underlay-loopbacks"], "import-policy": ["underlay-loopbacks"]}),
+        }
+    )
+
+    items = diff_desired_vs_actual(_desired_with_policy(), actual)
+
+    assert [(i.path, i.undesired) for i in items] == [("/routing-policy/policy[name=hand-made]/default_action", True)]
+
+
+# Measured on leaf-01, SR Linux v26.3.1 (2026-11-20), after #317's deploy: a GET
+# of /routing-policy with datatype all answers with the container's children,
+# and fills every match container with its defaults (match-set-options any).
+_MEASURED_POLICY = Path(__file__).resolve().parent.parent / "fixtures" / "srlinux_leaf01_routing_policy.json"
+
+
+def test_the_measured_policy_normalizes_to_what_intent_wrote() -> None:
+    out = normalize_srlinux_state({"/routing-policy": json.loads(_MEASURED_POLICY.read_text())})
+
+    assert out[_POLICY_PATH] == {
+        "name": "underlay-loopbacks",
+        "accept_prefixes": ["10.1.0.0/24 32..32"],
+        "default_action": "reject",
+    }
+
+
+def test_a_default_filled_statement_with_a_real_second_condition_shows_as_itself() -> None:
+    container = json.loads(_MEASURED_POLICY.read_text())
+    container["policy"][0]["statement"][0]["match"]["protocol"] = "bgp"
+
+    out = normalize_srlinux_state({"/routing-policy": container})
+
+    assert out[_POLICY_PATH]["accept_prefixes"] == ["statement accept"]

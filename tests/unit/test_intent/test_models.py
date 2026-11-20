@@ -1,6 +1,6 @@
 """Unit tests for Pydantic models in snapl_intent.models.
 
-Covers: Device, Interface, BGPSession, DesiredState, Schema,
+Covers: Device, Interface, BGPSession, RoutingPolicy, DesiredState, Schema,
 ProvisionResult, SeedResult, DeleteResult.
 """
 
@@ -19,6 +19,7 @@ from snapl_intent.models import (
     Device,
     Interface,
     ProvisionResult,
+    RoutingPolicy,
     Schema,
     SeedResult,
 )
@@ -175,6 +176,57 @@ class TestBGPSession:
 
 
 # ---------------------------------------------------------------------------
+# RoutingPolicy (#317)
+# ---------------------------------------------------------------------------
+
+
+class TestRoutingPolicy:
+    """A route filter a session names as its import or export policy: accept the
+    listed prefixes, apply ``default_action`` to the rest. Without one, SR Linux's
+    eBGP default policy advertises and accepts nothing (#317)."""
+
+    def test_defaults_reject_everything_not_listed(self):
+        policy = RoutingPolicy(name="underlay-loopbacks")
+        assert policy.accept_prefixes == []
+        assert policy.default_action == "reject"
+
+    def test_a_prefix_with_a_mask_length_range_is_kept(self):
+        policy = RoutingPolicy(name="p", accept_prefixes=["10.1.0.0/24 32..32"])
+        assert policy.accept_prefixes == ["10.1.0.0/24 32..32"]
+
+    def test_a_bare_prefix_matches_exactly(self):
+        """SR Linux's own default for a prefix-set entry is ``exact``; writing it
+        out keeps intent and the device's answer in the same form."""
+        policy = RoutingPolicy(name="p", accept_prefixes=["10.1.0.0/24"])
+        assert policy.accept_prefixes == ["10.1.0.0/24 exact"]
+
+    def test_prefixes_are_sorted_so_order_is_not_drift(self):
+        policy = RoutingPolicy(name="p", accept_prefixes=["10.2.0.0/24 32..32", "10.1.0.0/24 32..32"])
+        assert policy.accept_prefixes == ["10.1.0.0/24 32..32", "10.2.0.0/24 32..32"]
+
+    @pytest.mark.parametrize(
+        "entry",
+        [
+            "10.1.0.1/24 32..32",  # host bits set
+            "not-a-prefix",
+            "10.1.0.0/24 32",  # not a range
+            "10.1.0.0/24 16..24",  # shorter than the prefix itself
+            "10.1.0.0/24 32..24",  # upside down
+            "10.1.0.0/24 24..33",  # past /32
+            "10.1.0.0/24 32..32 extra",
+        ],
+    )
+    def test_an_entry_the_device_would_reject_is_refused(self, entry):
+        with pytest.raises(ValidationError):
+            RoutingPolicy(name="p", accept_prefixes=[entry])
+
+    def test_default_action_is_accept_or_reject(self):
+        assert RoutingPolicy(name="p", default_action="accept").default_action == "accept"
+        with pytest.raises(ValidationError):
+            RoutingPolicy(name="p", default_action="next-policy")
+
+
+# ---------------------------------------------------------------------------
 # DesiredState
 # ---------------------------------------------------------------------------
 
@@ -193,6 +245,12 @@ class TestDesiredState:
         state = DesiredState(device=self._make_device(), interfaces=[], bgp_sessions=[])
         assert state.interfaces == []
         assert state.bgp_sessions == []
+        assert state.routing_policies == []
+
+    def test_desired_state_carries_the_policies_its_sessions_name(self):
+        policy = RoutingPolicy(name="underlay-loopbacks", accept_prefixes=["10.1.0.0/24 32..32"])
+        state = DesiredState(device=self._make_device(), routing_policies=[policy])
+        assert state.routing_policies == [policy]
 
     def test_desired_state_with_children(self):
         device = self._make_device()

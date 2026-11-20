@@ -67,7 +67,9 @@ ENTITY_FIELD_MAP: dict[str, dict[str, Any]] = {
         "skip_when_none": ("mtu",),
     },
     "bgp_session": {
-        "fields": ["peer_address", "peer_asn", "peer_group", "enabled"],
+        # The policies decide what the session carries; without them SR Linux's
+        # eBGP default sends and accepts nothing (#317).
+        "fields": ["peer_address", "peer_asn", "peer_group", "enabled", "export_policy", "import_policy"],
         "path_template": "/network-instance[name=default]/protocols/bgp/neighbor[peer-address={peer_address}]",
         "key_field": "peer_address",
         # Unlike an interface, a neighbour entry only exists because somebody
@@ -86,6 +88,20 @@ ENTITY_FIELD_MAP: dict[str, dict[str, Any]] = {
         "path_template": "/network-instance[name=default]/interface[name={name}]",
         "key_field": "name",
         "value_fields": ("name",),
+        "protected": (),
+    },
+    # A routing policy a session names (#317), as the adapter folds SR Linux's
+    # policy and its prefix-set into one view: what it accepts, and what meets
+    # the rest. A policy only exists because somebody wrote it, so any on the
+    # device that intent does not hold is undesired.
+    "routing_policy": {
+        "fields": ["accept_prefixes", "default_action"],
+        "path_template": "/routing-policy/policy[name={name}]",
+        "key_field": "name",
+        "value_fields": ("accept_prefixes", "default_action"),
+        # A policy that lists nothing has nothing to report under accept_prefixes;
+        # its default_action already marks it as somebody's.
+        "device_defaults": {"accept_prefixes": []},
         "protected": (),
     },
     # No device-level entry: the executor manages no /system fields, and a
@@ -144,6 +160,11 @@ def diff_desired_vs_actual(
     for binding in routed:
         items.extend(_diff_entity(binding, routed_spec, actual_data, kind="routed_interface"))
 
+    # routing policies the sessions name (#317)
+    policy_spec = ENTITY_FIELD_MAP["routing_policy"]
+    for policy in desired.routing_policies:
+        items.extend(_diff_entity(policy, policy_spec, actual_data, kind="routing_policy"))
+
     # The reverse direction: entities the device carries that intent never
     # asked for (#54). Runs after the desired-driven pass so a report reads
     # "what is missing or wrong" before "what should not be here".
@@ -170,6 +191,14 @@ def diff_desired_vs_actual(
             actual_data,
             kind="routed_interface",
             desired_keys={binding.name for binding in routed},
+        )
+    )
+    items.extend(
+        _undesired_entities(
+            policy_spec,
+            actual_data,
+            kind="routing_policy",
+            desired_keys={policy.name for policy in desired.routing_policies},
         )
     )
 

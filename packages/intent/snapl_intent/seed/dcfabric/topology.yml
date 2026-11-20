@@ -4,7 +4,7 @@
 # ``snapl_intent.infrahub.seed``:
 #   Organization -> Location -> Manufacturer -> Platform -> DeviceType ->
 #   AutonomousSystem -> VRF -> IPPrefix -> Device -> IPAddress ->
-#   Interface -> BGPPeerGroup -> BGPSession
+#   Interface -> RoutingPolicy -> BGPPeerGroup -> BGPSession
 #
 # Addressing plan (intent-only, not tied to containerlab):
 #   - Management:       10.0.0.0/24          (spines .1-.2, leaves .11-.14)
@@ -199,11 +199,22 @@ interfaces:
   - {device: leaf-04, name: ethernet-1/50, role: fabric, mtu: 9214, ip_address: "10.10.2.7/31", peer_device: spine-02, peer_interface: ethernet-1/4, description: "to spine-02:ethernet-1/4"}
   - {device: leaf-04, name: lo0, role: loopback, ip_address: "10.1.0.14/32", description: "Router ID leaf-04"}
 
+# What the underlay carries (#317): each device's loopback /32, and not the
+# fabric /31 links. Without a policy, SR Linux's eBGP default advertises and
+# accepts nothing, so sessions come up and exchange no routes.
+routing_policies:
+  - name: "underlay-loopbacks"
+    description: "Accept and advertise the fabric loopback /32s, nothing else"
+    accept_prefixes: ["10.1.0.0/24 32..32"]
+    default_action: reject
+
 bgp_peer_groups:
   - name: "underlay-ipv4"
     description: "eBGP underlay peer group for spine-leaf fabric"
     address_family: ipv4
     send_community: true
+    import_policies: "underlay-loopbacks"
+    export_policies: "underlay-loopbacks"
 
 # eBGP sessions — every leaf peers with every spine: 8 sessions, each seeded on both ends (16 rows, #311)
 bgp_sessions:

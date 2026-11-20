@@ -1,0 +1,65 @@
+{
+  "prefix-set": [
+    {
+      "name": "underlay-loopbacks",
+      "prefix": [
+        {
+          "ip-prefix": "10.1.0.0/24",
+          "mask-length-range": "32..32"
+        }
+      ]
+    }
+  ],
+  "policy": [
+    {
+      "name": "underlay-loopbacks",
+      "default-action": {
+        "policy-result": "reject",
+        "bgp": {
+          "standard-community": {
+            "method": "reference"
+          },
+          "extended-community": {
+            "method": "reference"
+          }
+        }
+      },
+      "statement": [
+        {
+          "name": "accept",
+          "match": {
+            "prefix": {
+              "prefix-set": "underlay-loopbacks",
+              "match-set-options": "any"
+            },
+            "internal-tags": {
+              "match-set-options": "any"
+            },
+            "bgp": {
+              "as-path": {
+                "match-set-options": "any"
+              },
+              "standard-community": {
+                "match-set-options": "any"
+              },
+              "extended-community": {
+                "match-set-options": "any"
+              }
+            }
+          },
+          "action": {
+            "policy-result": "accept",
+            "bgp": {
+              "standard-community": {
+                "method": "reference"
+              },
+              "extended-community": {
+                "method": "reference"
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

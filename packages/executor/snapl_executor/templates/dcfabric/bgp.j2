@@ -27,7 +27,9 @@
       "peer-address": "{{ s.peer_address }}",
       "peer-as": {{ s.peer_asn }},
       "admin-state": "{{ 'enable' if s.enabled else 'disable' }}"{% if s.peer_group %},
-      "peer-group": "{{ s.peer_group }}"{% endif %}
+      "peer-group": "{{ s.peer_group }}"{% endif %}{% if s.export_policy %},
+      "export-policy": [{{ s.export_policy | tojson }}]{% endif %}{% if s.import_policy %},
+      "import-policy": [{{ s.import_policy | tojson }}]{% endif %}
 
     }{% if not loop.last %},{% endif %}
 {% endfor %}

@@ -34,6 +34,7 @@ from snapl_intent.models import (
     Device,
     Interface,
     ProvisionResult,
+    RoutingPolicy,
     Schema,
     SeedResult,
 )
@@ -55,6 +56,7 @@ DEVICE_KIND = "DcimDevice"
 # child-side queries filtered by ``device__ids`` (#33).
 INTERFACE_KIND = "InterfacePhysical"
 SESSION_KIND = "RoutingBGPSession"
+POLICY_KIND = "RoutingPolicy"
 
 # Schema namespaces declared in the packaged YAML tree. ``get_schema`` uses
 # this set to filter out Infrahub built-ins (Core*, Builtin*, Profile*) from
@@ -194,6 +196,11 @@ def _status_enabled(node: Any) -> bool:
     return status is None or status in _ENABLED_STATUSES
 
 
+def _policy_names(state: DesiredState) -> set[str]:
+    """Every routing policy a state's sessions name, for import or export."""
+    return {name for session in state.bgp_sessions for name in (session.import_policy, session.export_policy) if name}
+
+
 def _group_by_device(nodes: list[Any], device_ids: list[str], *, kind: str) -> dict[str, list[Any]]:
     """Group children from a ``device__ids`` query onto the queried devices.
 
@@ -304,7 +311,23 @@ class InfrahubIntentStore(IntentStore):
                     ],
                 )
             )
+        await self._attach_policies(states, branch=resolved_branch)
         return states
+
+    async def _attach_policies(self, states: list[DesiredState], *, branch: str) -> None:
+        """Give each state the routing policies its sessions name (#317).
+
+        One read for every device. A name with no policy behind it is left out
+        rather than raised here, where it would fail every device's read: the
+        renderer refuses the one device whose session names it.
+        """
+        names = sorted({name for state in states for name in _policy_names(state)})
+        if not names:
+            return
+        nodes = await self._filters(kind=POLICY_KIND, branch=branch, name__values=names)
+        policies = {policy.name: policy for policy in map(self._node_to_policy, nodes)}
+        for state in states:
+            state.routing_policies = [policies[name] for name in sorted(_policy_names(state)) if name in policies]
 
     async def _filters(self, **kwargs: Any) -> list[Any]:
         """Call ``client.filters`` translating SDK failures to domain errors."""
@@ -471,7 +494,16 @@ class InfrahubIntentStore(IntentStore):
             peer_asn=_peer_value(node, "remote_as", "asn", default=0) or 0,
             peer_group=_peer_value(node, "peer_group", "name"),
             address_family=_value(node, "address_family", default="ipv4_unicast"),
-            export_policy=_value(node, "export_policies"),
-            import_policy=_value(node, "import_policies"),
+            # The seed names the policies on the peer group; a session's own wins (#317).
+            export_policy=_value(node, "export_policies") or _peer_value(node, "peer_group", "export_policies"),
+            import_policy=_value(node, "import_policies") or _peer_value(node, "peer_group", "import_policies"),
             enabled=_status_enabled(node),
+        )
+
+    def _node_to_policy(self, node: Any) -> RoutingPolicy:
+        return RoutingPolicy(
+            name=_value(node, "name"),
+            description=_value(node, "description"),
+            accept_prefixes=list(_value(node, "accept_prefixes") or []),
+            default_action=_value(node, "default_action", default="reject") or "reject",
         )
