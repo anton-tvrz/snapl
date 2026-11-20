@@ -360,6 +360,7 @@ class TestTelemetryRunner:
 
         run_mod, seen = self._patch(monkeypatch)
         monkeypatch.delenv("SNAPL_TELEMETRY")
+        monkeypatch.delenv("SNAPL_TELEMETRY_USE_CASE", raising=False)
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.bind(("127.0.0.1", 0))
             port = s.getsockname()[1]
@@ -384,6 +385,25 @@ class TestTelemetryRunner:
         assert kwargs["intent_store"] is activities.intent_store
         assert isinstance(runtimes[0], Runtime)
         assert kwargs["meter"] is runtimes[0].metric_meter
+        assert kwargs["use_case"] == "dcfabric"  # #341: not the integration tests' test_edge devices
+
+    @pytest.mark.parametrize(("raw", "expected"), [("site_edge", "site_edge"), (" lab2 ", "lab2"), ("", "dcfabric")])
+    async def test_the_use_case_comes_from_snapl_telemetry_use_case(
+        self, monkeypatch, caplog, raw: str, expected: str
+    ) -> None:
+        import logging
+
+        run_mod, seen = self._patch(monkeypatch)
+        monkeypatch.setenv("SNAPL_TELEMETRY", "on")
+        monkeypatch.setenv("SNAPL_TELEMETRY_USE_CASE", raw)
+        monkeypatch.setenv("WORKER_METRICS_PORT", "off")
+
+        with caplog.at_level(logging.INFO, logger="snapl_orchestrator.worker.run"):
+            await run_mod.run_worker(activities=self._activities())
+
+        [kwargs] = seen["runners"]
+        assert kwargs["use_case"] == expected
+        assert f"telemetry: streaming use case {expected}" in [r.getMessage() for r in caplog.records]
 
     async def test_stopping_the_worker_stops_the_runner(self, monkeypatch) -> None:
         run_mod, seen = self._patch(monkeypatch)

@@ -107,13 +107,15 @@ class FakeIntentStore:
         self.states = states
         self.error: Exception | None = None
         self.calls = 0
+        self.filters: list[dict[str, Any]] = []
 
     async def get_desired_state(self, **filters: Any) -> list[DesiredState]:
-        assert filters == {}
         self.calls += 1
+        self.filters.append(filters)
         if self.error is not None:
             raise self.error
-        return list(self.states)
+        use_case = filters.get("use_case")
+        return [s for s in self.states if use_case is None or s.device.use_case == use_case]
 
 
 # ── Builders ─────────────────────────────────────────────────────────────
@@ -178,7 +180,7 @@ async def _settle() -> None:
 
 
 class Harness:
-    def __init__(self, states: list[DesiredState] | None = None) -> None:
+    def __init__(self, states: list[DesiredState] | None = None, **runner_kwargs: Any) -> None:
         from snapl_orchestrator.telemetry import TelemetryRunner
 
         self.clock = FakeClock()
@@ -195,6 +197,7 @@ class Harness:
             meter=self.meter,  # type: ignore[arg-type]
             clock=self.clock,
             sleep=self.sleep,
+            **runner_kwargs,
         )
 
     async def start(self) -> None:
@@ -231,6 +234,34 @@ class TestStreams:
         assert harness.collector.latest("spine-01").target == TelemetryTarget(
             device=_SPINE, interfaces=("ethernet-1/1",), peers=("10.10.1.1",)
         )
+
+    async def test_streams_only_the_use_case_it_was_given(self) -> None:
+        # #341: the lab's Infrahub also holds the integration tests' test_edge devices.
+        edge = _device("edge-01", uuid4(), address="10.200.0.1").model_copy(
+            update={"use_case": "test_edge", "lab_node_name": None}
+        )
+        h = Harness([*_intent(), _state(edge, {"ethernet-1/1": True})], use_case="dcfabric")
+        await h.start()
+        try:
+            for _ in range(6):
+                h.clock.advance(10)
+                await h.runner.tick()
+            await _settle()
+
+            assert h.collector.open_streams() == {"leaf-01": 1, "spine-01": 1}
+            assert h.store.filters == [{"use_case": "dcfabric"}, {"use_case": "dcfabric"}]
+        finally:
+            await h.runner.stop()
+
+    async def test_without_a_use_case_it_streams_every_device_in_intent(self) -> None:
+        edge = _device("edge-01", uuid4(), address="10.200.0.1").model_copy(update={"use_case": "test_edge"})
+        h = Harness([*_intent(), _state(edge, {"ethernet-1/1": True})])
+        await h.start()
+        try:
+            assert h.collector.open_streams() == {"edge-01": 1, "leaf-01": 1, "spine-01": 1}
+            assert h.store.filters == [{"use_case": None}]
+        finally:
+            await h.runner.stop()
 
     async def test_a_device_in_two_services_gets_one_stream_naming_both(self) -> None:
         h = Harness([_state(_LEAF, {"ethernet-1/49": True}), _state(_LEAF, {"lo0": True}, {"10.10.1.0": True})])

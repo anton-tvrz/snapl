@@ -50,6 +50,10 @@ __all__ = ["DEFAULT_AUDIT_DB", "DEFAULT_NAMESPACE", "DEFAULT_TASK_QUEUE", "DEFAU
 # (#63) and this module can never disagree about where the cluster is.
 DEFAULT_TASK_QUEUE = "snapl-orchestrator"
 DEFAULT_AUDIT_DB = "./snapl-audit.sqlite"
+# The lab's use case. Telemetry streams one use case, as a scan reads one, so
+# devices seeded for other use cases (the integration tests' test_edge) aren't
+# dialled (#341).
+DEFAULT_TELEMETRY_USE_CASE = "dcfabric"
 
 
 async def run_worker(*, activities: Activities | None = None) -> None:
@@ -141,12 +145,15 @@ async def run_worker(*, activities: Activities | None = None) -> None:
     # runtime the figures go to a no-op meter; health is still recorded.
     telemetry: asyncio.Task[None] | None = None
     if telemetry_enabled():
+        use_case = telemetry_use_case()
+        logger.info("telemetry: streaming use case %s", use_case)
         runner = TelemetryRunner(
             intent_store=activities.intent_store,
             collector=activities.collector,
             observer=activities.observer,
             audit_log=activities.audit_log,
             meter=runtime.metric_meter if runtime is not None else MetricMeter.noop,
+            use_case=use_case,
         )
         telemetry = asyncio.create_task(_run_telemetry(runner), name="snapl-telemetry")
     else:
@@ -163,6 +170,11 @@ async def run_worker(*, activities: Activities | None = None) -> None:
 def telemetry_enabled() -> bool:
     """Device telemetry runs unless ``SNAPL_TELEMETRY`` is ``off``."""
     return os.environ.get("SNAPL_TELEMETRY", "").strip().lower() != "off"
+
+
+def telemetry_use_case() -> str:
+    """The use case whose devices telemetry streams: ``SNAPL_TELEMETRY_USE_CASE``, or ``dcfabric``."""
+    return os.environ.get("SNAPL_TELEMETRY_USE_CASE", "").strip() or DEFAULT_TELEMETRY_USE_CASE
 
 
 async def _run_telemetry(runner: TelemetryRunner) -> None:
