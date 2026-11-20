@@ -210,7 +210,7 @@ All **Needs the lab**. Results go in `specs/016-device-telemetry/evidence.md`.
 - [x] T059 [US2] **Needs the lab**: quickstart item 5 (SC-006). *Done 2026-11-20: `unknown` 36 s into a 60 s pause, never `unhealthy`, `healthy` 15 s after the unpause, no restart.*
 - [ ] T060 **Needs the lab**: quickstart item 6 (SC-005).
 - [x] T061 [US3] **Needs the lab**, **after #311**: quickstart item 7 (SC-002, SC-003). *Run 2026-11-20: SC-003 holds (T026). SC-002 held in one trial of two: the network view took 34 s, then 18 s, against 30 s. The design's worst case is about 40 s (#348).*
-- [ ] T062 [US5] **Needs the lab**: quickstart item 8 (SC-008), and recapture the Prometheus fixtures for the six views.
+- [x] T062 [US5] **Needs the lab**: quickstart item 8 (SC-008), and recapture the Prometheus fixtures for the six views. *Done 2026-11-20: SC-008 holds (the archive's health history has every episode, with every live source unreachable). US5 scenario 1 doesn't: the archive's network views are at a 42 min step and miss a minutes-long fault (#351). Snapshot 3.50 MB for 7 days. The six fixtures are captured and read by tests.*
 
 ---
 
