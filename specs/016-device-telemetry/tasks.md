@@ -206,7 +206,7 @@ A slice that changes the contract also regenerates the OpenAPI snapshot and the 
 All **Needs the lab**. Results go in `specs/016-device-telemetry/evidence.md`.
 
 - [x] T057 [US1] **Needs the lab**: quickstart item 1, the fault captures as fixtures, each read by a test (Principle III). *Done 2026-11-20: `srlinux_v26_3_1_leaf01_interface_down_up.json` and `srlinux_v26_3_1_spine01_peer_paused.json`, read through the collector (`TestStreamTelemetryFaultCaptures`) and the runner (`TestLabCaptures`). The pause is 100 s, past the 90 s hold time.*
-- [ ] T058 [US1] **Needs the lab**: quickstart item 4 (SC-001).
+- [x] T058 [US1] **Needs the lab**: quickstart item 4 (SC-001). *Done 2026-11-20: shown down on the page in 24 s, flagged in 19 s, drifted and unhealthy as two marks, cleared 48 s after the reconcile.*
 - [ ] T059 [US2] **Needs the lab**: quickstart item 5 (SC-006).
 - [ ] T060 **Needs the lab**: quickstart item 6 (SC-005).
 - [ ] T061 [US3] **Needs the lab**, **after #311**: quickstart item 7 (SC-002, SC-003).
