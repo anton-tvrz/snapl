@@ -364,6 +364,8 @@ export interface components {
             metrics_end?: string | null;
             /** Metrics Start */
             metrics_start?: string | null;
+            /** Metrics Windows */
+            metrics_windows?: components["schemas"]["MetricsWindow"][];
             /** Name */
             name: string;
             /** Parts */
@@ -1108,6 +1110,22 @@ export interface components {
          * @enum {string}
          */
         MetricsViewName: "workflow-duration" | "gnmi-duration" | "gnmi-errors" | "worker-lag" | "worker-up" | "source-health" | "workflow-mean" | "gnmi-mean" | "workflows-completed" | "activity-time" | "worker-slots" | "server-request-time" | "source-fetch-time" | "scan-results" | "drift-paths" | "deploy-outcomes" | "interface-traffic" | "interface-errors" | "interface-discards" | "bgp-established" | "device-cpu" | "device-memory";
+        /**
+         * MetricsWindow
+         * @description A range an archive holds the six network views over at a 15 s step (spec 016, #351).
+         */
+        MetricsWindow: {
+            /**
+             * End
+             * Format: date-time
+             */
+            end: string;
+            /**
+             * Start
+             * Format: date-time
+             */
+            start: string;
+        };
         /** ModeResponse */
         ModeResponse: {
             archive?: components["schemas"]["ArchiveInfo"] | null;

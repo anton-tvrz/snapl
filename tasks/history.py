@@ -32,7 +32,8 @@ from pathlib import Path
 import httpx
 from invoke import Exit, task
 
-from snapl_presentation.dashboard.models import MetricsViewName, SeriesName
+from snapl_presentation.dashboard.archive import DETAIL_DIR, DETAIL_STEP_S, detail_windows, episodes_in
+from snapl_presentation.dashboard.models import NETWORK_VIEWS, MetricsViewName, SeriesName
 from snapl_presentation.settings import CliSettings
 
 from .dev import PROMETHEUS_DATA
@@ -228,18 +229,34 @@ def _dashboard_export(dashboard: str, staging: Path, now: datetime) -> Part:
                     return part
                 failed.append(f"{path} ({exc})")
                 continue
-            if response.status_code != httpx.codes.OK:
-                failed.append(f"{path} (HTTP {response.status_code})")
-                continue
-            target = out / filename
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(response.content)
+            _save(response, out / filename, path, failed)
+        # Spec 016 (#351): the network views at 15 s around each health episode and over the last hour.
+        health = out / "health.json"
+        episodes = episodes_in(json.loads(health.read_text()) if health.is_file() else None)
+        for begin, end in detail_windows(episodes, now):
+            for view in sorted(NETWORK_VIEWS):
+                path = f"/api/v1/metrics/{view.value}"
+                params = {"start": begin.isoformat(), "end": end.isoformat(), "step": str(DETAIL_STEP_S)}
+                try:
+                    response = client.get(path, params=params)
+                except httpx.TransportError as exc:
+                    failed.append(f"{path} ({exc})")
+                    continue
+                _save(response, out / DETAIL_DIR / view.value / f"{begin:%Y%m%dT%H%M%SZ}.json", path, failed)
     if failed:
         part.reason = "the dashboard did not answer: " + ", ".join(failed)
         part.bytes = _size(out) if out.exists() else None
         return part
     part.present, part.bytes = True, _size(out)
     return part
+
+
+def _save(response: httpx.Response, target: Path, path: str, failed: list[str]) -> None:
+    if response.status_code != httpx.codes.OK:
+        failed.append(f"{path} (HTTP {response.status_code})")
+        return
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(response.content)
 
 
 # --- archive -----------------------------------------------------------------------

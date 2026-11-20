@@ -699,6 +699,13 @@ class ArchivePart(_Model):
     reason: str | None = None
 
 
+class MetricsWindow(_Model):
+    """A range an archive holds the six network views over at a 15 s step (spec 016, #351)."""
+
+    start: UtcDatetime
+    end: UtcDatetime
+
+
 class ArchiveInfo(_Model):
     # The file's name, not its path.
     name: str
@@ -708,6 +715,9 @@ class ArchiveInfo(_Model):
     # The range the metrics were exported over: the only range an archive can show.
     metrics_start: UtcDatetime | None = None
     metrics_end: UtcDatetime | None = None
+    # Spec 016 (#351): around each health episode and the archive's last hour, the
+    # six network views at 15 s. A range inside one of these is served from it.
+    metrics_windows: list[MetricsWindow] = Field(default_factory=list)
 
 
 class ModeResponse(Envelope):
