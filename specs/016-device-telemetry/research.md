@@ -141,7 +141,7 @@ A link that is down usually takes its session down too. Both are listed: the rul
 
 ## R9. Rates for the views
 
-`interface-traffic` is `sum by (device, direction) (rate(snapl_interface_octets_total{use_case="$uc"}[$w]))` in bytes per second. `rate()` is #241's first-observation form, as spec 015's views use. Errors and discards are by `device, interface`, in packets per second (`per_second`). The R5 delta rule already removes resets, so `rate()`'s own reset handling is a second guard, not the only one.
+`interface-traffic` is `sum by (device) (rate(snapl_interface_octets_total{use_case="$uc"}[$w]))` in bytes per second (by device and direction until 2026-11-20, #312: see contracts/telemetry.md). `rate()` is #241's first-observation form, as spec 015's views use. Errors and discards are by `device, interface`, in packets per second (`per_second`). The R5 delta rule already removes resets, so `rate()`'s own reset handling is a second guard, not the only one.
 
 ## R10. Scans while streaming (SC-005)
 

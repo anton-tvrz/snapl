@@ -101,7 +101,64 @@ export const UNIT_NAMES: Record<string, string> = {
   per_second: "per second",
   up: "up or down",
   count: "count",
+  bytes_per_second: "bytes per second",
+  percent: "percent",
 };
+
+// Spec 016 data-model.md: on the lab, every container reports the host VM's CPU and memory.
+const LAB_NOTE = "On the lab, this is the host VM's, the same on every device";
+const VIEW_NOTES: Partial<Record<string, string>> = { "device-cpu": LAB_NOTE, "device-memory": LAB_NOTE };
+
+/** A note the page adds to a view, beside the server's own note. */
+export function viewNote(name: string): string | null {
+  return VIEW_NOTES[name] ?? null;
+}
+
+// Views where zero means nothing happened, so all zeros are said, not drawn (#312, 2026-11-20).
+const NONE_TEXT: Partial<Record<string, string>> = {
+  "interface-errors": "No errors on any interface in this range.",
+  "interface-discards": "No discards on any interface in this range.",
+};
+
+/** "No errors on any interface in this range." when every series of such a view stayed at zero, else null. */
+export function noneText(name: string, data: MetricsData): string | null {
+  const text = NONE_TEXT[name];
+  const series = data.series ?? [];
+  if (!text || series.length === 0) return null;
+  const values = series.flatMap((s) => s.points.map((point) => point.value)).filter((v): v is number => v !== null && v !== undefined);
+  return values.length > 0 && values.every((value) => value === 0) ? text : null;
+}
+
+/** The highest value of a series over the range, skipping gaps, or null. */
+export function peak(series: MetricSeries): number | null {
+  let top: number | null = null;
+  for (const point of series.points) {
+    const value = point.value;
+    if (value !== null && value !== undefined && (top === null || value > top)) top = value;
+  }
+  return top;
+}
+
+/** The chart's palette has six validated slots, used in order and never cycled. */
+export const SLOTS = 6;
+
+/**
+ * The series a chart draws (#312, 2026-11-20): all of them, in the server's
+ * order, up to six; past six, the six highest by their peak over the range,
+ * highest first, with the server's order kept between equal peaks.
+ */
+export function chartSeries(series: readonly MetricSeries[]): { drawn: MetricSeries[]; total: number } {
+  if (series.length <= SLOTS) return { drawn: [...series], total: series.length };
+  const ranked = series
+    .map((s, index) => ({ s, index, top: peak(s) }))
+    .sort((a, b) => {
+      if (a.top === b.top) return a.index - b.index;
+      if (a.top === null) return 1;
+      if (b.top === null) return -1;
+      return b.top - a.top || a.index - b.index;
+    });
+  return { drawn: ranked.slice(0, SLOTS).map((entry) => entry.s), total: series.length };
+}
 
 /** A series' name from its labels: "leaf-01 configure", or "all" when it has none. */
 export function seriesLabel(labels: Record<string, string>): string {
@@ -181,7 +238,23 @@ export function formatValue(value: number | null | undefined, unit: string): str
   }
   // Prometheus extrapolates a count, so it can be fractional: shown whole (spec 015 research R4).
   if (unit === "count") return `${Math.round(value)}`;
+  // Spec 016: bytes in thousands, as network tools show them, and a percent to one decimal under ten.
+  if (unit === "bytes_per_second") return bytesText(value);
+  if (unit === "percent") return `${Math.abs(value) < 10 ? Number(value.toFixed(1)) : Math.round(value)}%`;
   return `${value} ${unit}`;
+}
+
+const BYTE_STEPS: readonly [number, string][] = [
+  [1e9, "GB/s"],
+  [1e6, "MB/s"],
+  [1e3, "kB/s"],
+];
+
+function bytesText(value: number): string {
+  for (const [size, unit] of BYTE_STEPS) {
+    if (Math.abs(value) >= size) return `${Number((value / size).toPrecision(2))} ${unit}`;
+  }
+  return `${Math.round(value)} B/s`;
 }
 
 export function upState(value: number | null | undefined): "up" | "down" | "gap" {

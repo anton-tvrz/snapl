@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import type { DeviceView, MetricsViewName, TopologyNode } from "./api/types";
+import type { DeviceView, FabricNetwork, MetricsViewName, TopologyNode, View } from "./api/types";
 import { Command, Recording } from "./components/Command";
 import { DeviceDrawer } from "./components/DeviceDrawer";
 import { Fold } from "./components/Fold";
@@ -48,9 +48,12 @@ const TOPOLOGY_MS = 30_000;
 // The lanes, and every view of a past time, refresh once a minute: the past
 // changes only when a late audit row arrives (research R11, R12).
 const HISTORY_MS = 60_000;
+const NETWORK_MS = 30_000;
 
 const NO_FLAGS = new Map<string, number>();
 // The metrics in their groups (spec 015). The page asks for the views it knows.
+// `/network` is now's: a device shown at a past time does not list it as then (spec 016).
+const PRESENT_ONLY: View<FabricNetwork> = { source: "prometheus", available: false, reason: "Shows only the present.", data: null };
 const METRIC_GROUPS_ON_PAGE = groupViews(METRIC_VIEWS.map((view) => view.name));
 // Folded until opened, so the metrics start near the top (spec 014 SC-003, #290).
 // The first metrics group is open by default.
@@ -139,6 +142,8 @@ export function App({ provider }: Props) {
       : "default",
   );
   const healthView = health.data?.health;
+  // Each device's interfaces, sessions, CPU and memory now: one answer for the page (spec 016).
+  const network = usePolling(provider.network, every(NETWORK_MS));
 
   const historyAnswer = usePolling(
     () =>
@@ -440,6 +445,7 @@ export function App({ provider }: Props) {
                 onClose={onClose}
                 onSelectRun={onSelectRun}
                 selectedRun={chosenRun}
+                network={at ? PRESENT_ONLY : network.data?.network}
               />
             )}
             {/* With no device selected, the fabric's own summary takes the drawer's place. */}

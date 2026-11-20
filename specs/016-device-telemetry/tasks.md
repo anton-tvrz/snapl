@@ -174,11 +174,11 @@ A slice that changes the contract also regenerates the OpenAPI snapshot and the 
 
 **Goal**: the operator sees interfaces, sessions, CPU and memory.
 
-- [ ] T045 [US1] Tests first in `DeviceDrawer.test.tsx`: an "Interfaces" table (name, up or down against expected, traffic in and out, errors and discards when not zero), a "BGP sessions" table (peer, established or not against expected, prefixes), CPU and memory; `null` values show as "no data", never 0; the network view unavailable shows its reason.
-- [ ] T046 [US1] Implement it, reading the device's entry from `/network` (one request for the page).
-- [ ] T047 [US1] Tests first in `src/lib/metrics.test.ts` and `components/panels/Metrics.test.tsx`: "The network" group after spec 015's four, folded by default, the six views with their title suffixes, the `bytes_per_second` and `percent` units formatted (`1.2 kB/s`, `94%`), and the lab note on CPU and memory.
-- [ ] T048 [US1] Implement T047 in `src/lib/metrics.ts` and `Metrics.tsx`.
-- [ ] T049 The look check, with spine-01's drawer open and the network group unfolded. Measure the page height against #305's 7086 px and record it in the PR. Append to the changelog.
+- [x] T045 [US1] Tests first in `DeviceDrawer.test.tsx`: an "Interfaces" table (name, up or down against expected, traffic in and out, errors and discards when not zero), a "BGP sessions" table (peer, established or not against expected, prefixes), CPU and memory; `null` values show as "no data", never 0; the network view unavailable shows its reason.
+- [x] T046 [US1] Implement it, reading the device's entry from `/network` (one request for the page). *The network sections follow what snapl found (paths, last scan and deploy, recent runs), keeping the drawer drift-first; CPU and memory are the latest values from `/network`, and their history over the range is in "The network" group. At a past time the drawer says these show only the present, since `/network` is now's. A flag's "expected …" is read out and in its title, not shown: shown, it wrapped the state column to three lines (look check).*
+- [x] T047 [US1] Tests first in `src/lib/metrics.test.ts` and `components/panels/Metrics.test.tsx`: "The network" group after spec 015's four, folded by default, the six views with their title suffixes, the `bytes_per_second` and `percent` units formatted (`1.2 kB/s`, `94%`), and the lab note on CPU and memory.
+- [x] T048 [US1] Implement T047 in `src/lib/metrics.ts` and `Metrics.tsx`. *With the decision on #312 (2026-11-20): `interface-traffic` is summed by device (6 series, contract amended); any view over six series draws the six highest by peak and says how many it left out; errors or discards that stayed at zero say so instead of drawing flat lines.*
+- [x] T049 The look check, with spine-01's drawer open and the network group unfolded. Measure the page height against #305's 7086 px and record it in the PR. Append to the changelog.
 
 ---
 

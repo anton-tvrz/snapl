@@ -17,6 +17,7 @@ import type {
   MetricsResponse,
   MetricsViewName,
   ModeResponse,
+  NetworkResponse,
   Overview,
   RunStepsResponse,
   RunsResponse,
@@ -157,11 +158,11 @@ export class InlineProvider implements DataProvider {
     );
   }
 
-  /** An audit view the snapshot does not hold: made before it was bundled, or asked over another range. */
-  #notHeld(bundled: boolean) {
+  /** A view the snapshot does not hold: made before it was bundled, or asked over another range. */
+  #notHeld<S extends "audit" | "prometheus" = "audit">(bundled: boolean, source: S = "audit" as S) {
     const { manifest } = this.#bundle;
     return {
-      source: "audit" as const,
+      source,
       available: false,
       stale: false,
       reason: bundled ? `a snapshot holds only its own range, ${manifest.start} to ${manifest.end}` : "not in this snapshot",
@@ -175,6 +176,12 @@ export class InlineProvider implements DataProvider {
     if (bundled && this.#ownRange(range)) return bundled;
     const { manifest } = this.#bundle;
     return { contract_version: "1", generated_at: manifest.end, use_case: manifest.use_case, summary: this.#notHeld(!!bundled) };
+  };
+
+  // Spec 016: a snapshot carries the network from PR F (T050 to T052).
+  network = async (): Promise<NetworkResponse> => {
+    const { manifest } = this.#bundle;
+    return { contract_version: "1", generated_at: manifest.end, use_case: manifest.use_case, network: this.#notHeld(false, "prometheus") };
   };
 
   health = async (range?: Range): Promise<HealthResponse> => {

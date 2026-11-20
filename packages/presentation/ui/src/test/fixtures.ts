@@ -11,6 +11,7 @@ import type {
   MetricsResponse,
   MetricsViewName,
   ModeResponse,
+  NetworkResponse,
   Overview,
   RunStepsResponse,
   RunsResponse,
@@ -28,6 +29,7 @@ import history from "./fixtures/history.json";
 import driftSummary from "./fixtures/drift-summary.json";
 import fabricHistory from "./fixtures/fabric-history.json";
 import health from "./fixtures/health.json";
+import network from "./fixtures/up/network.json";
 import links from "./fixtures/links.json";
 import sources from "./fixtures/sources.json";
 import stepsDeploy from "./fixtures/steps-deploy.json";
@@ -73,6 +75,8 @@ export const DRIFT_SUMMARY = driftSummary as unknown as DriftSummaryResponse;
 export const FABRIC_HISTORY = fabricHistory as unknown as HistoryResponse;
 // `/health` over the arc with today's lab health added (spec 016).
 export const HEALTH = health as unknown as HealthResponse;
+// `/network` with every source up: the lab's today, the spines' sessions down (spec 016).
+export const NETWORK = network as unknown as NetworkResponse;
 export const OVERVIEW = overview as unknown as Overview;
 /** The same arc with the other sources up: an active schedule, one worker, a scan running. */
 export const OVERVIEW_UP = overviewUp as unknown as Overview;

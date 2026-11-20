@@ -121,4 +121,62 @@ describe("MetricPanel", () => {
     expect(screen.getByText("No data in this range.")).toBeInTheDocument();
     expect(screen.getByText("no samples in this range")).toBeInTheDocument();
   });
+
+  // Spec 016 PR E2, and the decision on #312 (2026-11-20).
+  describe("the network views", () => {
+    it("draws the six highest of 16 interfaces and says how many it left out", () => {
+      render(<MetricPanel name="interface-errors" title="Interface errors (rate)" view={view("interface-errors")} now={NOW} />);
+
+      const region = screen.getByRole("region", { name: "Interface errors (rate)" });
+      const legend = within(region).getByRole("list", { name: "Interface errors (rate): series" });
+      const items = within(legend).getAllByRole("listitem").map((item) => item.textContent);
+      expect(items).toHaveLength(6);
+      expect(items[0]).toBe("leaf-02 ethernet-1/49 12/min");
+      expect(region).toHaveTextContent("The chart draws the 6 highest of 16 series; all 16 are in the table.");
+      // The table has every series, the drawn ones first with their colour.
+      const rows = within(table()).getAllByRole("row").slice(1);
+      expect(rows).toHaveLength(16);
+      expect(rows[0]).toHaveTextContent("leaf-02 ethernet-1/49");
+      expect(rows.filter((row) => row.querySelector("[aria-hidden='true']"))).toHaveLength(6);
+    });
+
+    it("says there were no discards in place of 16 flat lines", () => {
+      render(<MetricPanel name="interface-discards" title="Interface discards (rate)" view={view("interface-discards")} now={NOW} />);
+
+      const region = screen.getByRole("region", { name: "Interface discards (rate)" });
+      expect(region).toHaveTextContent("No discards on any interface in this range.");
+      expect(within(region).queryByRole("img")).not.toBeInTheDocument();
+      expect(within(region).queryByRole("list", { name: /series/ })).not.toBeInTheDocument();
+      expect(region).not.toHaveTextContent("highest");
+      expect(within(table()).getAllByRole("row").slice(1)).toHaveLength(16);
+    });
+
+    it("draws traffic as one line per device, in bytes per second", () => {
+      render(<MetricPanel name="interface-traffic" title="Interface traffic (rate)" view={view("interface-traffic")} now={NOW} />);
+
+      const region = screen.getByRole("region", { name: "Interface traffic (rate)" });
+      expect(within(region).getByText("9.6 kB/s", { selector: "[data-lead]" })).toBeInTheDocument();
+      expect(within(region).getAllByRole("listitem")).toHaveLength(6);
+      expect(region).toHaveTextContent("bytes per second · step 15 s");
+      expect(region).not.toHaveTextContent("highest");
+    });
+
+    it("gives CPU in percent, with the lab note", () => {
+      render(<MetricPanel name="device-cpu" title="Device CPU (current value)" kind="current" view={view("device-cpu")} now={NOW} />);
+
+      const region = screen.getByRole("region", { name: "Device CPU (current value)" });
+      expect(within(region).getByText("5%", { selector: "[data-lead]" })).toBeInTheDocument();
+      expect(region).toHaveTextContent("On the lab, this is the host VM's, the same on every device");
+      expect(region).toHaveTextContent("percent · step 15 s");
+    });
+
+    it("gives memory the lab note too, and traffic none", () => {
+      const { unmount } = render(<MetricPanel name="device-memory" title="Device memory (current value)" view={view("device-memory")} now={NOW} />);
+      expect(screen.getByRole("region", { name: "Device memory (current value)" })).toHaveTextContent("host VM's");
+      unmount();
+
+      render(<MetricPanel name="interface-traffic" title="Interface traffic (rate)" view={view("interface-traffic")} now={NOW} />);
+      expect(screen.getByRole("region", { name: "Interface traffic (rate)" })).not.toHaveTextContent("host VM's");
+    });
+  });
 });

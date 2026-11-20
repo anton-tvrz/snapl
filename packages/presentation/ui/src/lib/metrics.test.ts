@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { METRICS, NOW } from "../test/fixtures";
 import {
+  chartSeries,
   formatValue,
   groupViews,
   latest,
@@ -9,10 +10,14 @@ import {
   METRIC_GROUPS,
   METRIC_VIEWS,
   type MetricKind,
+  noneText,
+  peak,
   PRESETS,
   presetRange,
   seriesLabel,
+  UNIT_NAMES,
   upState,
+  viewNote,
 } from "./metrics";
 
 describe("metrics helpers", () => {
@@ -120,6 +125,15 @@ describe("metrics helpers", () => {
     [1, "up", "up"],
     [0, "up", "down"],
     [null, "ms", "no data"],
+    // Spec 016's units: bytes in thousands, as a network tool shows them.
+    [800, "bytes_per_second", "800 B/s"],
+    [1234, "bytes_per_second", "1.2 kB/s"],
+    [15_400, "bytes_per_second", "15 kB/s"],
+    [2_500_000, "bytes_per_second", "2.5 MB/s"],
+    [3_100_000_000, "bytes_per_second", "3.1 GB/s"],
+    [94, "percent", "94%"],
+    [3.27, "percent", "3.3%"],
+    [0, "percent", "0%"],
   ] as const)("formats %s %s as %s", (value, unit, expected) => {
     expect(formatValue(value, unit)).toBe(expected);
   });
@@ -180,6 +194,81 @@ describe("metrics helpers", () => {
     it("shows a unit it does not know raw", () => {
       expect(leadValue({ ...data("worker-lag"), unit: "widgets" as never, series: [series({}, 3)] })?.text).toBe("3 widgets");
     });
+  });
+
+  it("names spec 016's units", () => {
+    expect(UNIT_NAMES.bytes_per_second).toBe("bytes per second");
+    expect(UNIT_NAMES.percent).toBe("percent");
+  });
+
+  // #312, 2026-11-20: a view over six series draws the six highest and says how many it left out.
+  describe("chartSeries", () => {
+    const flat = (name: string, values: (number | null)[]) => ({
+      labels: { device: name },
+      points: values.map((value, i) => ({ t: `2026-11-07T21:0${i}:00Z`, value })),
+    });
+
+    it("draws every series, in the server's order, when there are six or fewer", () => {
+      const series = [flat("a", [1]), flat("b", [5]), flat("c", [3])];
+
+      expect(chartSeries(series)).toEqual({ drawn: series, total: 3 });
+    });
+
+    it("draws the six highest by their peak over the range, highest first", () => {
+      const series = [0, 7, 2, 9, 4, 1, 8, 3].map((n, i) => flat(`d${i}`, [0, n, null]));
+
+      const { drawn, total } = chartSeries(series);
+
+      expect(total).toBe(8);
+      expect(drawn.map((s) => s.labels.device)).toEqual(["d3", "d6", "d1", "d4", "d7", "d2"]);
+    });
+
+    it("keeps the server's order between equal peaks, and puts a series with no data last", () => {
+      const series = [flat("gap", [null]), ...[1, 2, 3, 4, 5, 6].map((n) => flat(`z${n}`, [0]))];
+
+      expect(chartSeries(series).drawn.map((s) => s.labels.device)).toEqual(["z1", "z2", "z3", "z4", "z5", "z6"]);
+    });
+
+    it("finds the interface with errors among dcfabric's 16", () => {
+      const { drawn, total } = chartSeries(METRICS["interface-errors"].metrics.data!.series!);
+
+      expect(total).toBe(16);
+      expect(drawn).toHaveLength(6);
+      expect(drawn[0]!.labels).toEqual({ device: "leaf-02", interface: "ethernet-1/49" });
+    });
+
+    it("reads a series' peak, skipping gaps", () => {
+      expect(peak(flat("a", [1, null, 4, 2]))).toBe(4);
+      expect(peak(flat("a", [null]))).toBeNull();
+    });
+  });
+
+  describe("noneText", () => {
+    it("says there were none when every error or discard series stayed at zero", () => {
+      expect(noneText("interface-discards", METRICS["interface-discards"].metrics.data!)).toBe(
+        "No discards on any interface in this range.",
+      );
+    });
+
+    it("is null when one series counted something", () => {
+      expect(noneText("interface-errors", METRICS["interface-errors"].metrics.data!)).toBeNull();
+    });
+
+    it("is null for a view where zero is a value, not an absence", () => {
+      const zero = { ...METRICS["bgp-established"].metrics.data!, series: [{ labels: { device: "spine-01" }, points: [{ t: "2026-11-07T21:00:00Z", value: 0 }] }] };
+
+      expect(noneText("bgp-established", zero)).toBeNull();
+    });
+
+    it("is null with no series at all: that is no data, said elsewhere", () => {
+      expect(noneText("interface-errors", { ...METRICS["interface-errors"].metrics.data!, series: [] })).toBeNull();
+    });
+  });
+
+  it("notes on CPU and memory that the lab reports the host VM's (spec 016 data-model.md)", () => {
+    expect(viewNote("device-cpu")).toBe("On the lab, this is the host VM's, the same on every device");
+    expect(viewNote("device-memory")).toBe("On the lab, this is the host VM's, the same on every device");
+    expect(viewNote("interface-traffic")).toBeNull();
   });
 
   it("reads an up/down value as up, down or no data", () => {

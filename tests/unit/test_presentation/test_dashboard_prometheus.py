@@ -155,7 +155,7 @@ EXPECTED_QUERIES = {
     ),
     # Spec 016 (contracts/telemetry.md): the network.
     MetricsViewName.INTERFACE_TRAFFIC: (
-        f"sum by (device, direction) ({_rate('snapl_interface_octets_total{use_case="dcfabric"}')})"
+        f"sum by (device) ({_rate('snapl_interface_octets_total{use_case="dcfabric"}')})"
     ),
     MetricsViewName.INTERFACE_ERRORS: (
         f"sum by (device, interface) ({_rate('snapl_interface_errors_total{use_case="dcfabric"}')})"
@@ -238,7 +238,7 @@ def test_units_and_series_labels_follow_the_data_model() -> None:
         MetricsViewName.SCAN_RESULTS: ("device", "state"),
         MetricsViewName.DRIFT_PATHS: ("device", "kind"),
         MetricsViewName.DEPLOY_OUTCOMES: ("outcome", "reason"),
-        MetricsViewName.INTERFACE_TRAFFIC: ("device", "direction"),
+        MetricsViewName.INTERFACE_TRAFFIC: ("device",),
         MetricsViewName.INTERFACE_ERRORS: ("device", "interface"),
         MetricsViewName.INTERFACE_DISCARDS: ("device", "interface"),
         MetricsViewName.BGP_ESTABLISHED: ("device",),
@@ -450,12 +450,13 @@ HAND_BUILT: dict[MetricsViewName, tuple[list[tuple[dict[str, str], list[tuple[in
         [{"outcome": "succeeded", "reason": "none"}, {"outcome": "failed", "reason": "verification_failed"}],
     ),
     # Spec 016: the label sets the worker writes (contracts/telemetry.md), after the sum or max.
+    # Traffic is one series per device, both directions summed (#312, 2026-11-20).
     MetricsViewName.INTERFACE_TRAFFIC: (
         [
-            ({"device": "leaf-01", "direction": "in"}, [(_T, "1250.5")]),
-            ({"device": "leaf-01", "direction": "out"}, [(_T, "980")]),
+            ({"device": "leaf-01"}, [(_T, "2230.5")]),
+            ({"device": "leaf-02"}, [(_T, "980")]),
         ],
-        [{"device": "leaf-01", "direction": "in"}, {"device": "leaf-01", "direction": "out"}],
+        [{"device": "leaf-01"}, {"device": "leaf-02"}],
     ),
     MetricsViewName.INTERFACE_ERRORS: (
         [({"device": "leaf-02", "interface": "ethernet-1/49"}, [(_T, "0.2")])],

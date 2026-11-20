@@ -26,15 +26,19 @@ const shots = [
   { file: "first-screen-dark", scheme: "dark", viewport: WIDE, search: "", fullPage: false },
   { file: "device-light", scheme: "light", viewport: WIDE, search: "?device=leaf-01", fullPage: true },
   // Spec 016: an unhealthy device's drawer, its health first.
-  { file: "device-spine-light", scheme: "light", viewport: WIDE, search: "?device=spine-01", fullPage: false },
+  { file: "device-spine-light", scheme: "light", viewport: WIDE, search: "?device=spine-01", fullPage: true },
   { file: "device-spine-dark", scheme: "dark", viewport: WIDE, search: "?device=spine-01", fullPage: false },
+  // Spec 016 PR E2: the drawer's network beside "The network" group, unfolded.
+  { file: "network-light", scheme: "light", viewport: WIDE, search: "?device=spine-01&open=metrics-network", fullPage: true },
+  { file: "network-dark", scheme: "dark", viewport: WIDE, search: "?device=leaf-02&open=metrics-network", fullPage: true },
   { file: "narrow-light", scheme: "light", viewport: NARROW, search: "", fullPage: true },
+  { file: "narrow-device-light", scheme: "light", viewport: NARROW, search: "?device=leaf-02", fullPage: true },
   // Every folded panel and group open (#290): what the default view leaves folded.
   {
     file: "open-light",
     scheme: "light",
     viewport: WIDE,
-    search: "?open=history,fabric-history,drift-by-device,metrics-timing,metrics-work,metrics-worker,metrics-dashboard",
+    search: "?open=history,fabric-history,drift-by-device,metrics-timing,metrics-work,metrics-worker,metrics-dashboard,metrics-network",
     fullPage: true,
   },
 ];
@@ -59,7 +63,8 @@ try {
       });
     }
     if (shot.viewport === NARROW) {
-      narrowOverflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      narrowOverflow = Math.max(narrowOverflow ?? 0, overflow);
     }
     await page.screenshot({ path: `${out}/${shot.file}.png`, fullPage: shot.fullPage });
     await page.close();

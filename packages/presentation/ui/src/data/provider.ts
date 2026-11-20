@@ -11,6 +11,7 @@ import type {
   MetricsResponse,
   MetricsViewName,
   ModeResponse,
+  NetworkResponse,
   Overview,
   RunStepsResponse,
   RunsResponse,
@@ -55,6 +56,8 @@ export interface DataProvider {
   timeline(range?: Range): Promise<DriftTimelineResponse>;
   /** Each device's health now and its unhealthy stretches over a range (spec 016). Without one, the last 24 hours. */
   health(range?: Range): Promise<HealthResponse>;
+  /** Each device's interfaces, sessions, CPU and memory now, from the store (spec 016). */
+  network(): Promise<NetworkResponse>;
   steps(run: RunId): Promise<RunStepsResponse>;
   /** Without a range, the server's default: the last hour by its own clock. */
   metrics(view: MetricsViewName, range?: Range): Promise<MetricsResponse>;

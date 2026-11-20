@@ -2,8 +2,8 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import type { DeviceView } from "../api/types";
-import { DEVICES, DEVICES_AT_SCAN_2, NOW, OVERVIEW } from "../test/fixtures";
+import type { DeviceNetwork, DeviceView, FabricNetwork, View } from "../api/types";
+import { DEVICES, DEVICES_AT_SCAN_2, NETWORK, NOW, OVERVIEW } from "../test/fixtures";
 import { DeviceDrawer } from "./DeviceDrawer";
 
 const device = (name: string, from = DEVICES) => from.devices.data!.find((d) => d.name === name)!;
@@ -246,5 +246,130 @@ describe("DeviceDrawer", () => {
 
     expect(screen.getByText("snapl reconcile spine-01")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Copy command/ })).not.toBeInTheDocument();
+  });
+
+  // Spec 016 T045: the device's entry in /network, after what snapl itself found.
+  describe("the network (spec 016)", () => {
+    const network = NETWORK.network;
+    const entry = (name: string) => network.data!.devices.find((d) => d.name === name)!;
+    /** /network with one device's entry changed. */
+    const changed = (name: string, change: Partial<DeviceNetwork>): View<FabricNetwork> => ({
+      ...network,
+      data: { ...network.data!, devices: network.data!.devices.map((d) => (d.name === name ? { ...d, ...change } : d)) },
+    });
+    const cells = (region: HTMLElement) =>
+      within(region)
+        .getAllByRole("row")
+        .slice(1)
+        .map((row) => within(row).getAllByRole("cell").map((cell) => cell.textContent));
+
+    it("lists each interface in intent: up or down, and its traffic in and out", () => {
+      open({ device: device("spine-01"), network });
+
+      const interfaces = screen.getByRole("region", { name: "Interfaces" });
+      expect(cells(interfaces)).toEqual([
+        ["ethernet-1/1", "up", "1 kB/s", "1 kB/s"],
+        ["ethernet-1/2", "up", "1 kB/s", "1 kB/s"],
+        ["ethernet-1/3", "up", "1 kB/s", "1 kB/s"],
+        ["ethernet-1/4", "up", "1 kB/s", "1.1 kB/s"],
+        // A loopback has no counters: no data, never 0.
+        ["lo0", "up", "no data", "no data"],
+      ]);
+      expect(within(interfaces).queryByRole("columnheader", { name: "Errors and discards" })).not.toBeInTheDocument();
+    });
+
+    it("flags an interface that is not as intent expects", () => {
+      const interfaces = entry("spine-01").interfaces!.map((i) =>
+        i.name === "ethernet-1/2" ? { ...i, up: false } : i.name === "ethernet-1/3" ? { ...i, up: null } : i,
+      );
+      open({ device: device("spine-01"), network: changed("spine-01", { interfaces }) });
+
+      const region = screen.getByRole("region", { name: "Interfaces" });
+      const row = within(region).getByRole("row", { name: /ethernet-1\/2/ });
+      expect(within(row).getAllByRole("cell")[1]).toHaveTextContent(/^!down, expected up$/);
+      expect(within(row).getByText("!")).toHaveAttribute("aria-hidden", "true");
+      // The expectation is read out, and on the flag's title: shown, it wrapped the column (look check).
+      expect(within(row).getByText("!")).toHaveAttribute("title", "Expected up");
+      expect(within(row).getByText(", expected up")).toHaveClass("sr-only");
+      expect(within(within(region).getByRole("row", { name: /ethernet-1\/3/ })).getAllByRole("cell")[1]).toHaveTextContent(/^no data$/);
+    });
+
+    // Under the interface's name, not in a fifth column: a fifth wrapped every cell (look check).
+    it("names errors and discards only on the interfaces that have them, under the name", () => {
+      open({ device: device("leaf-02"), network });
+
+      const region = screen.getByRole("region", { name: "Interfaces" });
+      expect(within(region).getAllByRole("columnheader")).toHaveLength(4);
+      expect(cells(region).map((row) => row[0])).toEqual(["ethernet-1/49errors in 12/min", "ethernet-1/50", "lo0"]);
+      expect(within(region).getByText("errors in 12/min")).toHaveClass("text-meta");
+    });
+
+    it("lists each BGP session: established or not against intent, and the prefixes received", () => {
+      open({ device: device("spine-01"), network });
+
+      const sessions = screen.getByRole("region", { name: "BGP sessions" });
+      expect(cells(sessions)[0]).toEqual(["10.10.1.1", "!not established, expected established", "0"]);
+      expect(cells(sessions)).toHaveLength(4);
+    });
+
+    it("shows an established session plainly", () => {
+      open({ device: device("leaf-01"), network });
+
+      expect(cells(screen.getByRole("region", { name: "BGP sessions" }))[0]).toEqual(["10.10.1.0", "established", "2"]);
+    });
+
+    it("shows a missing value as no data, never 0", () => {
+      const sessions = [{ peer: "10.10.1.1", expected: null, established: null, prefixes_received: null }];
+      open({ device: device("spine-01"), network: changed("spine-01", { sessions, cpu_percent: null }) });
+
+      expect(cells(screen.getByRole("region", { name: "BGP sessions" }))).toEqual([["10.10.1.1", "no data", "no data"]]);
+      expect(screen.getByRole("region", { name: "CPU and memory" })).toHaveTextContent("CPUno dataMemory94%");
+    });
+
+    it("gives CPU and memory in percent, with the lab note", () => {
+      open({ device: device("spine-01"), network });
+
+      const region = screen.getByRole("region", { name: "CPU and memory" });
+      expect(region).toHaveTextContent("CPU3%Memory94%");
+      expect(region).toHaveTextContent("On the lab, this is the host VM's, the same on every device");
+    });
+
+    it("shows the reason when the network cannot be read", () => {
+      const down: View<FabricNetwork> = {
+        source: "prometheus",
+        available: false,
+        reason: "Prometheus is unreachable",
+        remedy: "uv run invoke dev.deps",
+        data: null,
+      };
+      open({ device: device("spine-01"), network: down });
+
+      const region = screen.getByRole("region", { name: "Network" });
+      expect(region).toHaveTextContent("Prometheus is unreachable");
+      expect(region).toHaveTextContent("uv run invoke dev.deps");
+      expect(screen.queryByRole("region", { name: "Interfaces" })).not.toBeInTheDocument();
+    });
+
+    it("comes after what snapl found, and shows nothing without an answer or an entry", () => {
+      const { unmount } = open({ device: device("spine-01"), network });
+      const drawer = screen.getByRole("dialog", { name: "spine-01" });
+      const regions = within(drawer).getAllByRole("region").map((r) => r.getAttribute("aria-label"));
+      expect(regions).toEqual(["Health", "Interfaces", "BGP sessions", "CPU and memory"]);
+      expect(
+        within(drawer).getByText("Recent runs").compareDocumentPosition(within(drawer).getByRole("region", { name: "Interfaces" })) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      unmount();
+
+      open({ device: device("spine-01") });
+      expect(screen.queryByRole("region", { name: "Interfaces" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("region", { name: "Network" })).not.toBeInTheDocument();
+    });
+
+    it("shows nothing for a device /network does not list", () => {
+      open({ device: device("spine-01"), network: { ...network, data: { ...network.data!, devices: [] } } });
+
+      expect(screen.queryByRole("region", { name: "Interfaces" })).not.toBeInTheDocument();
+    });
   });
 });

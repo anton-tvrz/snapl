@@ -325,9 +325,7 @@ def _cpu(k: int, i: int = 0) -> float:
 
 
 _SERIES[MetricsViewName.INTERFACE_TRAFFIC] = [
-    ({"device": device, "direction": direction}, lambda i, k=k, d=d: 4000.0 + 150 * k + 90 * d + 40 * (i % 12))
-    for k, device in enumerate(_DEVICES)
-    for d, direction in enumerate(("in", "out"))
+    ({"device": device}, lambda i, k=k: 8090.0 + 300 * k + 80 * (i % 12)) for k, device in enumerate(_DEVICES)
 ]
 # Every link end intent names has an error and a discard series, as the worker exports them.
 _LINKS = [(st.device.name, i.name) for st in arc_states() for i in st.interfaces if i.name != "lo0"]

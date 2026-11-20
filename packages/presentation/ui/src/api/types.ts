@@ -44,6 +44,12 @@ export type FabricHealth = Schemas["FabricHealth"];
 export type DeviceHealthEntry = Schemas["DeviceHealthEntry"];
 export type HealthEpisode = Schemas["HealthEpisode"];
 export type DeviceHealthView = Schemas["DeviceHealthView"];
+// Spec 016: each device's interfaces, sessions, CPU and memory now, from the store.
+export type NetworkResponse = Schemas["NetworkResponse"];
+export type FabricNetwork = Schemas["FabricNetwork"];
+export type DeviceNetwork = Schemas["DeviceNetwork"];
+export type InterfaceState = Schemas["InterfaceState"];
+export type SessionState = Schemas["SessionState"];
 
 export type DeviceView = Schemas["DeviceView"];
 export type RunView = Schemas["RunView"];

@@ -12,6 +12,7 @@ import {
   LINKS,
   METRICS,
   MODE_ARCHIVE,
+  NETWORK,
   OVERVIEW_ARCHIVE,
   SOURCES,
   STEPS_DEPLOY,
@@ -46,6 +47,7 @@ function provider() {
     history: async (_range?: unknown, _bucket?: unknown, series?: unknown) => (series ? FABRIC_HISTORY : HISTORY),
     driftSummary: async () => DRIFT_SUMMARY,
     health: async () => HEALTH,
+    network: async () => NETWORK,
     steps: async () => STEPS_DEPLOY,
     metrics: calls.metrics,
   } as unknown as DataProvider;
