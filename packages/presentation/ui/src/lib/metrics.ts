@@ -196,7 +196,10 @@ function windowText(seconds: number): string {
   return seconds < 120 ? `${seconds} s` : durationText(seconds);
 }
 
-/** The seconds a count's point covers: the server's window note, or else its step (research R4). */
+/**
+ * The seconds a count's point covers: its step (#308), or the window note of
+ * an archive made before #308, whose points covered 60 s each (research R4).
+ */
 export function countWindow(data: MetricsData): number {
   const noted = /events in the last (\d+) s/.exec(data.note ?? "");
   return noted ? Number(noted[1]) : data.step;

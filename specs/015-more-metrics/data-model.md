@@ -39,7 +39,7 @@ A view a newer server adds is shown in a last group, "Other", by its raw name.
 Settled in PR D2 (#286):
 - **Titles** end with what the value is: `(95th percentile)`, `(mean)`, `(count)` or `(current value)`, and `(rate)` for `gnmi-errors`, which is none of those four. The up/down views (`worker-up`, `source-health`) have no suffix: up or down names itself.
 - **"What the loop did"** holds `workflows-completed` and `gnmi-errors` until PR E adds its three views. The view list is a `satisfies Record<MetricsViewName, …>` map, so the types PR E regenerates fail the type check until its views have a group.
-- **A count's lead** is the highest latest point, with the window from the server's note ("events in the last 60 s"), or the step when there is no note; "in the last 60 s" under two minutes, "in the last 6 min" above. A gauge count (`worker-slots`) has no window. A count's axis has whole ticks only.
+- **A count's lead** is the highest latest point, with the window from the server's note ("events in the last 60 s", only in an archive made before spec 017's #308), or else the step; "in the last 60 s" under two minutes, "in the last 6 min" above. A gauge count (`worker-slots`) has no window. A count's axis has whole ticks only.
 
 ### `NumberCard` (`numbers.ts`, spec 014)
 

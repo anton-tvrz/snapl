@@ -103,7 +103,7 @@ def capture(
     span = {"start": str(int(end - span_s)), "end": str(int(end)), "step": str(step)}
     answers: dict[str, dict[str, Any]] = {}
     for view, filename in VIEW_FILES.items():
-        query = render_query(view, namespace=namespace, use_case=use_case, window_s=window)
+        query = render_query(view, namespace=namespace, use_case=use_case, window_s=window, step_s=step)
         answers[filename] = _request(address, "/api/v1/query_range", {"query": query, **span})
     answers["range_absent_metric.json"] = _request(
         address, "/api/v1/query_range", {"query": "snapl_metric_that_does_not_exist", **span}

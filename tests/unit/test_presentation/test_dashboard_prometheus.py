@@ -29,7 +29,6 @@ from snapl_presentation.dashboard.prometheus import (
     plan_range,
     rate_window,
     render_query,
-    window_note,
 )
 from snapl_presentation.dashboard.sources import SourceUnavailable
 
@@ -103,6 +102,20 @@ def _rate(selector: str, window: str = "60s", seconds: int = 60) -> str:
     )
 
 
+def _step_increase(selector: str, step: str = "15s") -> str:
+    """The counter's increase over the step ending at the point (#308): no window, no extrapolation.
+
+    The difference with the sample one step ago, or after a reset the count since it,
+    or for a first observation the whole value, when Prometheus was scraping the worker then (#191).
+    """
+    return (
+        f"((({selector} - {selector} offset {step}) >= 0)"
+        f" or ({selector} < {selector} offset {step})"
+        f" or (({selector} unless {selector} offset {step})"
+        f' and on() (up{{job="snapl-worker"}} offset {step})))'
+    )
+
+
 EXPECTED_QUERIES = {
     MetricsViewName.WORKFLOW_DURATION: (
         "histogram_quantile(0.95, sum by (le, workflow_type) "
@@ -131,7 +144,7 @@ EXPECTED_QUERIES = {
         f" / sum by (device, operation) ({_rate('snapl_gnmi_call_duration_count{use_case="dcfabric"}')})"
     ),
     MetricsViewName.WORKFLOWS_COMPLETED: (
-        f"sum by (workflow_type) (({_rate('temporal_workflow_completed{namespace="default"}')} * 60))"
+        f"sum by (workflow_type) ({_step_increase('temporal_workflow_completed{namespace="default"}')})"
     ),
     MetricsViewName.ACTIVITY_TIME: (
         f"sum by (activity_type) ({_rate('temporal_activity_execution_latency_sum{namespace="default"}')})"
@@ -145,13 +158,13 @@ EXPECTED_QUERIES = {
     MetricsViewName.SOURCE_FETCH_TIME: "snapl_dashboard_source_fetch_duration_milliseconds",
     # Spec 015 PR E: the worker's own counters.
     MetricsViewName.SCAN_RESULTS: (
-        f"sum by (device, state) (({_rate('snapl_scan_results_total{use_case="dcfabric"}')} * 60))"
+        f"sum by (device, state) ({_step_increase('snapl_scan_results_total{use_case="dcfabric"}')})"
     ),
     MetricsViewName.DRIFT_PATHS: (
-        f"sum by (device, kind) (({_rate('snapl_drift_paths_total{use_case="dcfabric"}')} * 60))"
+        f"sum by (device, kind) ({_step_increase('snapl_drift_paths_total{use_case="dcfabric"}')})"
     ),
     MetricsViewName.DEPLOY_OUTCOMES: (
-        f"sum by (outcome, reason) (({_rate('snapl_deploy_ends_total{use_case="dcfabric"}')} * 60))"
+        f"sum by (outcome, reason) ({_step_increase('snapl_deploy_ends_total{use_case="dcfabric"}')})"
     ),
     # Spec 016 (contracts/telemetry.md): the network.
     MetricsViewName.INTERFACE_TRAFFIC: (
@@ -172,18 +185,18 @@ EXPECTED_QUERIES = {
 def test_every_view_has_exactly_the_documented_query() -> None:
     assert set(VIEWS) == set(MetricsViewName) == set(EXPECTED_QUERIES)
     for view, expected in EXPECTED_QUERIES.items():
-        assert render_query(view, namespace="default", use_case="dcfabric", window_s=60) == expected
+        assert render_query(view, namespace="default", use_case="dcfabric", window_s=60, step_s=15) == expected
 
 
 def test_the_rate_window_spans_at_least_four_scrapes_and_one_step() -> None:
-    assert "[60s]" in render_query(MetricsViewName.GNMI_ERRORS, namespace="n", use_case="u", window_s=60)
-    assert "[300s]" in render_query(MetricsViewName.GNMI_ERRORS, namespace="n", use_case="u", window_s=300)
+    assert "[60s]" in render_query(MetricsViewName.GNMI_ERRORS, namespace="n", use_case="u", window_s=60, step_s=15)
+    assert "[300s]" in render_query(MetricsViewName.GNMI_ERRORS, namespace="n", use_case="u", window_s=300, step_s=300)
 
 
 def test_a_first_observation_is_divided_by_the_window_in_seconds() -> None:
     """A series with no sample one window ago started from zero inside it, so its
     value is its increase over the window (#191)."""
-    query = render_query(MetricsViewName.GNMI_ERRORS, namespace="n", use_case="u", window_s=300)
+    query = render_query(MetricsViewName.GNMI_ERRORS, namespace="n", use_case="u", window_s=300, step_s=300)
 
     assert "offset 300s" in query
     assert "/ 300 or rate(" in query
@@ -191,7 +204,9 @@ def test_a_first_observation_is_divided_by_the_window_in_seconds() -> None:
 
 
 def test_a_quote_in_a_setting_cannot_break_out_of_the_matcher() -> None:
-    query = render_query(MetricsViewName.GNMI_ERRORS, namespace="n", use_case='x"}or vector(1)#', window_s=60)
+    query = render_query(
+        MetricsViewName.SCAN_RESULTS, namespace="n", use_case='x"}or vector(1)#', window_s=60, step_s=15
+    )
 
     assert 'use_case="x\\"}or vector(1)#"' in query
 
@@ -260,37 +275,27 @@ def test_only_the_event_views_count_events_in_a_window() -> None:
     assert {v for v, spec in VIEWS.items() if spec.counts_events} == EVENT_VIEWS
 
 
-def test_a_count_of_events_is_the_first_observation_rate_times_the_window() -> None:
-    """increase() is rate() times the window, so a first completion counts too (#191)."""
-    query = render_query(MetricsViewName.WORKFLOWS_COMPLETED, namespace="n", use_case="u", window_s=300)
-
-    assert "offset 300s" in query
-    assert "/ 300 or rate(" in query
-    assert query.endswith(" * 300))")
-    assert "$" not in query
-
-
-# --- the window of a count (research R4) -----------------------------------------
-
-
-@pytest.mark.parametrize(
-    ("step", "expected"),
-    [
-        (15, "events in the last 60 s"),  # the default hour: each point overlaps three neighbours
-        (59, "events in the last 60 s"),
-        (60, None),  # the window is the step: a point is the events in its own step
-        (360, None),
-    ],
-)
-def test_a_count_says_its_window_when_the_window_is_longer_than_the_step(step: int, expected: str | None) -> None:
+@pytest.mark.parametrize("step", [15, 60, 2520])
+def test_a_count_of_events_is_the_increase_over_its_own_step(step: int) -> None:
+    """Each point counts its own step, so points are whole and add up to the range's events (#308)."""
     for view in EVENT_VIEWS:
-        assert window_note(view, step) == expected, view
+        query = render_query(view, namespace="n", use_case="u", window_s=rate_window(step), step_s=step)
+
+        assert f"offset {step}s" in query, view
+        assert "$" not in query, view
+        assert "rate(" not in query, view
+        assert "increase(" not in query, view
+        assert "[" not in query, view  # no range selector: nothing is extrapolated over a window
 
 
-def test_views_that_do_not_count_events_have_no_window_note() -> None:
-    for view in MetricsViewName:
-        if view not in EVENT_VIEWS:
-            assert window_note(view, 15) is None, view
+def test_a_count_of_events_counts_a_first_observation_and_a_reset() -> None:
+    """A first completion after a worker restart counts as one (#191), and a reset is not negative (#308)."""
+    query = render_query(MetricsViewName.SCAN_RESULTS, namespace="n", use_case="u", window_s=60, step_s=15)
+
+    assert query == f"sum by (device, state) ({_step_increase('snapl_scan_results_total{use_case="u"}')})"
+
+
+# --- the rate window ---------------------------------------------------------------
 
 
 def test_the_window_spans_four_scrapes_or_one_step() -> None:
@@ -504,13 +509,36 @@ async def test_a_new_view_parses_its_matrix_to_series_with_its_labels(view: Metr
         assert series.points[0].value == (None if raw == "NaN" else float(raw))
 
 
-async def test_a_count_over_the_default_hour_carries_its_window() -> None:
+async def test_a_count_over_the_default_hour_has_no_window_note() -> None:
+    """A point covers its own step, so there is no longer window to name (#308)."""
     results, _ = HAND_BUILT[MetricsViewName.WORKFLOWS_COMPLETED]
     prom = FakeProm({"http_status": 200, "body": _matrix(results)})
 
     data = await source(prom).query(MetricsViewName.WORKFLOWS_COMPLETED, an_hour())
 
-    assert data.note == "events in the last 60 s"
+    assert data.note is None
+    [params] = prom.range_queries()
+    assert "offset 15s" in params["query"][0]
+
+
+@pytest.mark.parametrize("view", list(MetricsViewName))
+async def test_no_view_says_a_window_note(view: MetricsViewName) -> None:
+    """Counts cover their own step (#308), and rates never had a note (research R4)."""
+    prom = FakeProm(fixture("range_absent_metric"))
+
+    data = await source(prom).query(view, an_hour())
+
+    assert "events in the last" not in (data.note or "")
+
+
+async def test_a_count_at_a_raised_step_counts_that_step() -> None:
+    prom = FakeProm(fixture("range_absent_metric"))
+    plan = plan_range(T0 - timedelta(days=400), T0, 1)
+
+    await source(prom).query(MetricsViewName.SCAN_RESULTS, plan)
+
+    [params] = prom.range_queries()
+    assert f"offset {plan.step}s" in params["query"][0]
 
 
 async def test_a_count_keeps_every_note_in_order() -> None:
@@ -518,13 +546,13 @@ async def test_a_count_keeps_every_note_in_order() -> None:
 
     data = await source(prom).query(MetricsViewName.WORKFLOWS_COMPLETED, plan_range(T0 - timedelta(hours=1), T0, 1))
 
-    assert data.note == "events in the last 60 s; no data in range"
+    assert data.note == "no data in range"
 
     data = await source(prom).query(MetricsViewName.WORKFLOWS_COMPLETED, plan_range(T0 - timedelta(days=400), T0, 1))
     assert data.note is not None
     assert data.note.startswith("step raised to ")
     assert data.note.endswith("; no data in range")
-    assert "events in the last" not in data.note  # the raised step is longer than four scrapes
+    assert "events in the last" not in data.note
 
 
 async def test_bgp_established_has_no_window_note_and_says_a_removed_session_still_counts() -> None:
