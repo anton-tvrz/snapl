@@ -4,6 +4,34 @@ Recorded on 2026-11-20 on the dcfabric lab (SR Linux 26.3.1, six devices), with 
 
 The lab had already been brought into line with #316, #318 and #340 before their merges (spec 016 research, and the #317 run earlier the same morning: scan 6/6 clean, each leaf learning the other five loopbacks). So this run is after #311 and #317, and item 3 below records the healthy fabric, not the flagged spines the quickstart was written for.
 
+## Item 1: the fault captures (T057)
+
+Two captures with `dev/scripts/capture_srlinux_telemetry.py`, every 10 s, while the worker from item 2 kept running. Timelines are in `.snapl/lab/2026-11-20/t057/timeline.txt`.
+
+**leaf-01, `ethernet-1/49` disabled and re-enabled** (`srlinux_v26_3_1_leaf01_interface_down_up.json`, 150 s from 07:47:45 UTC). Disabled at +15 s, enabled at +46 s, with `sr_cli -ec`.
+
+| t (s) | `ethernet-1/49` | BGP `10.10.1.0` (spine-01) | routes received |
+|---:|---|---|---:|
+| 0, 10 | up | established | 4 |
+| 20 to 40 | down | active | 0 |
+| 50 to 80 | up | active | 0 |
+| 90 on | up | established | 4 |
+
+The session takes about 45 s after the link to come back. `in-octets` stands still while the link is down. The running worker flagged leaf-01 and spine-01 at 07:48:19, 19 s after the disable, changed leaf-01's reasons when the link came back and only the session was left, and cleared both at 07:49:20.
+
+**spine-01 while leaf-01 is paused** (`srlinux_v26_3_1_spine01_peer_paused.json`, 240 s from 07:50:35 UTC). `docker pause clab-dcfabric-leaf-01` at +15 s, `docker unpause` at +115 s.
+
+| t (s) | `ethernet-1/1` | BGP `10.10.1.1` (leaf-01) | routes received |
+|---:|---|---|---:|
+| 0 to 90 | up | established | 2 |
+| 100, 110 | up | connect | 0 |
+| 120 | up | established | 0 |
+| 130 on | up | established | 2 |
+
+The link never goes down: a paused container keeps its veth up. The session drops only when the 90 s hold timer runs out, 85 s into the pause, so the quickstart's 60 s pause would have shown nothing here. The quickstart now asks for 100 s. The worker read leaf-01 `unknown` 30 s into the pause (never `unhealthy`), flagged spine-02 and spine-01 when their hold timers ran out (07:52:21, 07:52:31), and cleared all three at 07:52:41, 11 s after the unpause.
+
+Both captures are read by `TestStreamTelemetryFaultCaptures` (the collector: the state sequence, routes, counters) and `TestLabCaptures` (through the collector and the runner: the health changes above). With the debounce set to three intervals instead of one, both `TestLabCaptures` tests fail.
+
 ## Item 2: the worker streams (T026, SC-004)
 
 No worker was running. `uv run invoke orchestrator.start` started at 07:20:26 UTC. Each of the six fabric devices had its first sample between 07:20:31 and 07:20:41, 5 to 15 s after start: each one's `health_changed` event carries `last_sample_at` from 07:20:31.91 (leaf-03) to 07:20:41.83 (leaf-02). At 07:20:41 the runner logged all six `unknown → healthy`. No stream for a fabric device broke during the run.
