@@ -107,4 +107,6 @@ A change is **compatible** when it only adds an optional field, a route, a query
 
 **Amended 2026-11-10 (spec 011):** the routes `GET /api/v1/topology`, `GET /api/v1/drift-timeline`, `GET /api/v1/runs/steps` and `GET /api/v1/mode` were added, and `/api/v1/devices` and `/api/v1/runs` gained the optional `at` parameter. See [011's contracts/ui-api.md](../../011-dashboard-ui/contracts/ui-api.md). `NafBlock` and `BlockStatus` are new enums whose unknown values consumers must render as raw strings. Nothing that existed changed shape.
 
+**Amended 2026-11-20 (spec 016):** `DeviceHealthState` (`healthy`, `unhealthy`, `unknown`) joins the enums whose unknown values consumers must render as raw strings, and so does a health reason's `kind`. `DeviceView` gained the optional `health`. The routes `GET /api/v1/health` and `GET /api/v1/network` were added, `MetricsViewName` gained six values and `MetricUnit` two (`bytes_per_second`, `percent`). See [016's contracts/telemetry.md](../../016-device-telemetry/contracts/telemetry.md). Nothing that existed changed shape.
+
 Any other change is **breaking**. It moves to `/api/v2/`, keeps `/api/v1/` until spec 011's UI has moved, and bumps `contract_version`.

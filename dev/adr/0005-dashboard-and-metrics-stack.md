@@ -5,6 +5,7 @@
 - **Decision 1** (FastAPI and uvicorn, spec 010): Accepted on 2026-11-08, once spec 010's implementation PRs (#154, #160, #162, #164, #166, #168) had merged.
 - **Decision 2** (spec 011): Accepted on 2026-11-10, once spec 011's implementation PRs had merged: #200, #202, #204, #206, #208, #210, #212, #214, #216, #218, #220, #222, #224, #226 and #228.
 - **Decision 3** (spec 012): Accepted on 2026-11-09. Implemented by #180, #182, #184, #186 and #188; spec 012's quickstart items 1–7 were run against the live lab in #195. Two defects it found are in this decision's metrics, and neither changes the decision: #191 (a series' first observation is invisible to `rate()`) and #192 (the default buckets make the gNMI p95 a constant 480 ms). Both are fixed: #191 in the dashboard's queries (spec 012 data-model, `R(x)`), #192 by bucket overrides on the worker. Spec 015 extends it without changing it (see "Spec 015 additions" under Decision 3): #271, #273, #276, #278, #280, #282, #285, #288, #293, #295 and its PR G. Its counters and scan steps have not yet been run against the live lab (spec 015 tasks T037, T044, T049, T050).
+- **Decision 4** (spec 016, device telemetry): Accepted on 2026-11-20, once spec 016's implementation PRs had merged: #320, #322, #324, #326, #328, #330, #332, #335, #337 and its PR G. It has not yet been run against the live lab (spec 016 tasks T026 and T057 to T062). Since #311 was fixed (#316, #318) the lab's eBGP sessions are configured on both ends; until #317 they exchange no routes, so each session's prefixes received reads 0, which health does not judge.
 
 ## Date
 
@@ -86,6 +87,17 @@ Prometheus runs in the Compose stack on 18090. It scrapes:
 
 **Linux caveat (not measured).** On Linux Docker, `host.docker.internal` needs `extra_hosts: host-gateway` (the Compose service carries it) and reaches the bridge address, not loopback. A Linux host must start the worker with `WORKER_METRICS_BIND=0.0.0.0` (or the bridge IP), and the dashboard with a matching `DASHBOARD_HOST`, for Prometheus to scrape them. Nothing automates this.
 
+### 4. Device telemetry in the worker (spec 016)
+
+The worker streams each device's operational state, exports it on its existing metrics endpoint, and records each device's health in the audit trail when it changes. The dashboard shows health beside drift and never in place of it. Nothing repairs on health, and no drift figure changes (`specs/016-device-telemetry/contracts/telemetry.md`).
+
+- **Streams run in the worker process, not in workflows** (spec 016 research R3). `run_worker` starts a `TelemetryRunner` task beside the Temporal worker and stops it with the worker. A separate process would need its own intent client, audit writer and metrics port, and a second audit writer. A workflow would turn a long-lived stream into history events every 10 s. `SNAPL_TELEMETRY=off` starts the worker without it; there is no other setting.
+- **One sample-mode gNMI subscription per device, every 10 s, for what intent names only** (R1, R2): each interface's state and counters, each BGP session end's state and prefixes received, and the device's CPU and memory. The SR Linux paths and parsing live in `GnmiCollector`, behind one new abstract method, `Collector.stream_telemetry`. The runner, the health rule and every model are vendor-neutral.
+- **Health is Observability's rule** (`Observer.evaluate_health`, R6), over intent's expectations and the latest samples: `unknown` after three intervals without a sample, `unhealthy` with one reason per item out of its expected state for longer than one interval, else `healthy`. CPU and memory never change health.
+- **Health is in the audit trail** as one new event, `health_changed` (R7), written only on a change, by the worker's one audit writer. Every existing projection ignores it. The dashboard reads it for `/api/v1/health`, the devices' `health` and `snapl status`. With no worker polling, the live dashboard reads a recorded state as `unknown`, "the worker is not running".
+- **Eight new metric families** on 18091, through the Temporal runtime's own meter, with no new dependency (R5): `snapl_interface_up`, `snapl_interface_octets_total`, `snapl_interface_errors_total`, `snapl_interface_discards_total`, `snapl_bgp_session_established`, `snapl_bgp_prefixes_received`, `snapl_device_cpu_percent` and `snapl_device_memory_percent`. Labels come from intent (`device`, `interface`, `peer`) or a fixed list (`direction`), never from a device's answer. A fabric adds at most 7 series per interface, 2 per session end and 2 per device: 162 measured on dcfabric, 198 at most (spec 016 FR-013).
+- **Six new views and `GET /api/v1/network`** read them from the same Prometheus. A view with more than six series draws the six highest. Archives and snapshots carry the health, the network and the six views; a snapshot carries the views at spec 015's coarse step (spec 016 research R12).
+
 ### Diagram
 
 ```mermaid
@@ -114,6 +126,8 @@ flowchart LR
     dash --> gh
     dash -. 012 .-> prom
     prom -. 012 .-> worker
+    worker -. "016: gNMI streams" .-> lab["SR Linux devices"]
+    worker -. "016: health_changed" .-> audit
 ```
 
 ## Consequences

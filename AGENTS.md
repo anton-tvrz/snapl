@@ -79,8 +79,8 @@ This is a **uv workspace monorepo** with six packages mapped to NAF building blo
 | -------------------- | ---------------------- | -------------- | ------------------------------------------------- |
 | `snapl-intent`       | `snapl_intent`         | Intent         | SoT interaction, desired state models, schemas    |
 | `snapl-executor`     | `snapl_executor`       | Executor       | Config deployment via gNMI, Jinja2 templates      |
-| `snapl-collector`    | `snapl_collector`      | Collector      | Live network data retrieval                       |
-| `snapl-observability`| `snapl_observability`  | Observability  | Drift detection, audit logging                    |
+| `snapl-collector`    | `snapl_collector`      | Collector      | Live network data retrieval, telemetry streams    |
+| `snapl-observability`| `snapl_observability`  | Observability  | Drift detection, device health, audit logging     |
 | `snapl-orchestrator` | `snapl_orchestrator`   | Orchestrator   | Temporal workflows + activities, gNMI call timing |
 | `snapl-presentation` | `snapl_presentation`   | Presentation   | `snapl` CLI and the read-only `snapl dashboard`   |
 
