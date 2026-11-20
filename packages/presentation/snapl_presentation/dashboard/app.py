@@ -1108,7 +1108,13 @@ def create_app(
         if range_end - range_start > _METRICS_MAX_RANGE:
             raise HTTPException(status_code=422, detail="the range may span at most 400 days")
         span_s = int((range_end - range_start).total_seconds())
-        plan = plan_range(range_start, range_end, step or max(SCRAPE_INTERVAL_S, span_s // _METRICS_DEFAULT_POINTS))
+        plan = plan_range(
+            range_start,
+            range_end,
+            step or max(SCRAPE_INTERVAL_S, span_s // _METRICS_DEFAULT_POINTS),
+            # An explicit end, an export's or an archive's, keeps its newest step (#306).
+            align_end=end is not None,
+        )
 
         async def load() -> View[MetricsData]:
             data = await sources.prometheus.query(name, plan)

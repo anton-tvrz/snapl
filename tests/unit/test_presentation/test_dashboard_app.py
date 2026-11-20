@@ -1142,6 +1142,20 @@ def test_metrics_returns_the_envelope_and_a_prometheus_view():
     assert (plan.start, plan.end) == (T0 - timedelta(hours=1), T0)
 
 
+def test_metrics_with_an_explicit_end_answers_a_range_ending_at_it():
+    """An export asks up to its own time, and keeps its newest step (#306)."""
+    prometheus = FakePrometheus()
+
+    _client(prometheus=prometheus).get(
+        "/api/v1/metrics/worker-up", params={"start": "2026-11-13T19:44:37Z", "end": "2026-11-20T19:44:37Z"}
+    )
+
+    [(_, plan)] = prometheus.plans
+    assert plan.step == 2520
+    assert plan.end == datetime(2026, 11, 20, 19, 44, 37, tzinfo=UTC)
+    assert plan.end - plan.start == timedelta(days=7)
+
+
 def test_metrics_defaults_to_the_last_hour_at_15_s():
     prometheus = FakePrometheus()
 

@@ -208,13 +208,14 @@ def _test_runs(runs: Path) -> Part:
 def _dashboard_export(dashboard: str, staging: Path, now: datetime) -> Part:
     """The dashboard's JSON for the last 7 days, as the API serves it (R9)."""
     part = Part("dashboard_export", "export", False, dashboard)
-    start = (now - timedelta(days=EXPORT_DAYS)).isoformat()
+    # Every range ends at the archive's time, so the metrics keep their newest step (#306).
+    ranged = {"start": (now - timedelta(days=EXPORT_DAYS)).isoformat(), "end": now.isoformat()}
     wanted: list[tuple[str, str, dict[str, str | list[str]]]] = [
-        (f"{name}.json", f"/api/v1/{name}", {"start": start} if name in _RANGED else {}) for name in _EXPORTS
+        (f"{name}.json", f"/api/v1/{name}", dict(ranged) if name in _RANGED else {}) for name in _EXPORTS
     ]
     # Every series, not only `/history`'s default four (spec 015).
     wanted[_EXPORTS.index("history")][2]["series"] = [name.value for name in SeriesName]
-    wanted += [(f"metrics/{v.value}.json", f"/api/v1/metrics/{v.value}", {"start": start}) for v in MetricsViewName]
+    wanted += [(f"metrics/{v.value}.json", f"/api/v1/metrics/{v.value}", dict(ranged)) for v in MetricsViewName]
     out = staging / "export"
     failed: list[str] = []
     with httpx.Client(base_url=dashboard, timeout=30) as client:
@@ -289,7 +290,8 @@ def archive(ctx, use_case="dcfabric"):
     settings = CliSettings.from_env()
     out_dir = _from_root(os.environ.get("SNAPL_ARCHIVE_DIR") or str(DEFAULT_ARCHIVE_DIR))
     out_dir.mkdir(parents=True, exist_ok=True)
-    now = datetime.now(UTC)
+    # To the second, as the manifest says it, so the export's ranges end at exactly that time.
+    now = datetime.now(UTC).replace(microsecond=0)
     dashboard = f"http://{settings.dashboard_host}:{settings.dashboard_port}"
     runs = _from_root(settings.test_runs_dir)
 

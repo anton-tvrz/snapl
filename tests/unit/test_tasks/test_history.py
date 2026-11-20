@@ -327,6 +327,25 @@ def test_no_docker_means_no_mounted_data_dirs(monkeypatch: pytest.MonkeyPatch, f
     assert history._mounted_data_dirs() == []
 
 
+def test_every_ranged_export_ends_at_the_archives_time(stub: Stub, tmp_path: Path) -> None:
+    """So the metrics keep their newest step instead of ending up to 42 min early (#306)."""
+    history.archive(_ctx())
+
+    created = json.loads(_members(_the_archive(tmp_path / "archives"))["manifest.json"])["created_at"]
+    created_at = datetime.strptime(created + "+0000", "%Y-%m-%dT%H:%M:%SZ%z")
+    ranged = (
+        "/api/v1/history",
+        "/api/v1/drift-timeline",
+        "/api/v1/drift-summary",
+        "/api/v1/health",
+        *(f"/api/v1/metrics/{v.value}" for v in MetricsViewName),
+    )
+    for path in ranged:
+        [query] = [q for q in stub.asked("GET", path) if q.get("step") != ["15"]]
+        assert datetime.fromisoformat(query["end"][0]) == created_at, path
+        assert datetime.fromisoformat(query["start"][0]) == created_at - timedelta(days=7), path
+
+
 def test_the_export_covers_the_last_7_days(stub: Stub) -> None:
     before = datetime.now(UTC)
     history.archive(_ctx())
