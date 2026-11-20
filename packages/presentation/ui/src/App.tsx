@@ -34,7 +34,7 @@ import { activityFor } from "./lib/activity";
 import { FABRIC_SERIES } from "./lib/fabricHistory";
 import { bucketFor } from "./lib/history";
 import { domainOf, type Range, scanStops } from "./lib/lanes";
-import { groupViews, METRIC_VIEWS } from "./lib/metrics";
+import { groupViews, insideWindow, METRIC_VIEWS } from "./lib/metrics";
 import { numberCards } from "./lib/numbers";
 import { fabricSummary } from "./lib/summary";
 import { linkNotes } from "./lib/linkNotes";
@@ -283,6 +283,11 @@ export function App({ provider }: Props) {
           end: new Date(archiveInfo.metrics_end),
         }
       : undefined;
+  // Spec 016 (#351): where an archive holds the network views at 15 s.
+  const detailWindows = useMemo(
+    () => (archiveInfo?.metrics_windows ?? []).map((w) => ({ start: new Date(w.start), end: new Date(w.end) })),
+    [archiveInfo],
+  );
 
   // The loop strip shows the chosen run, or the latest run as of the time shown.
   // A run still going is asked again every 5 s; a finished one never changes.
@@ -520,6 +525,7 @@ export function App({ provider }: Props) {
                 now={now}
                 onChange={setRange}
                 archived={exportedRange}
+                windows={detailWindows}
               />
             </div>
           )}
@@ -613,7 +619,15 @@ export function App({ provider }: Props) {
                         name={view.name as MetricsViewName}
                         title={view.title}
                         kind={view.kind}
-                        range={fixed ? undefined : range}
+                        range={
+                          archived
+                            ? view.group === "network" && insideWindow(range, detailWindows)
+                              ? range
+                              : undefined
+                            : fixed
+                              ? undefined
+                              : range
+                        }
                         live={!fixed}
                         now={now}
                       />

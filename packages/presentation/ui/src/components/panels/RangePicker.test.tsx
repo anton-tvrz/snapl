@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -72,6 +72,35 @@ describe("RangePicker", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("Up to the archive's time: the lanes show its last 24 h.")).toBeInTheDocument();
     expect(screen.queryByText(/Following now/)).not.toBeInTheDocument();
+  });
+
+  // Spec 016 T066 (#351): the network views at 15 s around each fault.
+  it("in an archive with detail, lists each window as a button that picks its range", async () => {
+    const exported = { start: new Date("2026-10-31T21:18:00Z"), end: new Date("2026-11-07T21:18:00Z") };
+    const windows = [
+      { start: new Date("2026-11-07T10:00:15Z"), end: new Date("2026-11-07T10:12:00Z") },
+      { start: new Date("2026-11-06T23:40:00Z"), end: new Date("2026-11-07T00:10:00Z") },
+    ];
+    const onChange = vi.fn();
+    render(<RangePicker now={NOW} onChange={onChange} archived={exported} windows={windows} />);
+
+    const detail = screen.getByRole("group", { name: "Detail around faults" });
+    await userEvent.click(within(detail).getByRole("button", { name: "2026-11-07 10:00 to 10:12 UTC" }));
+    expect(onChange).toHaveBeenCalledWith(windows[0]);
+    expect(within(detail).getByRole("button", { name: "2026-11-06 23:40 to 2026-11-07 00:10 UTC" })).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "The metrics show the exported range, 2026-10-31 21:18:00 UTC to 2026-11-07 21:18:00 UTC. The network views also hold 15 s detail around each fault: pick a window, or a range inside one. The range here applies to the lanes and the history too.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("in an archive without detail, lists no windows", () => {
+    const exported = { start: new Date("2026-10-31T21:18:00Z"), end: new Date("2026-11-07T21:18:00Z") };
+    render(<RangePicker now={NOW} onChange={vi.fn()} archived={exported} windows={[]} />);
+
+    expect(screen.queryByRole("group", { name: "Detail around faults" })).not.toBeInTheDocument();
+    expect(screen.getByText(/an archive holds no other/)).toBeInTheDocument();
   });
 
   // spec 014 FR-027, research R9: a toolbar, with the custom fields one click away.
