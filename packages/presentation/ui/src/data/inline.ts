@@ -11,6 +11,7 @@ import type {
   DriftSummaryResponse,
   DriftTimeline,
   DriftTimelineResponse,
+  HealthResponse,
   HistoryResponse,
   LinksResponse,
   MetricsResponse,
@@ -50,6 +51,8 @@ export interface SnapshotBundle {
   // device. A snapshot made before it has neither.
   fabric_history?: HistoryResponse;
   drift_summary?: DriftSummaryResponse;
+  // Spec 016: each device's health over the range. A snapshot made before it has none.
+  health?: HealthResponse;
   steps: Record<string, RunStepsResponse>;
   links: LinksResponse;
   sources: SourcesResponse;
@@ -154,23 +157,31 @@ export class InlineProvider implements DataProvider {
     );
   }
 
+  /** An audit view the snapshot does not hold: made before it was bundled, or asked over another range. */
+  #notHeld(bundled: boolean) {
+    const { manifest } = this.#bundle;
+    return {
+      source: "audit" as const,
+      available: false,
+      stale: false,
+      reason: bundled ? `a snapshot holds only its own range, ${manifest.start} to ${manifest.end}` : "not in this snapshot",
+      remedy: "uv run snapl dashboard",
+      data: null,
+    };
+  }
+
   driftSummary = async (range?: Range): Promise<DriftSummaryResponse> => {
     const bundled = this.#bundle.drift_summary;
     if (bundled && this.#ownRange(range)) return bundled;
     const { manifest } = this.#bundle;
-    return {
-      contract_version: "1",
-      generated_at: manifest.end,
-      use_case: manifest.use_case,
-      summary: {
-        source: "audit",
-        available: false,
-        stale: false,
-        reason: bundled ? `a snapshot holds only its own range, ${manifest.start} to ${manifest.end}` : "not in this snapshot",
-        remedy: "uv run snapl dashboard",
-        data: null,
-      },
-    };
+    return { contract_version: "1", generated_at: manifest.end, use_case: manifest.use_case, summary: this.#notHeld(!!bundled) };
+  };
+
+  health = async (range?: Range): Promise<HealthResponse> => {
+    const bundled = this.#bundle.health;
+    if (bundled && this.#ownRange(range)) return bundled;
+    const { manifest } = this.#bundle;
+    return { contract_version: "1", generated_at: manifest.end, use_case: manifest.use_case, health: this.#notHeld(!!bundled) };
   };
 
   devices = async (when?: Date): Promise<DevicesResponse> => {
@@ -199,6 +210,8 @@ export class InlineProvider implements DataProvider {
         // The command and note are the ones for the state at the bundle's time.
         suggested_command: point?.state === device.drift_state ? device.suggested_command : null,
         note: point?.state === device.drift_state ? device.note : null,
+        // The health at the bundle's time held from `since`: before then it is not known here (spec 016).
+        health: device.health && at(device.health.since) <= t ? device.health : null,
       };
     });
     return { ...answer, devices: { ...answer.devices, data: devices } };

@@ -7,6 +7,7 @@ import type { DataProvider } from "./data/provider";
 import {
   DRIFT_SUMMARY,
   FABRIC_HISTORY,
+  HEALTH,
   HISTORY,
   LINKS,
   METRICS,
@@ -44,6 +45,7 @@ function provider() {
     timeline: calls.timeline,
     history: async (_range?: unknown, _bucket?: unknown, series?: unknown) => (series ? FABRIC_HISTORY : HISTORY),
     driftSummary: async () => DRIFT_SUMMARY,
+    health: async () => HEALTH,
     steps: async () => STEPS_DEPLOY,
     metrics: calls.metrics,
   } as unknown as DataProvider;

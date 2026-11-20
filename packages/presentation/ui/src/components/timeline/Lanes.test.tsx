@@ -1,10 +1,11 @@
-import { render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "../../data/http";
 import { domainOf } from "../../lib/lanes";
-import { SCAN_STOPS, TIMELINE } from "../../test/fixtures";
+import type { FabricHealth, View } from "../../api/types";
+import { HEALTH, SCAN_STOPS, TIMELINE } from "../../test/fixtures";
 import { Lanes } from "./Lanes";
 
 const timeline = TIMELINE.timeline.data!;
@@ -150,5 +151,89 @@ describe("Lanes", () => {
 
     expect(screen.getByRole("alert")).toHaveTextContent("ask for a shorter range");
     expect(lanes()).toHaveLength(6);
+  });
+
+  describe("health (spec 016)", () => {
+    // The arc with today's lab health: leaf-01 unhealthy 18:50:48 to 19:50:48,
+    // both spines unhealthy since 20:20:48 and still now. The domain reaches
+    // back to 18:00, as the page's does once it takes the health changes in.
+    const health = HEALTH.health as View<FabricHealth>;
+    const wide = { start: new Date("2026-11-07T18:00:00Z"), end: domain.end };
+    const span = wide.end.getTime() - wide.start.getTime();
+    const lane = (name: string) => lanes().find((item) => item.getAttribute("aria-label") === name)!;
+    const stretches = (name: string) => [...lane(name).querySelectorAll<HTMLElement>("[data-health]")];
+    const width = (element: HTMLElement) => parseFloat(element.style.width);
+    const key = () => screen.getByText(/· underline: unhealthy/);
+
+    function drawWith(over: Partial<Parameters<typeof Lanes>[0]> = {}) {
+      return render(<Lanes timeline={timeline} domain={wide} now={NOW} health={health} {...over} />);
+    }
+
+    it("draws each unhealthy stretch under the device's own drift lane, on its axis", () => {
+      drawWith();
+
+      const [leaf] = stretches("leaf-01");
+      expect(leaf!.dataset.health).toBe("closed");
+      expect(left(leaf!)).toBeCloseTo(((Date.parse("2026-11-07T18:50:48.919877Z") - wide.start.getTime()) / span) * 100, 3);
+      expect(width(leaf!)).toBeCloseTo((3_600_000 / span) * 100, 3);
+      expect(stretches("leaf-02")).toEqual([]);
+    });
+
+    it("draws a stretch still open up to now", () => {
+      drawWith();
+
+      const [spine] = stretches("spine-01");
+      expect(spine!.dataset.health).toBe("open");
+      expect(left(spine!) + width(spine!)).toBeCloseTo(100, 3);
+    });
+
+    it("leaves the drift drawing as it is", () => {
+      drawWith();
+      const drift = (name: string) => [...lane(name).querySelectorAll("[data-state]")].map((s) => s.getAttribute("data-state"));
+      const without = drift("spine-01");
+
+      cleanup();
+      render(<Lanes timeline={timeline} domain={wide} now={NOW} />);
+      expect(drift("spine-01")).toEqual(without);
+    });
+
+    it("titles each stretch with its time and reasons, and says it in the lane's words", () => {
+      drawWith();
+
+      expect(stretches("leaf-01")[0]!.title).toBe("Unhealthy 18:50:48 UTC to 19:50:48 UTC: ethernet-1/49 down (expected up)");
+      expect(lane("leaf-01")).toHaveTextContent(/^leaf-01leaf-01: [^;]*; unhealthy 18:50:48 UTC to 19:50:48 UTC/);
+      expect(lane("spine-01")).toHaveTextContent(/^spine-01spine-01: [^;]*; unhealthy from 20:20:48 UTC, still now/);
+      expect(lane("leaf-02")).not.toHaveTextContent(/unhealthy/);
+    });
+
+    it("clips a stretch that began before the drawing to its start", () => {
+      drawWith({ domain: { start: new Date("2026-11-07T19:00:00Z"), end: domain.end } });
+
+      expect(left(stretches("leaf-01")[0]!)).toBe(0);
+    });
+
+    it("explains the underline in the lanes' key while one is drawn", () => {
+      drawWith();
+      expect(key()).toBeInTheDocument();
+
+      cleanup();
+      const devices = health.data!.devices.map((device) => ({ ...device, episodes: [] }));
+      drawWith({ health: { ...health, data: { ...health.data!, devices } } });
+      expect(screen.queryByText(/underline: unhealthy/)).not.toBeInTheDocument();
+    });
+
+    it("says in the key why the health cannot be shown", () => {
+      drawWith({ health: { source: "audit", available: false, reason: "not in this snapshot", data: null } });
+
+      expect(screen.getByText(/· health: not in this snapshot/)).toBeInTheDocument();
+      expect(document.querySelectorAll("[data-health]")).toHaveLength(0);
+    });
+
+    it("draws no health before the first answer", () => {
+      render(<Lanes timeline={timeline} domain={wide} now={NOW} />);
+
+      expect(document.querySelectorAll("[data-health]")).toHaveLength(0);
+      expect(screen.queryByText(/health/)).not.toBeInTheDocument();
+    });
   });
 });

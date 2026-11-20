@@ -53,7 +53,7 @@ describe("numberCards", () => {
       const card = cards().in_sync;
 
       expect(card.state).toBe("nothing_to_compare");
-      expect(card.context).toBe("No scan 24 h ago to compare with.");
+      expect(card.context).toBe("No scan 24 h ago to compare with. 2 unhealthy.");
     });
 
     it("compares with the scans 24 hours before when there were some", () => {
@@ -66,7 +66,7 @@ describe("numberCards", () => {
       const card = cards({ timeline: withTimeline({ lanes }) }).in_sync;
 
       expect(card.state).toBe("known");
-      expect(card.context).toBe("4 of 6 in sync 24 h ago.");
+      expect(card.context).toBe("4 of 6 in sync 24 h ago. 2 unhealthy.");
     });
 
     it("leaves the comparison out when the range shown is not 24 hours", () => {
@@ -75,7 +75,26 @@ describe("numberCards", () => {
       const card = cards({ timeline: withTimeline({ start }) }).in_sync;
 
       expect(card.state).toBe("known");
-      expect(card.context).toBe("Of the devices in intent.");
+      expect(card.context).toBe("Of the devices in intent. 2 unhealthy.");
+    });
+
+    it("names the unhealthy devices without counting them out of sync (spec 016 FR-010)", () => {
+      const card = cards().in_sync;
+
+      expect(card.value).toBe("5 of 6");
+      expect(card.context).toMatch(/ 2 unhealthy\.$/);
+    });
+
+    it("says all healthy when every device in intent is", () => {
+      const data = devicesView.data!.map((d) => ({ ...d, health: d.health && { ...d.health, state: "healthy" as const, reasons: [] } }));
+
+      expect(cards({ devices: { ...devicesView, data } }).in_sync.context).toBe("No scan 24 h ago to compare with. All healthy.");
+    });
+
+    it("says nothing of health when none is recorded", () => {
+      const data = [device("1", "in_sync"), device("2", "undesired")];
+
+      expect(cards({ devices: { ...devicesView, data } }).in_sync.context).toBe("No scan 24 h ago to compare with.");
     });
 
     it("is unavailable in words, never zero, when the devices are not known", () => {

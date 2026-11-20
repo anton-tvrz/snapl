@@ -25,6 +25,9 @@ const shots = [
   { file: "first-screen-light", scheme: "light", viewport: WIDE, search: "", fullPage: false },
   { file: "first-screen-dark", scheme: "dark", viewport: WIDE, search: "", fullPage: false },
   { file: "device-light", scheme: "light", viewport: WIDE, search: "?device=leaf-01", fullPage: true },
+  // Spec 016: an unhealthy device's drawer, its health first.
+  { file: "device-spine-light", scheme: "light", viewport: WIDE, search: "?device=spine-01", fullPage: false },
+  { file: "device-spine-dark", scheme: "dark", viewport: WIDE, search: "?device=spine-01", fullPage: false },
   { file: "narrow-light", scheme: "light", viewport: NARROW, search: "", fullPage: true },
   // Every folded panel and group open (#290): what the default view leaves folded.
   {

@@ -1,6 +1,7 @@
 // How a device's scans are drawn over time (spec 011 FR-021, research R10).
 // The server sends scan points; the drawing rules live here.
 import type { DeviceLane, DriftTimeline, ScanPoint } from "../api/types";
+import { utcText } from "./time";
 
 /** A scan's state is drawn for at most three default schedule intervals. */
 export const HOLD_MS = 15 * 60_000;
@@ -83,17 +84,19 @@ export function scanStops(lanes: readonly DeviceLane[]): Date[] {
 }
 
 /**
- * The stretch of time drawn, and where history starts. When the first scan or
- * repair run is inside the range, the drawing starts just before it rather
- * than spending most of its width on nothing.
+ * The stretch of time drawn, and where history starts. When the first scan,
+ * repair run or time in `also` is inside the range, the drawing starts just
+ * before it rather than spending most of its width on nothing.
  */
-export function domainOf(timeline: DriftTimeline): Range & { history?: Date } {
+export function domainOf(timeline: DriftTimeline, also: readonly number[] = []): Range & { history?: Date } {
   const start = new Date(timeline.start);
   const end = new Date(timeline.end);
   const history = timeline.first_event_at ? { history: new Date(timeline.first_event_at) } : {};
   const firsts = [
     ...timeline.lanes.flatMap((lane) => (lane.points[0] ? [pointTime(lane.points[0].t)] : [])),
     ...timeline.markers.map((marker) => pointTime(marker.t)),
+    // Other times drawn on the same axis, such as health changes (spec 016).
+    ...also,
   ];
   if (firsts.length === 0) return { start, end, ...history };
   const first = Math.min(...firsts);
@@ -111,4 +114,16 @@ export function nextStop(stops: readonly Date[], value: Date | undefined): Date 
 export function previousStop(stops: readonly Date[], value: Date | undefined): Date | undefined {
   const before = value ? stops.filter((stop) => stop < value) : stops;
   return before.at(-1) ?? stops[0];
+}
+
+/** Where `t` falls across `domain`, in percent, held to 0 to 100. */
+export function position(domain: Range, t: number): number {
+  const span = domain.end.getTime() - domain.start.getTime();
+  return Math.min(100, Math.max(0, ((t - domain.start.getTime()) / span) * 100));
+}
+
+/** A time on the axis: the time of day, or the date too when the domain is longer than a day. */
+export function clock(domain: Range, t: Date): string {
+  const long = domain.end.getTime() - domain.start.getTime() > 86_400_000;
+  return long ? utcText(t) : utcText(t).slice(11);
 }

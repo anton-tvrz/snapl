@@ -8,6 +8,7 @@ import {
   DEVICES_AT_SCAN_2,
   DRIFT_SUMMARY,
   FABRIC_HISTORY,
+  HEALTH,
   HISTORY,
   LINKS,
   METRICS,
@@ -48,6 +49,7 @@ function provider() {
     links: async () => LINKS,
     history: async (_range?: unknown, _bucket?: unknown, series?: unknown) => (series ? FABRIC_HISTORY : HISTORY),
     driftSummary: async () => DRIFT_SUMMARY,
+    health: async () => HEALTH,
     steps: async () => STEPS_DEPLOY,
     metrics: async (view) => METRICS[view],
   };
@@ -83,7 +85,7 @@ describe("App at a past time", () => {
     expect(calls.devices).toHaveBeenCalledWith(new Date(STOP_2));
     expect(calls.runs).toHaveBeenCalledWith({ at: new Date(STOP_2) });
     expect(await screen.findByRole("button", { name: /^spine-01,/ })).toHaveAccessibleName(
-      "spine-01, spine, Missing intent",
+      "spine-01, spine, Missing intent, Unhealthy",
     );
     expect(banner()).toHaveTextContent("Showing the fabric as of 2026-11-07 21:20:15 UTC");
     expect(within(banner()).getByRole("button", { name: "Return to now" })).toBeInTheDocument();
@@ -180,7 +182,7 @@ describe("App at a past time", () => {
 
     expect(location.search).toBe("?device=spine-01");
     expect(screen.queryByRole("region", { name: "Past time" })).not.toBeInTheDocument();
-    expect(device("spine-01")).toHaveAccessibleName("spine-01, spine, In sync");
+    expect(device("spine-01")).toHaveAccessibleName("spine-01, spine, In sync, Unhealthy");
   });
 
   it("shows a device's detail as it was then", async () => {

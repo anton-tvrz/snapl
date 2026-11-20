@@ -5,6 +5,7 @@ import type {
   DevicesResponse,
   DriftSummaryResponse,
   DriftTimelineResponse,
+  HealthResponse,
   HistoryResponse,
   LinksResponse,
   MetricsResponse,
@@ -52,6 +53,8 @@ export interface DataProvider {
   driftSummary(range?: Range): Promise<DriftSummaryResponse>;
   /** Without a range, the server's default: the last 24 hours by its own clock. */
   timeline(range?: Range): Promise<DriftTimelineResponse>;
+  /** Each device's health now and its unhealthy stretches over a range (spec 016). Without one, the last 24 hours. */
+  health(range?: Range): Promise<HealthResponse>;
   steps(run: RunId): Promise<RunStepsResponse>;
   /** Without a range, the server's default: the last hour by its own clock. */
   metrics(view: MetricsViewName, range?: Range): Promise<MetricsResponse>;

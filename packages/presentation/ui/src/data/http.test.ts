@@ -81,6 +81,18 @@ describe("HttpProvider", () => {
     ]);
   });
 
+  it("asks for the health over the server's default range or a given one (spec 016)", async () => {
+    const { http, fetchFn } = provider();
+
+    await http.health();
+    await http.health({ start: new Date("2026-11-01T00:00:00Z"), end: new Date("2026-11-02T00:00:00Z") });
+
+    expect(requested(fetchFn)).toEqual([
+      "/api/v1/health",
+      "/api/v1/health?start=2026-11-01T00%3A00%3A00.000Z&end=2026-11-02T00%3A00%3A00.000Z",
+    ]);
+  });
+
   it("asks for the drift summary over the server's default range or a given one", async () => {
     const { http, fetchFn } = provider();
 

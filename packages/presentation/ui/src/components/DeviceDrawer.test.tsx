@@ -2,6 +2,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
+import type { DeviceView } from "../api/types";
 import { DEVICES, DEVICES_AT_SCAN_2, NOW, OVERVIEW } from "../test/fixtures";
 import { DeviceDrawer } from "./DeviceDrawer";
 
@@ -23,6 +24,61 @@ describe("DeviceDrawer", () => {
     const drawer = screen.getByRole("dialog", { name: "leaf-01" });
     expect(within(drawer).getByText("leaf")).toBeInTheDocument();
     expect(within(drawer).getByText("Undesired config")).toBeInTheDocument();
+  });
+
+  describe("health (spec 016)", () => {
+    const withHealth = (health: DeviceView["health"]) => ({ ...device("spine-01"), health });
+
+    it("comes first: its state, since when, and each reason", () => {
+      open({ device: device("spine-01") });
+
+      const drawer = screen.getByRole("dialog", { name: "spine-01" });
+      const health = within(drawer).getByRole("region", { name: "Health" });
+      expect(within(drawer).getAllByRole("region")[0]).toBe(health);
+      expect(within(health).getByText("Unhealthy")).toBeInTheDocument();
+      // Recorded an hour before the page's now.
+      expect(within(health).getByText("since 1 h ago")).toBeInTheDocument();
+      expect(within(health).getAllByRole("listitem").map((item) => item.textContent)).toEqual([
+        "BGP 10.10.1.1 active (expected established)",
+        "BGP 10.10.1.3 active (expected established)",
+        "BGP 10.10.1.5 active (expected established)",
+        "BGP 10.10.1.7 active (expected established)",
+      ]);
+    });
+
+    it("says why the health is unknown when the worker is not running", () => {
+      open({
+        device: withHealth({
+          state: "unknown",
+          since: NOW.toISOString(),
+          reasons: [{ kind: "no_telemetry", text: "the worker is not running" }],
+        }),
+      });
+
+      const health = screen.getByRole("region", { name: "Health" });
+      expect(within(health).getByText("Health unknown")).toBeInTheDocument();
+      expect(within(health).getByText("the worker is not running")).toBeInTheDocument();
+    });
+
+    it("lists no reason for a healthy device", () => {
+      open({ device: device("leaf-02") });
+
+      const health = screen.getByRole("region", { name: "Health" });
+      expect(within(health).getByText("Healthy")).toBeInTheDocument();
+      expect(within(health).queryByRole("list")).not.toBeInTheDocument();
+    });
+
+    it("shows nothing when no health is recorded", () => {
+      open({ device: withHealth(null) });
+
+      expect(screen.queryByRole("region", { name: "Health" })).not.toBeInTheDocument();
+    });
+
+    it("leaves the drift state as it is", () => {
+      open({ device: device("spine-01") });
+
+      expect(screen.getByText("In sync")).toBeInTheDocument();
+    });
   });
 
   it("lists undesired paths apart, says removal is not automatic, and offers no command", () => {

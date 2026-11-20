@@ -3,6 +3,7 @@
 // no request. A number that is not known is said in words, never shown as zero.
 import type { DeviceView, DriftTimeline, HistoryResponse, View } from "../api/types";
 import { repairedBy } from "./episodes";
+import { healthContext } from "./health";
 import { parseRunKey } from "./fabricHistory";
 import { HOLD_MS, stateAt } from "./lanes";
 import { ageText, durationText } from "./time";
@@ -62,15 +63,18 @@ function inSync(input: NumbersInput): NumberCard {
   if (!devices) return { ...base, state: "unavailable", value: null, context: unavailable(input.devices) };
   const intent = devices.filter((device) => device.in_intent);
   if (intent.length === 0) return { ...base, state: "known", value: null, context: "No device is in intent." };
+  // Health is said beside the count and never changes it (spec 016 FR-010).
   const value = `${intent.filter((device) => device.drift_state === "in_sync").length} of ${intent.length}`;
+  const health = healthContext(devices);
+  const said = (context: string) => (health ? `${context} ${health[0]!.toUpperCase()}${health.slice(1)}.` : context);
 
   const timeline = input.timeline?.data;
   const before = dayBefore(timeline);
-  if (!before || !timeline) return { ...base, state: "known", value, context: "Of the devices in intent." };
-  if (!before.scanned) return { ...base, state: "nothing_to_compare", value, context: "No scan 24 h ago to compare with." };
+  if (!before || !timeline) return { ...base, state: "known", value, context: said("Of the devices in intent.") };
+  if (!before.scanned) return { ...base, state: "nothing_to_compare", value, context: said("No scan 24 h ago to compare with.") };
   const lanes = timeline.lanes.filter((lane) => lane.in_intent);
   const then = lanes.filter((lane) => stateAt(lane.points, before.at).state === "in_sync").length;
-  return { ...base, state: "known", value, context: `${then} of ${lanes.length} in sync 24 h ago.` };
+  return { ...base, state: "known", value, context: said(`${then} of ${lanes.length} in sync 24 h ago.`) };
 }
 
 function openDrifts(input: NumbersInput): NumberCard {

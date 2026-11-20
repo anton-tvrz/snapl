@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { DevicesResponse, RunsResponse } from "../api/types";
-import { SNAPSHOT_BUNDLE, TIMELINE_AT_SCAN_2 } from "../test/fixtures";
+import { HEALTH, SNAPSHOT_BUNDLE, TIMELINE_AT_SCAN_2 } from "../test/fixtures";
 import { HttpProvider } from "./http";
 import { InlineProvider, providerFor, readBundle, type SnapshotBundle } from "./inline";
 
@@ -42,6 +42,18 @@ describe("InlineProvider at a past time", () => {
     const mine = (await provider.runs({ at: new Date(at) })).runs.data!;
 
     expect(mine.map(key).sort()).toEqual(entry.runs.runs.data!.map(key).sort());
+  });
+
+  it("keeps a device's health at a past time only when it has not changed since (spec 016)", async () => {
+    // spine-01 has been unhealthy since 20:20:48, leaf-01 healthy since 19:50:48.
+    const health = (devices: DevicesResponse, name: string) => devices.devices.data!.find((d) => d.name === name)!.health;
+    const now = await provider.devices();
+    const later = await provider.devices(new Date("2026-11-07T21:00:00Z"));
+    const earlier = await provider.devices(new Date("2026-11-07T20:00:00Z"));
+
+    expect(health(later, "spine-01")).toEqual(health(now, "spine-01"));
+    expect(health(earlier, "spine-01")).toBeNull();
+    expect(health(earlier, "leaf-01")).toEqual(health(now, "leaf-01"));
   });
 
   it("gives the headline's timeline as of a past time", async () => {
@@ -102,6 +114,18 @@ describe("InlineProvider at the bundle's time", () => {
 
     expect((await older.driftSummary()).summary).toMatchObject({ available: false, reason: "not in this snapshot" });
     expect((await older.history(undefined, undefined, ["runs"])).series).toEqual([]);
+  });
+
+  it("gives the bundled health for the bundled range, and says an older snapshot does not hold it (spec 016)", async () => {
+    const withHealth = new InlineProvider({ ...bundle, health: HEALTH });
+    expect(await withHealth.health()).toBe(HEALTH);
+
+    const other = await withHealth.health({ start: new Date("2026-11-07T20:00:00Z"), end: new Date("2026-11-07T21:00:00Z") });
+    expect(other.health).toMatchObject({ source: "audit", available: false, data: null });
+    expect(other.health.reason).toMatch(/^a snapshot holds only its own range/);
+
+    const older = new InlineProvider({ ...bundle, health: undefined });
+    expect((await older.health()).health).toMatchObject({ available: false, reason: "not in this snapshot" });
   });
 
   it("is a snapshot whose now is the bundle's end", async () => {

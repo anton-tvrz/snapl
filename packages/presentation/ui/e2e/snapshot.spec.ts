@@ -43,14 +43,14 @@ test("a snapshot opened from disk offline shows the loop, replays the drift and 
   await expect(page.getByRole("region", { name: "Recording" })).toContainText("A recording made 2026-11-07");
   await expect(page.getByRole("group", { name: "Fabric topology" })).toBeVisible();
   const spine = page.getByRole("button", { name: /^spine-01,/ });
-  await expect(spine).toHaveAccessibleName("spine-01, spine, In sync");
+  await expect(spine).toHaveAccessibleName("spine-01, spine, In sync, Unhealthy");
   await expect(page.getByRole("list", { name: "The loop, block by block" })).toBeVisible();
 
   const slider = page.getByRole("slider", { name: "As of" });
   await slider.focus();
   await page.keyboard.press("ArrowLeft");
   await page.keyboard.press("ArrowLeft");
-  await expect(spine).toHaveAccessibleName("spine-01, spine, Missing intent");
+  await expect(spine).toHaveAccessibleName("spine-01, spine, Missing intent, Unhealthy");
   await expect(page.getByRole("region", { name: "Past time" })).toContainText("2026-11-07 21:20:15 UTC");
 
   await page.getByRole("button", { name: /^spine-01,/ }).click();
