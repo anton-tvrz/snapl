@@ -1132,3 +1132,158 @@ class TestSeedDoesNotSkipSilently:
                         assert session[field] in addresses, f"{topo.parent.name}: {session['description']} {field}"
                 if "peer_group" in session:
                     assert session["peer_group"] in groups, f"{topo.parent.name}: {session['description']}"
+
+
+# ---------------------------------------------------------------------------
+# #317: routing policies as intent
+# ---------------------------------------------------------------------------
+
+
+_LOOPBACKS_POLICY = {
+    "name": "underlay-loopbacks",
+    "description": "the fabric's loopback /32s",
+    "accept_prefixes": ["10.1.0.0/24 32..32"],
+    "default_action": "reject",
+}
+
+
+def _policy_dataset(**group_policies: str) -> dict[str, Any]:
+    dataset = _minimal_bgp_dataset(num_spines=1)
+    dataset["routing_policies"] = [dict(_LOOPBACKS_POLICY)]
+    dataset["bgp_peer_groups"][0].update(group_policies)
+    return dataset
+
+
+class TestRoutingPolicySeeding:
+    """A session with no policy carries no routes (#317). The policy is intent:
+    declared in the seed, named by the peer group."""
+
+    def test_policies_are_seeded_before_the_peer_groups_that_name_them(self):
+        assert SEED_ORDER.index("routing_policies") < SEED_ORDER.index("bgp_peer_groups")
+
+    async def test_a_declared_policy_becomes_a_routing_policy_node(self, tmp_path: Path):
+        client = _make_bgp_client()
+
+        await SeedIngester(client=client).seed(use_case="dcfabric", data_path=_bgp_file(tmp_path, _policy_dataset()))
+
+        creates = [c.kwargs for c in client.create.await_args_list if c.kwargs.get("kind") == "RoutingPolicy"]
+        assert [c["data"] for c in creates] == [_LOOPBACKS_POLICY]
+
+    async def test_the_peer_group_carries_the_policy_names(self, tmp_path: Path):
+        client = _make_bgp_client()
+        dataset = _policy_dataset(export_policies="underlay-loopbacks", import_policies="underlay-loopbacks")
+
+        await SeedIngester(client=client).seed(use_case="dcfabric", data_path=_bgp_file(tmp_path, dataset))
+
+        creates = client.create.await_args_list
+        (group,) = [c.kwargs["data"] for c in creates if c.kwargs.get("kind") == "RoutingBGPPeerGroup"]
+        assert (group["export_policies"], group["import_policies"]) == ("underlay-loopbacks", "underlay-loopbacks")
+
+    @pytest.mark.parametrize("field", ["export_policies", "import_policies"])
+    async def test_a_peer_group_naming_an_undeclared_policy_is_a_data_error(self, tmp_path: Path, field: str):
+        """Left in, every neighbour in the group names a policy the device does
+        not have, and the whole SET is refused at deploy time."""
+        dataset = _policy_dataset(**{field: "nowhere"})
+        client = _make_bgp_client()
+
+        with pytest.raises(IntentValidationError, match="nowhere") as raised:
+            await SeedIngester(client=client).seed(use_case="dcfabric", data_path=_bgp_file(tmp_path, dataset))
+
+        assert raised.value.field == field
+        assert client.create.await_count == 0, "validation runs before anything is written"
+
+    async def test_a_policy_the_device_would_reject_is_a_data_error(self, tmp_path: Path):
+        dataset = _policy_dataset()
+        dataset["routing_policies"][0]["accept_prefixes"] = ["10.1.0.1/24 32..32"]
+        client = _make_bgp_client()
+
+        with pytest.raises(IntentValidationError, match="underlay-loopbacks") as raised:
+            await SeedIngester(client=client).seed(use_case="dcfabric", data_path=_bgp_file(tmp_path, dataset))
+
+        assert raised.value.field == "routing_policies"
+        assert client.create.await_count == 0
+
+
+class TestShippedUnderlayPolicy:
+    """The decision on #317 (2026-11-19): the underlay advertises each device's
+    loopback /32 and not the fabric /31 links, and the policy comes from the seed."""
+
+    @staticmethod
+    def _dcfabric() -> dict[str, Any]:
+        import snapl_intent
+
+        root = pathlib.Path(snapl_intent.__file__).resolve().parent
+        return yaml.safe_load((root / "seed" / "dcfabric" / "topology.yml").read_text())
+
+    def _underlay_policy(self):
+        from snapl_intent.models import RoutingPolicy
+
+        data = self._dcfabric()
+        (group,) = data["bgp_peer_groups"]
+        assert group["export_policies"] == group["import_policies"], "one policy both ways"
+        policies = {p["name"]: p for p in data["routing_policies"]}
+        return RoutingPolicy(**policies[group["export_policies"]]), data
+
+    @staticmethod
+    def _accepts(policy, address: str) -> bool:
+        import ipaddress
+
+        interface = ipaddress.ip_interface(address)
+        route = interface.network if interface.network.prefixlen < interface.max_prefixlen else interface.ip
+        route_net = ipaddress.ip_network(route)
+        for entry in policy.accept_prefixes:
+            prefix, lengths = entry.split()
+            low, high = (route_net.prefixlen,) * 2 if lengths == "exact" else map(int, lengths.split(".."))
+            if route_net.subnet_of(ipaddress.ip_network(prefix)) and low <= route_net.prefixlen <= high:
+                return True
+        return policy.default_action == "accept"
+
+    def test_every_loopback_is_accepted(self):
+        policy, data = self._underlay_policy()
+        loopbacks = [row["ip_address"] for row in data["interfaces"] if row.get("role") == "loopback"]
+        assert len(loopbacks) == 6
+        for address in loopbacks:
+            assert self._accepts(policy, address), address
+
+    def test_no_fabric_link_is_accepted(self):
+        policy, data = self._underlay_policy()
+        links = [row["ip_address"] for row in data["interfaces"] if row.get("ip_address", "").endswith("/31")]
+        assert links
+        for address in links:
+            assert not self._accepts(policy, address), address
+
+    def test_the_policy_rejects_what_it_does_not_list(self):
+        policy, _ = self._underlay_policy()
+        assert policy.default_action == "reject"
+
+
+class TestPolicySchema:
+    """The seed writes RoutingPolicy nodes, so the packaged schema must declare them."""
+
+    @staticmethod
+    def _declared_nodes() -> dict[str, dict[str, Any]]:
+        import snapl_intent
+
+        root = pathlib.Path(snapl_intent.__file__).resolve().parent / "schemas"
+        nodes: dict[str, dict[str, Any]] = {}
+        for path in sorted(root.rglob("*.yml")):
+            for node in (yaml.safe_load(path.read_text()) or {}).get("nodes", []):
+                nodes[f"{node['namespace']}{node['name']}"] = node
+        return nodes
+
+    def test_every_seed_section_writes_a_declared_kind(self):
+        from snapl_intent.infrahub.seed import _SECTIONS
+
+        declared = self._declared_nodes()
+        for name, section in _SECTIONS.items():
+            assert section.kind in declared, f"seed section {name!r} writes {section.kind}, which no schema declares"
+
+    def test_the_policy_node_holds_what_the_model_reads(self):
+        policy = self._declared_nodes()["RoutingPolicy"]
+        attrs = {a["name"]: a for a in policy["attributes"]}
+
+        assert set(attrs) == {"name", "description", "accept_prefixes", "default_action"}
+        assert attrs["name"].get("unique") is True, "the seed upserts a policy by its name"
+        assert attrs["accept_prefixes"]["kind"] == "List"
+        assert attrs["default_action"]["enum"] == ["accept", "reject"]
+        assert attrs["default_action"]["default_value"] == "reject"

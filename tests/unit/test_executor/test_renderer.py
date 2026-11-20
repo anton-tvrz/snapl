@@ -263,3 +263,80 @@ class TestConfigRendererDefaultInstance:
         payload = ConfigRenderer(use_case="dcfabric").render(dcfabric_desired_state)
 
         assert "network-instance" not in payload
+
+
+class TestConfigRendererRoutingPolicy:
+    """A session with no policy gets SR Linux's eBGP default, which advertises
+    and accepts nothing (#317). The policy is intent, rendered as SR Linux's
+    prefix-set and policy, and named on each neighbour. The shapes below are the
+    ones SR Linux v26.3.1 validated and reported back (2026-11-20)."""
+
+    @staticmethod
+    def _with_policy(desired_state, **policy):
+        from snapl_intent.models import RoutingPolicy
+
+        defaults = {"name": "underlay-loopbacks", "accept_prefixes": ["10.1.0.0/24 32..32"]}
+        desired_state.routing_policies.append(RoutingPolicy(**{**defaults, **policy}))
+        for session in desired_state.bgp_sessions:
+            session.export_policy = session.import_policy = "underlay-loopbacks"
+        return desired_state
+
+    def test_the_policy_renders_as_a_prefix_set_and_a_policy(self, dcfabric_desired_state):
+        payload = ConfigRenderer(use_case="dcfabric").render(self._with_policy(dcfabric_desired_state))
+
+        assert payload["routing-policy"] == {
+            "prefix-set": [
+                {
+                    "name": "underlay-loopbacks",
+                    "prefix": [{"ip-prefix": "10.1.0.0/24", "mask-length-range": "32..32"}],
+                }
+            ],
+            "policy": [
+                {
+                    "name": "underlay-loopbacks",
+                    "default-action": {"policy-result": "reject"},
+                    "statement": [
+                        {
+                            "name": "accept",
+                            "match": {"prefix": {"prefix-set": "underlay-loopbacks"}},
+                            "action": {"policy-result": "accept"},
+                        }
+                    ],
+                }
+            ],
+        }
+
+    def test_a_policy_that_lists_nothing_renders_its_default_action_alone(self, dcfabric_desired_state):
+        desired = self._with_policy(dcfabric_desired_state, accept_prefixes=[], default_action="accept")
+
+        payload = ConfigRenderer(use_case="dcfabric").render(desired)
+
+        assert payload["routing-policy"] == {
+            "policy": [{"name": "underlay-loopbacks", "default-action": {"policy-result": "accept"}}]
+        }
+
+    def test_each_neighbour_names_its_policies(self, dcfabric_desired_state):
+        payload = ConfigRenderer(use_case="dcfabric").render(self._with_policy(dcfabric_desired_state))
+
+        (neighbor,) = payload["network-instance"][0]["protocols"]["bgp"]["neighbor"]
+        assert neighbor["export-policy"] == ["underlay-loopbacks"]
+        assert neighbor["import-policy"] == ["underlay-loopbacks"]
+
+    def test_a_neighbour_without_policies_names_none(self, dcfabric_desired_state):
+        payload = ConfigRenderer(use_case="dcfabric").render(dcfabric_desired_state)
+
+        (neighbor,) = payload["network-instance"][0]["protocols"]["bgp"]["neighbor"]
+        assert "export-policy" not in neighbor
+        assert "import-policy" not in neighbor
+        assert "routing-policy" not in payload
+
+    @pytest.mark.parametrize("field", ["export_policy", "import_policy"])
+    def test_a_session_naming_a_policy_intent_does_not_hold_is_refused(self, dcfabric_desired_state, field):
+        """The device refuses the whole SET over a neighbour naming a policy it
+        does not have; say which name, before anything is sent."""
+        setattr(dcfabric_desired_state.bgp_sessions[0], field, "nowhere")
+
+        with pytest.raises(TemplateError, match="nowhere"):
+            ConfigRenderer(use_case="dcfabric").render(dcfabric_desired_state)
+
+        assert "nowhere" in ConfigRenderer(use_case="dcfabric").render_safe(dcfabric_desired_state)[RENDER_ERROR_KEY]

@@ -35,13 +35,14 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import yaml
+from pydantic import ValidationError
 
 from snapl_intent.exceptions import (
     IntentConnectionError,
     IntentError,
     IntentValidationError,
 )
-from snapl_intent.models import SeedResult
+from snapl_intent.models import RoutingPolicy, SeedResult
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -61,6 +62,7 @@ SEED_ORDER: list[str] = [
     "ip_prefixes",
     "devices",
     "interfaces",
+    "routing_policies",  # before the peer groups that name them (#317)
     "bgp_peer_groups",  # Milestone D — handled by _seed_bgp_peer_groups (shadow copies)
     "bgp_sessions",  # Milestone D — handled by _seed_bgp_sessions
 ]
@@ -145,6 +147,7 @@ _SECTIONS: dict[str, _Section] = {
         ip_field="ip_address",
         lookup_rel_fields=frozenset({"device"}),
     ),
+    "routing_policies": _Section("RoutingPolicy", ("name",), True),
     "bgp_peer_groups": _Section("RoutingBGPPeerGroup", ("name",), True),
     "bgp_sessions": _Section(
         "RoutingBGPSession",
@@ -308,6 +311,33 @@ class SeedIngester:
                     f"Device {device.get('name', '<unknown>')} missing required fields: " + ", ".join(missing),
                     field=missing[0],
                 )
+        SeedIngester._validate_policies(dataset)
+
+    @staticmethod
+    def _validate_policies(dataset: dict[str, Any]) -> None:
+        """Refuse a policy the device would reject, or a name no policy answers to (#317).
+
+        Either one reaches the device inside the SET of every neighbour in the
+        group, which refuses the whole SET at deploy time, far from this file.
+        """
+        declared: set[str] = set()
+        for policy in dataset.get("routing_policies") or []:
+            try:
+                declared.add(RoutingPolicy(**policy).name)
+            except ValidationError as exc:
+                raise IntentValidationError(
+                    f"routing policy {policy.get('name', '<unnamed>')!r} is not valid: {exc}",
+                    field="routing_policies",
+                ) from exc
+        for group in dataset.get("bgp_peer_groups") or []:
+            for field_name in ("export_policies", "import_policies"):
+                name = group.get(field_name)
+                if name and name not in declared:
+                    raise IntentValidationError(
+                        f"peer group {group.get('name')!r}: {field_name}={name!r} "
+                        "is not declared under routing_policies",
+                        field=field_name,
+                    )
 
     @staticmethod
     def _items_for_section(section: _Section, value: Any) -> list[dict[str, Any]]:

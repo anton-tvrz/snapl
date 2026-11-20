@@ -1,0 +1,50 @@
+{#- One prefix-set and one policy per intent policy, both under its name (#317).
+    The statement accepts the prefix-set; everything else meets default-action. -#}
+{% set listing = policies | selectattr('accept_prefixes') | list %}
+{
+{% if listing %}
+  "prefix-set": [
+{% for p in listing %}
+    {
+      "name": {{ p.name | tojson }},
+      "prefix": [
+{% for entry in p.accept_prefixes %}
+{% set prefix, lengths = entry.split() %}
+        {
+          "ip-prefix": "{{ prefix }}",
+          "mask-length-range": "{{ lengths }}"
+        }{% if not loop.last %},{% endif %}
+
+{% endfor %}
+      ]
+    }{% if not loop.last %},{% endif %}
+
+{% endfor %}
+  ],
+{% endif %}
+  "policy": [
+{% for p in policies %}
+    {
+      "name": {{ p.name | tojson }},
+      "default-action": {
+        "policy-result": "{{ p.default_action }}"
+      }{% if p.accept_prefixes %},
+      "statement": [
+        {
+          "name": "accept",
+          "match": {
+            "prefix": {
+              "prefix-set": {{ p.name | tojson }}
+            }
+          },
+          "action": {
+            "policy-result": "accept"
+          }
+        }
+      ]{% endif %}
+
+    }{% if not loop.last %},{% endif %}
+
+{% endfor %}
+  ]
+}

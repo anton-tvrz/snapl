@@ -17,6 +17,7 @@ from snapl_intent.models import (
     Device,
     Interface,
     ProvisionResult,
+    RoutingPolicy,
     Schema,
     SeedResult,
 )
@@ -36,6 +37,7 @@ __all__ = [  # noqa: RUF022
     "Device",
     "Interface",
     "BGPSession",
+    "RoutingPolicy",
     "DesiredState",
     "Schema",
     "ProvisionResult",

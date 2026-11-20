@@ -25,7 +25,7 @@ from uuid import uuid4
 
 from snapl_collector.gnmi.collector import GnmiCollector
 from snapl_executor.gnmi.executor import GnmiExecutor
-from snapl_intent.models import BGPSession, DesiredState, Device, Interface
+from snapl_intent.models import BGPSession, DesiredState, Device, Interface, RoutingPolicy
 from snapl_orchestrator.adapters.srlinux import DRIFT_PATHS
 
 _FIXTURE = (
@@ -88,9 +88,12 @@ def _desired(node: str) -> DesiredState:
                 peer_address="10.10.1.1",
                 peer_asn=65011,
                 peer_group="underlay-ipv4",
+                export_policy="underlay-loopbacks",
+                import_policy="underlay-loopbacks",
                 enabled=True,
             ),
         ],
+        routing_policies=[RoutingPolicy(name="underlay-loopbacks", accept_prefixes=["10.1.0.0/24 32..32"])],
     )
 
 
@@ -118,7 +121,7 @@ def _prune(data: dict) -> dict:
     keep_bgp = {"admin-state", "autonomous-system", "router-id", "group", "neighbor", "afi-safi"}
     b = {k: v for k, v in bgp.items() if k in keep_bgp}
     if "neighbor" in b:
-        n_keep = ("peer-address", "peer-as", "peer-group", "admin-state")
+        n_keep = ("peer-address", "peer-as", "peer-group", "admin-state", "export-policy", "import-policy")
         b["neighbor"] = [{k: v for k, v in n.items() if k in n_keep} for n in b["neighbor"]]
     if "group" in b:
         b["group"] = [{k: v for k, v in g.items() if k in ("group-name", "admin-state")} for g in b["group"]]
@@ -130,6 +133,9 @@ def _prune(data: dict) -> dict:
     bound = (data.get(instance_key) or {}).get("interface") or []
     b_keep = ("name", "oper-state", "index")
     out[instance_key] = {"interface": [{k: v for k, v in i.items() if k in b_keep} for i in bound]}
+
+    # The routing policies (#317), small enough to keep whole.
+    out["/routing-policy"] = data.get("/routing-policy") or {}
 
     return out
 

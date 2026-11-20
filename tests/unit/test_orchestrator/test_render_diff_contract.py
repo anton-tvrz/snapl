@@ -20,7 +20,7 @@ from uuid import uuid4
 import pytest
 
 from snapl_executor.gnmi.renderer import ConfigRenderer
-from snapl_intent.models import BGPSession, DesiredState, Device, Interface
+from snapl_intent.models import BGPSession, DesiredState, Device, Interface, RoutingPolicy
 from snapl_observability.structural.diff import ENTITY_FIELD_MAP, diff_desired_vs_actual
 from snapl_orchestrator.adapters.srlinux import normalize_srlinux_state
 
@@ -93,6 +93,8 @@ def _full_desired_state() -> DesiredState:
             peer_address="10.10.1.1",
             peer_asn=65001,
             peer_group="underlay-ipv4",
+            export_policy="underlay-loopbacks",
+            import_policy="underlay-loopbacks",
             enabled=True,
         ),
         BGPSession(
@@ -104,7 +106,14 @@ def _full_desired_state() -> DesiredState:
             enabled=False,
         ),
     ]
-    return DesiredState(device=device, interfaces=interfaces, bgp_sessions=sessions)
+    # One policy that lists prefixes and one that lists none, the shapes the
+    # template renders differently (#317).
+    policies = [
+        RoutingPolicy(name="underlay-loopbacks", accept_prefixes=["10.1.0.0/24 32..32", "10.2.0.0/24"]),
+        RoutingPolicy(name="accept-all", default_action="accept"),
+    ]
+    sessions[1].import_policy = "accept-all"
+    return DesiredState(device=device, interfaces=interfaces, bgp_sessions=sessions, routing_policies=policies)
 
 
 def _replay_through_adapter(payload: dict) -> dict:
@@ -121,6 +130,8 @@ def _replay_through_adapter(payload: dict) -> dict:
         if "interface" in instance:
             # Keyed by the instance entry, as SR Linux answers (#315).
             data["/network-instance[name=default]"] = {"interface": instance["interface"]}
+    if "routing-policy" in payload:
+        data["/routing-policy"] = payload["routing-policy"]
     return normalize_srlinux_state(data)
 
 
@@ -135,6 +146,7 @@ def test_fixture_exercises_every_diff_field() -> None:
         "interface": list(desired.interfaces),
         "bgp_session": list(desired.bgp_sessions),
         "routed_interface": [SimpleNamespace(name=f"{i.name}.0") for i in desired.interfaces if i.ip_address],
+        "routing_policy": list(desired.routing_policies),
     }
     for kind, spec in ENTITY_FIELD_MAP.items():
         pool = entities[kind]
@@ -169,3 +181,5 @@ def test_every_desired_entity_is_rendered() -> None:
     for iface in (i for i in desired.interfaces if i.ip_address):
         key = f"/network-instance[name=default]/interface[name={iface.name}.0]"
         assert key in normalized, f"{iface.name}.0 missing from the default instance (#315)"
+    for policy in desired.routing_policies:
+        assert f"/routing-policy/policy[name={policy.name}]" in normalized, f"policy {policy.name} not rendered (#317)"
