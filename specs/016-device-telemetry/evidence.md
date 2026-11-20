@@ -92,3 +92,19 @@ Drift and health are two separate marks: during the fault, the scan reported lea
 The quickstart said spine-01's "reasons grow by one". That was written for the lab before #311, when spine-01 was already flagged. Now it starts healthy and gets two reasons, its interface and its session. The quickstart now says so.
 
 An earlier attempt at 08:45:31 was dropped: the page poller had failed to start (`python3` on the host is 3.9), so that run has no page timeline. The interface was re-enabled at 08:46, and the run above started from a healthy fabric.
+
+## Item 8: an archive and a snapshot across a fault (T062, SC-008)
+
+Item 4 again: leaf-01's `ethernet-1/49` was disabled at 10:05:04 and reconciled at 10:06:11. leaf-01 was flagged 10:05:22 to 10:07:03 and spine-01 10:05:32 to 10:07:03. `snapl dashboard` was running on 18030, which `history.archive` needs: a first try with it on another port gave an archive with no dashboard export, which was deleted. Raw output is in `.snapl/lab/2026-11-20/t062/`.
+
+`uv run invoke history.archive` at 10:08:38: `snapl-history-20261120T100838Z.tar.gz`, 9.3 MB (audit DB 12.4 MB, metrics snapshot 27.0 MB, test runs 79.6 KB, dashboard export 2.2 MB, before compression).
+
+It was opened with `snapl dashboard --archive … --port 18061` and `PROMETHEUS_ADDRESS`, `INFRAHUB_ADDRESS` and `TEMPORAL_HOST` pointed at port 1 and `SNAPL_AUDIT_DB` at a path that doesn't exist. The stack itself was left running, since other work shares it. Every source the page would read live was unreachable.
+
+**The health history: SC-008 holds.** `/api/v1/health` came from the archive's trail (`source: audit`) and listed every episode of the day with its start, end and reasons: six for leaf-01 (07:48 to 10:07), seven for spine-01, and spine-02's 20 s at 07:52 when its hold timer ran out during item 1. The fault above is the last one: leaf-01 `10:05:22 → 10:07:03`, `ethernet-1/49 down (expected up)` and `BGP 10.10.1.0 active (expected established)`. leaf-03 has no episode: its 60 s `unknown` in item 5 opens none, as data-model.md says.
+
+**The network views: US5 scenario 1 doesn't hold.** The archive exports the six views over 7 days at a 2520 s (42 min) step. `bgp-established` has instant points at 07:30, 08:12, 08:54 and 09:36, and leaf-01 reads 2 sessions at each, so none of the day's faults shows. The export ends at 09:36, 32 min before the archive was made (#306), so the 10:05 fault isn't in it at all, and any other range is refused. SC-008 asks only for the health history, so it holds. The scenario's "the network views show the interface down over that time" does not. Tracked in #351.
+
+**The snapshot.** `snapl dashboard --snapshot … --days 7` at 10:09: **3.50 MB**, against spec 015's 3.2 MB. It contains device health and the network, as its summary says.
+
+**The Prometheus fixtures.** `dev/scripts/capture_prometheus_fixtures.py` at 10:07 wrote the six views' `range_<view>.json`. The other files it rewrites were restored, and the admin snapshot it leaves in `.snapl/prometheus/snapshots/` was deleted. Each view has all six devices. `bgp-established` has leaf-01 between 1 and 2 sessions and spine-01 between 3 and 4, from item 7 and the fault above. New tests read each file.

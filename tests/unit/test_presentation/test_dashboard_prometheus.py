@@ -623,6 +623,48 @@ async def test_each_spec_015_view_reads_its_live_capture(view, name, unit, label
     assert all(set(s.labels) == labels for s in data.series)
 
 
+SPEC_016_CAPTURES = [
+    (MetricsViewName.INTERFACE_TRAFFIC, "range_interface_traffic", "bytes_per_second", {"device"}),
+    (MetricsViewName.INTERFACE_ERRORS, "range_interface_errors", "per_second", {"device", "interface"}),
+    (MetricsViewName.INTERFACE_DISCARDS, "range_interface_discards", "per_second", {"device", "interface"}),
+    (MetricsViewName.BGP_ESTABLISHED, "range_bgp_established", "count", {"device"}),
+    (MetricsViewName.DEVICE_CPU, "range_device_cpu", "percent", {"device"}),
+    (MetricsViewName.DEVICE_MEMORY, "range_device_memory", "percent", {"device"}),
+]
+
+
+@pytest.mark.parametrize(("view", "name", "unit", "labels"), SPEC_016_CAPTURES, ids=[c[1] for c in SPEC_016_CAPTURES])
+async def test_each_spec_016_view_reads_its_live_capture(view, name, unit, labels) -> None:
+    data = await source(FakeProm(fixture(name))).query(view, an_hour())
+
+    assert data.view is view
+    assert data.unit == unit
+    assert {s.labels["device"] for s in data.series} == {
+        "spine-01",
+        "spine-02",
+        "leaf-01",
+        "leaf-02",
+        "leaf-03",
+        "leaf-04",
+    }
+    assert all(set(s.labels) == labels for s in data.series)
+
+
+async def test_the_live_capture_shows_the_sessions_the_lab_lost() -> None:
+    """T061 disabled spine-01's neighbour leaf-01, and T062 leaf-01's uplink: each end dips by one session."""
+    data = await source(FakeProm(fixture("range_bgp_established"))).query(MetricsViewName.BGP_ESTABLISHED, an_hour())
+    ranges = {s.labels["device"]: (min(p.value for p in s.points), max(p.value for p in s.points)) for s in data.series}
+
+    assert ranges == {
+        "spine-01": (3, 4),
+        "spine-02": (4, 4),
+        "leaf-01": (1, 2),
+        "leaf-02": (2, 2),
+        "leaf-03": (2, 2),
+        "leaf-04": (2, 2),
+    }
+
+
 async def test_the_live_capture_counts_the_drift_the_lab_was_given() -> None:
     """T037 gave leaf-01 one undesired interface, then repaired it; T058 left spine-01 missing a path."""
     paths = await source(FakeProm(fixture("range_drift_paths"))).query(MetricsViewName.DRIFT_PATHS, an_hour())

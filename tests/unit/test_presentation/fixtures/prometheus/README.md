@@ -22,6 +22,16 @@ The ten `range_<view>.json` files for spec 015 were captured from the same lab o
 
 `test_each_spec_015_view_reads_its_live_capture` checks each file's unit and labels against `contracts/metrics-views.md`. The spec 012 files above were not re-captured: this hour had no gNMI errors, and they hold the paused leaf-04's.
 
+## Spec 016's views (captured 2026-11-20, task T062)
+
+The six `range_<view>.json` files for "The network" (`interface_traffic`, `interface_errors`, `interface_discards`, `bgp_established`, `device_cpu`, `device_memory`) were captured at 10:07 UTC on main c12053e, from the worker that had streamed the lab since 07:20. The hour before held:
+
+- leaf-03 paused for 60 s at 09:56 (no session dropped: the pause is shorter than the BGP hold time);
+- spine-01's neighbour leaf-01 disabled twice (09:58 and 10:01) and reconciled each time;
+- leaf-01's `ethernet-1/49` disabled at 10:05:04 and reconciled at 10:06.
+
+So `range_bgp_established.json` has leaf-01 between 1 and 2 sessions and spine-01 between 3 and 4, with the other four level, and `test_the_live_capture_shows_the_sessions_the_lab_lost` checks that. `test_each_spec_015_view_reads_its_live_capture`'s twin for spec 016 checks each file's unit and labels. Memory reads 92 to 94 % on every node: it is the OrbStack VM's, not a switch's. The other files were not re-captured.
+
 ## Files
 
 | file | request | shows |
