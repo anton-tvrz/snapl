@@ -387,7 +387,36 @@ Leave the schedule running in report mode for a few hours (Scenario 9), or run b
 
 **Expect:** once the worker has run a scan since it was restarted, `curl -s localhost:18091/metrics | grep '^snapl_scan_results_total'` prints one counter per device and state.
 
-The metrics describe the loop, not the network: snapl collects no device telemetry (interface counters, BGP state, CPU). Say so if you are asked.
+These metrics describe the loop. The network itself is in Metrics' "The network" group and in Scenario 14.
+
+---
+
+## Scenario 14 — In sync, and still broken (device health)
+
+**Story:** "Drift asks whether the device is configured the way intent says. Health asks whether the network is actually up. They are different questions, and one device can pass the first and fail the second."
+
+Start from a converged, healthy fabric: `snapl status` ends with `fabric health   6 healthy, 0 unhealthy, 0 unknown`. Then break leaf-01's uplink to spine-01 on the device:
+
+```bash
+docker exec clab-dcfabric-leaf-01 sr_cli -ec 'set / interface ethernet-1/49 admin-state disable'
+```
+
+**Expect, within about 30 s:**
+- `snapl status`: `4 healthy, 2 unhealthy (leaf-01, spine-01)`.
+- The dashboard: both devices flagged. Open spine-01's drawer: `ethernet-1/1 down (expected up)` and `BGP 10.10.1.1 active (expected established)`. The interface and session rows in the drawer can take up to about 40 s longer than the flag (#348).
+- `snapl scan`: **only leaf-01** drifted, with `/interface[name=ethernet-1/49]/enabled True → False`.
+
+**Point at:** spine-01. Nothing on it differs from intent, so it is in sync. Its link and its session are down all the same, so it is unhealthy. A config-only check would call it fine.
+
+Then repair it:
+
+```bash
+snapl reconcile --drifted --yes
+```
+
+**Expect:** the scan is clean right away, and both flags clear about 45 s later, once the BGP session comes back. `snapl audit --device spine-01` shows each `health_changed` with its reasons.
+
+Measured on the lab on 2026-11-20 (spec 016 evidence, item 4): flagged in 19 s, shown down in 24 s, cleared 48 s after the reconcile.
 
 ---
 
@@ -454,6 +483,8 @@ node, or a port mismatch all show up there as a named failing line.
 Together these mean "we converge to intent" is currently true for additions and
 changes, not deletions. Say it before the audience finds it.
 
-- **No device telemetry**: the dashboard's metrics are the loop's own (timings,
-  counts of scans, drifts and deploys). Interface counters, BGP state and device
-  health are not collected.
+- **Health checks interfaces and BGP sessions only**: a device is flagged for
+  an interface intent expects up that is down, or an expected session that is
+  not established. Routes, counters, CPU and memory are shown, never judged, and
+  on the lab CPU and memory are the container host's, not a switch's. Health is
+  never repaired automatically.
