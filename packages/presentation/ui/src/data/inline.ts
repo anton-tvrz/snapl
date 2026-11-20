@@ -54,6 +54,8 @@ export interface SnapshotBundle {
   drift_summary?: DriftSummaryResponse;
   // Spec 016: each device's health over the range. A snapshot made before it has none.
   health?: HealthResponse;
+  // Spec 016 PR F: the network's figures at the snapshot's end. A snapshot made before it has none.
+  network?: NetworkResponse;
   steps: Record<string, RunStepsResponse>;
   links: LinksResponse;
   sources: SourcesResponse;
@@ -178,8 +180,10 @@ export class InlineProvider implements DataProvider {
     return { contract_version: "1", generated_at: manifest.end, use_case: manifest.use_case, summary: this.#notHeld(!!bundled) };
   };
 
-  // Spec 016: a snapshot carries the network from PR F (T050 to T052).
+  // Spec 016: the network at the snapshot's end, the only time a snapshot holds it.
   network = async (): Promise<NetworkResponse> => {
+    const bundled = this.#bundle.network;
+    if (bundled) return bundled;
     const { manifest } = this.#bundle;
     return { contract_version: "1", generated_at: manifest.end, use_case: manifest.use_case, network: this.#notHeld(false, "prometheus") };
   };

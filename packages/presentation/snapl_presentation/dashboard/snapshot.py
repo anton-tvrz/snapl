@@ -29,7 +29,10 @@ NOT_BUILT = "the designed UI is not built. Build it with: uv run invoke dashboar
 # The newest runs of any type also get their steps, so the loop strip has the
 # latest run; every deploy gets them because a deploy records each step.
 LATEST_WITH_STEPS = 20
-CONTAINS = "devices, links, drift history, runs and their steps, schedule, CI status, lab runs, metrics"
+CONTAINS = (
+    "devices, links, drift history, runs and their steps, schedule, CI status, lab runs, metrics, "
+    "device health and the network"
+)
 NOTE = "error text and paths recorded from devices are included as recorded. Read it before publishing."
 
 # Spec 015 T045, research R8: the ten views spec 015 added would almost triple
@@ -37,7 +40,8 @@ NOTE = "error text and paths recorded from devices are included as recorded. Rea
 # against SC-006's 60%. The snapshot asks them for at most COARSE_POINTS points
 # per series, at the smallest step on this ladder that keeps under it, and says
 # so in each view's note. The six views before them keep the page's step.
-COARSE_VIEWS = frozenset(
+# Spec 016's six network views follow the same rule (its T051, research R8 here).
+COARSE_VIEWS = NETWORK_VIEWS | frozenset(
     {
         MetricsViewName.WORKFLOW_MEAN,
         MetricsViewName.GNMI_MEAN,
@@ -163,11 +167,13 @@ async def _collect(app: FastAPI, days: int, commit: str | None, source: str) -> 
                 **window,
             ),
             "drift_summary": await get("drift-summary", **window),
+            # Spec 016: the health over the range, and the network's figures at its end.
+            "health": await get("health", **window),
+            "network": await get("network"),
             "steps": steps,
             "links": await get("links"),
             "sources": sources,
-            # Spec 016's views join in its PR F, at the coarse step (NETWORK_VIEWS).
-            "metrics": {view.value: await metrics(view) for view in MetricsViewName if view not in NETWORK_VIEWS},
+            "metrics": {view.value: await metrics(view) for view in MetricsViewName},
         }
 
 

@@ -61,3 +61,20 @@ test("a snapshot opened from disk offline shows the loop, replays the drift and 
   expect(problems).toEqual([]);
   await context.close();
 });
+
+// Spec 016 PR F: the drawer's network and "The network" group, from the bundle, offline.
+test("a snapshot's drawer lists the device's network at its end, and the network group draws", async ({ browser }) => {
+  const context = await browser.newContext();
+  await context.setOffline(true);
+  const page = await context.newPage();
+
+  await page.goto(`${pathToFileURL(file).href}?device=spine-01&open=metrics-network`);
+
+  const drawer = page.getByRole("dialog", { name: "spine-01" });
+  await expect(drawer.getByRole("region", { name: "BGP sessions" })).toContainText("not established");
+  await expect(drawer.getByRole("region", { name: "Interfaces" })).toContainText("ethernet-1/1");
+  const network = page.getByRole("group", { name: "The network" });
+  await expect(network.getByRole("region", { name: "Interface traffic (rate)" })).toContainText("kB/s");
+  await expect(network.getByRole("region", { name: "Interface traffic (rate)" })).toContainText("one point every");
+  await context.close();
+});

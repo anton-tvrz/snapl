@@ -81,6 +81,9 @@ def test_the_bundle_holds_every_view_the_page_reads(bundle: dict):
         "history",
         "fabric_history",
         "drift_summary",
+        # Spec 016: the health over the range, and the network at its end.
+        "health",
+        "network",
         "steps",
         "links",
         "sources",
@@ -106,6 +109,13 @@ def test_the_bundle_holds_every_view_the_page_reads(bundle: dict):
         "scan-results",
         "drift-paths",
         "deploy-outcomes",
+        # Spec 016.
+        "interface-traffic",
+        "interface-errors",
+        "interface-discards",
+        "bgp-established",
+        "device-cpu",
+        "device-memory",
     }
 
 
@@ -128,15 +138,22 @@ def test_the_views_cover_the_range(bundle: dict):
     assert [s["name"] for s in fabric] == ["in_sync_devices", "open_drifts", "runs", "repair_duration"]
     assert fabric[2]["bucket"] == "1d"
     assert bundle["metrics"]["worker-up"]["metrics"]["data"]["step"] >= 2520
+    health = bundle["health"]["health"]["data"]
+    assert (health["start"], health["end"]) == (bundle["manifest"]["start"], bundle["manifest"]["end"])
+    assert next(d for d in health["devices"] if d["name"] == "spine-01")["episodes"]
+    # The network's figures are the ones at the snapshot's end.
+    assert bundle["network"]["network"]["data"]["at"] == bundle["manifest"]["end"]
 
 
 def _data(bundle: dict, view: str) -> dict:
     return bundle["metrics"][view]["metrics"]["data"]
 
 
-# Spec 015 T045, research R8: the views spec 015 added are exported coarser.
-def test_spec_015_views_are_the_ten_it_added():
-    assert {view.value for view in COARSE_VIEWS} == {
+# Spec 015 T045, research R8: the views spec 015 added are exported coarser,
+# and spec 016's six follow the same rule (T051).
+def test_the_coarse_views_are_spec_015s_ten_and_spec_016s_six():
+    assert NETWORK_VIEWS <= COARSE_VIEWS
+    assert {view.value for view in COARSE_VIEWS - NETWORK_VIEWS} == {
         "workflow-mean",
         "gnmi-mean",
         "workflows-completed",
@@ -166,7 +183,7 @@ def test_the_coarse_step_is_the_smallest_on_the_ladder_within_the_point_limit(sp
     assert span.total_seconds() / step + 1 <= COARSE_POINTS
 
 
-def test_a_seven_day_snapshot_has_spec_015_views_at_three_hours_and_says_so(bundle: dict):
+def test_a_seven_day_snapshot_has_spec_015_and_016_views_at_three_hours_and_says_so(bundle: dict):
     for view in COARSE_VIEWS:
         data = _data(bundle, view.value)
         assert data["step"] == 10800, view
@@ -179,19 +196,21 @@ def test_a_seven_day_snapshot_has_spec_015_views_at_three_hours_and_says_so(bund
 
 def test_a_seven_day_snapshot_keeps_the_earlier_views_at_their_step(bundle: dict):
     for view in MetricsViewName:
-        # Spec 016's views join in its PR F, at the coarse step.
-        if view not in COARSE_VIEWS | NETWORK_VIEWS:
+        if view not in COARSE_VIEWS:
             data = _data(bundle, view.value)
             assert data["step"] == 2520, view
             assert "in this snapshot" not in (data["note"] or ""), view
 
 
 def test_a_seven_day_snapshot_grows_less_than_60_percent_over_its_size_before_spec_015(bundle: dict):
-    """SC-006: measured against the same bundle without what spec 015 added."""
-    before = {key: value for key, value in bundle.items() if key not in {"fabric_history", "drift_summary"}}
+    """SC-006: measured against the same bundle without what spec 015 added, and without spec 016's parts."""
+    spec_016 = {"health", "network"}
+    after = {key: value for key, value in bundle.items() if key not in spec_016}
+    after["metrics"] = {name: answer for name, answer in bundle["metrics"].items() if name not in NETWORK_VIEWS}
+    before = {key: value for key, value in after.items() if key not in {"fabric_history", "drift_summary"}}
     before["metrics"] = {name: answer for name, answer in bundle["metrics"].items() if name not in COARSE_VIEWS}
 
-    grown = len(render(TEMPLATE, bundle).encode()) / len(render(TEMPLATE, before).encode())
+    grown = len(render(TEMPLATE, after).encode()) / len(render(TEMPLATE, before).encode())
 
     assert grown < 1.6
 
@@ -308,6 +327,7 @@ def test_summary_says_what_was_written(bundle: dict, tmp_path: Path):
     assert lines[1] == "  range: 2026-10-31 21:20 to 2026-11-07 21:20 UTC (7 days)"
     assert lines[2] == "  from: live dashboard sources, commit 6baff39"
     assert lines[3].startswith("  contains: devices, links, drift history, runs and their steps")
+    assert lines[3].endswith("metrics, device health and the network")
     assert lines[4] == (
         "  note: error text and paths recorded from devices are included as recorded. Read it before publishing."
     )

@@ -8,6 +8,7 @@ server's exports with every source up, so the parts are what a real
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import importlib.util
 import io
@@ -21,6 +22,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from snapl_presentation.dashboard.app import WORKER_NOT_RUNNING
 from snapl_presentation.dashboard.archive import (
     ARCHIVE_REMEDY,
     NOT_IN_ARCHIVE,
@@ -32,11 +34,11 @@ from snapl_presentation.dashboard.archive import (
     create_archive_app,
     open_archive,
 )
-from snapl_presentation.dashboard.models import CiStatus, MetricsViewName, ScheduleStatus, WorkerStatus
+from snapl_presentation.dashboard.models import NETWORK_VIEWS, CiStatus, MetricsViewName, ScheduleStatus, WorkerStatus
 from snapl_presentation.dashboard.prometheus import plan_range
 from snapl_presentation.dashboard.sources import SourceUnavailable
 from tasks import history
-from tests.unit.test_presentation.dashboard_fakes import ARC_FIXTURE
+from tests.unit.test_presentation.dashboard_fakes import ARC_FIXTURE, write_arc_with_health
 
 pytestmark = pytest.mark.unit
 
@@ -44,7 +46,19 @@ ROOT = Path(__file__).resolve().parents[3]
 SERVER = ROOT / "dev" / "scripts" / "serve_dashboard_fixtures.py"
 LAB_RUNS = Path(__file__).parent / "fixtures" / "lab_runs"
 CREATED = "2026-11-07T21:20:48Z"
-EXPORTS = ("overview", "history", "links", "sources", "topology", "devices", "runs", "drift-timeline")
+EXPORTS = (
+    "overview",
+    "history",
+    "links",
+    "sources",
+    "topology",
+    "devices",
+    "runs",
+    "drift-timeline",
+    "health",
+    "network",
+)
+_RANGED = ("history", "drift-timeline", "health")
 
 
 def _exports() -> dict[str, bytes]:
@@ -58,7 +72,7 @@ def _exports() -> dict[str, bytes]:
     start = (datetime.fromisoformat(CREATED) - timedelta(days=7)).isoformat()
     files = {}
     for name in EXPORTS:
-        params = {"start": start} if name in ("history", "drift-timeline") else {}
+        params = {"start": start} if name in _RANGED else {}
         files[f"{name}.json"] = client.get(f"/api/v1/{name}", params=params).content
     for view in MetricsViewName:
         files[f"metrics/{view.value}.json"] = client.get(
@@ -76,13 +90,15 @@ def build_archive(
     omit: tuple[str, ...] = (),
     manifest: dict[str, Any] | None = None,
     prometheus: bool = True,
+    audit: Path = ARC_FIXTURE,
+    replace: dict[str, bytes] | None = None,
 ) -> Path:
-    """An archive as history.archive writes one. ``omit`` leaves export files out."""
+    """An archive as history.archive writes one. ``omit`` leaves export files out, ``replace`` swaps some."""
     staging = tmp_path / "staging"
     (staging / "audit").mkdir(parents=True)
-    shutil.copy(ARC_FIXTURE, staging / "audit" / "snapl-audit.sqlite")
+    shutil.copy(audit, staging / "audit" / "snapl-audit.sqlite")
     shutil.copytree(LAB_RUNS, staging / "test-runs", ignore=shutil.ignore_patterns("README.md"))
-    for name, body in EXPORTED.items():
+    for name, body in (EXPORTED | (replace or {})).items():
         if name.removesuffix(".json") not in omit:
             (staging / "export" / name).parent.mkdir(parents=True, exist_ok=True)
             (staging / "export" / name).write_bytes(body)
@@ -475,6 +491,8 @@ def test_every_route_answers_with_no_network(served, monkeypatch: pytest.MonkeyP
     paths += [
         "drift-timeline",
         "drift-summary",
+        "health",
+        "network",
         "ci",
         "lab-runs",
         *(f"metrics/{view.value}" for view in MetricsViewName),
@@ -566,3 +584,88 @@ def test_an_archive_of_100k_events_is_ready_within_10_s(tmp_path: Path):
         assert len(client.get("/api/v1/runs", params={"limit": 500}).json()["runs"]["data"]) == 500
 
     assert elapsed < 10, f"ready in {elapsed:.1f} s"
+
+
+# --- spec 016 (T050) -----------------------------------------------------------------
+
+
+def test_the_network_is_the_exported_one_at_the_archives_end(served):
+    client, _ = served
+    exported = json.loads(EXPORTED["network.json"])["network"]
+
+    network = client.get("/api/v1/network").json()["network"]
+    assert network == exported
+    assert network["data"]["at"].startswith("2026-11-07T21:20:48")
+
+
+def test_the_network_views_answer_the_exported_range(served):
+    client, _ = served
+
+    for view in NETWORK_VIEWS:
+        exported = json.loads(EXPORTED[f"metrics/{view.value}.json"])["metrics"]
+        answer = client.get(f"/api/v1/metrics/{view.value}").json()["metrics"]
+        assert (answer["available"], answer["data"]) == (True, exported["data"]), view
+
+
+def test_a_network_that_was_down_when_exported_is_not_in_this_archive_rather_than_a_failure(tmp_path: Path):
+    down = json.loads(EXPORTED["network.json"])
+    down["network"] |= {
+        "available": False,
+        "data": None,
+        "reason": "Prometheus is unreachable",
+        "remedy": "uv run invoke dev.deps",
+    }
+    archive = build_archive(tmp_path, replace={"network.json": json.dumps(down).encode()})
+    with open_archive(archive) as opened:
+        network = TestClient(create_archive_app(opened, ui_dir=None)).get("/api/v1/network").json()["network"]
+
+    assert network["available"] is False
+    assert network["reason"] == f"{NOT_IN_ARCHIVE}: Prometheus is unreachable when it was made"
+    assert network["remedy"] == ARCHIVE_REMEDY
+
+
+def test_health_comes_from_the_archived_trail_as_recorded(tmp_path: Path):
+    """FR-015, and never "the worker is not running": the archived worker is not asked about now."""
+    audit = asyncio.run(write_arc_with_health(tmp_path / "arc-with-health.sqlite"))
+    overview = _overview_export()
+    overview["worker"]["data"]["pollers"] = 0
+    archive = build_archive(tmp_path, audit=audit, replace={"overview.json": json.dumps(overview).encode()})
+    with open_archive(archive) as opened:
+        client = TestClient(create_archive_app(opened, ui_dir=None))
+        health = client.get("/api/v1/health").json()["health"]
+        devices = client.get("/api/v1/devices").json()["devices"]["data"]
+
+    assert health["available"] is True
+    spine = next(d for d in health["data"]["devices"] if d["name"] == "spine-01")
+    assert spine["current"]["state"] == "unhealthy"
+    assert spine["episodes"]
+    recorded = {d["name"]: d["health"] for d in devices}
+    assert recorded["spine-01"]["state"] == "unhealthy"
+    assert WORKER_NOT_RUNNING not in json.dumps(recorded)
+
+
+SPEC_016_EXPORTS = ("health", "network", *(f"metrics/{view.value}" for view in NETWORK_VIEWS))
+
+
+def test_an_archive_made_before_spec_016_says_the_network_and_health_are_not_in_it(tmp_path: Path):
+    """FR-015: the views, the network and the health history, from an archive without them or health events."""
+    with open_archive(build_archive(tmp_path, omit=SPEC_016_EXPORTS)) as opened:
+        client = TestClient(create_archive_app(opened, ui_dir=None))
+        network = client.get("/api/v1/network").json()["network"]
+        health = client.get("/api/v1/health").json()["health"]
+        views = [client.get(f"/api/v1/metrics/{view.value}").json()["metrics"] for view in NETWORK_VIEWS]
+        worker_up = client.get("/api/v1/metrics/worker-up").json()["metrics"]
+
+    for answer in (network, health, *views):
+        assert (answer["available"], answer["reason"], answer["remedy"]) == (False, NOT_IN_ARCHIVE, ARCHIVE_REMEDY)
+    assert worker_up["available"] is True
+
+
+def test_an_older_archive_whose_trail_has_health_events_still_answers_health(tmp_path: Path):
+    """Health is computed from the archived trail: a trail with health events answers, with or without the export."""
+    audit = asyncio.run(write_arc_with_health(tmp_path / "arc-with-health.sqlite"))
+    with open_archive(build_archive(tmp_path, omit=("health",), audit=audit)) as opened:
+        health = TestClient(create_archive_app(opened, ui_dir=None)).get("/api/v1/health").json()["health"]
+
+    assert health["available"] is True
+    assert health["data"]["first_event_at"] is not None

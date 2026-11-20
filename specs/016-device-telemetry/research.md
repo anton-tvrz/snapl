@@ -150,3 +150,16 @@ Streams hold their own gRPC connections. A scan's GET dials separately, as today
 ## R11. The page
 
 The drawer grows by a list of 3 to 5 interfaces and 0 to 4 sessions, and two small charts. "The network" group is folded by default. The page height issue (#305) is not made worse beyond that. The look check runs on the drawer of spine-01 (5 interfaces, 4 sessions: the longest).
+
+## R12. Snapshot and archive size
+
+**Measured in PR F (T052)**: a seven-day snapshot's bundle on the fixture app (`serve_dashboard_fixtures.build_app(up=True)`, `collect_bundle(days=7)`), with a stub template, as spec 015 R8 measured it:
+
+| | Bytes | Against before |
+|---|---:|---:|
+| Before PR F (`1a03d23`, spec 016 PR E2 merged) | 267,413 | |
+| After PR F: `/health`, `/network` and the six views at a 3 h step | 416,171 | +56% |
+
+Of the 148,758 bytes added, the six views are 138,267: `interface-errors` and `interface-discards` 38,964 and 38,966 (16 series each), `interface-traffic` 15,790, `device-memory` 15,054, `bgp-established` 14,784 and `device-cpu` 14,709. `/network` is 6,097 and `/health` 4,260. The views follow spec 015's rule (`COARSE_VIEWS`): the smallest step on the ladder that keeps at most 60 points per series, 3 h for seven days, said in each view's note. Spec 016 sets no size limit, so nothing is cut further; the errors and discards views are half the growth if one is wanted.
+
+An archive exports the six views at the page's step over seven days, as it does every view, and `/health` and `/network`. Its size is dominated by the Prometheus snapshot, which archive mode never reads.

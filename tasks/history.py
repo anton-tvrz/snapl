@@ -32,7 +32,7 @@ from pathlib import Path
 import httpx
 from invoke import Exit, task
 
-from snapl_presentation.dashboard.models import NETWORK_VIEWS, MetricsViewName, SeriesName
+from snapl_presentation.dashboard.models import MetricsViewName, SeriesName
 from snapl_presentation.settings import CliSettings
 
 from .dev import PROMETHEUS_DATA
@@ -45,9 +45,22 @@ DEFAULT_ARCHIVE_DIR = PROJECT_ROOT / ".snapl" / "archives"
 PROMETHEUS_IMAGE = "prom/prometheus:v3.10.0"
 EXPORT_DAYS = 7
 # Spec 011 adds the views archive mode reads (its research R13); older archives
-# lack them and still open. Spec 015 adds drift-summary.
-_EXPORTS = ("overview", "history", "links", "sources", "topology", "devices", "runs", "drift-timeline", "drift-summary")
-_RANGED = ("history", "drift-timeline", "drift-summary")
+# lack them and still open. Spec 015 adds drift-summary; spec 016 adds health
+# over the range and the network's figures at the archive's end.
+_EXPORTS = (
+    "overview",
+    "history",
+    "links",
+    "sources",
+    "topology",
+    "devices",
+    "runs",
+    "drift-timeline",
+    "drift-summary",
+    "health",
+    "network",
+)
+_RANGED = ("history", "drift-timeline", "drift-summary", "health")
 
 
 @dataclass
@@ -200,12 +213,7 @@ def _dashboard_export(dashboard: str, staging: Path, now: datetime) -> Part:
     ]
     # Every series, not only `/history`'s default four (spec 015).
     wanted[_EXPORTS.index("history")][2]["series"] = [name.value for name in SeriesName]
-    # Spec 016's views join in its PR F (NETWORK_VIEWS).
-    wanted += [
-        (f"metrics/{v.value}.json", f"/api/v1/metrics/{v.value}", {"start": start})
-        for v in MetricsViewName
-        if v not in NETWORK_VIEWS
-    ]
+    wanted += [(f"metrics/{v.value}.json", f"/api/v1/metrics/{v.value}", {"start": start}) for v in MetricsViewName]
     out = staging / "export"
     failed: list[str] = []
     with httpx.Client(base_url=dashboard, timeout=30) as client:

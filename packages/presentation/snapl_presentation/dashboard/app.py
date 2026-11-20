@@ -25,7 +25,7 @@ from pydantic import AwareDatetime
 
 from snapl_orchestrator.models import AuditEventType, drift_schedule_id
 from snapl_presentation.dashboard import pages
-from snapl_presentation.dashboard.archive import ARCHIVE_REMEDY, NOT_IN_ARCHIVE
+from snapl_presentation.dashboard.archive import ARCHIVE_REMEDY, NOT_IN_ARCHIVE, not_in_archive
 from snapl_presentation.dashboard.ci import REPO_REMEDY
 from snapl_presentation.dashboard.exposition import CONTENT_TYPE, SourceOutcome, render_exposition
 from snapl_presentation.dashboard.models import (
@@ -892,6 +892,9 @@ def create_app(
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
         elif range_start >= range_end:
             raise HTTPException(status_code=422, detail="start must be before end")
+        if exported is not None and not exported.health_exported and (fabric is None or fabric.first_event_at is None):
+            # An archive made before spec 016, whose trail has no health either (FR-015).
+            return HealthResponse(use_case=served, generated_at=clock(), health=not_in_archive(SourceName.AUDIT))
         view: View[FabricHealth] = View(
             source=SourceName.AUDIT,
             available=audit.available,
@@ -907,6 +910,9 @@ def create_app(
     async def network(requested: UseCaseQuery = None) -> NetworkResponse:
         """Each device's interfaces and sessions from intent, with their latest figures (spec 016)."""
         served = _check_use_case(requested)
+        if exported is not None:
+            # An archive: the figures as exported at its end.
+            return NetworkResponse(use_case=served, generated_at=clock(), network=exported.network)
 
         async def load() -> View[Any]:
             sample = await sources.prometheus.network()
