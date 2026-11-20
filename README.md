@@ -13,6 +13,7 @@ What this demonstrates, live, on a six-node spine-leaf fabric in Containerlab:
 - **Deploy and verify.** `snapl deploy spine-01` renders intent, applies it, then collects the device's state and checks that the change actually took.
 - **Drift detection in both directions.** `snapl scan` flags config the device is *missing* and config the device carries that intent *never asked for*: a hand-added interface address or BGP neighbour.
 - **Reconcile.** `snapl reconcile` re-applies intent to drifted devices. Remediation is always operator-triggered, never automatic.
+- **Health, separate from drift.** The worker streams each device's interfaces, BGP sessions, CPU and memory over gNMI every 10 s. It flags a device when an interface intent expects up is down, or a session intent expects is not established. A device can be in sync and still flagged: on the lab, a leaf's uplink disabled by hand shows the leaf drifted and unhealthy, and the spine at the other end in sync but unhealthy. The flag came up in 19 s and cleared 48 s after the reconcile.
 - **Durability.** Workflows survive a worker restart. `snapl audit` reads the trail by workflow or by device.
 
 ## NAF building blocks
@@ -21,14 +22,14 @@ What this demonstrates, live, on a six-node spine-leaf fabric in Containerlab:
 |-------|---------|-------------------|
 | Intent | `snapl-intent` | Infrahub schema, seed data, desired-state models |
 | Executor | `snapl-executor` | Jinja2 rendering + gNMI apply and dry-run |
-| Collector | `snapl-collector` | gNMI GET of live device state |
-| Observability | `snapl-observability` | Structural drift diff, drift events |
+| Collector | `snapl-collector` | gNMI GET of live device state; gNMI sample subscriptions for telemetry |
+| Observability | `snapl-observability` | Structural drift diff, drift events, the device health rule |
 | Orchestrator | `snapl-orchestrator` | Temporal workflows: deploy, scan, reconcile; durable audit |
 | Presentation | `snapl-presentation` | The `snapl` operator CLI |
 
 ## Scope
 
-- **Datacenter fabric (current):** spine-leaf eBGP underlay, 2 spines and 4 leaves.
+- **Datacenter fabric (current):** spine-leaf eBGP underlay, 2 spines and 4 leaves. All 16 session ends establish, and each device advertises its loopback and learns the others'.
 - **Site edge (next, #117):** a manufacturing site edge with an OT segmentation rule as intent.
 - **Roadmap, not started:** SD-WAN, WAN backbone.
 
@@ -44,8 +45,8 @@ Single vendor: Nokia SR Linux. Vendor-specific code is confined to a few named p
   - An archive shows its metrics only over the range they were exported for, 7 days by default.
 - **Lab metrics, not monitoring.** Prometheus in the dev stack records how long workflows and gNMI calls take, gNMI errors, how long activities wait for a worker, and whether the worker and the dashboard's sources were up (spec 012). The dashboard charts them. There is no alerting, and the numbers describe a lab on one machine.
   - Spec 015 adds mean times, workflows completed, activity run time, worker slots, Temporal request time, the dashboard's source read time, and three counts the worker records: scan results per device and state, differing paths per device and kind, and deploys ended per outcome and reason. These are checked in tests and on captured fixtures. They have not yet been run against the lab.
-  - **No device telemetry.** The metrics describe the loop, not the network. snapl collects no interface counters, BGP state or device CPU.
-- **Config-level verification only.** Intent describes configuration. Operational expectations (BGP sessions established, interfaces oper-up) are not yet checked.
+  - **Device telemetry, at lab scale (spec 016).** Interface state and counters, BGP session state and routes received, and CPU and memory, from each device every 10 s. On the lab, CPU and memory are the container host's, the same on every node, not a switch's. The network views read Prometheus, so a change can take up to about 40 s to show there; the health flag doesn't go through Prometheus and came up within 30 s in every lab run (#348). An archive keeps the network views at a 42-minute step over 7 days, so a fault of a few minutes shows in its health history but not in its network views (#351).
+- **Health checks two things.** A device is flagged only for an interface intent expects up that is down, or a BGP session intent expects that is not established. Routes received, error and discard counters, CPU and memory are shown but never judged. Health is never repaired: a reconcile fixes drift, and health follows when the network does.
 
 ## Quick start
 
