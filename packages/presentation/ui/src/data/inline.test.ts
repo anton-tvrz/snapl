@@ -128,10 +128,20 @@ describe("InlineProvider at the bundle's time", () => {
     expect((await older.health()).health).toMatchObject({ available: false, reason: "not in this snapshot" });
   });
 
-  it("says a snapshot does not hold the network yet (spec 016, until PR F)", async () => {
+  // Spec 016 PR F: the network's figures at the snapshot's end.
+  it("gives the bundled network, and says an older snapshot does not hold it", async () => {
     const network = await provider.network();
+    expect(network.network.available).toBe(true);
+    expect(network.network.data!.at).toBe(bundle.manifest.end);
+    expect(network.network.data!.devices.map((d) => d.name)).toContain("spine-01");
 
-    expect(network.network).toMatchObject({ source: "prometheus", available: false, reason: "not in this snapshot", data: null });
+    const older = new InlineProvider({ ...bundle, network: undefined });
+    expect((await older.network()).network).toMatchObject({
+      source: "prometheus",
+      available: false,
+      reason: "not in this snapshot",
+      data: null,
+    });
   });
 
   it("is a snapshot whose now is the bundle's end", async () => {

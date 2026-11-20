@@ -28,10 +28,12 @@ from snapl_presentation.dashboard.models import (
     ArchiveInfo,
     ArchivePart,
     CiStatus,
+    FabricNetwork,
     LabEvidence,
     LinksResponse,
     MetricsData,
     MetricsViewName,
+    NetworkResponse,
     ScheduleStatus,
     SourceName,
     Topology,
@@ -159,6 +161,11 @@ def archived_view[M: BaseModel](root: Path, key: str, model: type[M]) -> View[M]
     if raw is None:
         return _not_here(SourceName.TEMPORAL if key in ("schedule", "worker") else SourceName(key))
     view: View[M] = View[model].model_validate(raw)  # type: ignore[valid-type]
+    return _as_exported(view)
+
+
+def _as_exported[M: BaseModel](view: View[M]) -> View[M]:
+    """A view down when exported reads as not in the archive, not as a failure with a live remedy."""
     if not view.available:
         return View(
             source=view.source,
@@ -169,6 +176,19 @@ def archived_view[M: BaseModel](root: Path, key: str, model: type[M]) -> View[M]
             data=view.data,
         )
     return view
+
+
+def archived_network(root: Path) -> View[FabricNetwork]:
+    """``/network`` as exported, at the archive's end (spec 016). An older archive has none."""
+    exported = _export(root, "network.json")
+    if exported is None:
+        return _not_here(SourceName.PROMETHEUS)
+    return _as_exported(NetworkResponse.model_validate(exported).network)
+
+
+def not_in_archive(source: SourceName) -> View[Any]:
+    """What a view the archive lacks answers."""
+    return _not_here(source)
 
 
 def _exported_names(root: Path) -> dict[UUID, str]:
@@ -266,7 +286,7 @@ class ArchivedMetrics:
         return (data.start, data.end) if data is not None else None
 
     async def network(self) -> NetworkSample:
-        """An archive holds no network figures yet (spec 016 PR F carries them)."""
+        """Never asked in archive mode: ``/network`` answers the exported figures (``archived_network``)."""
         raise SourceUnavailable(NOT_IN_ARCHIVE, ARCHIVE_REMEDY)
 
     async def query(self, view: MetricsViewName, plan: RangePlan) -> MetricsData:
@@ -288,6 +308,9 @@ class ArchiveExports:
     topology: View[Topology]
     links: LinksResponse | None
     metrics: ArchivedMetrics
+    # Spec 016: the network at the archive's end, and whether health was exported.
+    network: View[FabricNetwork]
+    health_exported: bool
 
 
 def archive_sources(opened: OpenedArchive) -> tuple[Sources, ArchiveExports, ArchiveInfo]:
@@ -310,6 +333,8 @@ def archive_sources(opened: OpenedArchive) -> tuple[Sources, ArchiveExports, Arc
         topology=intent.topology(),
         links=LinksResponse.model_validate(links) if links is not None else None,
         metrics=metrics,
+        network=archived_network(root),
+        health_exported=_export(root, "health.json") is not None,
     )
     ranges = [r for view in MetricsViewName if (r := metrics.exported_range(view)) is not None]
     info = opened.info

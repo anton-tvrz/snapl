@@ -27,7 +27,7 @@ from invoke import Context, Exit
 
 from snapl_orchestrator.audit.sqlite import SqliteAuditLog
 from snapl_orchestrator.models import AuditEvent, AuditEventType
-from snapl_presentation.dashboard.models import NETWORK_VIEWS, MetricsViewName, SeriesName
+from snapl_presentation.dashboard.models import MetricsViewName, SeriesName
 from tasks import history, ns
 
 pytestmark = pytest.mark.unit
@@ -37,7 +37,20 @@ SNAPSHOT_NAME = "20261108T203115Z-674e642f920efff4"
 REAL_PROMETHEUS_DATA = getattr(history, "PROMETHEUS_DATA", None)
 # Spec 011 adds topology, devices, runs and drift-timeline, for archive mode.
 # Spec 015 adds drift-summary.
-EXPORTS = ("overview", "history", "links", "sources", "topology", "devices", "runs", "drift-timeline", "drift-summary")
+# Spec 016 adds health (over the range) and network (at the archive's end).
+EXPORTS = (
+    "overview",
+    "history",
+    "links",
+    "sources",
+    "topology",
+    "devices",
+    "runs",
+    "drift-timeline",
+    "drift-summary",
+    "health",
+    "network",
+)
 
 
 def _closed_port() -> int:
@@ -190,8 +203,8 @@ def test_archive_holds_every_part_and_exits_0(stub: Stub, tmp_path: Path, capsys
         f"prometheus/{SNAPSHOT_NAME}/01HBLOCK/chunks",
         "test-runs/20261108T101500Z-e2e/run.json",
         *(f"export/{name}.json" for name in EXPORTS),
-        # Spec 016's views join in its PR F.
-        *(f"export/metrics/{view.value}.json" for view in MetricsViewName if view not in NETWORK_VIEWS),
+        # Every view, spec 016's six included.
+        *(f"export/metrics/{view.value}.json" for view in MetricsViewName),
     }
     assert expected <= set(members)
     out = capsys.readouterr().out
@@ -318,7 +331,8 @@ def test_the_export_covers_the_last_7_days(stub: Stub) -> None:
         "/api/v1/history",
         "/api/v1/drift-timeline",
         "/api/v1/drift-summary",
-        *(f"/api/v1/metrics/{v.value}" for v in MetricsViewName if v not in NETWORK_VIEWS),
+        "/api/v1/health",
+        *(f"/api/v1/metrics/{v.value}" for v in MetricsViewName),
     )
     for path in ranged:
         [query] = stub.asked("GET", path)
@@ -326,6 +340,8 @@ def test_the_export_covers_the_last_7_days(stub: Stub) -> None:
         assert abs((before - timedelta(days=7)) - start) < timedelta(minutes=1), path
     for name in ("overview", "links", "sources", "topology", "devices", "runs"):
         assert stub.asked("GET", f"/api/v1/{name}")
+    # The network is the figures at the archive's end: no range.
+    assert stub.asked("GET", "/api/v1/network") == [{}]
     # Every series, the ones spec 015 added included, not only the default four.
     [query] = stub.asked("GET", "/api/v1/history")
     assert query["series"] == [name.value for name in SeriesName]

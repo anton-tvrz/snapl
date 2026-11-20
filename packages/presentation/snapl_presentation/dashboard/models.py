@@ -756,8 +756,8 @@ class MetricsViewName(StrEnum):
     DEVICE_MEMORY = "device-memory"
 
 
-# Spec 016's views. Archives and snapshots carry them from spec 016 PR F, which
-# gives them spec 015's coarse snapshot step and measures the size (T050 to T052).
+# Spec 016's views. Archives export them; snapshots carry them at spec 015's
+# coarse step (snapshot.COARSE_VIEWS; spec 016 research R12).
 NETWORK_VIEWS = frozenset(
     {
         MetricsViewName.INTERFACE_TRAFFIC,

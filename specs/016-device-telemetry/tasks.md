@@ -186,9 +186,9 @@ A slice that changes the contract also regenerates the OpenAPI snapshot and the 
 
 **Goal**: a recording of an incident shows the fault.
 
-- [ ] T050 [US5] Tests first in `test_dashboard_archive.py`, `test_dashboard_snapshot.py` and `tests/unit/test_tasks/test_history.py`: the archive export, the archive reader and the snapshot bundle carry `/health`, `/network` (at the archive's end) and the six views; an archive made before this feature answers each as "not in this archive"; `DeviceView.health` in an archive is what was recorded, never "the worker is not running".
-- [ ] T051 [US5] Implement T050 in `tasks/history.py`, `archive.py` and `snapshot.py`. The six views follow spec 015's snapshot step rule.
-- [ ] T052 [US5] Measure a seven-day snapshot on the test fixtures before and after (as spec 015 T045) and record both sizes in research.md. Append to the changelog.
+- [x] T050 [US5] Tests first in `test_dashboard_archive.py`, `test_dashboard_snapshot.py` and `tests/unit/test_tasks/test_history.py`: the archive export, the archive reader and the snapshot bundle carry `/health`, `/network` (at the archive's end) and the six views; an archive made before this feature answers each as "not in this archive"; `DeviceView.health` in an archive is what was recorded, never "the worker is not running".
+- [x] T051 [US5] Implement T050 in `tasks/history.py`, `archive.py` and `snapshot.py`. The six views follow spec 015's snapshot step rule. *In archive mode `/network` answers the exported figures and `/health` is computed from the archived trail, as `/drift-summary` is; it says "not in this archive" only when the archive has no health export and its trail no health event. `DeviceView.health` in an archive was already the recorded one (C2); a test now holds it.*
+- [x] T052 [US5] Measure a seven-day snapshot on the test fixtures before and after (as spec 015 T045) and record both sizes in research.md. Append to the changelog. *267,413 to 416,171 bytes (+56%), research R12.*
 
 ---
 
