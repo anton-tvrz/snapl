@@ -132,7 +132,7 @@ For SC-002, `docker exec clab-dcfabric-spine-01 sr_cli -ec 'set / network-instan
 
 The reasons were `BGP 10.10.1.1 idle (expected established)` on spine-01 and `BGP 10.10.1.0 active (expected established)` on leaf-01. The disable is also drift: the scan after trial 1 exited 2 with spine-01 drifted on one path under `/network-instance[name=default]/protocols/bgp/neighbor[…]`, desired `True`, actual `False`, and `snapl status` read `4 healthy, 2 unhealthy (leaf-01, spine-01)`. leaf-01 was unhealthy and in sync. `snapl reconcile --drifted --yes` restored it each time: after trial 1 spine-01 was healthy in 11 s and leaf-01 in 21 s, and the scan was 6 clean.
 
-**SC-002 held in trial 2 and missed in trial 1, by 4 s.** The network view reaches the device through three waits in a row: up to 10 s for the next sample, up to 15 s for Prometheus's next scrape, and up to 15 s in the dashboard's cache of the network query. The worst case is about 40 s, so the 30 s in SC-001 and SC-002 holds only when those line up. Health reaches the page through the audit trail, not Prometheus, and stayed within 26 s. Tracked in #348.
+**SC-002 held in trial 2 and missed in trial 1, by 4 s.** The network view reaches the device through three waits in a row: up to 10 s for the next sample, up to 15 s for Prometheus's next scrape, and up to 15 s in the dashboard's cache of the network query. The worst case is about 40 s, so the 30 s in SC-001 and SC-002 holds only when those line up. Health reaches the page through the audit trail, not Prometheus, and stayed within 26 s. Tracked in #348, fixed by #359: item 9 has it within 30 s in three trials of three.
 
 ## Item 8: an archive and a snapshot across a fault (T062, SC-008)
 
@@ -149,3 +149,15 @@ It was opened with `snapl dashboard --archive … --port 18061` and `PROMETHEUS_
 **The snapshot.** `snapl dashboard --snapshot … --days 7` at 10:09: **3.50 MB**, against spec 015's 3.2 MB. It contains device health and the network, as its summary says.
 
 **The Prometheus fixtures.** `dev/scripts/capture_prometheus_fixtures.py` at 10:07 wrote the six views' `range_<view>.json`. The other files it rewrites were restored, and the admin snapshot it leaves in `.snapl/prometheus/snapshots/` was deleted. Each view has all six devices. `bgp-established` has leaf-01 between 1 and 2 sessions and spine-01 between 3 and 4, from item 7 and the fault above. New tests read each file.
+
+## Item 9: a BGP session brought down, after #359 (#348)
+
+Item 7's fault again, three times, with main at f55c629: Prometheus recreated so it scrapes the worker every 5 s (a reload doesn't do it: the config's single-file mount still pointed at the file from before the `git pull`), the UI rebuilt, and `snapl dashboard` restarted on 18030. The page was timed in headless Chromium (Playwright, from the UI package) with spine-01's drawer open, reading the drawer's text and `/api/v1/network` every 250 ms, so the page's 5 s refresh is in the figures. Each disable landed at a different point in the 10 s sample. Times are from just before each `sr_cli` call. Each trial ended with `admin-state enable` and waited for the session to show established again. Raw output is in `.snapl/lab/2026-11-20/348/trials.log`.
+
+| trial | disabled (UTC) | `/api/v1/network`: not established | drawer: `10.10.1.1 not established` | drawer: health flagged | drawer: established again after enable |
+|---|---|---:|---:|---:|---:|
+| 1 | 14:05:21.9 | 10.6 s | 10.9 s | 21.1 s | 19.7 s |
+| 2 | 14:06:15.3 | 7.7 s | 12.6 s | 17.7 s | 19.8 s |
+| 3 | 14:07:07.8 | 5.2 s | 5.7 s | 15.2 s | 19.9 s |
+
+**SC-002 holds for the network view: 5.7 to 12.6 s, against 30 s, from 18 and 34 s in item 7.** The drawer followed the API by 0.3 to 4.9 s, its next refresh. Health is unchanged by #359 (it doesn't go through Prometheus) and came up in 15 to 21 s, 10 s after the API each time: one sample, as the one-interval debounce has it. An admin disable and enable brings the session back in about 15 s, faster than item 1's link flap. The drawer first showed it established with 6 routes received in trial 1 and 0 in trials 2 and 3, then 2, the count before the fault. Every session's routes received were back at their counts from before the trials by 14:08. The interface row wasn't timed again: it goes through the same scrape, cache and refresh as the session row.
