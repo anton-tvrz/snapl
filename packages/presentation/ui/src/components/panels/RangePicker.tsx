@@ -12,16 +12,26 @@ interface Props {
   onChange: (range?: Range) => void;
   /** In an archive, the one range its metrics were exported over. */
   archived?: Range;
+  /** In an archive, where it holds the network views at 15 s: around each fault (spec 016, #351). */
+  windows?: readonly Range[];
 }
 
 const inputValue = (t: Date) => t.toISOString().slice(0, 16);
+
+/** "2026-11-07 10:00 to 10:12 UTC", with the end's date only when it differs. */
+function windowText({ start, end }: Range): string {
+  const day = (t: Date) => t.toISOString().slice(0, 10);
+  const minute = (t: Date) => t.toISOString().slice(11, 16);
+  const to = day(end) === day(start) ? minute(end) : `${day(end)} ${minute(end)}`;
+  return `${day(start)} ${minute(start)} to ${to} UTC`;
+}
 
 /**
  * The time range for the drift lanes and the metrics (spec 011 FR-031):
  * presets ending at the server's now, or a custom start and end in UTC. An end
  * before its start is refused here, before any request.
  */
-export function RangePicker({ value, now, onChange, archived }: Props) {
+export function RangePicker({ value, now, onChange, archived, windows = [] }: Props) {
   const [from, setFrom] = useState(() => inputValue(value?.start ?? new Date(now.getTime() - 3_600_000)));
   const [to, setTo] = useState(() => inputValue(value?.end ?? now));
   const [problem, setProblem] = useState<string | null>(null);
@@ -102,10 +112,26 @@ export function RangePicker({ value, now, onChange, archived }: Props) {
           )}
         </details>
       </div>
+      {archived && windows.length > 0 && (
+        <div role="group" aria-label="Detail around faults" className="flex flex-wrap items-center gap-2">
+          <span className="text-meta text-muted">Detail around faults</span>
+          {windows.map((window) => (
+            <button
+              key={window.start.getTime()}
+              type="button"
+              onClick={() => onChange(window)}
+              className={`${chip} border-line`}
+            >
+              {windowText(window)}
+            </button>
+          ))}
+        </div>
+      )}
       {archived && (
         <p className="max-w-prose text-meta text-muted">
-          The metrics show the exported range, {utcText(archived.start)} to {utcText(archived.end)}: an archive
-          holds no other. The range here applies to the lanes and the history.
+          {windows.length > 0
+            ? `The metrics show the exported range, ${utcText(archived.start)} to ${utcText(archived.end)}. The network views also hold 15 s detail around each fault: pick a window, or a range inside one. The range here applies to the lanes and the history too.`
+            : `The metrics show the exported range, ${utcText(archived.start)} to ${utcText(archived.end)}: an archive holds no other. The range here applies to the lanes and the history.`}
         </p>
       )}
     </section>
