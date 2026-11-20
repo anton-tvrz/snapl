@@ -144,7 +144,7 @@ It was opened with `snapl dashboard --archive … --port 18061` and `PROMETHEUS_
 
 **The health history: SC-008 holds.** `/api/v1/health` came from the archive's trail (`source: audit`) and listed every episode of the day with its start, end and reasons: six for leaf-01 (07:48 to 10:07), seven for spine-01, and spine-02's 20 s at 07:52 when its hold timer ran out during item 1. The fault above is the last one: leaf-01 `10:05:22 → 10:07:03`, `ethernet-1/49 down (expected up)` and `BGP 10.10.1.0 active (expected established)`. leaf-03 has no episode: its 60 s `unknown` in item 5 opens none, as data-model.md says.
 
-**The network views: US5 scenario 1 doesn't hold.** The archive exports the six views over 7 days at a 2520 s (42 min) step. `bgp-established` has instant points at 07:30, 08:12, 08:54 and 09:36, and leaf-01 reads 2 sessions at each, so none of the day's faults shows. The export ends at 09:36, 32 min before the archive was made (#306), so the 10:05 fault isn't in it at all, and any other range is refused. SC-008 asks only for the health history, so it holds. The scenario's "the network views show the interface down over that time" does not. Tracked in #351.
+**The network views: US5 scenario 1 doesn't hold.** The archive exports the six views over 7 days at a 2520 s (42 min) step. `bgp-established` has instant points at 07:30, 08:12, 08:54 and 09:36, and leaf-01 reads 2 sessions at each, so none of the day's faults shows. The export ends at 09:36, 32 min before the archive was made (#306), so the 10:05 fault isn't in it at all, and any other range is refused. SC-008 asks only for the health history, so it holds. The scenario's "the network views show the interface down over that time" does not. Tracked in #351, and item 10 has it after the fix.
 
 **The snapshot.** `snapl dashboard --snapshot … --days 7` at 10:09: **3.50 MB**, against spec 015's 3.2 MB. It contains device health and the network, as its summary says.
 
@@ -161,3 +161,16 @@ Item 7's fault again, three times, with main at f55c629: Prometheus recreated so
 | 3 | 14:07:07.8 | 5.2 s | 5.7 s | 15.2 s | 19.9 s |
 
 **SC-002 holds for the network view: 5.7 to 12.6 s, against 30 s, from 18 and 34 s in item 7.** The drawer followed the API by 0.3 to 4.9 s, its next refresh. Health is unchanged by #359 (it doesn't go through Prometheus) and came up in 15 to 21 s, 10 s after the API each time: one sample, as the one-interval debounce has it. An admin disable and enable brings the session back in about 15 s, faster than item 1's link flap. The drawer first showed it established with 6 routes received in trial 1 and 0 in trials 2 and 3, then 2, the count before the fault. Every session's routes received were back at their counts from before the trials by 14:08. The interface row wasn't timed again: it goes through the same scrape, cache and refresh as the session row.
+
+## Item 10: an archive with detail around faults (T065 to T067, #351)
+
+`uv run invoke history.archive` from the #351 branch at 20:26:56 UTC, with `snapl dashboard` on 18030: `snapl-history-20261120T202656Z.tar.gz`, 9.9 MB (dashboard export 3.1 MB before compression). The day's health episodes gave five windows: 07:43 to 07:57, 08:40 to 08:55, 09:54 to 10:12, 14:00 to 14:12, and the last hour from 19:26. That's 2 h 10 min in all, against the 6 h limit. The six network views over them at 15 s were 0.88 MB before compression, about 0.04 MB after. Prometheus has no worker samples between 15:18 and 19:58, so the last hour holds data from 19:57:30 only. Raw output is in `.snapl/lab/2026-11-20/351/`.
+
+It was opened as in item 8, with every live source pointed at port 1, on 18061. The page was driven in headless Chromium.
+
+- **The windows.** The range picker lists the five as "Detail around faults". Picking 14:00 to 14:12 made the six network views ask for exactly that range, and they answered at a 15 s step. Every other view kept the exported range.
+- **The BGP trials of item 9.** `bgp-established` shows spine-01 at 4, 3, 4 three times between 14:05:30 and 14:07:45, and leaf-01 at 2, 1, 2 (`bgp-established-14h.png`).
+- **Item 7's trials and item 8's link fault.** The 09:54 window shows leaf-01 at 1 session and spine-01 at 3 over 09:58, 10:01 and 10:05:30 to 10:06:30 (`bgp-established-10h.png`). The last is leaf-01's `ethernet-1/49` disabled at 10:05:04, flagged 10:05:22 to 10:07:03.
+- **Outside every window.** 12:00 to 13:00 is refused, naming the exported range and each window. The 7-day default is unchanged at 2520 s.
+
+**US5 scenario 1 holds for what the six views carry.** A link fault shows as the BGP sessions it took down, at 15 s, over the episode. The link's own state is not one of the six views: in an archive the drawer shows interface state at the archive's time only. Device-level traffic at the lab's idle rates (tens of B/s) is too noisy to show the link either way.
