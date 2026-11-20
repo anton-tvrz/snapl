@@ -14,7 +14,7 @@ Lab addresses: spine-01 172.20.21.11, spine-02 .12, leaf-01 .13 to leaf-04 .16. 
 
 5. **A paused device (SC-006).** `docker pause clab-dcfabric-leaf-03` for 60 s. leaf-03 reads `unknown`, "no telemetry since …", never `unhealthy`. `docker unpause`: leaf-03 is `healthy` again within 60 s, with no worker restart (the stream's own state isn't shown; its first sample is). Keep the pause under the 90 s BGP hold time, or the spines are flagged too.
 
-6. **Scan time (SC-005).** As spec 015 T044: the median of at least 10 scheduled scans with `SNAPL_TELEMETRY=off`, then 10 with it on. The difference is at most 10%.
+6. **Scan time (SC-005).** As spec 015 T044: the median of at least 10 scheduled scans with `SNAPL_TELEMETRY=off`, then 10 with it on. `snapl schedule trigger --use-case dcfabric` every 15 s starts scheduled runs without waiting for the interval. The difference is at most 10%.
 
 7. **After #311 (SC-002, SC-003).** Once #311 is merged and the fabric reconciled: all six devices healthy, and every session end `established` with prefixes received. Disable one session's neighbour on spine-01 (`admin-state disable`): both ends show not established within 30 s and both devices are flagged.
 
