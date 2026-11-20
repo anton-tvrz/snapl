@@ -1,6 +1,6 @@
 """The worker's telemetry runner (spec 016, data-model.md "The runner", research R3, R5 to R7).
 
-One stream per device in intent, held in the worker beside the Temporal worker,
+One stream per device in intent (in one use case, when given: #341), held in the worker beside the Temporal worker,
 not in a workflow: a stream is not a durable business process, and every sample
 would otherwise be heartbeat traffic (R2). The runner composes the blocks:
 
@@ -141,7 +141,7 @@ def _observe(items: dict[str, ObservedItem], name: str, state: str, now: datetim
 
 
 class TelemetryRunner:
-    """Streams every device in intent, exports the figures and records health changes."""
+    """Streams every device in intent, or in one use case, exports the figures and records health changes."""
 
     def __init__(
         self,
@@ -154,8 +154,10 @@ class TelemetryRunner:
         clock: Callable[[], datetime] = _utc_now,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         interval_s: int = SAMPLE_INTERVAL_S,
+        use_case: str | None = None,
     ) -> None:
         self._intent_store = intent_store
+        self._use_case = use_case
         self._collector = collector
         self._observer = observer
         self._audit_log = audit_log
@@ -212,7 +214,7 @@ class TelemetryRunner:
 
     async def _refresh(self) -> None:
         try:
-            wanted = _from_intent(await self._intent_store.get_desired_state())
+            wanted = _from_intent(await self._intent_store.get_desired_state(use_case=self._use_case))
         except Exception as exc:
             logger.warning(
                 "telemetry: could not read intent, keeping %d stream(s) until the next refresh: %s",
