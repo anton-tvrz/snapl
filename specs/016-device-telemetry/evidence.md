@@ -108,6 +108,17 @@ Same worker and dashboard, from main at c12053e. A poller logged `/api/v1/health
 
 SC-006 holds. leaf-03 read `unknown` 36 s into the pause and was never `unhealthy`. It was `healthy` again 15 s after the unpause, with the worker untouched. No other device changed: a 60 s pause is shorter than the 90 s BGP hold time, so the spines' sessions to leaf-03 stayed up (item 1). The recovery time depends on where the backoff stands, which is capped at 30 s, so it stays within 60 s for any pause.
 
+## Item 6: scan time with and without telemetry (T060, SC-005)
+
+Measured as spec 015 T044 did: each ScanDrift's first to last audit event (15 events each: start, fetch, six collects, six detects, end). The runs are scheduled runs started with `snapl schedule trigger --use-case dcfabric` every 15 s, plus the 5-minute schedule's own 10:15 run. Same lab, same main (c12053e, the worker that had run items 1 to 8 on it), one worker at a time.
+
+| worker | UTC | scans | median | range |
+|---|---|---:|---:|---|
+| telemetry on (streaming six devices since 07:20) | 10:12 to 10:15 | 11 | 1.603 s | 1.384 to 2.133 s |
+| `SNAPL_TELEMETRY=off` | 10:15 to 10:18 | 10 | 1.553 s | 1.374 to 2.109 s |
+
+SC-005 holds: the median is 3.2 % higher with telemetry on, under 10 %. The two ranges overlap almost entirely, so 3 % is within the run-to-run spread. The worker was then restarted with telemetry on. Raw output is in `.snapl/lab/2026-11-20/t060/`.
+
 ## Item 7: a BGP session brought down (T061, SC-002, SC-003)
 
 SC-003 was shown in item 3: all six devices healthy, all 16 session ends established with routes, nothing flagged for CPU or memory.
