@@ -42,14 +42,14 @@
 
 ## Phase 3: The Seed (US3, #62) — PR C
 
-- [ ] T013 [US3] Tests first in `tests/unit/test_intent/` (the seed's tests and fake client):
+- [x] T013 [US3] Tests first in `tests/unit/test_intent/` (the seed's tests and fake client):
   - with `branch="b"`, every lookup is made on `b`, including the default namespace and VRF, relationship peers and both BGP methods;
   - an `OSError`, `TimeoutError` or Infrahub SDK error from any lookup, including `_get_default_namespace_id`, surfaces as the store's translated exception;
   - a session whose `local_ip` or `remote_ip` lookup misses raises `IntentValidationError` naming the session and the address;
   - an unreferenced peer group logs a warning naming it;
   - the dcfabric seed gives each leaf its sessions (#62's related gap, closed by #316 and #318).
-- [ ] T014 [US3] Implement in `packages/intent/snapl_intent/infrahub/seed.py` as plan.md C describes. Reuse the store's SDK-error translation; don't copy it.
-- [ ] T015 [US3] `changelog/62.fixed.md`.
+- [x] T014 [US3] Implement in `packages/intent/snapl_intent/infrahub/seed.py` as plan.md C describes. Reuse the store's SDK-error translation; don't copy it.
+- [x] T015 [US3] `changelog/62.fixed.md`.
 
 ## Phase 4: The Flaky Cancellation Test (US4, #333) — PR D
 

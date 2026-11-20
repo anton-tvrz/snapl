@@ -37,11 +37,8 @@ from typing import TYPE_CHECKING, Any
 import yaml
 from pydantic import ValidationError
 
-from snapl_intent.exceptions import (
-    IntentConnectionError,
-    IntentError,
-    IntentValidationError,
-)
+from snapl_intent.exceptions import IntentValidationError
+from snapl_intent.infrahub.sdk_errors import sdk_errors_as_domain_errors
 from snapl_intent.models import RoutingPolicy, SeedResult
 
 if TYPE_CHECKING:
@@ -202,18 +199,10 @@ class SeedIngester:
         self._validate(dataset)
         self._branch = branch
 
-        try:
+        # The store's rule: an error from the SDK or the network reaches callers
+        # as a domain error, never raw, from any lookup or write (#62).
+        with sdk_errors_as_domain_errors():
             return await self._seed(dataset, use_case=use_case, branch=branch)
-        except IntentError:
-            raise
-        except (OSError, TimeoutError) as exc:
-            raise IntentConnectionError(f"Infrahub unreachable: {exc}") from exc
-        except Exception as exc:
-            # The same rule as the store's reads: an error from inside the SDK
-            # reaches callers as a domain error, never raw (#62).
-            if exc.__class__.__module__.startswith("infrahub"):
-                raise IntentConnectionError(f"Infrahub error: {exc}") from exc
-            raise
 
     async def _seed(self, dataset: dict[str, Any], *, use_case: str, branch: str) -> SeedResult:
         # Fetch the default IP namespace once if any section will materialise IpamIPAddress.

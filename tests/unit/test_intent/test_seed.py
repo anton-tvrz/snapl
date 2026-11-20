@@ -995,6 +995,16 @@ class TestRepoSeedContent:
                 assert mirror.get("peer_group") == session.get("peer_group"), where
         assert checked, "no session between seeded devices found: glob broken?"
 
+    def test_every_leaf_of_the_fabric_has_its_own_sessions(self):
+        """#62's related gap: sessions were seeded on the spine side only, so a
+        leaf had none in intent. Closed by #316 and #318 (spec 017 T013)."""
+        data = yaml.safe_load((self._package_root() / "seed" / "dcfabric" / "topology.yml").read_text())
+        leaves = {row["name"] for row in data["devices"] if row["role"] == "leaf"}
+        with_sessions = {session["local_device"] for session in data["bgp_sessions"]}
+
+        assert leaves, "no leaves in the dcfabric seed"
+        assert leaves <= with_sessions, f"leaves with no session: {sorted(leaves - with_sessions)}"
+
     def test_session_descriptions_are_unique(self):
         """The seed upserts a session by its description, so two rows sharing one
         would overwrite each other (#311)."""
@@ -1041,6 +1051,40 @@ class TestSeedBranchIsUsedForEveryLookup:
         assert without == [], f"lookups that did not read the branch: {without}"
         assert all(call.kwargs.get("branch") == "feature" for call in client.create.await_args_list)
 
+    async def test_every_kind_of_lookup_reads_the_branch(self, tmp_path: Path):
+        """The default namespace and VRF, a relationship's peer, the upsert's own
+        lookup, the session's addresses and both BGP methods (spec 017 T013)."""
+        dataset = _minimal_bgp_dataset(num_spines=1)
+        dataset["manufacturer"] = {"name": "Nokia"}
+        dataset["device_types"] = [{"name": "7220 IXR-D2L", "manufacturer": "Nokia"}]
+        dataset["vrfs"] = [{"name": "default"}]
+        dataset["bgp_sessions"][0] |= {"local_ip": "10.10.1.0/31", "remote_ip": "10.10.1.1/31"}
+        client = _make_bgp_client()
+        bgp_filters = client.filters.side_effect
+
+        async def every_peer_exists(*, kind: str, **kwargs: Any) -> list[Any]:
+            if kind in {"OrganizationManufacturer", "IpamIPAddress"}:
+                return [_stub_node(kind)]
+            return await bgp_filters(kind=kind, **kwargs)
+
+        client.filters = AsyncMock(side_effect=every_peer_exists)
+
+        await SeedIngester(client=client).seed(use_case="dcfabric", data_path=_bgp_file(tmp_path, dataset), branch="b")
+
+        looked_up = {call.kwargs["kind"] for call in client.filters.await_args_list}
+        assert looked_up >= {
+            "IpamNamespace",
+            "IpamVRF",
+            "OrganizationManufacturer",
+            "DcimDeviceType",
+            "DcimDevice",
+            "RoutingAutonomousSystem",
+            "IpamIPAddress",
+            "RoutingBGPPeerGroup",
+            "RoutingBGPSession",
+        }
+        assert {call.kwargs.get("branch") for call in client.filters.await_args_list} == {"b"}
+
 
 class TestSeedRaisesOnlyDomainErrors:
     async def test_an_unreachable_sot_during_the_namespace_lookup(self, tmp_path: Path):
@@ -1052,6 +1096,25 @@ class TestSeedRaisesOnlyDomainErrors:
 
         with pytest.raises(IntentConnectionError, match="connection refused"):
             await SeedIngester(client=client).seed(use_case="dcfabric", data_path=path)
+
+    @pytest.mark.parametrize("error", [OSError("connection refused"), TimeoutError("timed out")])
+    @pytest.mark.parametrize("failing_kind", ["IpamNamespace", "IpamVRF", "DcimDevice", "RoutingBGPSession"])
+    async def test_a_lost_connection_from_any_lookup(self, tmp_path: Path, error: Exception, failing_kind: str):
+        client = _make_bgp_client()
+        lookups = client.filters.side_effect
+
+        async def fails_once_it_reaches(*, kind: str, **kwargs: Any) -> list[Any]:
+            if kind == failing_kind:
+                raise error
+            return await lookups(kind=kind, **kwargs)
+
+        client.filters = AsyncMock(side_effect=fails_once_it_reaches)
+        dataset = _minimal_bgp_dataset(num_spines=1) | {"vrfs": [{"name": "default"}]}
+
+        with pytest.raises(IntentConnectionError, match=str(error)) as raised:
+            await SeedIngester(client=client).seed(use_case="dcfabric", data_path=_bgp_file(tmp_path, dataset))
+
+        assert raised.value.__cause__ is error
 
     async def test_an_sdk_error_from_a_lookup(self, tmp_path: Path):
         client = _make_bgp_client()
