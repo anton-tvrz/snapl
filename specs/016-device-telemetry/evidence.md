@@ -92,3 +92,33 @@ Drift and health are two separate marks: during the fault, the scan reported lea
 The quickstart said spine-01's "reasons grow by one". That was written for the lab before #311, when spine-01 was already flagged. Now it starts healthy and gets two reasons, its interface and its session. The quickstart now says so.
 
 An earlier attempt at 08:45:31 was dropped: the page poller had failed to start (`python3` on the host is 3.9), so that run has no page timeline. The interface was re-enabled at 08:46, and the run above started from a healthy fabric.
+
+## Item 5: a paused device (T059, SC-006)
+
+Same worker and dashboard, from main at c12053e. A poller logged `/api/v1/health` for all six devices and `/api/v1/network` every 2 s. Raw output is in `.snapl/lab/2026-11-20/t059/`.
+
+| UTC | what happened |
+|---|---|
+| 09:56:04 | `docker pause clab-dcfabric-leaf-03` (leaf-03's last sample was at 09:56:02) |
+| 09:56:28 | the worker: `telemetry from leaf-03 broke (… UNAVAILABLE: recvmsg:Operation timed out); retrying in 1 s`, then `FutureTimeoutError` with the backoff doubling (2, 4, 8, 16 s) |
+| 09:56:40 | `health_changed` leaf-03 `healthy → unknown`, reason `no telemetry since 2026-11-20T09:56:02+00:00`. On the page at 09:56:42 |
+| 09:57:05 | `docker unpause` |
+| 09:57:19 | the next retry gets a sample |
+| 09:57:20 | `health_changed` leaf-03 `unknown → healthy`. On the page at 09:57:21 |
+
+SC-006 holds. leaf-03 read `unknown` 36 s into the pause and was never `unhealthy`. It was `healthy` again 15 s after the unpause, with the worker untouched. No other device changed: a 60 s pause is shorter than the 90 s BGP hold time, so the spines' sessions to leaf-03 stayed up (item 1). The recovery time depends on where the backoff stands, which is capped at 30 s, so it stays within 60 s for any pause.
+
+## Item 7: a BGP session brought down (T061, SC-002, SC-003)
+
+SC-003 was shown in item 3: all six devices healthy, all 16 session ends established with routes, nothing flagged for CPU or memory.
+
+For SC-002, `docker exec clab-dcfabric-spine-01 sr_cli -ec 'set / network-instance default protocols bgp neighbor 10.10.1.1 admin-state disable'`, twice, with the same poller. Raw output is in `.snapl/lab/2026-11-20/t061/` and `t059/page.log`.
+
+| trial | disabled | `/api/v1/network`: both ends not established | `health_changed`: both flagged | on the page's health |
+|---|---|---:|---:|---:|
+| 1 | 09:58:35 | 34 s | 26 s | 26 s |
+| 2 | 10:01:02 | 18 s | 19 s | 20 s |
+
+The reasons were `BGP 10.10.1.1 idle (expected established)` on spine-01 and `BGP 10.10.1.0 active (expected established)` on leaf-01. The disable is also drift: the scan after trial 1 exited 2 with spine-01 drifted on one path under `/network-instance[name=default]/protocols/bgp/neighbor[…]`, desired `True`, actual `False`, and `snapl status` read `4 healthy, 2 unhealthy (leaf-01, spine-01)`. leaf-01 was unhealthy and in sync. `snapl reconcile --drifted --yes` restored it each time: after trial 1 spine-01 was healthy in 11 s and leaf-01 in 21 s, and the scan was 6 clean.
+
+**SC-002 held in trial 2 and missed in trial 1, by 4 s.** The network view reaches the device through three waits in a row: up to 10 s for the next sample, up to 15 s for Prometheus's next scrape, and up to 15 s in the dashboard's cache of the network query. The worst case is about 40 s, so the 30 s in SC-001 and SC-002 holds only when those line up. Health reaches the page through the audit trail, not Prometheus, and stayed within 26 s. Tracked in #348.
