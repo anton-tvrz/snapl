@@ -121,7 +121,7 @@ A slice that changes the contract also regenerates the OpenAPI snapshot and the 
 - [x] T023 [US1] Tests first in `tests/unit/test_orchestrator/test_worker_run.py`: `run_worker` starts the runner beside `worker.run()` with the same audit log instance, the collector, the observer and the runtime's meter; stopping the worker stops the runner; `SNAPL_TELEMETRY=off` starts none; a runner that raises is logged and does not stop the worker; with metrics off, the runner records into a no-op meter.
 - [x] T024 [US1] Wire it in `packages/orchestrator/snapl_orchestrator/worker/run.py`, and document `SNAPL_TELEMETRY` in its docstring and in `tasks/orchestrator.py`'s env list.
 - [x] T025 Check `tests/unit/test_orchestrator/test_vendor_seams.py` still passes with the new package. Append to the changelog.
-- [ ] T026 **Needs the lab**: quickstart items 2 and 3 (six streams, the series count, the spines flagged and the leaves not). Write them into `specs/016-device-telemetry/evidence.md`.
+- [x] T026 **Needs the lab**: quickstart items 2 and 3 (six streams, the series count, the spines flagged and the leaves not). Write them into `specs/016-device-telemetry/evidence.md`. *Done 2026-11-20 after #311 and #317: six streams, 162 series, all six healthy, so no spine flagged. The runner also dials the integration tests' `test_edge` devices (#341).*
 
 **Checkpoint**: a test worker with two fake devices streams, flags one and records the change once.
 
