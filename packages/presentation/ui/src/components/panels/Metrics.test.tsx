@@ -56,15 +56,15 @@ describe("MetricPanel", () => {
     expect(region).toHaveTextContent("per minute");
   });
 
-  // spec 015: a count's lead is its latest point with the window it covers, never a sum.
+  // spec 015: a count's lead is its latest point with the window it covers, never a sum; #308: that window is its step.
   it("leads a count of events with the latest point and the window it covers", () => {
     render(<MetricPanel title="Workflows completed (count)" kind="events" view={view("workflows-completed")} now={NOW} />);
 
     const region = screen.getByRole("region", { name: "Workflows completed (count)" });
     expect(within(region).getByText("1", { selector: "[data-lead]" })).toBeInTheDocument();
-    expect(region).toHaveTextContent("1in the last 60 sScanDrift");
+    expect(region).toHaveTextContent("1in the last 15 sScanDrift");
     expect(region).toHaveTextContent("count · step 15 s");
-    expect(region).toHaveTextContent("events in the last 60 s");
+    expect(region).not.toHaveTextContent("events in the last");
   });
 
   it("leads a gauge count with its current value and no window", () => {

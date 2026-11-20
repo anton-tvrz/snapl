@@ -228,12 +228,12 @@ def test_the_up_server_draws_the_network_views_with_the_contracts_series(client_
     assert len(data["series"]) == _SERIES_ON_DCFABRIC[view]
 
 
-def test_the_up_server_says_the_window_of_a_count(client_up: TestClient):
-    """The default hour is at 15 s, so a count's 60 s windows overlap (research R4)."""
+def test_the_up_server_counts_each_step_with_no_window_note(client_up: TestClient):
+    """A count's point covers its own step, so it names no longer window (#308)."""
     counted = client_up.get("/api/v1/metrics/workflows-completed").json()["metrics"]["data"]
     gauge = client_up.get("/api/v1/metrics/worker-slots").json()["metrics"]["data"]
 
-    assert counted["note"] == "events in the last 60 s"
+    assert counted["note"] is None
     assert gauge["note"] is None
 
 

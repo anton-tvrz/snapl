@@ -16,14 +16,14 @@
 
 ## Phase 1: Counting Views (US1, #308) — PR A
 
-- [ ] T001 [US1] Tests first in `tests/unit/test_presentation/test_dashboard_prometheus.py`:
+- [x] T001 [US1] Tests first in `tests/unit/test_presentation/test_dashboard_prometheus.py`:
   - each of the four counting views renders `_step_increase` with `$step` replaced by the plan's step, at 15 s, 60 s and 2520 s;
   - its query has no `$w`, `rate(` or `increase(`;
   - `window_note` is `None` for the four, and unchanged for every `rate()` view.
-- [ ] T002 [US1] Implement `_step_increase` and `$step` in `prometheus.py` as plan.md A describes. Use it for `WORKFLOWS_COMPLETED`, `SCAN_RESULTS`, `DRIFT_PATHS` and `DEPLOY_OUTCOMES`. Keep `_increase` only if another view still uses it. Keep `counts_events`.
-- [ ] T003 [US1] Amend `specs/015-more-metrics/contracts/metrics-views.md` ("The window note" and the counting views' query lines) and the "Look"/metrics notes in `dev/skills/dashboard/` if they mention the 60 s window. List each change under "Spec amendments" in the PR.
-- [ ] T004 [US1] Regenerate the UI fixtures (`SNAPL_WRITE_UI_FIXTURES=1 uv run pytest tests/unit/test_presentation/test_ui_fixtures.py`) and the Prometheus fixtures' README if it names the window. Update the UI tests that read "events in the last 60 s"; the page itself needs no change unless a test shows it does. `cd packages/presentation/ui && npx vitest run && npm run lint`.
-- [ ] T005 [US1] `changelog/308.fixed.md`.
+- [x] T002 [US1] Implement `_step_increase` and `$step` in `prometheus.py` as plan.md A describes. Use it for `WORKFLOWS_COMPLETED`, `SCAN_RESULTS`, `DRIFT_PATHS` and `DEPLOY_OUTCOMES`. Keep `_increase` only if another view still uses it. Keep `counts_events`.
+- [x] T003 [US1] Amend `specs/015-more-metrics/contracts/metrics-views.md` ("The window note" and the counting views' query lines) and the "Look"/metrics notes in `dev/skills/dashboard/` if they mention the 60 s window. List each change under "Spec amendments" in the PR.
+- [x] T004 [US1] Regenerate the UI fixtures (`SNAPL_WRITE_UI_FIXTURES=1 uv run pytest tests/unit/test_presentation/test_ui_fixtures.py`) and the Prometheus fixtures' README if it names the window. Update the UI tests that read "events in the last 60 s"; the page itself needs no change unless a test shows it does. `cd packages/presentation/ui && npx vitest run && npm run lint`.
+- [x] T005 [US1] `changelog/308.fixed.md`.
 - [ ] T006 [US1] **Needs the lab**: SC-001. Over the last hour, compare `scan-results` (`/api/v1/metrics/scan-results?start=…`) with the ScanDrift runs in the audit trail. Every point must be whole and the sum equal.
 
 ## Phase 2: An Export Keeps Its Newest Step (US2, #306) — PR B

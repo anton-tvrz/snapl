@@ -172,13 +172,19 @@ describe("metrics helpers", () => {
       expect(leadValue({ ...data("worker-lag"), series: [series({}, null)] })).toBeNull();
     });
 
-    it("leads a count of events with the latest point and its window from the note, never a sum", () => {
+    it("leads a count of events with the latest point and its own step as the window, never a sum", () => {
       const completed = data("workflows-completed");
-      expect(completed.note).toBe("events in the last 60 s");
+      expect(completed.note).toBeNull(); // a point counts its own step (#308)
 
-      expect(leadValue(completed, "events")).toEqual({ text: "1", series: "ScanDrift", unitNote: null, window: "in the last 60 s" });
+      expect(leadValue(completed, "events")).toEqual({ text: "1", series: "ScanDrift", unitNote: null, window: "in the last 15 s" });
       const steady = { ...completed, series: [{ labels: {}, points: [3, 3, 3].map((value) => ({ t: "2026-11-07T21:20:00Z", value })) }] };
       expect(leadValue(steady, "events")?.text).toBe("3");
+    });
+
+    it("names the window from the note of an archive made before #308", () => {
+      const archived = { ...data("workflows-completed"), note: "events in the last 60 s" };
+
+      expect(leadValue(archived, "events")?.window).toBe("in the last 60 s");
     });
 
     it("names the step as the window when the server gives no window note", () => {

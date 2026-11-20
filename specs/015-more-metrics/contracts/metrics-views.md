@@ -6,27 +6,40 @@ Every addition is **compatible** under 010's versioning rules: new enum values, 
 
 ## `MetricsViewName` (new values)
 
-`$ns`, `$uc` and `$w` are as in spec 012. `rate()` below means spec 012's rate, or PR #241's first-observation form once it has merged. `increase()` over `$w` is not scaled: a point is the events in the window ending at it, so when `$w` is longer than the step, neighbouring points overlap (research R4).
+`$ns`, `$uc` and `$w` are as in spec 012. `rate()` below means spec 012's rate, or PR #241's first-observation form once it has merged. `step_increase()` is spec 017's count of the events in each step (#308): see "Counts per step" below. It replaced `increase()` over `$w`, whose points overlapped when `$w` was longer than the step (research R4).
 
 | view | query (template) | unit | series labels | reads |
 | --- | --- | --- | --- | --- |
 | `workflow-mean` | `sum by (workflow_type) (rate(temporal_workflow_endtoend_latency_sum{namespace="$ns"}[$w])) / sum by (workflow_type) (rate(temporal_workflow_endtoend_latency_count{namespace="$ns"}[$w]))` | ms | `workflow_type` | SDK |
 | `gnmi-mean` | `sum by (device, operation) (rate(snapl_gnmi_call_duration_sum{use_case="$uc"}[$w])) / sum by (device, operation) (rate(snapl_gnmi_call_duration_count{use_case="$uc"}[$w]))` | ms | `device`, `operation` | snapl |
-| `workflows-completed` | `sum by (workflow_type) (increase(temporal_workflow_completed{namespace="$ns"}[$w]))` | count | `workflow_type` | SDK |
+| `workflows-completed` | `sum by (workflow_type) (step_increase(temporal_workflow_completed{namespace="$ns"}))` | count | `workflow_type` | SDK |
 | `activity-time` | `sum by (activity_type) (rate(temporal_activity_execution_latency_sum{namespace="$ns"}[$w])) / sum by (activity_type) (rate(temporal_activity_execution_latency_count{namespace="$ns"}[$w]))` | ms | `activity_type` | SDK |
 | `worker-slots` | `sum by (worker_type) (temporal_worker_task_slots_used{namespace="$ns"})` | count | `worker_type` | SDK |
 | `server-request-time` | `sum(rate(temporal_request_latency_sum{namespace="$ns"}[$w])) / sum(rate(temporal_request_latency_count{namespace="$ns"}[$w]))` | ms | — | SDK |
 | `source-fetch-time` | `snapl_dashboard_source_fetch_duration_milliseconds` | ms | `source` | dashboard |
-| `scan-results` | `sum by (device, state) (increase(snapl_scan_results_total{use_case="$uc"}[$w]))` | count | `device`, `state` | snapl, new |
-| `drift-paths` | `sum by (device, kind) (increase(snapl_drift_paths_total{use_case="$uc"}[$w]))` | count | `device`, `kind` | snapl, new |
-| `deploy-outcomes` | `sum by (outcome, reason) (increase(snapl_deploy_ends_total{use_case="$uc"}[$w]))` | count | `outcome`, `reason` | snapl, new |
+| `scan-results` | `sum by (device, state) (step_increase(snapl_scan_results_total{use_case="$uc"}))` | count | `device`, `state` | snapl, new |
+| `drift-paths` | `sum by (device, kind) (step_increase(snapl_drift_paths_total{use_case="$uc"}))` | count | `device`, `kind` | snapl, new |
+| `deploy-outcomes` | `sum by (outcome, reason) (step_increase(snapl_deploy_ends_total{use_case="$uc"}))` | count | `outcome`, `reason` | snapl, new |
 
 The label sets of the SDK families were read from the live metrics store on 2026-11-15 (research R2).
 
 Settled in PR D (#284):
-- **Rates are #241's first-observation form**, in the means as in the percentiles. `increase()` is that rate times the window (`increase` is `rate` times the range in Prometheus), so a first workflow completion after a worker restart counts as one instead of showing nothing (#191).
-- **The window note.** `$w` is `max(60 s, step)`. When it is longer than the step, a view that counts events (`workflows-completed`, and PR E's three) says `events in the last 60 s` in its `note`, after any step note and before "no data in range". When `$w` is the step, a point is the events in its own step and there is no window note. `worker-slots` is a `count` but a gauge, so it has no window note.
+- **Rates are #241's first-observation form**, in the means as in the percentiles. The counts used `increase()` as that rate times the window until spec 017 replaced it with `step_increase()` (below).
+- **The window note.** Until spec 017, a count whose `$w` was longer than the step said `events in the last 60 s` in its `note`. Spec 017 (#308) removed it: a count's point covers its own step, so no view has a window note. An archive made before spec 017 still carries the note, and the page still reads its window from it. `worker-slots` is a `count` but a gauge, so it never had one.
 - **Checked live** on 2026-11-17: each of the seven queries answered `success` from the lab's Prometheus, with the series labels above. `source-fetch-time` also carries `__name__`, `job` and `instance`, which the parser drops, as for `source-health`.
+
+Amended by spec 017 (#308), **counts per step**. `step_increase(sel)` is the counter's increase over (t − step, t], with `$step` the range's step:
+
+```
+((sel - sel offset $step) >= 0)
+or (sel < sel offset $step)
+or ((sel unless sel offset $step) and on() (up{job="snapl-worker"} offset $step))
+```
+
+- The first term is the difference with the latest sample at or before t − step. Consecutive points telescope, so every point is a whole number and the points add up to the range's events. Nothing is extrapolated.
+- The second is a reset (the worker restarted): the count since it, not a negative number.
+- The third is a first observation, counted from zero under #191's guard that Prometheus was scraping the worker one step ago.
+- The three terms never match the same series. Checked with `promtool test rules` (v3.10.0) on a 5 s-scraped counter with a first observation and a reset, at 15 s, 60 s and 120 s steps: every point as expected, adding up to the counter's five events.
 
 ## `MetricUnit` (new value)
 

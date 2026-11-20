@@ -169,7 +169,7 @@ def test_the_views_are_captured_with_the_dashboards_own_queries(prometheus: Fake
 
     asked = {q["query"][0] for method, path, q in prometheus.requests if path == "/api/v1/query_range" and "query" in q}
     for view in MetricsViewName:
-        assert render_query(view, namespace="default", use_case="dcfabric", window_s=60) in asked, view
+        assert render_query(view, namespace="default", use_case="dcfabric", window_s=60, step_s=15) in asked, view
 
 
 def test_an_empty_result_is_captured(prometheus: FakePrometheus, tmp_path: Path) -> None:

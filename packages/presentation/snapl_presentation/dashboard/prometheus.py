@@ -61,7 +61,6 @@ __all__ = [
     "plan_range",
     "rate_window",
     "render_query",
-    "window_note",
 ]
 
 # development/prometheus/prometheus.yml scrapes every 15 s.
@@ -91,14 +90,24 @@ def _rate(selector: str) -> str:
     )
 
 
-def _increase(selector: str) -> str:
-    """``increase(selector[$w])`` that also counts a series' first observation.
+def _step_increase(selector: str) -> str:
+    """The counter's increase over the step ending at each point (#308).
 
-    ``increase()`` is ``rate()`` times the window, so this is ``_rate`` times
-    ``$sec``: a first workflow completion after a worker restart counts as one,
-    where a plain ``increase()`` shows nothing (#191).
+    The difference with the latest sample at or before one step ago. Consecutive
+    points telescope, so each is a whole number and they add up to the range's
+    events. No range selector, so nothing is extrapolated: ``increase()`` over a
+    window turned one scan into 5.33 at a 15 s step. A reset (the worker
+    restarted) is counted from zero, as the value since it, instead of going
+    negative. A first observation is the whole value, under #191's guard that
+    Prometheus was scraping the worker one step ago. The three terms never
+    overlap.
     """
-    return f"({_rate(selector)} * $sec)"
+    return (
+        f"((({selector} - {selector} offset $step) >= 0)"
+        f" or ({selector} < {selector} offset $step)"
+        f" or (({selector} unless {selector} offset $step)"
+        f' and on() (up{{job="snapl-worker"}} offset $step)))'
+    )
 
 
 def _mean(sum_selector: str, count_selector: str, by: str) -> str:
@@ -108,11 +117,11 @@ def _mean(sum_selector: str, count_selector: str, by: str) -> str:
 
 @dataclass(frozen=True)
 class MetricsViewSpec:
-    # `$ns`, `$uc`, `$w` and `$sec` are filled by render_query, and nothing else is.
+    # `$ns`, `$uc`, `$w`, `$sec` and `$step` are filled by render_query, and nothing else is.
     query: str
     unit: MetricUnit
     labels: tuple[str, ...]
-    # True for a count of events over the window, as opposed to a gauge's current count (research R4).
+    # True for a count of events in each step, as opposed to a gauge's current count (research R4, #308).
     counts_events: bool = False
     # Said with every answer of the view.
     note: str | None = None
@@ -164,7 +173,7 @@ VIEWS: dict[MetricsViewName, MetricsViewSpec] = {
         ("device", "operation"),
     ),
     MetricsViewName.WORKFLOWS_COMPLETED: MetricsViewSpec(
-        f"sum by (workflow_type) ({_increase('temporal_workflow_completed{namespace="$ns"}')})",
+        f"sum by (workflow_type) ({_step_increase('temporal_workflow_completed{namespace="$ns"}')})",
         "count",
         ("workflow_type",),
         counts_events=True,
@@ -197,19 +206,19 @@ VIEWS: dict[MetricsViewName, MetricsViewSpec] = {
     ),
     # Spec 015 PR E: the worker's counters (FR-010 to FR-012), summed over the runtime's labels.
     MetricsViewName.SCAN_RESULTS: MetricsViewSpec(
-        f"sum by (device, state) ({_increase('snapl_scan_results_total{use_case="$uc"}')})",
+        f"sum by (device, state) ({_step_increase('snapl_scan_results_total{use_case="$uc"}')})",
         "count",
         ("device", "state"),
         counts_events=True,
     ),
     MetricsViewName.DRIFT_PATHS: MetricsViewSpec(
-        f"sum by (device, kind) ({_increase('snapl_drift_paths_total{use_case="$uc"}')})",
+        f"sum by (device, kind) ({_step_increase('snapl_drift_paths_total{use_case="$uc"}')})",
         "count",
         ("device", "kind"),
         counts_events=True,
     ),
     MetricsViewName.DEPLOY_OUTCOMES: MetricsViewSpec(
-        f"sum by (outcome, reason) ({_increase('snapl_deploy_ends_total{use_case="$uc"}')})",
+        f"sum by (outcome, reason) ({_step_increase('snapl_deploy_ends_total{use_case="$uc"}')})",
         "count",
         ("outcome", "reason"),
         counts_events=True,
@@ -381,14 +390,15 @@ def _label_value(value: str) -> str:
     return value.replace("\\", "\\\\").replace('"', '\\"')
 
 
-def render_query(view: MetricsViewName, *, namespace: str, use_case: str, window_s: int) -> str:
-    return _render(VIEWS[view].query, namespace=namespace, use_case=use_case, window_s=window_s)
+def render_query(view: MetricsViewName, *, namespace: str, use_case: str, window_s: int, step_s: int) -> str:
+    return _render(VIEWS[view].query, namespace=namespace, use_case=use_case, window_s=window_s, step_s=step_s)
 
 
-def _render(query: str, *, namespace: str, use_case: str, window_s: int) -> str:
+def _render(query: str, *, namespace: str, use_case: str, window_s: int, step_s: int) -> str:
     return (
         query.replace("$ns", _label_value(namespace))
         .replace("$uc", _label_value(use_case))
+        .replace("$step", f"{step_s}s")
         .replace("$w", f"{window_s}s")
         .replace("$sec", str(window_s))
     )
@@ -397,15 +407,6 @@ def _render(query: str, *, namespace: str, use_case: str, window_s: int) -> str:
 def rate_window(step: int) -> int:
     """The window ``$w`` of a range at ``step``: at least four scrapes, and at least one step."""
     return max(4 * SCRAPE_INTERVAL_S, step)
-
-
-def window_note(view: MetricsViewName, step: int) -> str | None:
-    """What a count's point covers, when its window is longer than the step (research R4).
-
-    Neighbouring points then overlap, so they must not be added up.
-    """
-    window = rate_window(step)
-    return f"events in the last {window} s" if VIEWS[view].counts_events and window > step else None
 
 
 def choose_step(start: datetime, end: datetime, requested: int) -> int:
@@ -522,7 +523,9 @@ class PrometheusSource:
         spec = VIEWS[view]
         window = rate_window(plan.step)
         params = {
-            "query": render_query(view, namespace=self._namespace, use_case=self._use_case, window_s=window),
+            "query": render_query(
+                view, namespace=self._namespace, use_case=self._use_case, window_s=window, step_s=plan.step
+            ),
             "start": str(int(plan.start.timestamp())),
             "end": str(int(plan.end.timestamp())),
             "step": str(plan.step),
@@ -535,11 +538,7 @@ class PrometheusSource:
         body = self._body(response)
 
         series = parse_matrix(body, spec.labels)
-        notes = [
-            note
-            for note in (plan.note, window_note(view, plan.step), spec.note, None if series else "no data in range")
-            if note
-        ]
+        notes = [note for note in (plan.note, spec.note, None if series else "no data in range") if note]
         data = MetricsData(
             view=view,
             unit=spec.unit,
@@ -570,7 +569,11 @@ class PrometheusSource:
                             "/api/v1/query",
                             params={
                                 "query": _render(
-                                    query, namespace=self._namespace, use_case=self._use_case, window_s=window
+                                    query,
+                                    namespace=self._namespace,
+                                    use_case=self._use_case,
+                                    window_s=window,
+                                    step_s=SCRAPE_INTERVAL_S,
                                 ),
                                 "time": str(now.timestamp()),
                             },

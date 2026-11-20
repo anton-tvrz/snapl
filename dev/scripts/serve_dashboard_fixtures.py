@@ -59,7 +59,7 @@ from snapl_presentation.dashboard.models import (  # noqa: E402
     SourceName,
     View,
 )
-from snapl_presentation.dashboard.prometheus import VIEWS, NetworkSample, RangePlan, window_note  # noqa: E402
+from snapl_presentation.dashboard.prometheus import VIEWS, NetworkSample, RangePlan  # noqa: E402
 from snapl_presentation.dashboard.sources import AuditSource, Sources, TemporalSnapshot  # noqa: E402
 from snapl_presentation.settings import CliSettings  # noqa: E402
 from tests.unit.test_presentation.dashboard_fakes import (  # noqa: E402
@@ -401,8 +401,7 @@ class _PrometheusUp:
             end=plan.end,
             step=plan.step,
             series=series,
-            note="; ".join(note for note in (plan.note, window_note(view, plan.step), VIEWS[view].note) if note)
-            or None,
+            note="; ".join(note for note in (plan.note, VIEWS[view].note) if note) or None,
         )
 
     async def network(self) -> NetworkSample:
