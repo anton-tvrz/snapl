@@ -67,3 +67,28 @@ After #311 and #317 the fabric has no fault to flag:
 - CPU reads 3 % and memory 91 % on every node. Both are the OrbStack VM's, the same on all six, and neither crosses a threshold. They say nothing about a switch.
 
 The quickstart's "both spines in sync and unhealthy, four `BGP … active` reasons each" was the lab before #311 and no longer reproduces. The flagged path is still to be shown on the lab, with a fault made on purpose: item 4 (an interface, T058) and item 7 (a BGP neighbour, T061).
+
+## Item 4: an interface fault (T058, SC-001)
+
+Same worker, with `snapl dashboard` from main at d741172. A poller read the page's own APIs, `/api/v1/network` (the drawer and the network views) and `/api/v1/health` (the fabric panel), every 2 s and logged each change. The page itself wasn't opened in a browser. Raw output is in `.snapl/lab/2026-11-20/t058/`.
+
+| UTC | what happened | after the disable |
+|---|---|---:|
+| 08:48:01 | `docker exec clab-dcfabric-leaf-01 sr_cli -ec 'set / interface ethernet-1/49 admin-state disable'` | 0 s |
+| 08:48:18 | `health_changed` for leaf-01 and spine-01: `unhealthy` | 17 s |
+| 08:48:20 | `/api/v1/health`: leaf-01 `ethernet-1/49 down (expected up)`, `BGP 10.10.1.0 active (expected established)`; spine-01 `ethernet-1/1 down (expected up)`, `BGP 10.10.1.1 active (expected established)` | 19 s |
+| 08:48:25 | `/api/v1/network`: leaf-01 `ethernet-1/49` and spine-01 `ethernet-1/1` down, both sessions not established, 0 routes | 24 s |
+| 08:49:16 | `snapl scan` exits 2: `5 clean, 1 drifted`, leaf-01 `/interface[name=ethernet-1/49]/enabled True → False`. `snapl status`: `4 healthy, 2 unhealthy (leaf-01, spine-01)` | |
+| 08:49:33 | `snapl reconcile --drifted --yes`: `1/1 succeeded` | |
+| 08:49:38 | `health_changed`: both still `unhealthy`, the interface reason gone, the session's left | |
+| 08:49:46 | `/api/v1/network`: both interfaces up | |
+| 08:50:19 | `health_changed`: both `healthy` | 46 s after the reconcile |
+| 08:50:21 | `/api/v1/health`: both healthy. `snapl scan`: `6 clean`, `snapl status`: `6 healthy` | 48 s after the reconcile |
+
+SC-001 holds: shown down within 30 s (24 s), flagged within 60 s (19 s), and cleared within 60 s of the repair (48 s). The clear has the narrowest margin. The link is up 13 s after the reconcile, and the rest is the BGP session coming back, as in item 1's capture.
+
+Drift and health are two separate marks: during the fault, the scan reported leaf-01 drifted and only leaf-01, and health reported leaf-01 and spine-01 unhealthy. spine-01 is in sync the whole time: nothing on it differs from intent, but its link and session are down.
+
+The quickstart said spine-01's "reasons grow by one". That was written for the lab before #311, when spine-01 was already flagged. Now it starts healthy and gets two reasons, its interface and its session. The quickstart now says so.
+
+An earlier attempt at 08:45:31 was dropped: the page poller had failed to start (`python3` on the host is 3.9), so that run has no page timeline. The interface was re-enabled at 08:46, and the run above started from a healthy fabric.
