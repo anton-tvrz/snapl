@@ -968,6 +968,50 @@ class TestStreamTelemetrySpineCapture:
         assert all(s.sessions == () for s in samples)
 
 
+def _timeline(samples, *, interface: str, peer: str) -> tuple[list[bool], list[str], list[int]]:
+    """Each reported oper state, session state and prefix count, in order, with repeats folded."""
+
+    def folded(values):
+        return [v for i, v in enumerate(values) if i == 0 or v != values[i - 1]]
+
+    up = [i.oper_up for s in samples for i in s.interfaces if i.name == interface and i.oper_up is not None]
+    states = [x.state for s in samples for x in s.sessions if x.peer == peer and x.state is not None]
+    prefixes = [
+        x.prefixes_received for s in samples for x in s.sessions if x.peer == peer and x.prefixes_received is not None
+    ]
+    return folded(up), folded(states), folded(prefixes)
+
+
+class TestStreamTelemetryFaultCaptures:
+    """Spec 016 T057: the two fault captures, recorded on the lab on 2026-11-20."""
+
+    async def test_leaf01_interface_disabled_then_enabled(self, make_device):
+        # ethernet-1/49 disabled at +15 s and enabled at +46 s on the device.
+        target = _target(make_device, "leaf-01", interfaces=("ethernet-1/49",), peers=("10.10.1.0",))
+        samples = await _samples(_make_collector(), target, _capture("srlinux_v26_3_1_leaf01_interface_down_up.json"))
+        up, states, prefixes = _timeline(samples, interface="ethernet-1/49", peer="10.10.1.0")
+        assert up == [True, False, True]
+        assert states == ["established", "active", "established"]
+        assert prefixes == [4, 0, 4]
+
+    async def test_leaf01_counters_hold_while_the_link_is_down(self, make_device):
+        target = _target(make_device, "leaf-01", interfaces=("ethernet-1/49",), peers=("10.10.1.0",))
+        samples = await _samples(_make_collector(), target, _capture("srlinux_v26_3_1_leaf01_interface_down_up.json"))
+        octets = [i.in_octets for s in samples for i in s.interfaces if i.in_octets is not None]
+        assert octets == sorted(octets)  # a counter never goes back
+        assert len(set(octets[2:5])) == 1  # the samples at +20, +30 and +40 s, taken while down, read the same
+
+    async def test_spine01_while_its_peer_leaf01_is_paused(self, make_device):
+        # leaf-01 paused from +15 s to +115 s: the link stays up, the session
+        # drops only when the 90 s hold timer runs out, and comes back after.
+        target = _target(make_device, "spine-01", interfaces=("ethernet-1/1",), peers=("10.10.1.1",))
+        samples = await _samples(_make_collector(), target, _capture("srlinux_v26_3_1_spine01_peer_paused.json"))
+        up, states, prefixes = _timeline(samples, interface="ethernet-1/1", peer="10.10.1.1")
+        assert up == [True]
+        assert states == ["established", "connect", "established"]
+        assert prefixes == [2, 0, 2]
+
+
 class TestStreamTelemetryParsing:
     async def test_an_interface_outside_the_target_is_dropped(self, make_device):
         target = _target(make_device, "leaf-01", interfaces=("lo0",))

@@ -1,0 +1,1981 @@
+[
+ {
+  "t_rel": 0.033,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]",
+      "val": {
+       "oper-state": "up"
+      }
+     },
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]/statistics",
+      "val": {
+       "in-packets": "18979",
+       "in-octets": "3688330",
+       "in-unicast-packets": "3937",
+       "in-broadcast-packets": "12",
+       "in-multicast-packets": "15006",
+       "in-discarded-packets": "142",
+       "in-error-packets": "0",
+       "in-fcs-error-packets": "0",
+       "out-packets": "18837",
+       "out-octets": "3768405",
+       "out-mirror-octets": "0",
+       "out-unicast-packets": "3935",
+       "out-broadcast-packets": "12",
+       "out-multicast-packets": "14890",
+       "out-discarded-packets": "0",
+       "out-error-packets": "0",
+       "out-mirror-packets": "0",
+       "carrier-transitions": "6",
+       "interface-transitions": "11",
+       "link-transitions": "0"
+      }
+     },
+     {
+      "path": "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]",
+      "val": {
+       "session-state": "established"
+      }
+     },
+     {
+      "path": "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]/afi-safi[afi-safi-name=ipv4-unicast]",
+      "val": {
+       "received-routes": 2
+      }
+     }
+    ],
+    "timestamp": 1795161035313902651
+   },
+   "sync_response": true
+  }
+ },
+ {
+  "t_rel": 10.035,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]",
+      "val": {
+       "oper-state": "up"
+      }
+     }
+    ],
+    "timestamp": 1795161045314994495
+   }
+  }
+ },
+ {
+  "t_rel": 10.038,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]/statistics",
+      "val": {
+       "in-packets": "18981",
+       "in-octets": "3688481",
+       "in-unicast-packets": "3939",
+       "in-broadcast-packets": "12",
+       "in-multicast-packets": "15006",
+       "in-discarded-packets": "142",
+       "in-error-packets": "0",
+       "in-fcs-error-packets": "0",
+       "out-packets": "18839",
+       "out-octets": "3768564",
+       "out-mirror-octets": "0",
+       "out-unicast-packets": "3937",
+       "out-broadcast-packets": "12",
+       "out-multicast-packets": "14890",
+       "out-discarded-packets": "0",
+       "out-error-packets": "0",
+       "out-mirror-packets": "0",
+       "carrier-transitions": "6",
+       "interface-transitions": "11",
+       "link-transitions": "0"
+      }
+     }
+    ],
+    "timestamp": 1795161045315667164
+   }
+  }
+ },
+ {
+  "t_rel": 10.038,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]",
+      "val": {
+       "session-state": "established"
+      }
+     }
+    ],
+    "timestamp": 1795161045316580208
+   }
+  }
+ },
+ {
+  "t_rel": 10.038,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]/afi-safi[afi-safi-name=ipv4-unicast]",
+      "val": {
+       "received-routes": 2
+      }
+     }
+    ],
+    "timestamp": 1795161045316631041
+   }
+  }
+ },
+ {
+  "t_rel": 20.032,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]",
+      "val": {
+       "oper-state": "up"
+      }
+     }
+    ],
+    "timestamp": 1795161055313512458
+   }
+  }
+ },
+ {
+  "t_rel": 20.032,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]/statistics",
+      "val": {
+       "in-packets": "18981",
+       "in-octets": "3688481",
+       "in-unicast-packets": "3939",
+       "in-broadcast-packets": "12",
+       "in-multicast-packets": "15006",
+       "in-discarded-packets": "142",
+       "in-error-packets": "0",
+       "in-fcs-error-packets": "0",
+       "out-packets": "18840",
+       "out-octets": "3768796",
+       "out-mirror-octets": "0",
+       "out-unicast-packets": "3937",
+       "out-broadcast-packets": "12",
+       "out-multicast-packets": "14891",
+       "out-discarded-packets": "0",
+       "out-error-packets": "0",
+       "out-mirror-packets": "0",
+       "carrier-transitions": "6",
+       "interface-transitions": "11",
+       "link-transitions": "0"
+      }
+     }
+    ],
+    "timestamp": 1795161055313657833
+   }
+  }
+ },
+ {
+  "t_rel": 20.035,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]",
+      "val": {
+       "session-state": "established"
+      }
+     }
+    ],
+    "timestamp": 1795161055317025217
+   }
+  }
+ },
+ {
+  "t_rel": 20.035,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]/afi-safi[afi-safi-name=ipv4-unicast]",
+      "val": {
+       "received-routes": 2
+      }
+     }
+    ],
+    "timestamp": 1795161055317083384
+   }
+  }
+ },
+ {
+  "t_rel": 30.033,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]",
+      "val": {
+       "oper-state": "up"
+      }
+     }
+    ],
+    "timestamp": 1795161065314013051
+   }
+  }
+ },
+ {
+  "t_rel": 30.037,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]/statistics",
+      "val": {
+       "in-packets": "18981",
+       "in-octets": "3688481",
+       "in-unicast-packets": "3939",
+       "in-broadcast-packets": "12",
+       "in-multicast-packets": "15006",
+       "in-discarded-packets": "142",
+       "in-error-packets": "0",
+       "in-fcs-error-packets": "0",
+       "out-packets": "18840",
+       "out-octets": "3768796",
+       "out-mirror-octets": "0",
+       "out-unicast-packets": "3937",
+       "out-broadcast-packets": "12",
+       "out-multicast-packets": "14891",
+       "out-discarded-packets": "0",
+       "out-error-packets": "0",
+       "out-mirror-packets": "0",
+       "carrier-transitions": "6",
+       "interface-transitions": "11",
+       "link-transitions": "0"
+      }
+     }
+    ],
+    "timestamp": 1795161065314358885
+   }
+  }
+ },
+ {
+  "t_rel": 30.037,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]",
+      "val": {
+       "session-state": "established"
+      }
+     }
+    ],
+    "timestamp": 1795161065318032478
+   }
+  }
+ },
+ {
+  "t_rel": 30.037,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]/afi-safi[afi-safi-name=ipv4-unicast]",
+      "val": {
+       "received-routes": 2
+      }
+     }
+    ],
+    "timestamp": 1795161065318173270
+   }
+  }
+ },
+ {
+  "t_rel": 40.033,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]",
+      "val": {
+       "oper-state": "up"
+      }
+     }
+    ],
+    "timestamp": 1795161075314032642
+   }
+  }
+ },
+ {
+  "t_rel": 40.038,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]/statistics",
+      "val": {
+       "in-packets": "18981",
+       "in-octets": "3688481",
+       "in-unicast-packets": "3939",
+       "in-broadcast-packets": "12",
+       "in-multicast-packets": "15006",
+       "in-discarded-packets": "142",
+       "in-error-packets": "0",
+       "in-fcs-error-packets": "0",
+       "out-packets": "18847",
+       "out-octets": "3769419",
+       "out-mirror-octets": "0",
+       "out-unicast-packets": "3944",
+       "out-broadcast-packets": "12",
+       "out-multicast-packets": "14891",
+       "out-discarded-packets": "0",
+       "out-error-packets": "0",
+       "out-mirror-packets": "0",
+       "carrier-transitions": "6",
+       "interface-transitions": "11",
+       "link-transitions": "0"
+      }
+     }
+    ],
+    "timestamp": 1795161075314520685
+   }
+  }
+ },
+ {
+  "t_rel": 40.038,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]",
+      "val": {
+       "session-state": "established"
+      }
+     }
+    ],
+    "timestamp": 1795161075319038572
+   }
+  }
+ },
+ {
+  "t_rel": 40.038,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]/afi-safi[afi-safi-name=ipv4-unicast]",
+      "val": {
+       "received-routes": 2
+      }
+     }
+    ],
+    "timestamp": 1795161075319262989
+   }
+  }
+ },
+ {
+  "t_rel": 50.034,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]",
+      "val": {
+       "oper-state": "up"
+      }
+     }
+    ],
+    "timestamp": 1795161085314845402
+   }
+  }
+ },
+ {
+  "t_rel": 50.034,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]/statistics",
+      "val": {
+       "in-packets": "18981",
+       "in-octets": "3688481",
+       "in-unicast-packets": "3939",
+       "in-broadcast-packets": "12",
+       "in-multicast-packets": "15006",
+       "in-discarded-packets": "142",
+       "in-error-packets": "0",
+       "in-fcs-error-packets": "0",
+       "out-packets": "18849",
+       "out-octets": "3769740",
+       "out-mirror-octets": "0",
+       "out-unicast-packets": "3945",
+       "out-broadcast-packets": "12",
+       "out-multicast-packets": "14892",
+       "out-discarded-packets": "0",
+       "out-error-packets": "0",
+       "out-mirror-packets": "0",
+       "carrier-transitions": "6",
+       "interface-transitions": "11",
+       "link-transitions": "0"
+      }
+     }
+    ],
+    "timestamp": 1795161085315362195
+   }
+  }
+ },
+ {
+  "t_rel": 50.04,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]",
+      "val": {
+       "session-state": "established"
+      }
+     }
+    ],
+    "timestamp": 1795161085320121749
+   }
+  }
+ },
+ {
+  "t_rel": 50.04,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]/afi-safi[afi-safi-name=ipv4-unicast]",
+      "val": {
+       "received-routes": 2
+      }
+     }
+    ],
+    "timestamp": 1795161085320482250
+   }
+  }
+ },
+ {
+  "t_rel": 60.036,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]",
+      "val": {
+       "oper-state": "up"
+      }
+     }
+    ],
+    "timestamp": 1795161095316197039
+   }
+  }
+ },
+ {
+  "t_rel": 60.042,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]/statistics",
+      "val": {
+       "in-packets": "18981",
+       "in-octets": "3688481",
+       "in-unicast-packets": "3939",
+       "in-broadcast-packets": "12",
+       "in-multicast-packets": "15006",
+       "in-discarded-packets": "142",
+       "in-error-packets": "0",
+       "in-fcs-error-packets": "0",
+       "out-packets": "18849",
+       "out-octets": "3769740",
+       "out-mirror-octets": "0",
+       "out-unicast-packets": "3945",
+       "out-broadcast-packets": "12",
+       "out-multicast-packets": "14892",
+       "out-discarded-packets": "0",
+       "out-error-packets": "0",
+       "out-mirror-packets": "0",
+       "carrier-transitions": "6",
+       "interface-transitions": "11",
+       "link-transitions": "0"
+      }
+     }
+    ],
+    "timestamp": 1795161095316409414
+   }
+  }
+ },
+ {
+  "t_rel": 60.042,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]",
+      "val": {
+       "session-state": "established"
+      }
+     }
+    ],
+    "timestamp": 1795161095320250549
+   }
+  }
+ },
+ {
+  "t_rel": 60.042,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]/afi-safi[afi-safi-name=ipv4-unicast]",
+      "val": {
+       "received-routes": 2
+      }
+     }
+    ],
+    "timestamp": 1795161095320516467
+   }
+  }
+ },
+ {
+  "t_rel": 70.036,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]",
+      "val": {
+       "oper-state": "up"
+      }
+     }
+    ],
+    "timestamp": 1795161105317543009
+   }
+  }
+ },
+ {
+  "t_rel": 70.041,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]/statistics",
+      "val": {
+       "in-packets": "18981",
+       "in-octets": "3688481",
+       "in-unicast-packets": "3939",
+       "in-broadcast-packets": "12",
+       "in-multicast-packets": "15006",
+       "in-discarded-packets": "142",
+       "in-error-packets": "0",
+       "in-fcs-error-packets": "0",
+       "out-packets": "18850",
+       "out-octets": "3769829",
+       "out-mirror-octets": "0",
+       "out-unicast-packets": "3946",
+       "out-broadcast-packets": "12",
+       "out-multicast-packets": "14892",
+       "out-discarded-packets": "0",
+       "out-error-packets": "0",
+       "out-mirror-packets": "0",
+       "carrier-transitions": "6",
+       "interface-transitions": "11",
+       "link-transitions": "0"
+      }
+     }
+    ],
+    "timestamp": 1795161105317823051
+   }
+  }
+ },
+ {
+  "t_rel": 70.041,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]",
+      "val": {
+       "session-state": "established"
+      }
+     }
+    ],
+    "timestamp": 1795161105322096104
+   }
+  }
+ },
+ {
+  "t_rel": 70.043,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]/afi-safi[afi-safi-name=ipv4-unicast]",
+      "val": {
+       "received-routes": 2
+      }
+     }
+    ],
+    "timestamp": 1795161105322601730
+   }
+  }
+ },
+ {
+  "t_rel": 80.037,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]",
+      "val": {
+       "oper-state": "up"
+      }
+     }
+    ],
+    "timestamp": 1795161115317846727
+   }
+  }
+ },
+ {
+  "t_rel": 80.04,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]/statistics",
+      "val": {
+       "in-packets": "18981",
+       "in-octets": "3688481",
+       "in-unicast-packets": "3939",
+       "in-broadcast-packets": "12",
+       "in-multicast-packets": "15006",
+       "in-discarded-packets": "142",
+       "in-error-packets": "0",
+       "in-fcs-error-packets": "0",
+       "out-packets": "18851",
+       "out-octets": "3770061",
+       "out-mirror-octets": "0",
+       "out-unicast-packets": "3946",
+       "out-broadcast-packets": "12",
+       "out-multicast-packets": "14893",
+       "out-discarded-packets": "0",
+       "out-error-packets": "0",
+       "out-mirror-packets": "0",
+       "carrier-transitions": "6",
+       "interface-transitions": "11",
+       "link-transitions": "0"
+      }
+     }
+    ],
+    "timestamp": 1795161115318187769
+   }
+  }
+ },
+ {
+  "t_rel": 80.042,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]",
+      "val": {
+       "session-state": "established"
+      }
+     }
+    ],
+    "timestamp": 1795161115322130689
+   }
+  }
+ },
+ {
+  "t_rel": 80.042,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]/afi-safi[afi-safi-name=ipv4-unicast]",
+      "val": {
+       "received-routes": 2
+      }
+     }
+    ],
+    "timestamp": 1795161115322489356
+   }
+  }
+ },
+ {
+  "t_rel": 90.039,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]",
+      "val": {
+       "oper-state": "up"
+      }
+     }
+    ],
+    "timestamp": 1795161125319126747
+   }
+  }
+ },
+ {
+  "t_rel": 90.044,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]/statistics",
+      "val": {
+       "in-packets": "18981",
+       "in-octets": "3688481",
+       "in-unicast-packets": "3939",
+       "in-broadcast-packets": "12",
+       "in-multicast-packets": "15006",
+       "in-discarded-packets": "142",
+       "in-error-packets": "0",
+       "in-fcs-error-packets": "0",
+       "out-packets": "18852",
+       "out-octets": "3770150",
+       "out-mirror-octets": "0",
+       "out-unicast-packets": "3947",
+       "out-broadcast-packets": "12",
+       "out-multicast-packets": "14893",
+       "out-discarded-packets": "0",
+       "out-error-packets": "0",
+       "out-mirror-packets": "0",
+       "carrier-transitions": "6",
+       "interface-transitions": "11",
+       "link-transitions": "0"
+      }
+     }
+    ],
+    "timestamp": 1795161125319356373
+   }
+  }
+ },
+ {
+  "t_rel": 90.044,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]",
+      "val": {
+       "session-state": "established"
+      }
+     }
+    ],
+    "timestamp": 1795161125322823543
+   }
+  }
+ },
+ {
+  "t_rel": 90.252,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]/afi-safi[afi-safi-name=ipv4-unicast]",
+      "val": {
+       "received-routes": 2
+      }
+     }
+    ],
+    "timestamp": 1795161125322956043
+   }
+  }
+ },
+ {
+  "t_rel": 100.048,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]",
+      "val": {
+       "oper-state": "up"
+      }
+     }
+    ],
+    "timestamp": 1795161135326149357
+   }
+  }
+ },
+ {
+  "t_rel": 100.051,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]/statistics",
+      "val": {
+       "in-packets": "18981",
+       "in-octets": "3688481",
+       "in-unicast-packets": "3939",
+       "in-broadcast-packets": "12",
+       "in-multicast-packets": "15006",
+       "in-discarded-packets": "142",
+       "in-error-packets": "0",
+       "in-fcs-error-packets": "0",
+       "out-packets": "18860",
+       "out-octets": "3770766",
+       "out-mirror-octets": "0",
+       "out-unicast-packets": "3955",
+       "out-broadcast-packets": "12",
+       "out-multicast-packets": "14893",
+       "out-discarded-packets": "0",
+       "out-error-packets": "0",
+       "out-mirror-packets": "0",
+       "carrier-transitions": "6",
+       "interface-transitions": "11",
+       "link-transitions": "0"
+      }
+     }
+    ],
+    "timestamp": 1795161135328777067
+   }
+  }
+ },
+ {
+  "t_rel": 100.051,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]",
+      "val": {
+       "session-state": "connect"
+      }
+     }
+    ],
+    "timestamp": 1795161135328823859
+   }
+  }
+ },
+ {
+  "t_rel": 100.051,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]/afi-safi[afi-safi-name=ipv4-unicast]",
+      "val": {
+       "received-routes": 0
+      }
+     }
+    ],
+    "timestamp": 1795161135328843567
+   }
+  }
+ },
+ {
+  "t_rel": 110.041,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]",
+      "val": {
+       "oper-state": "up"
+      }
+     }
+    ],
+    "timestamp": 1795161145321127663
+   }
+  }
+ },
+ {
+  "t_rel": 110.041,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]/statistics",
+      "val": {
+       "in-packets": "18981",
+       "in-octets": "3688481",
+       "in-unicast-packets": "3939",
+       "in-broadcast-packets": "12",
+       "in-multicast-packets": "15006",
+       "in-discarded-packets": "142",
+       "in-error-packets": "0",
+       "in-fcs-error-packets": "0",
+       "out-packets": "18862",
+       "out-octets": "3771076",
+       "out-mirror-octets": "0",
+       "out-unicast-packets": "3956",
+       "out-broadcast-packets": "12",
+       "out-multicast-packets": "14894",
+       "out-discarded-packets": "0",
+       "out-error-packets": "0",
+       "out-mirror-packets": "0",
+       "carrier-transitions": "6",
+       "interface-transitions": "11",
+       "link-transitions": "0"
+      }
+     }
+    ],
+    "timestamp": 1795161145321593080
+   }
+  }
+ },
+ {
+  "t_rel": 110.047,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]",
+      "val": {
+       "session-state": "connect"
+      }
+     }
+    ],
+    "timestamp": 1795161145327283460
+   }
+  }
+ },
+ {
+  "t_rel": 110.047,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]/afi-safi[afi-safi-name=ipv4-unicast]",
+      "val": {
+       "received-routes": 0
+      }
+     }
+    ],
+    "timestamp": 1795161145327471252
+   }
+  }
+ },
+ {
+  "t_rel": 120.041,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]",
+      "val": {
+       "oper-state": "up"
+      }
+     }
+    ],
+    "timestamp": 1795161155321830182
+   }
+  }
+ },
+ {
+  "t_rel": 120.041,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]/statistics",
+      "val": {
+       "in-packets": "19005",
+       "in-octets": "3690625",
+       "in-unicast-packets": "3961",
+       "in-broadcast-packets": "12",
+       "in-multicast-packets": "15008",
+       "in-discarded-packets": "142",
+       "in-error-packets": "0",
+       "in-fcs-error-packets": "0",
+       "out-packets": "18884",
+       "out-octets": "3773153",
+       "out-mirror-octets": "0",
+       "out-unicast-packets": "3977",
+       "out-broadcast-packets": "12",
+       "out-multicast-packets": "14895",
+       "out-discarded-packets": "0",
+       "out-error-packets": "0",
+       "out-mirror-packets": "0",
+       "carrier-transitions": "6",
+       "interface-transitions": "11",
+       "link-transitions": "0"
+      }
+     }
+    ],
+    "timestamp": 1795161155322065058
+   }
+  }
+ },
+ {
+  "t_rel": 120.046,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]",
+      "val": {
+       "session-state": "established"
+      }
+     }
+    ],
+    "timestamp": 1795161155327322021
+   }
+  }
+ },
+ {
+  "t_rel": 120.046,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]/afi-safi[afi-safi-name=ipv4-unicast]",
+      "val": {
+       "received-routes": 0
+      }
+     }
+    ],
+    "timestamp": 1795161155327409271
+   }
+  }
+ },
+ {
+  "t_rel": 130.042,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]",
+      "val": {
+       "oper-state": "up"
+      }
+     }
+    ],
+    "timestamp": 1795161165322504785
+   }
+  }
+ },
+ {
+  "t_rel": 130.042,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]/statistics",
+      "val": {
+       "in-packets": "19008",
+       "in-octets": "3690950",
+       "in-unicast-packets": "3963",
+       "in-broadcast-packets": "12",
+       "in-multicast-packets": "15008",
+       "in-discarded-packets": "143",
+       "in-error-packets": "0",
+       "in-fcs-error-packets": "0",
+       "out-packets": "18886",
+       "out-octets": "3773321",
+       "out-mirror-octets": "0",
+       "out-unicast-packets": "3979",
+       "out-broadcast-packets": "12",
+       "out-multicast-packets": "14895",
+       "out-discarded-packets": "0",
+       "out-error-packets": "0",
+       "out-mirror-packets": "0",
+       "carrier-transitions": "6",
+       "interface-transitions": "11",
+       "link-transitions": "0"
+      }
+     }
+    ],
+    "timestamp": 1795161165322662036
+   }
+  }
+ },
+ {
+  "t_rel": 130.045,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]",
+      "val": {
+       "session-state": "established"
+      }
+     }
+    ],
+    "timestamp": 1795161165327740624
+   }
+  }
+ },
+ {
+  "t_rel": 130.047,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]/afi-safi[afi-safi-name=ipv4-unicast]",
+      "val": {
+       "received-routes": 2
+      }
+     }
+    ],
+    "timestamp": 1795161165327868666
+   }
+  }
+ },
+ {
+  "t_rel": 140.042,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]",
+      "val": {
+       "oper-state": "up"
+      }
+     }
+    ],
+    "timestamp": 1795161175323812473
+   }
+  }
+ },
+ {
+  "t_rel": 140.046,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]/statistics",
+      "val": {
+       "in-packets": "19008",
+       "in-octets": "3690950",
+       "in-unicast-packets": "3963",
+       "in-broadcast-packets": "12",
+       "in-multicast-packets": "15008",
+       "in-discarded-packets": "143",
+       "in-error-packets": "0",
+       "in-fcs-error-packets": "0",
+       "out-packets": "18887",
+       "out-octets": "3773553",
+       "out-mirror-octets": "0",
+       "out-unicast-packets": "3979",
+       "out-broadcast-packets": "12",
+       "out-multicast-packets": "14896",
+       "out-discarded-packets": "0",
+       "out-error-packets": "0",
+       "out-mirror-packets": "0",
+       "carrier-transitions": "6",
+       "interface-transitions": "11",
+       "link-transitions": "0"
+      }
+     }
+    ],
+    "timestamp": 1795161175324178056
+   }
+  }
+ },
+ {
+  "t_rel": 140.05,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]",
+      "val": {
+       "session-state": "established"
+      }
+     }
+    ],
+    "timestamp": 1795161175328665936
+   }
+  }
+ },
+ {
+  "t_rel": 140.05,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]/afi-safi[afi-safi-name=ipv4-unicast]",
+      "val": {
+       "received-routes": 2
+      }
+     }
+    ],
+    "timestamp": 1795161175328945394
+   }
+  }
+ },
+ {
+  "t_rel": 150.044,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]",
+      "val": {
+       "oper-state": "up"
+      }
+     }
+    ],
+    "timestamp": 1795161185325277451
+   }
+  }
+ },
+ {
+  "t_rel": 150.051,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]/statistics",
+      "val": {
+       "in-packets": "19011",
+       "in-octets": "3691328",
+       "in-unicast-packets": "3965",
+       "in-broadcast-packets": "12",
+       "in-multicast-packets": "15009",
+       "in-discarded-packets": "143",
+       "in-error-packets": "0",
+       "in-fcs-error-packets": "0",
+       "out-packets": "18889",
+       "out-octets": "3773712",
+       "out-mirror-octets": "0",
+       "out-unicast-packets": "3981",
+       "out-broadcast-packets": "12",
+       "out-multicast-packets": "14896",
+       "out-discarded-packets": "0",
+       "out-error-packets": "0",
+       "out-mirror-packets": "0",
+       "carrier-transitions": "6",
+       "interface-transitions": "11",
+       "link-transitions": "0"
+      }
+     }
+    ],
+    "timestamp": 1795161185325475202
+   }
+  }
+ },
+ {
+  "t_rel": 150.051,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]",
+      "val": {
+       "session-state": "established"
+      }
+     }
+    ],
+    "timestamp": 1795161185329622456
+   }
+  }
+ },
+ {
+  "t_rel": 150.053,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]/afi-safi[afi-safi-name=ipv4-unicast]",
+      "val": {
+       "received-routes": 2
+      }
+     }
+    ],
+    "timestamp": 1795161185329761914
+   }
+  }
+ },
+ {
+  "t_rel": 160.047,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]",
+      "val": {
+       "oper-state": "up"
+      }
+     }
+    ],
+    "timestamp": 1795161195327183597
+   }
+  }
+ },
+ {
+  "t_rel": 160.051,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]/statistics",
+      "val": {
+       "in-packets": "19011",
+       "in-octets": "3691328",
+       "in-unicast-packets": "3965",
+       "in-broadcast-packets": "12",
+       "in-multicast-packets": "15009",
+       "in-discarded-packets": "143",
+       "in-error-packets": "0",
+       "in-fcs-error-packets": "0",
+       "out-packets": "18889",
+       "out-octets": "3773712",
+       "out-mirror-octets": "0",
+       "out-unicast-packets": "3981",
+       "out-broadcast-packets": "12",
+       "out-multicast-packets": "14896",
+       "out-discarded-packets": "0",
+       "out-error-packets": "0",
+       "out-mirror-packets": "0",
+       "carrier-transitions": "6",
+       "interface-transitions": "11",
+       "link-transitions": "0"
+      }
+     }
+    ],
+    "timestamp": 1795161195327496014
+   }
+  }
+ },
+ {
+  "t_rel": 160.051,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]",
+      "val": {
+       "session-state": "established"
+      }
+     }
+    ],
+    "timestamp": 1795161195332087436
+   }
+  }
+ },
+ {
+  "t_rel": 160.053,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]/afi-safi[afi-safi-name=ipv4-unicast]",
+      "val": {
+       "received-routes": 2
+      }
+     }
+    ],
+    "timestamp": 1795161195332186061
+   }
+  }
+ },
+ {
+  "t_rel": 170.047,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]",
+      "val": {
+       "oper-state": "up"
+      }
+     }
+    ],
+    "timestamp": 1795161205328554201
+   }
+  }
+ },
+ {
+  "t_rel": 170.051,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]/statistics",
+      "val": {
+       "in-packets": "19011",
+       "in-octets": "3691328",
+       "in-unicast-packets": "3965",
+       "in-broadcast-packets": "12",
+       "in-multicast-packets": "15009",
+       "in-discarded-packets": "143",
+       "in-error-packets": "0",
+       "in-fcs-error-packets": "0",
+       "out-packets": "18890",
+       "out-octets": "3773944",
+       "out-mirror-octets": "0",
+       "out-unicast-packets": "3981",
+       "out-broadcast-packets": "12",
+       "out-multicast-packets": "14897",
+       "out-discarded-packets": "0",
+       "out-error-packets": "0",
+       "out-mirror-packets": "0",
+       "carrier-transitions": "6",
+       "interface-transitions": "11",
+       "link-transitions": "0"
+      }
+     }
+    ],
+    "timestamp": 1795161205328899160
+   }
+  }
+ },
+ {
+  "t_rel": 170.053,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]",
+      "val": {
+       "session-state": "established"
+      }
+     }
+    ],
+    "timestamp": 1795161205332529788
+   }
+  }
+ },
+ {
+  "t_rel": 170.053,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]/afi-safi[afi-safi-name=ipv4-unicast]",
+      "val": {
+       "received-routes": 2
+      }
+     }
+    ],
+    "timestamp": 1795161205332752372
+   }
+  }
+ },
+ {
+  "t_rel": 180.048,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]",
+      "val": {
+       "oper-state": "up"
+      }
+     }
+    ],
+    "timestamp": 1795161215329637138
+   }
+  }
+ },
+ {
+  "t_rel": 180.048,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]/statistics",
+      "val": {
+       "in-packets": "19014",
+       "in-octets": "3691706",
+       "in-unicast-packets": "3967",
+       "in-broadcast-packets": "12",
+       "in-multicast-packets": "15010",
+       "in-discarded-packets": "143",
+       "in-error-packets": "0",
+       "in-fcs-error-packets": "0",
+       "out-packets": "18892",
+       "out-octets": "3774103",
+       "out-mirror-octets": "0",
+       "out-unicast-packets": "3983",
+       "out-broadcast-packets": "12",
+       "out-multicast-packets": "14897",
+       "out-discarded-packets": "0",
+       "out-error-packets": "0",
+       "out-mirror-packets": "0",
+       "carrier-transitions": "6",
+       "interface-transitions": "11",
+       "link-transitions": "0"
+      }
+     }
+    ],
+    "timestamp": 1795161215329773138
+   }
+  }
+ },
+ {
+  "t_rel": 180.052,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]",
+      "val": {
+       "session-state": "established"
+      }
+     }
+    ],
+    "timestamp": 1795161215333285558
+   }
+  }
+ },
+ {
+  "t_rel": 180.052,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]/afi-safi[afi-safi-name=ipv4-unicast]",
+      "val": {
+       "received-routes": 2
+      }
+     }
+    ],
+    "timestamp": 1795161215333472559
+   }
+  }
+ },
+ {
+  "t_rel": 190.049,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]",
+      "val": {
+       "oper-state": "up"
+      }
+     }
+    ],
+    "timestamp": 1795161225329369699
+   }
+  }
+ },
+ {
+  "t_rel": 190.049,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]/statistics",
+      "val": {
+       "in-packets": "19014",
+       "in-octets": "3691706",
+       "in-unicast-packets": "3967",
+       "in-broadcast-packets": "12",
+       "in-multicast-packets": "15010",
+       "in-discarded-packets": "143",
+       "in-error-packets": "0",
+       "in-fcs-error-packets": "0",
+       "out-packets": "18892",
+       "out-octets": "3774103",
+       "out-mirror-octets": "0",
+       "out-unicast-packets": "3983",
+       "out-broadcast-packets": "12",
+       "out-multicast-packets": "14897",
+       "out-discarded-packets": "0",
+       "out-error-packets": "0",
+       "out-mirror-packets": "0",
+       "carrier-transitions": "6",
+       "interface-transitions": "11",
+       "link-transitions": "0"
+      }
+     }
+    ],
+    "timestamp": 1795161225329543616
+   }
+  }
+ },
+ {
+  "t_rel": 190.053,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]",
+      "val": {
+       "session-state": "established"
+      }
+     }
+    ],
+    "timestamp": 1795161225334075120
+   }
+  }
+ },
+ {
+  "t_rel": 190.26,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]/afi-safi[afi-safi-name=ipv4-unicast]",
+      "val": {
+       "received-routes": 2
+      }
+     }
+    ],
+    "timestamp": 1795161225334329037
+   }
+  }
+ },
+ {
+  "t_rel": 200.049,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]",
+      "val": {
+       "oper-state": "up"
+      }
+     }
+    ],
+    "timestamp": 1795161235329574260
+   }
+  }
+ },
+ {
+  "t_rel": 200.057,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]/statistics",
+      "val": {
+       "in-packets": "19014",
+       "in-octets": "3691706",
+       "in-unicast-packets": "3967",
+       "in-broadcast-packets": "12",
+       "in-multicast-packets": "15010",
+       "in-discarded-packets": "143",
+       "in-error-packets": "0",
+       "in-fcs-error-packets": "0",
+       "out-packets": "18893",
+       "out-octets": "3774335",
+       "out-mirror-octets": "0",
+       "out-unicast-packets": "3983",
+       "out-broadcast-packets": "12",
+       "out-multicast-packets": "14898",
+       "out-discarded-packets": "0",
+       "out-error-packets": "0",
+       "out-mirror-packets": "0",
+       "carrier-transitions": "6",
+       "interface-transitions": "11",
+       "link-transitions": "0"
+      }
+     }
+    ],
+    "timestamp": 1795161235329817677
+   }
+  }
+ },
+ {
+  "t_rel": 200.061,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]",
+      "val": {
+       "session-state": "established"
+      }
+     }
+    ],
+    "timestamp": 1795161235334050889
+   }
+  }
+ },
+ {
+  "t_rel": 200.061,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]/afi-safi[afi-safi-name=ipv4-unicast]",
+      "val": {
+       "received-routes": 2
+      }
+     }
+    ],
+    "timestamp": 1795161235334177181
+   }
+  }
+ },
+ {
+  "t_rel": 210.049,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]",
+      "val": {
+       "oper-state": "up"
+      }
+     }
+    ],
+    "timestamp": 1795161245329590915
+   }
+  }
+ },
+ {
+  "t_rel": 210.049,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]/statistics",
+      "val": {
+       "in-packets": "19017",
+       "in-octets": "3692084",
+       "in-unicast-packets": "3969",
+       "in-broadcast-packets": "12",
+       "in-multicast-packets": "15011",
+       "in-discarded-packets": "143",
+       "in-error-packets": "0",
+       "in-fcs-error-packets": "0",
+       "out-packets": "18895",
+       "out-octets": "3774494",
+       "out-mirror-octets": "0",
+       "out-unicast-packets": "3985",
+       "out-broadcast-packets": "12",
+       "out-multicast-packets": "14898",
+       "out-discarded-packets": "0",
+       "out-error-packets": "0",
+       "out-mirror-packets": "0",
+       "carrier-transitions": "6",
+       "interface-transitions": "11",
+       "link-transitions": "0"
+      }
+     }
+    ],
+    "timestamp": 1795161245329963748
+   }
+  }
+ },
+ {
+  "t_rel": 210.056,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]",
+      "val": {
+       "session-state": "established"
+      }
+     }
+    ],
+    "timestamp": 1795161245336230879
+   }
+  }
+ },
+ {
+  "t_rel": 210.056,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]/afi-safi[afi-safi-name=ipv4-unicast]",
+      "val": {
+       "received-routes": 2
+      }
+     }
+    ],
+    "timestamp": 1795161245336445546
+   }
+  }
+ },
+ {
+  "t_rel": 220.049,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]",
+      "val": {
+       "oper-state": "up"
+      }
+     }
+    ],
+    "timestamp": 1795161255329661487
+   }
+  }
+ },
+ {
+  "t_rel": 220.05,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]/statistics",
+      "val": {
+       "in-packets": "19017",
+       "in-octets": "3692084",
+       "in-unicast-packets": "3969",
+       "in-broadcast-packets": "12",
+       "in-multicast-packets": "15011",
+       "in-discarded-packets": "143",
+       "in-error-packets": "0",
+       "in-fcs-error-packets": "0",
+       "out-packets": "18895",
+       "out-octets": "3774494",
+       "out-mirror-octets": "0",
+       "out-unicast-packets": "3985",
+       "out-broadcast-packets": "12",
+       "out-multicast-packets": "14898",
+       "out-discarded-packets": "0",
+       "out-error-packets": "0",
+       "out-mirror-packets": "0",
+       "carrier-transitions": "6",
+       "interface-transitions": "11",
+       "link-transitions": "0"
+      }
+     }
+    ],
+    "timestamp": 1795161255330008821
+   }
+  }
+ },
+ {
+  "t_rel": 220.054,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]",
+      "val": {
+       "session-state": "established"
+      }
+     }
+    ],
+    "timestamp": 1795161255335958035
+   }
+  }
+ },
+ {
+  "t_rel": 220.054,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]/afi-safi[afi-safi-name=ipv4-unicast]",
+      "val": {
+       "received-routes": 2
+      }
+     }
+    ],
+    "timestamp": 1795161255336252744
+   }
+  }
+ },
+ {
+  "t_rel": 230.049,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]",
+      "val": {
+       "oper-state": "up"
+      }
+     }
+    ],
+    "timestamp": 1795161265329925894
+   }
+  }
+ },
+ {
+  "t_rel": 230.053,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]/statistics",
+      "val": {
+       "in-packets": "19017",
+       "in-octets": "3692084",
+       "in-unicast-packets": "3969",
+       "in-broadcast-packets": "12",
+       "in-multicast-packets": "15011",
+       "in-discarded-packets": "143",
+       "in-error-packets": "0",
+       "in-fcs-error-packets": "0",
+       "out-packets": "18896",
+       "out-octets": "3774726",
+       "out-mirror-octets": "0",
+       "out-unicast-packets": "3985",
+       "out-broadcast-packets": "12",
+       "out-multicast-packets": "14899",
+       "out-discarded-packets": "0",
+       "out-error-packets": "0",
+       "out-mirror-packets": "0",
+       "carrier-transitions": "6",
+       "interface-transitions": "11",
+       "link-transitions": "0"
+      }
+     }
+    ],
+    "timestamp": 1795161265330429186
+   }
+  }
+ },
+ {
+  "t_rel": 230.055,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]",
+      "val": {
+       "session-state": "established"
+      }
+     }
+    ],
+    "timestamp": 1795161265336413983
+   }
+  }
+ },
+ {
+  "t_rel": 230.055,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-network-instance:network-instance[name=default]/protocols/srl_nokia-bgp:bgp/neighbor[peer-address=10.10.1.1]/afi-safi[afi-safi-name=ipv4-unicast]",
+      "val": {
+       "received-routes": 2
+      }
+     }
+    ],
+    "timestamp": 1795161265336615192
+   }
+  }
+ },
+ {
+  "t_rel": 240.05,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/1]",
+      "val": {
+       "oper-state": "up"
+      }
+     }
+    ],
+    "timestamp": 1795161275330808217
+   }
+  }
+ }
+]

@@ -8,8 +8,11 @@ fed by the test. No device is dialled and nothing sleeps for real.
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 from uuid import UUID, uuid4
 
 import pytest
@@ -472,6 +475,77 @@ class TestHealth:
         assert calls["n"] == 2
         assert [e.payload["after"] for e in await harness.health_events("spine-01")] == ["healthy"]
         assert any("leaf-01" in r.getMessage() for r in caplog.records)
+
+
+# ── Lab captures (spec 016 T057) ─────────────────────────────────────────
+
+_CAPTURES = Path(__file__).parents[1] / "test_collector" / "fixtures" / "telemetry"
+
+
+async def _parsed_capture(name: str, target: TelemetryTarget) -> list[tuple[float, TelemetrySample]]:
+    """The capture read by the real collector, each sample with its seconds since the subscription began."""
+    from snapl_collector.gnmi.collector import GnmiCollector
+
+    entries = json.loads((_CAPTURES / name).read_text())
+
+    async def _replay(**_kwargs):
+        for entry in entries:
+            yield entry["msg"]
+
+    collector = GnmiCollector(host="127.0.0.1", password="test")  # pragma: allowlist secret
+    with patch("snapl_collector.gnmi.collector.subscribe_sample", _replay):
+        samples = [s async for s in collector.stream_telemetry(target, interval_s=10)]
+    assert len(samples) == len(entries)
+    return [(entry["t_rel"], sample) for entry, sample in zip(entries, samples, strict=True)]
+
+
+async def _replay_through_runner(device: Device, state: DesiredState, capture: str) -> list[tuple[str, list[str]]]:
+    """Feed a capture to the runner at its own pace, ticking at the end of each 10 s interval.
+
+    Returns each recorded health change as (state, reason texts).
+    """
+    h = Harness([state])
+    await h.start()
+    try:
+        target = h.collector.latest(device.name).target
+        samples = await _parsed_capture(capture, target)
+        ticked = 0
+        for t_rel, sample in samples:
+            while t_rel >= (ticked + 1) * 10:  # the interval before this sample ends: tick at its last moment
+                ticked += 1
+                h.clock.now = _T0 + timedelta(seconds=ticked * 10 - 0.01)
+                await h.runner.tick()
+            h.clock.now = _T0 + timedelta(seconds=t_rel)
+            await h.push(device.name, sample)
+        h.clock.now = _T0 + timedelta(seconds=(ticked + 1) * 10 - 0.01)
+        await h.runner.tick()
+        events = await h.health_events(device.name)
+        return [(e.payload["after"], [r["text"] for r in e.payload["reasons"]]) for e in events]
+    finally:
+        await h.runner.stop()
+
+
+class TestLabCaptures:
+    """The fault captures from the lab, through the real collector and the runner (spec 016 T057)."""
+
+    async def test_leaf01_flagged_while_its_uplink_is_down_and_cleared_when_bgp_returns(self) -> None:
+        state = _state(_LEAF, {"ethernet-1/49": True}, {"10.10.1.0": True})
+        changes = await _replay_through_runner(_LEAF, state, "srlinux_v26_3_1_leaf01_interface_down_up.json")
+        assert changes == [
+            ("healthy", []),
+            ("unhealthy", ["ethernet-1/49 down (expected up)", "BGP 10.10.1.0 active (expected established)"]),
+            ("unhealthy", ["BGP 10.10.1.0 active (expected established)"]),  # the link is back before the session
+            ("healthy", []),
+        ]
+
+    async def test_spine01_flagged_once_the_paused_peers_hold_timer_runs_out(self) -> None:
+        state = _state(_SPINE, {"ethernet-1/1": True}, {"10.10.1.1": True})
+        changes = await _replay_through_runner(_SPINE, state, "srlinux_v26_3_1_spine01_peer_paused.json")
+        assert changes == [
+            ("healthy", []),
+            ("unhealthy", ["BGP 10.10.1.1 connect (expected established)"]),
+            ("healthy", []),
+        ]
 
 
 # ── Intent refresh ───────────────────────────────────────────────────────
