@@ -211,10 +211,11 @@ VIEWS: dict[MetricsViewName, MetricsViewSpec] = {
         counts_events=True,
     ),
     # Spec 016 (contracts/telemetry.md): the network, summed or maxed over the runtime's label.
+    # One series per device, both directions summed: the drawer has each interface's in and out (#312).
     MetricsViewName.INTERFACE_TRAFFIC: MetricsViewSpec(
-        f"sum by (device, direction) ({_rate('snapl_interface_octets_total{use_case="$uc"}')})",
+        f"sum by (device) ({_rate('snapl_interface_octets_total{use_case="$uc"}')})",
         "bytes_per_second",
-        ("device", "direction"),
+        ("device",),
     ),
     MetricsViewName.INTERFACE_ERRORS: MetricsViewSpec(
         f"sum by (device, interface) ({_rate('snapl_interface_errors_total{use_case="$uc"}')})",

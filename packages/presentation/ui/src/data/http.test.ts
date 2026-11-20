@@ -81,6 +81,14 @@ describe("HttpProvider", () => {
     ]);
   });
 
+  it("asks for the network now (spec 016)", async () => {
+    const { http, fetchFn } = provider();
+
+    await http.network();
+
+    expect(requested(fetchFn)).toEqual(["/api/v1/network"]);
+  });
+
   it("asks for the health over the server's default range or a given one (spec 016)", async () => {
     const { http, fetchFn } = provider();
 

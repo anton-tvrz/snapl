@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { ApiError } from "./data/http";
 import type { DataProvider } from "./data/provider";
-import { DRIFT_SUMMARY, FABRIC_HISTORY, HEALTH, HISTORY, LINKS, METRICS, MODE, NOW, OVERVIEW, OVERVIEW_UP, SOURCES, STEPS_DEPLOY, TIMELINE, TOPOLOGY } from "./test/fixtures";
+import { DRIFT_SUMMARY, FABRIC_HISTORY, HEALTH, HISTORY, LINKS, METRICS, MODE, NETWORK, NOW, OVERVIEW, OVERVIEW_UP, SOURCES, STEPS_DEPLOY, TIMELINE, TOPOLOGY } from "./test/fixtures";
 
 // Every folded panel and group open (#290).
 const ALL_OPEN = "/?open=history,fabric-history,drift-by-device,metrics-timing,metrics-work,metrics-worker,metrics-dashboard";
@@ -26,6 +26,7 @@ function provider(overrides: Partial<DataProvider> = {}): DataProvider {
     history: async (_range?: unknown, _bucket?: unknown, series?: unknown) => (series ? FABRIC_HISTORY : HISTORY),
     driftSummary: async () => DRIFT_SUMMARY,
     health: async () => HEALTH,
+    network: async () => NETWORK,
     steps: async () => STEPS_DEPLOY,
     metrics: async (view: keyof typeof METRICS) => METRICS[view],
     ...overrides,
@@ -128,6 +129,21 @@ describe("App", () => {
     const drawer = screen.getByRole("dialog", { name: "leaf-01" });
     expect(within(drawer).getByText("/interface[name=ethernet-1/7]/description")).toBeInTheDocument();
     expect(location.search).toBe("?device=leaf-01");
+  });
+
+  // Spec 016 T046: one /network answer for the page, each drawer picking its device out.
+  it("shows the open device's interfaces and sessions from one answer for the page", async () => {
+    const network = vi.fn(async () => NETWORK);
+    render(<App provider={provider({ network })} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /^spine-01,/ }));
+    const spine = screen.getByRole("dialog", { name: "spine-01" });
+    expect(await within(spine).findByRole("region", { name: "BGP sessions" })).toHaveTextContent("10.10.1.1");
+
+    await userEvent.click(device("leaf-02"));
+    const leaf = await screen.findByRole("dialog", { name: "leaf-02" });
+    expect(within(leaf).getByRole("region", { name: "Interfaces" })).toHaveTextContent("errors in 12/min");
+    expect(network).toHaveBeenCalledTimes(1);
   });
 
   it("opens the device named in the address on load", async () => {
@@ -390,6 +406,33 @@ describe("App", () => {
       "gNMI errors (rate)",
     ]);
     expect(new URLSearchParams(location.search).get("open")).toBe("metrics-timing,metrics-work");
+  });
+
+  // Spec 016 data-model.md: "The network" after spec 015's four, folded by default.
+  it("puts the network's six views last, folded until opened", async () => {
+    const metrics = vi.fn(async (view: keyof typeof METRICS) => METRICS[view]);
+    render(<App provider={provider({ metrics })} />);
+
+    const section = await screen.findByRole("region", { name: "Metrics" });
+    const groups = within(section).getAllByRole("group");
+    const network = within(section).getByRole("group", { name: "The network" });
+    expect(groups.at(-1)).toBe(network);
+    expect(within(network).getByRole("button", { name: "Show The network" })).toHaveTextContent("Show 6 panels");
+    expect(metrics.mock.calls.map(([view]) => view)).not.toContain("interface-traffic");
+
+    await userEvent.click(within(network).getByRole("button", { name: "Show The network" }));
+
+    const opened = within(section).getByRole("group", { name: "The network" });
+    expect(within(opened).getAllByRole("heading", { level: 2 }).map((h) => h.textContent)).toEqual([
+      "Interface traffic (rate)",
+      "Interface errors (rate)",
+      "Interface discards (rate)",
+      "BGP sessions established (count)",
+      "Device CPU (current value)",
+      "Device memory (current value)",
+    ]);
+    expect(await within(opened).findByText("No discards on any interface in this range.")).toBeInTheDocument();
+    expect(within(opened).getAllByText("On the lab, this is the host VM's, the same on every device")).toHaveLength(2);
   });
 
   // #290: the history's detail panels are folded behind their headings.

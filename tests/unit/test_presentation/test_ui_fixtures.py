@@ -209,10 +209,10 @@ def test_the_up_server_answers_every_view_with_its_own_labels_and_unit(client_up
 
 
 # Spec 016's network views over dcfabric, with the label sets contracts/telemetry.md
-# gives: more series than the palette's six slots for three of them. How the page
-# draws those is left to the UI slice (PR E2).
+# gives: errors and discards have more series than the palette's six slots, and
+# the page draws the six highest (#312, 2026-11-20).
 _SERIES_ON_DCFABRIC = {
-    MetricsViewName.INTERFACE_TRAFFIC: 12,  # 6 devices x 2 directions
+    MetricsViewName.INTERFACE_TRAFFIC: 6,  # one per device, both directions summed
     MetricsViewName.INTERFACE_ERRORS: 16,  # 8 links, both ends
     MetricsViewName.INTERFACE_DISCARDS: 16,
     MetricsViewName.BGP_ESTABLISHED: 6,

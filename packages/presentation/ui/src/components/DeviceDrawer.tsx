@@ -1,10 +1,10 @@
 import { useEffect, useRef } from "react";
 
-import type { DeviceView, RunView } from "../api/types";
+import type { DeviceHealthView, DeviceNetwork, DeviceView, FabricNetwork, InterfaceState, RunView, SessionState, View } from "../api/types";
 import type { RunId } from "../data/provider";
-import type { DeviceHealthView } from "../api/types";
 import { driftEncoding, runEncoding, TONES } from "../lib/encoding";
 import { healthMark } from "../lib/health";
+import { formatValue, viewNote } from "../lib/metrics";
 import { ageText, utcText } from "../lib/time";
 import { Command } from "./Command";
 import { StateMark } from "./topology/StateMark";
@@ -23,6 +23,8 @@ interface Props {
   onSelectRun?: (run: RunId) => void;
   /** The run the loop shows, if one was chosen. */
   selectedRun?: RunId;
+  /** `/network` for the page (spec 016): this device's entry is picked out. Without it, nothing is shown. */
+  network?: View<FabricNetwork>;
 }
 
 function Paths({ title, paths }: { title: string; paths: readonly string[] }) {
@@ -76,13 +78,181 @@ function Health({ health, now }: { health: DeviceHealthView; now: Date }) {
   );
 }
 
+/** A red "!" beside a value that is not as intent expects; the expectation is in its title. */
+function Flag({ title }: { title: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      title={title}
+      className="chip mr-1 rounded px-1.5 font-semibold"
+      style={{ backgroundColor: TONES.fail.fill, color: TONES.fail.onFill }}
+    >
+      !
+    </span>
+  );
+}
+
+/** "up", "down" flagged when intent expects up (the expectation is read out, not shown), or "no data". */
+function InterfaceStateCell({ item }: { item: InterfaceState }) {
+  if (item.up === null || item.up === undefined) return <td className="py-2 pr-4 text-muted">no data</td>;
+  const actual = item.up ? "up" : "down";
+  const off = actual !== item.expected;
+  return (
+    <td className="py-2 pr-4 whitespace-nowrap">
+      {off && <Flag title={`Expected ${item.expected}`} />}
+      {actual}
+      {off && <span className="sr-only">, expected {item.expected}</span>}
+    </td>
+  );
+}
+
+/** "errors in 12/min, discards out 3/min": only the figures that are not zero or missing. */
+function lossText(item: InterfaceState): string {
+  const figures: [string, number | null | undefined][] = [
+    ["errors in", item.in_errors_ps],
+    ["errors out", item.out_errors_ps],
+    ["discards in", item.in_discards_ps],
+    ["discards out", item.out_discards_ps],
+  ];
+  return figures
+    .filter(([, value]) => value !== null && value !== undefined && value !== 0)
+    .map(([words, value]) => `${words} ${formatValue(value, "per_second")}`)
+    .join(", ");
+}
+
+const TH = "cell py-1 pr-4 font-medium";
+
+function Interfaces({ items }: { items: readonly InterfaceState[] }) {
+  return (
+    <section aria-label="Interfaces" className="mt-4">
+      <h3 className="text-meta font-semibold text-muted">Interfaces ({items.length})</h3>
+      {/* A narrow window scrolls the table, never the page. */}
+      <div className="mt-2 overflow-x-auto">
+        <table className="w-full text-left">
+          <thead className="text-meta text-muted">
+            <tr>
+              <th className={TH}>Interface</th>
+              <th className={TH}>State</th>
+              <th className={TH}>In</th>
+              <th className="cell py-1 font-medium">Out</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item) => {
+              const loss = lossText(item);
+              return (
+                <tr key={item.name} className="border-t border-line">
+                  <td className="py-2 pr-4">
+                    <span className="font-mono text-meta whitespace-nowrap">{item.name}</span>
+                    {/* Errors and discards under the name, only when not zero: a column of them wrapped every cell. */}
+                    {loss && <span className="block text-meta">{loss}</span>}
+                  </td>
+                  <InterfaceStateCell item={item} />
+                  <td className="py-2 pr-4 tabular-nums whitespace-nowrap">{formatValue(item.in_bps, "bytes_per_second")}</td>
+                  <td className="py-2 tabular-nums whitespace-nowrap">{formatValue(item.out_bps, "bytes_per_second")}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+/** "established", "not established" flagged when intent expects it (read out, not shown), or "no data". */
+function SessionStateCell({ item }: { item: SessionState }) {
+  if (item.established === null || item.established === undefined) return <td className="py-2 pr-4 text-muted">no data</td>;
+  const actual = item.established ? "established" : "not established";
+  const off = item.expected === "established" && !item.established;
+  return (
+    <td className="py-2 pr-4 whitespace-nowrap">
+      {off && <Flag title={`Expected ${item.expected}`} />}
+      {actual}
+      {off && <span className="sr-only">, expected {item.expected}</span>}
+    </td>
+  );
+}
+
+function Sessions({ items }: { items: readonly SessionState[] }) {
+  return (
+    <section aria-label="BGP sessions" className="mt-4">
+      <h3 className="text-meta font-semibold text-muted">BGP sessions ({items.length})</h3>
+      <div className="mt-2 overflow-x-auto">
+        <table className="w-full text-left">
+          <thead className="text-meta text-muted">
+            <tr>
+              <th className={TH}>Peer</th>
+              <th className={TH}>State</th>
+              <th className="cell py-1 font-medium">Prefixes received</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item) => {
+              const prefixes = item.prefixes_received;
+              const missing = prefixes === null || prefixes === undefined;
+              return (
+                <tr key={item.peer} className="border-t border-line">
+                  <td className="py-2 pr-4 font-mono text-meta whitespace-nowrap">{item.peer}</td>
+                  <SessionStateCell item={item} />
+                  <td className={`py-2 tabular-nums ${missing ? "text-muted" : ""}`}>{missing ? "no data" : prefixes}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+/** The device's interfaces, sessions, CPU and memory now, from its entry in `/network` (spec 016 FR-011). */
+function Network({ view, device }: { view: View<FabricNetwork>; device: DeviceView }) {
+  if (!view.available || !view.data) {
+    return (
+      <section aria-label="Network" className="mt-4">
+        <h3 className="text-meta font-semibold text-muted">Interfaces, sessions, CPU and memory</h3>
+        <p className="mt-2 max-w-prose break-words text-muted">{view.reason ?? "Not available."}</p>
+        {view.remedy && (
+          <p className="mt-2">
+            <Command text={view.remedy} copy={false} />
+          </p>
+        )}
+      </section>
+    );
+  }
+  const entry: DeviceNetwork | undefined = view.data.devices.find(
+    (d) => d.device_id === device.device_id || d.name === device.name,
+  );
+  if (!entry) return null;
+  const interfaces = entry.interfaces ?? [];
+  const sessions = entry.sessions ?? [];
+  return (
+    <>
+      {interfaces.length > 0 && <Interfaces items={interfaces} />}
+      {sessions.length > 0 && <Sessions items={sessions} />}
+      <section aria-label="CPU and memory" className="mt-4">
+        <h3 className="text-meta font-semibold text-muted">CPU and memory</h3>
+        <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
+          <dt className="text-muted">CPU</dt>
+          <dd className="tabular-nums">{formatValue(entry.cpu_percent, "percent")}</dd>
+          <dt className="text-muted">Memory</dt>
+          <dd className="tabular-nums">{formatValue(entry.memory_percent, "percent")}</dd>
+        </dl>
+        <p className="mt-2 text-meta text-muted">{viewNote("device-cpu")}</p>
+      </section>
+    </>
+  );
+}
+
 /**
  * One device's detail (spec 011 FR-016): how it differs from intent, when it
  * was last scanned and deployed, its recent runs, and the command that would
  * reconcile it. Everything recorded from the device is rendered as text.
- * Its health comes first (spec 016 FR-011).
+ * Its health comes first (spec 016 FR-011); its interfaces, sessions, CPU and
+ * memory follow what snapl itself found.
  */
-export function DeviceDrawer({ device, runs, linkNotes, now, onClose, copy = true, onSelectRun, selectedRun }: Props) {
+export function DeviceDrawer({ device, runs, linkNotes, now, onClose, copy = true, onSelectRun, selectedRun, network }: Props) {
   const encoding = driftEncoding(device.drift_state);
   const close = useRef<HTMLButtonElement>(null);
   const own = runs.filter((run) => run.target === device.name);
@@ -193,6 +363,8 @@ export function DeviceDrawer({ device, runs, linkNotes, now, onClose, copy = tru
           </ul>
         )}
       </section>
+
+      {network && <Network view={network} device={device} />}
 
       {linkNotes.length > 0 && (
         <section className="mt-4">

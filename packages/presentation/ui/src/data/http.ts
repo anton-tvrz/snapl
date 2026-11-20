@@ -106,6 +106,8 @@ export class HttpProvider implements DataProvider {
       end: range?.end.toISOString(),
     });
 
+  network = () => this.#get<Awaited<ReturnType<DataProvider["network"]>>>("network");
+
   steps = (run: RunId) =>
     this.#get<Awaited<ReturnType<DataProvider["steps"]>>>("runs/steps", {
       workflow_id: run.workflow_id,

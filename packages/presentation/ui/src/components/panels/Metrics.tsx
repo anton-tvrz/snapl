@@ -1,22 +1,31 @@
 import { Area, CartesianGrid, ComposedChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
-import type { MetricsData, MetricsViewName, View } from "../../api/types";
+import type { MetricsData, MetricSeries, MetricsViewName, View } from "../../api/types";
 import type { DataProvider } from "../../data/provider";
 import { usePolling } from "../../data/usePolling";
 import { TONES } from "../../lib/encoding";
 import type { Range } from "../../lib/lanes";
-import { formatValue, latest, leadValue, type MetricKind, seriesLabel, UNIT_NAMES, upState } from "../../lib/metrics";
+import {
+  chartSeries,
+  formatValue,
+  latest,
+  leadValue,
+  type MetricKind,
+  noneText,
+  seriesLabel,
+  SLOTS,
+  UNIT_NAMES,
+  upState,
+  viewNote,
+} from "../../lib/metrics";
 import { durationText, utcText } from "../../lib/time";
 import { ViewFrame } from "../ViewFrame";
 
-// The series palette has six validated slots, used in order and never cycled.
-const SLOTS = 6;
 const METRICS_MS = 30_000;
 
 const clock = (t: number) => utcText(new Date(t)).slice(11, 16);
 
-function Lines({ title, data }: { title: string; data: MetricsData }) {
-  const drawn = (data.series ?? []).slice(0, SLOTS);
+function Lines({ title, data, drawn }: { title: string; data: MetricsData; drawn: readonly MetricSeries[] }) {
   const rows = new Map<number, Record<string, number | null>>();
   drawn.forEach((series, index) => {
     for (const point of series.points) {
@@ -128,6 +137,8 @@ function Strips({ title, data }: { title: string; data: MetricsData }) {
 }
 
 interface PanelProps {
+  /** The view's name, for what the page adds to it: a note, or "none" in place of flat zeros. */
+  name?: string;
   title: string;
   /** What the value is; a count of events leads with the window it covers (spec 015). */
   kind?: MetricKind | null;
@@ -138,12 +149,17 @@ interface PanelProps {
 }
 
 /** One metrics view (spec 012): its chart, and the latest value of each series as a table. */
-export function MetricPanel({ title, kind, view, now, error }: PanelProps) {
+export function MetricPanel({ name, title, kind, view, now, error }: PanelProps) {
   const data = view?.data;
   const all = data?.series ?? [];
-  const lead = data ? leadValue(data, kind) : null;
+  // Past six series, the six highest are drawn (#312, 2026-11-20); the table lists them first.
+  const { drawn, total } = chartSeries(all);
+  const rows = [...drawn, ...all.filter((series) => !drawn.includes(series))];
+  const none = name && data ? noneText(name, data) : null;
+  const note = name ? viewNote(name) : null;
+  const lead = data && !none ? leadValue(data, kind) : null;
   // The legend names what the chart draws: up/down strips name themselves.
-  const legend = data && data.unit !== "up" ? all.slice(0, SLOTS) : [];
+  const legend = data && data.unit !== "up" && !none ? drawn : [];
   return (
     <ViewFrame title={title} view={view} now={now} error={error}>
       {view && error && (
@@ -180,17 +196,20 @@ export function MetricPanel({ title, kind, view, now, error }: PanelProps) {
           )}
           {all.length === 0 ? (
             <p className="text-muted">No data in this range.</p>
+          ) : none ? (
+            <p className="text-muted">{none}</p>
           ) : data.unit === "up" ? (
             <Strips title={title} data={data} />
           ) : (
-            <Lines title={title} data={data} />
+            <Lines title={title} data={data} drawn={drawn} />
           )}
-          {all.length > SLOTS && data.unit !== "up" && (
+          {total > SLOTS && data.unit !== "up" && !none && (
             <p className="text-meta text-muted">
-              The chart draws the first {SLOTS} series; all {all.length} are in the table.
+              The chart draws the {SLOTS} highest of {total} series; all {total} are in the table.
             </p>
           )}
           {data.note && <p className="text-meta text-muted">{data.note}</p>}
+          {note && <p className="text-meta text-muted">{note}</p>}
           <p className="text-meta text-muted">
             {UNIT_NAMES[data.unit] ?? data.unit}
             {/* A rare rate is reworded, and the panel says so (spec 014 FR-026). */}
@@ -207,10 +226,10 @@ export function MetricPanel({ title, kind, view, now, error }: PanelProps) {
                   </tr>
                 </thead>
                 <tbody>
-                  {all.map((series, index) => (
+                  {rows.map((series, index) => (
                     <tr key={seriesLabel(series.labels)} className="border-t border-line">
                       <td className="py-2 pr-4">
-                        {data.unit !== "up" && index < SLOTS && (
+                        {data.unit !== "up" && !none && index < drawn.length && (
                           <span
                             aria-hidden="true"
                             className="mr-2 inline-block h-2 w-2 rounded-full"
@@ -248,5 +267,5 @@ interface ViewProps {
 export function MetricView({ provider, name, title, kind, range, now, live = true }: ViewProps) {
   const key = range ? `${range.start.toISOString()}/${range.end.toISOString()}` : "default";
   const answer = usePolling(() => provider.metrics(name, range), live ? METRICS_MS : null, key);
-  return <MetricPanel title={title} kind={kind} view={answer.data?.metrics} now={now} error={answer.error} />;
+  return <MetricPanel name={name} title={title} kind={kind} view={answer.data?.metrics} now={now} error={answer.error} />;
 }

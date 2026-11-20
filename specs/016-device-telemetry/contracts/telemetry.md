@@ -27,12 +27,14 @@ Every addition is **compatible** under 010's versioning rules: an optional field
 
 | view | query (template) | unit | series labels |
 | --- | --- | --- | --- |
-| `interface-traffic` | `sum by (device, direction) (rate(snapl_interface_octets_total{use_case="$uc"}[$w]))` | `bytes_per_second` | `device`, `direction` |
+| `interface-traffic` | `sum by (device) (rate(snapl_interface_octets_total{use_case="$uc"}[$w]))` | `bytes_per_second` | `device` |
 | `interface-errors` | `sum by (device, interface) (rate(snapl_interface_errors_total{use_case="$uc"}[$w]))` | `per_second` | `device`, `interface` |
 | `interface-discards` | `sum by (device, interface) (rate(snapl_interface_discards_total{use_case="$uc"}[$w]))` | `per_second` | `device`, `interface` |
 | `bgp-established` | `sum by (device) (snapl_bgp_session_established{use_case="$uc"})` | `count` | `device` |
 | `device-cpu` | `max by (device) (snapl_device_cpu_percent{use_case="$uc"})` | `percent` | `device` |
 | `device-memory` | `max by (device) (snapl_device_memory_percent{use_case="$uc"})` | `percent` | `device` |
+
+`interface-traffic` is one series per device, both directions summed, as FR-012 names it ("traffic by device"); each interface's in and out are in the drawer, from `/network` (amended 2026-11-20, #312: by device and direction was 12 series on dcfabric, over the chart's six). Errors and discards stay by interface, 16 series on dcfabric: the page draws the six highest over the range and says how many it left out, as it does for any view over six series.
 
 `bgp-established` is a gauge count, so it has no window note (as spec 015's `worker-slots`). Its note says a session removed from intent keeps counting until the worker restarts (research R5), when it does.
 

@@ -128,6 +128,12 @@ describe("InlineProvider at the bundle's time", () => {
     expect((await older.health()).health).toMatchObject({ available: false, reason: "not in this snapshot" });
   });
 
+  it("says a snapshot does not hold the network yet (spec 016, until PR F)", async () => {
+    const network = await provider.network();
+
+    expect(network.network).toMatchObject({ source: "prometheus", available: false, reason: "not in this snapshot", data: null });
+  });
+
   it("is a snapshot whose now is the bundle's end", async () => {
     const mode = await provider.mode();
 

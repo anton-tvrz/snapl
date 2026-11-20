@@ -13,6 +13,7 @@ import {
   LINKS,
   METRICS,
   MODE,
+  NETWORK,
   OVERVIEW,
   RUNS_AT_SCAN_2,
   SCAN_STOPS,
@@ -50,6 +51,7 @@ function provider() {
     history: async (_range?: unknown, _bucket?: unknown, series?: unknown) => (series ? FABRIC_HISTORY : HISTORY),
     driftSummary: async () => DRIFT_SUMMARY,
     health: async () => HEALTH,
+    network: async () => NETWORK,
     steps: async () => STEPS_DEPLOY,
     metrics: async (view) => METRICS[view],
   };
@@ -192,6 +194,17 @@ describe("App at a past time", () => {
 
     const drawer = await screen.findByRole("dialog", { name: "spine-01" });
     expect(within(drawer).getByText("/interface[name=ethernet-1/1]/enabled")).toBeInTheDocument();
+  });
+
+  // Spec 016: /network is now's, so a past device's drawer does not list it as then.
+  it("says the drawer's interfaces, sessions, CPU and memory show only the present", async () => {
+    history.replaceState(null, "", `/?at=${STOP_2}&device=spine-01`);
+    render(<App provider={provider().p} />);
+    await settle();
+
+    const drawer = await screen.findByRole("dialog", { name: "spine-01" });
+    expect(within(drawer).getByRole("region", { name: "Network" })).toHaveTextContent("Shows only the present");
+    expect(within(drawer).queryByRole("region", { name: "Interfaces" })).not.toBeInTheDocument();
   });
 
   it("draws the lanes and the latest repair at the present", async () => {
