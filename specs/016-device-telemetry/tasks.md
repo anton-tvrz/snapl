@@ -214,6 +214,24 @@ All **Needs the lab**. Results go in `specs/016-device-telemetry/evidence.md`.
 
 ---
 
+## Phase 12: Detail Around Faults in an Archive (US5) — #351
+
+**Goal**: US5 scenario 1. An archive made across a fault shows the interface or session down over that time. T062 found the archive's network views at a 42 min step over 7 days, so a fault of minutes fell between points. The archive now also carries the six network views at a 15 s step over short windows around what it recorded.
+
+- [x] T063 [US5] Tests first in `test_dashboard_archive.py` and `tests/unit/test_tasks/test_history.py`. `detail_windows` (`archive.py`) builds the windows:
+  - each health episode in the export, padded 5 min on each side (an open episode runs to the archive's time);
+  - the archive's last hour;
+  - merged where they overlap and clipped to the export's 7 days;
+  - kept newest first up to 6 h in all.
+
+  `history.archive` exports the six network views over each window at a 15 s step, in `export/metrics-detail/<view>.json`. A failed health export leaves the last hour only.
+- [x] T064 [US5] Tests first in `test_dashboard_archive.py`. The archive reader serves a range that lies inside one window from that window, at its 15 s step, with the points cut to the range. The 7-day range still comes from the coarse export. Any other range is refused, and the refusal names the windows. `/api/v1/mode`'s `archive` gains `metrics_windows` (additive, FR-016). An archive without the detail answers as before.
+- [x] T065 [US5] Implement T063 and T064 in `archive.py`, `models.py` and `tasks/history.py` (the route needed no change); refresh the OpenAPI fixture and `schema.d.ts`. *Done 2026-11-20 on the lab: an archive at 20:26 held five windows (07:43, 08:40, 09:54, 14:00 and the last hour), 0.88 MB before compression; opened offline, `bgp-established` from 14:04 to 14:09 at 15 s shows spine-01 4, 3, 4 three times, the BGP trials of evidence item 9. The UI still asks only for the exported range (T066).*
+- [ ] T066 [US5] Tests first, then the UI. In an archive the range picker lists each window as a button. The six network views follow a chosen range that lies inside a window, and otherwise show the exported range, as now.
+- [ ] T067 [US5] **Needs the lab**: quickstart item 8 again. Make an archive across a fault and open it with every source unreachable. Check that the network views show the interface down over the episode. Record the archive's size before and after (evidence item 10), and update the README's limitation.
+
+---
+
 ## Dependencies
 
 - A and B in either order. C1 needs B's `DeviceHealthState`. C2 needs A, B and C1.

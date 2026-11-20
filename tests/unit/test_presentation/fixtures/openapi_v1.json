@@ -33,6 +33,13 @@
             ],
             "title": "Metrics Start"
           },
+          "metrics_windows": {
+            "items": {
+              "$ref": "#/components/schemas/MetricsWindow"
+            },
+            "title": "Metrics Windows",
+            "type": "array"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -2087,6 +2094,28 @@
         ],
         "title": "MetricsViewName",
         "type": "string"
+      },
+      "MetricsWindow": {
+        "additionalProperties": false,
+        "description": "A range an archive holds the six network views over at a 15 s step (spec 016, #351).",
+        "properties": {
+          "end": {
+            "format": "date-time",
+            "title": "End",
+            "type": "string"
+          },
+          "start": {
+            "format": "date-time",
+            "title": "Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ],
+        "title": "MetricsWindow",
+        "type": "object"
       },
       "ModeResponse": {
         "additionalProperties": false,

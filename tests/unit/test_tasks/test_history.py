@@ -27,7 +27,7 @@ from invoke import Context, Exit
 
 from snapl_orchestrator.audit.sqlite import SqliteAuditLog
 from snapl_orchestrator.models import AuditEvent, AuditEventType
-from snapl_presentation.dashboard.models import MetricsViewName, SeriesName
+from snapl_presentation.dashboard.models import NETWORK_VIEWS, MetricsViewName, SeriesName
 from tasks import history, ns
 
 pytestmark = pytest.mark.unit
@@ -68,6 +68,8 @@ class Stub:
         self.snapshot_refusal: tuple[int, dict] | None = None
         # Dashboard routes that answer 404, as an older server would.
         self.missing: set[str] = set()
+        # Dashboard routes that answer this body instead of the default one.
+        self.bodies: dict[str, object] = {}
         self.requests: list[tuple[str, str, dict[str, list[str]]]] = []
         stub = self
 
@@ -103,6 +105,8 @@ class Stub:
                     self._answer(200, "Prometheus Server is Ready.")
                 elif url.path in stub.missing:
                     self._answer(404, {"detail": "Not Found"})
+                elif url.path in stub.bodies:
+                    self._answer(200, stub.bodies[url.path])
                 elif url.path.startswith("/api/v1/"):
                     self._answer(200, {"contract_version": "1", "path": url.path})
                 else:
@@ -335,7 +339,8 @@ def test_the_export_covers_the_last_7_days(stub: Stub) -> None:
         *(f"/api/v1/metrics/{v.value}" for v in MetricsViewName),
     )
     for path in ranged:
-        [query] = stub.asked("GET", path)
+        # The network views are also asked at 15 s around faults (#351): not this export.
+        [query] = [q for q in stub.asked("GET", path) if q.get("step") != ["15"]]
         start = datetime.fromisoformat(query["start"][0])
         assert abs((before - timedelta(days=7)) - start) < timedelta(minutes=1), path
     for name in ("overview", "links", "sources", "topology", "devices", "runs"):
@@ -345,6 +350,58 @@ def test_the_export_covers_the_last_7_days(stub: Stub) -> None:
     # Every series, the ones spec 015 added included, not only the default four.
     [query] = stub.asked("GET", "/api/v1/history")
     assert query["series"] == [name.value for name in SeriesName]
+
+
+def _floor_15(t: datetime) -> datetime:
+    return t - timedelta(seconds=t.second % 15, microseconds=t.microsecond)
+
+
+def _detail_asks(stub: Stub, view: MetricsViewName) -> list[tuple[datetime, datetime]]:
+    """The 15 s requests for one view, oldest first."""
+    asked = [q for q in stub.asked("GET", f"/api/v1/metrics/{view.value}") if q.get("step") == ["15"]]
+    return sorted((datetime.fromisoformat(q["start"][0]), datetime.fromisoformat(q["end"][0])) for q in asked)
+
+
+def test_the_network_views_get_15_s_detail_over_the_last_hour(stub: Stub, tmp_path: Path) -> None:
+    """Spec 016 T063 (#351): with no health episode, the archive's last hour only."""
+    before = datetime.now(UTC)
+    history.archive(_ctx())
+    after = datetime.now(UTC)
+
+    members = _members(_the_archive(tmp_path / "archives"))
+    for view in NETWORK_VIEWS:
+        [(start, end)] = _detail_asks(stub, view)
+        assert _floor_15(before) <= end <= after, view
+        assert end - start == timedelta(hours=1), view
+        assert f"export/metrics-detail/{view.value}/{start:%Y%m%dT%H%M%SZ}.json" in members, view
+    for view in set(MetricsViewName) - NETWORK_VIEWS:
+        assert _detail_asks(stub, view) == [], view
+
+
+def test_each_health_episode_gets_a_detail_window(stub: Stub, tmp_path: Path) -> None:
+    now = datetime.now(UTC)
+    opened, closed = now - timedelta(hours=3), now - timedelta(hours=3) + timedelta(minutes=2)
+    stub.bodies["/api/v1/health"] = {
+        "contract_version": "1",
+        "health": {
+            "available": True,
+            "data": {
+                "devices": [
+                    {
+                        "name": "leaf-01",
+                        "episodes": [{"opened_at": opened.isoformat(), "closed_at": closed.isoformat()}],
+                    }
+                ]
+            },
+        },
+    }
+
+    history.archive(_ctx())
+
+    for view in NETWORK_VIEWS:
+        fault, last_hour = _detail_asks(stub, view)
+        assert fault == (_floor_15(opened - timedelta(minutes=5)), _floor_15(closed + timedelta(minutes=5))), view
+        assert last_hour[1] - last_hour[0] == timedelta(hours=1), view
 
 
 def test_a_dashboard_without_the_spec_011_routes_is_a_failed_export_part(stub: Stub, tmp_path: Path) -> None:

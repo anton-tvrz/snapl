@@ -669,3 +669,232 @@ def test_an_older_archive_whose_trail_has_health_events_still_answers_health(tmp
 
     assert health["available"] is True
     assert health["data"]["first_event_at"] is not None
+
+
+# --- detail around faults (spec 016 T063, T064, #351) ------------------------------
+#
+# T062 on the lab: the six network views over 7 days at a 42 min step, so a
+# fault of minutes fell between two points. An archive now also carries them
+# at 15 s over windows around each health episode and its last hour.
+
+AT = datetime.fromisoformat(CREATED)
+
+
+def _w(start: str, end: str) -> tuple[datetime, datetime]:
+    return datetime.fromisoformat(start), datetime.fromisoformat(end)
+
+
+LAST_HOUR = _w("2026-11-07T20:20:45Z", "2026-11-07T21:20:45Z")
+
+
+class TestDetailWindows:
+    def test_no_episode_gives_the_last_hour(self) -> None:
+        from snapl_presentation.dashboard.archive import detail_windows
+
+        # 21:20:48 is floored to the 15 s step, as plan_range floors a range.
+        assert detail_windows([], AT) == [_w("2026-11-07T20:20:45Z", "2026-11-07T21:20:45Z")]
+
+    def test_a_closed_episode_is_padded_5_min_on_each_side(self) -> None:
+        from snapl_presentation.dashboard.archive import detail_windows
+
+        episode = _w("2026-11-07T10:05:22Z", "2026-11-07T10:07:03Z")
+
+        assert detail_windows([episode], AT) == [
+            _w("2026-11-07T10:00:15Z", "2026-11-07T10:12:00Z"),
+            _w("2026-11-07T20:20:45Z", "2026-11-07T21:20:45Z"),
+        ]
+
+    def test_an_open_episode_runs_to_the_archives_time_and_joins_the_last_hour(self) -> None:
+        from snapl_presentation.dashboard.archive import detail_windows
+
+        opened = datetime.fromisoformat("2026-11-07T19:40:00Z")
+
+        assert detail_windows([(opened, None)], AT) == [_w("2026-11-07T19:35:00Z", "2026-11-07T21:20:45Z")]
+
+    def test_overlapping_episodes_are_one_window(self) -> None:
+        from snapl_presentation.dashboard.archive import detail_windows
+
+        episodes = [
+            _w("2026-11-07T10:05:00Z", "2026-11-07T10:06:00Z"),  # leaf-01
+            _w("2026-11-07T10:05:30Z", "2026-11-07T10:07:00Z"),  # spine-01, the same fault
+            _w("2026-11-07T10:14:00Z", "2026-11-07T10:15:00Z"),  # 7 min later: the pads meet
+        ]
+
+        assert detail_windows(episodes, AT)[0] == _w("2026-11-07T10:00:00Z", "2026-11-07T10:20:00Z")
+
+    def test_an_episode_older_than_the_export_is_clipped_to_it(self) -> None:
+        from snapl_presentation.dashboard.archive import detail_windows
+
+        episode = _w("2026-10-31T21:00:00Z", "2026-10-31T21:30:00Z")
+
+        assert detail_windows([episode], AT)[0] == _w("2026-10-31T21:20:45Z", "2026-10-31T21:35:00Z")
+
+    def test_at_most_6_h_in_all_the_newest_kept(self) -> None:
+        from snapl_presentation.dashboard.archive import DETAIL_MAX, detail_windows
+
+        # Ten 50 min episodes, 2 h apart: 60 min windows. With the last hour, the newest five fill 6 h.
+        first = datetime.fromisoformat("2026-11-06T22:00:00Z")
+        episodes = [(first + timedelta(hours=2 * i), first + timedelta(hours=2 * i, minutes=50)) for i in range(10)]
+
+        windows = detail_windows(episodes, AT)
+
+        assert sum((end - start for start, end in windows), timedelta()) == DETAIL_MAX
+        assert len(windows) == 6
+        assert windows[0] == _w("2026-11-07T07:55:00Z", "2026-11-07T08:55:00Z")
+        assert windows[-1] == LAST_HOUR
+
+    def test_a_window_past_the_limit_keeps_its_newest_part(self) -> None:
+        from snapl_presentation.dashboard.archive import detail_windows
+
+        opened = AT - timedelta(hours=8)
+
+        assert detail_windows([(opened, None)], AT) == [_w("2026-11-07T15:20:45Z", "2026-11-07T21:20:45Z")]
+
+    def test_the_episodes_come_from_the_health_export(self) -> None:
+        from snapl_presentation.dashboard.archive import episodes_in
+
+        exported = {
+            "health": {
+                "available": True,
+                "data": {
+                    "devices": [
+                        {
+                            "name": "leaf-01",
+                            "episodes": [{"opened_at": "2026-11-07T10:05:22Z", "closed_at": "2026-11-07T10:07:03Z"}],
+                        },
+                        {"name": "spine-01", "episodes": [{"opened_at": "2026-11-07T19:40:00Z", "closed_at": None}]},
+                        {"name": "leaf-02", "episodes": []},
+                    ]
+                },
+            }
+        }
+
+        assert episodes_in(exported) == [
+            _w("2026-11-07T10:05:22Z", "2026-11-07T10:07:03Z"),
+            (datetime.fromisoformat("2026-11-07T19:40:00Z"), None),
+        ]
+
+    @pytest.mark.parametrize(
+        "exported", [None, {}, {"health": {"available": False, "data": None}}, {"contract_version": "1"}]
+    )
+    def test_no_health_export_gives_no_episodes(self, exported: Any) -> None:
+        from snapl_presentation.dashboard.archive import episodes_in
+
+        assert episodes_in(exported) == []
+
+
+def _detail(view: MetricsViewName, start: datetime, end: datetime) -> bytes:
+    """A 15 s answer over one window, as history.archive saves it: the API's response."""
+    body = json.loads(EXPORTED[f"metrics/{view.value}.json"])
+    n = int((end - start).total_seconds()) // 15 + 1
+    points = [{"t": (start + timedelta(seconds=15 * i)).isoformat(), "value": float(i)} for i in range(n)]
+    body["metrics"]["data"] |= {
+        "start": start.isoformat(),
+        "end": end.isoformat(),
+        "step": 15,
+        "note": None,
+        "series": [{"labels": {"device": "leaf-01"}, "points": points}],
+    }
+    return json.dumps(body).encode()
+
+
+FAULT = _w("2026-11-07T10:00:15Z", "2026-11-07T10:12:00Z")
+
+
+def _with_detail(windows: list[tuple[datetime, datetime]] = [FAULT, LAST_HOUR]) -> dict[str, bytes]:  # noqa: B006
+    return {
+        f"metrics-detail/{view.value}/{start:%Y%m%dT%H%M%SZ}.json": _detail(view, start, end)
+        for view in NETWORK_VIEWS
+        for start, end in windows
+    }
+
+
+class TestDetailInTheArchive:
+    async def test_the_windows_are_read_from_the_detail_files(self, tmp_path: Path) -> None:
+        with open_archive(build_archive(tmp_path, replace=_with_detail())) as opened:
+            metrics = ArchivedMetrics(opened.root, opened.created_at)
+
+            assert metrics.windows() == [FAULT, LAST_HOUR]
+
+    async def test_a_range_inside_a_window_is_served_from_it_at_15_s(self, tmp_path: Path) -> None:
+        start, end = _w("2026-11-07T10:02:00Z", "2026-11-07T10:10:00Z")
+        with open_archive(build_archive(tmp_path, replace=_with_detail())) as opened:
+            metrics = ArchivedMetrics(opened.root, opened.created_at)
+
+            data = await metrics.query(MetricsViewName.INTERFACE_TRAFFIC, plan_range(start, end, 15))
+
+        assert (data.start, data.end, data.step) == (start, end, 15)
+        [series] = data.series
+        assert (series.points[0].t, series.points[-1].t) == (start, end)
+        assert len(series.points) == 33
+
+    async def test_a_range_the_page_floors_to_a_coarser_step_is_still_inside(self, tmp_path: Path) -> None:
+        # Two hours ask for a 30 s step; flooring the start to 30 s takes it 15 s before the window.
+        start, end = _w("2026-11-07T19:20:45Z", "2026-11-07T21:20:45Z")
+        windows = [_w("2026-11-07T19:20:45Z", "2026-11-07T21:20:45Z")]
+        with open_archive(build_archive(tmp_path, replace=_with_detail(windows))) as opened:
+            metrics = ArchivedMetrics(opened.root, opened.created_at)
+
+            data = await metrics.query(MetricsViewName.BGP_ESTABLISHED, plan_range(start, end, 30))
+
+        assert (data.start, data.end, data.step) == (windows[0][0], datetime.fromisoformat("2026-11-07T21:20:30Z"), 15)
+
+    async def test_the_7_day_range_still_comes_from_the_coarse_export(self, tmp_path: Path) -> None:
+        exported = json.loads(EXPORTED["metrics/interface-traffic.json"])["metrics"]["data"]
+        start, end = datetime.fromisoformat(exported["start"]), datetime.fromisoformat(exported["end"])
+        with open_archive(build_archive(tmp_path, replace=_with_detail())) as opened:
+            metrics = ArchivedMetrics(opened.root, opened.created_at)
+
+            data = await metrics.query(MetricsViewName.INTERFACE_TRAFFIC, plan_range(start, end, exported["step"]))
+
+        assert data.step == exported["step"]
+
+    async def test_a_range_outside_every_window_is_refused_naming_them(self, tmp_path: Path) -> None:
+        start, end = _w("2026-11-07T12:00:00Z", "2026-11-07T13:00:00Z")
+        with open_archive(build_archive(tmp_path, replace=_with_detail())) as opened:
+            metrics = ArchivedMetrics(opened.root, opened.created_at)
+
+            with pytest.raises(SourceUnavailable) as raised:
+                await metrics.query(MetricsViewName.INTERFACE_TRAFFIC, plan_range(start, end, 15))
+
+        assert "2026-11-07 10:00 to 10:12 UTC" in str(raised.value)
+        assert "2026-11-07 20:20 to 21:20 UTC" in str(raised.value)
+
+    async def test_the_other_views_have_no_detail(self, tmp_path: Path) -> None:
+        start, end = _w("2026-11-07T10:02:00Z", "2026-11-07T10:10:00Z")
+        with open_archive(build_archive(tmp_path, replace=_with_detail())) as opened:
+            metrics = ArchivedMetrics(opened.root, opened.created_at)
+
+            with pytest.raises(SourceUnavailable):
+                await metrics.query(MetricsViewName.WORKER_UP, plan_range(start, end, 15))
+
+    async def test_an_archive_without_detail_has_no_windows(self, tmp_path: Path) -> None:
+        with open_archive(build_archive(tmp_path)) as opened:
+            assert ArchivedMetrics(opened.root, opened.created_at).windows() == []
+
+    def test_mode_lists_the_windows(self, tmp_path: Path) -> None:
+        with open_archive(build_archive(tmp_path, replace=_with_detail())) as opened:
+            archive = TestClient(create_archive_app(opened, ui_dir=None)).get("/api/v1/mode").json()["archive"]
+
+        assert archive["metrics_windows"] == [
+            {"start": "2026-11-07T10:00:15Z", "end": "2026-11-07T10:12:00Z"},
+            {"start": "2026-11-07T20:20:45Z", "end": "2026-11-07T21:20:45Z"},
+        ]
+
+    def test_mode_without_detail_lists_none(self, served) -> None:
+        client, _ = served
+
+        assert client.get("/api/v1/mode").json()["archive"]["metrics_windows"] == []
+
+    def test_the_api_serves_a_fault_window_at_15_s(self, tmp_path: Path) -> None:
+        with open_archive(build_archive(tmp_path, replace=_with_detail())) as opened:
+            client = TestClient(create_archive_app(opened, ui_dir=None))
+            params = {"start": "2026-11-07T10:00:15Z", "end": "2026-11-07T10:12:00Z"}
+            answer = client.get("/api/v1/metrics/interface-traffic", params=params).json()["metrics"]
+
+        assert answer["available"] is True
+        assert (answer["data"]["start"], answer["data"]["end"], answer["data"]["step"]) == (
+            "2026-11-07T10:00:15Z",
+            "2026-11-07T10:12:00Z",
+            15,
+        )

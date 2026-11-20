@@ -15,7 +15,7 @@ import tarfile
 import tempfile
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
@@ -25,6 +25,7 @@ from pydantic import BaseModel
 from snapl_presentation.dashboard import pages
 from snapl_presentation.dashboard.lab_runs import read_lab_evidence
 from snapl_presentation.dashboard.models import (
+    NETWORK_VIEWS,
     ArchiveInfo,
     ArchivePart,
     CiStatus,
@@ -32,7 +33,9 @@ from snapl_presentation.dashboard.models import (
     LabEvidence,
     LinksResponse,
     MetricsData,
+    MetricSeries,
     MetricsViewName,
+    MetricsWindow,
     NetworkResponse,
     ScheduleStatus,
     SourceName,
@@ -46,7 +49,7 @@ from snapl_presentation.dashboard.sources import AuditSource, Sources, SourceUna
 from snapl_presentation.settings import CliSettings
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Iterable, Iterator
 
     from fastapi import FastAPI
 
@@ -61,6 +64,73 @@ PREDATES = "this archive predates the topology export (spec 011): devices are li
 # Archive mode never reads the Prometheus snapshot (R13 rejects starting
 # Prometheus on it), and it is most of a real archive's size.
 _SKIPPED = ("prometheus/",)
+
+# Spec 016 (#351). Over 7 days the views are at a 42 min step, so a fault of
+# minutes falls between two points. The archive also holds the six network
+# views at 15 s around each health episode and over its last hour, newest
+# first, up to DETAIL_MAX in all. On the lab, five windows (2 h 10 min) were
+# 0.88 MB before compression, 0.04 MB after (2026-11-20).
+DETAIL_DIR = "metrics-detail"
+DETAIL_STEP_S = 15
+DETAIL_PAD = timedelta(minutes=5)
+DETAIL_TAIL = timedelta(hours=1)
+DETAIL_MAX = timedelta(hours=6)
+EXPORT_SPAN = timedelta(days=7)
+
+type Window = tuple[datetime, datetime]
+
+
+def _floor(moment: datetime) -> datetime:
+    """To the detail step, as ``plan_range`` floors a range, so a window is asked and answered alike."""
+    seconds = int(moment.timestamp())
+    return datetime.fromtimestamp(seconds - seconds % DETAIL_STEP_S, UTC)
+
+
+def episodes_in(exported: dict[str, Any] | None) -> list[tuple[datetime, datetime | None]]:
+    """Each health episode in an exported ``/health`` answer, oldest first; none when it wasn't exported."""
+    data = ((exported or {}).get("health") or {}).get("data") or {}
+    found = [
+        (
+            datetime.fromisoformat(episode["opened_at"]),
+            datetime.fromisoformat(episode["closed_at"]) if episode.get("closed_at") else None,
+        )
+        for device in data.get("devices") or []
+        for episode in device.get("episodes") or []
+    ]
+    return sorted(found, key=lambda episode: episode[0])
+
+
+def detail_windows(episodes: Iterable[tuple[datetime, datetime | None]], created_at: datetime) -> list[Window]:
+    """The windows an archive made at ``created_at`` exports at 15 s, oldest first.
+
+    Each episode padded by ``DETAIL_PAD`` (an open one runs to ``created_at``),
+    and the last hour; clipped to the export's 7 days, floored to the step,
+    merged where they meet, and the newest kept up to ``DETAIL_MAX`` in all.
+    """
+    limit = created_at - EXPORT_SPAN
+    spans = [(created_at - DETAIL_TAIL, created_at)]
+    spans += [(opened - DETAIL_PAD, closed + DETAIL_PAD if closed else created_at) for opened, closed in episodes]
+    floored = sorted((_floor(max(s, limit)), _floor(min(e, created_at))) for s, e in spans)
+    merged: list[Window] = []
+    for start, end in (w for w in floored if w[1] > w[0]):
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+    kept: list[Window] = []
+    left = DETAIL_MAX
+    for start, end in reversed(merged):
+        if left <= timedelta():
+            break
+        cut = max(start, end - left)
+        kept.append((cut, end))
+        left -= end - cut
+    return sorted(kept)
+
+
+def _window_text(start: datetime, end: datetime) -> str:
+    to = f"{end:%H:%M}" if end.date() == start.date() else f"{end:%Y-%m-%d %H:%M}"
+    return f"{start:%Y-%m-%d %H:%M} to {to} UTC"
 
 
 class ArchiveError(Exception):
@@ -265,7 +335,7 @@ def archived_lab_runs(root: Path, created_at: datetime) -> ArchivedLabRuns:
 
 
 class ArchivedMetrics:
-    """The metrics as exported: each view over the exported range only."""
+    """The metrics as exported: each view over the exported range, and the network views over each window."""
 
     def __init__(self, root: Path, created_at: datetime) -> None:
         self._created_at = created_at
@@ -275,6 +345,17 @@ class ArchivedMetrics:
             data = (exported or {}).get("metrics", {}).get("data")
             if data is not None:
                 self._data[view] = MetricsData.model_validate(data)
+        self._detail: dict[MetricsViewName, list[MetricsData]] = {}
+        for view in NETWORK_VIEWS:
+            folder = root / "export" / DETAIL_DIR / view.value
+            answers = [json.loads(f.read_text()) for f in sorted(folder.glob("*.json"))] if folder.is_dir() else []
+            windows = [MetricsData.model_validate(d) for a in answers if (d := (a.get("metrics") or {}).get("data"))]
+            if windows:
+                self._detail[view] = sorted(windows, key=lambda data: data.start)
+
+    def windows(self) -> list[Window]:
+        """The ranges the network views are held at 15 s, oldest first (#351)."""
+        return sorted({(data.start, data.end) for windows in self._detail.values() for data in windows})
 
     async def refresh(self) -> View[Any]:
         if not self._data:
@@ -291,12 +372,28 @@ class ArchivedMetrics:
 
     async def query(self, view: MetricsViewName, plan: RangePlan) -> MetricsData:
         data = self._data.get(view)
-        if data is None:
+        detail = self._detail.get(view, [])
+        if data is None and not detail:
             raise SourceUnavailable(NOT_IN_ARCHIVE, ARCHIVE_REMEDY)
-        if (plan.start, plan.end) != (data.start, data.end):
-            exported = f"{data.start:%Y-%m-%d %H:%M} to {data.end:%Y-%m-%d %H:%M} UTC"
-            raise SourceUnavailable(f"an archive holds only the exported range {exported}", ARCHIVE_REMEDY)
-        return data
+        if data is not None and (plan.start, plan.end) == (data.start, data.end):
+            return data
+        # The page floors a range to its step, which can take the start up to one step before a window's.
+        step = timedelta(seconds=plan.step)
+        window = next((w for w in detail if w.start - step <= plan.start and plan.end <= w.end), None)
+        if window is not None:
+            return _cut(window, max(plan.start, window.start), plan.end)
+        held = []
+        if data is not None:
+            held.append(f"the exported range {data.start:%Y-%m-%d %H:%M} to {data.end:%Y-%m-%d %H:%M} UTC")
+        if detail:
+            held.append("15 s detail over " + ", ".join(_window_text(w.start, w.end) for w in detail))
+        raise SourceUnavailable(f"an archive holds only {' and '.join(held)}", ARCHIVE_REMEDY)
+
+
+def _cut(window: MetricsData, start: datetime, end: datetime) -> MetricsData:
+    """One window's answer over a range inside it."""
+    series = [MetricSeries(labels=s.labels, points=[p for p in s.points if start <= p.t <= end]) for s in window.series]
+    return window.model_copy(update={"start": start, "end": end, "series": series})
 
 
 @dataclass(frozen=True)
@@ -337,7 +434,9 @@ def archive_sources(opened: OpenedArchive) -> tuple[Sources, ArchiveExports, Arc
         health_exported=_export(root, "health.json") is not None,
     )
     ranges = [r for view in MetricsViewName if (r := metrics.exported_range(view)) is not None]
-    info = opened.info
+    info = opened.info.model_copy(
+        update={"metrics_windows": [MetricsWindow(start=start, end=end) for start, end in metrics.windows()]}
+    )
     if ranges:
         info = info.model_copy(update={"metrics_start": ranges[0][0], "metrics_end": ranges[0][1]})
     return sources, exports, info
