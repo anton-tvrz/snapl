@@ -235,6 +235,11 @@ services:
   # data until the size limit. The admin API is on for `history.archive`
   # snapshots, which is why the port is published on loopback only.
   # Pinned: the dashboard's fixtures were captured from this version.
+  #
+  # The config is a single-file mount, which keeps pointing at the file it was
+  # started with: after a `git pull` changes prometheus.yml, a reload still
+  # reads the old one. Apply a change with
+  # `docker compose -f development/docker-compose.yml up -d --force-recreate prometheus`.
   # ---------------------------------------------------------------------------
   prometheus:
     image: prom/prometheus:v3.10.0
