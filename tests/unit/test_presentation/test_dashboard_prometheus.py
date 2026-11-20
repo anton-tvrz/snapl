@@ -890,16 +890,17 @@ async def test_the_network_keys_each_figure_by_its_labels() -> None:
     assert sample.memory == {}
 
 
-async def test_the_network_is_read_once_per_scrape_interval() -> None:
+async def test_the_network_is_read_once_per_worker_scrape() -> None:
+    """Cached for the worker's 5 s scrape, not the views' 15 s, so a change shows within 30 s (#348)."""
     fake = FakeInstant({})
     clock = Clock()
     source_ = _instant_source(fake, clock)
 
     await source_.network()
-    clock.now = T0 + timedelta(seconds=14)
+    clock.now = T0 + timedelta(seconds=4)
     await source_.network()
     first = len(fake.requests)
-    clock.now = T0 + timedelta(seconds=15)
+    clock.now = T0 + timedelta(seconds=5)
     await source_.network()
 
     assert len(fake.requests) == 2 * first

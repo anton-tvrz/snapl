@@ -333,7 +333,7 @@ uv run snapl scan
 ```
 
 **Point at:**
-- gNMI call duration: one line per device and operation. The deploy adds `configure` for spine-01, and the scan adds `collect` for every device. Prometheus scrapes every 15 s and each line is a 95th percentile over at least a minute, so give it a minute to settle.
+- gNMI call duration: one line per device and operation. The deploy adds `configure` for spine-01, and the scan adds `collect` for every device. Prometheus scrapes the worker every 5 s and each line is a 95th percentile over at least a minute, so give it a minute to settle.
 - Workflow duration: `DeployIntent` and `ScanDrift` end to end, gNMI calls included.
 - Worker up: stop the worker and its strip turns red within a minute. Start it again and it turns green.
 - Dashboard sources up: the strip records when each source stopped answering, so an outage stays visible after it ends. It only moves while the page is open, because the page's polling is what reads the sources.
@@ -401,7 +401,7 @@ docker exec clab-dcfabric-leaf-01 sr_cli -ec 'set / interface ethernet-1/49 admi
 
 **Expect, within about 30 s:**
 - `snapl status`: `4 healthy, 2 unhealthy (leaf-01, spine-01)`.
-- The dashboard: both devices flagged. Open spine-01's drawer: `ethernet-1/1 down (expected up)` and `BGP 10.10.1.1 active (expected established)`. The interface and session rows in the drawer can take up to about 40 s longer than the flag (#348).
+- The dashboard: both devices flagged. Open spine-01's drawer: `ethernet-1/1 down (expected up)` and `BGP 10.10.1.1 active (expected established)`. The interface and session rows in the drawer follow within about 25 s of the change (#348).
 - `snapl scan`: **only leaf-01** drifted, with `/interface[name=ethernet-1/49]/enabled True → False`.
 
 **Point at:** spine-01. Nothing on it differs from intent, so it is in sync. Its link and its session are down all the same, so it is unhealthy. A config-only check would call it fine.

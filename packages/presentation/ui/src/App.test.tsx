@@ -239,6 +239,22 @@ describe("App", () => {
     expect(screen.getByText("uv run snapl dashboard")).toBeInTheDocument();
   });
 
+  // #348: a downed link must reach the drawer within 30 s; 30 s here alone used the whole budget.
+  it("reads the network every 5 s", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const network = vi.fn(async () => NETWORK);
+    render(<App provider={provider({ network })} />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+
+    expect(network).toHaveBeenCalledTimes(7);
+  });
+
   it("reads the mode once, the overview every 5 s and the topology every 30 s", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const calls = { mode: vi.fn(), overview: vi.fn(), topology: vi.fn() };

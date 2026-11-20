@@ -50,6 +50,7 @@ __all__ = [
     "NETWORK_QUERIES",
     "SCRAPE_INTERVAL_S",
     "VIEWS",
+    "WORKER_SCRAPE_INTERVAL_S",
     "MetricsViewSpec",
     "NetworkSample",
     "PrometheusSource",
@@ -65,6 +66,9 @@ __all__ = [
 
 # development/prometheus/prometheus.yml scrapes every 15 s.
 SCRAPE_INTERVAL_S = 15
+# ...except the worker, every 5 s, so a downed link or session reaches the network
+# view within 30 s: sample (10 s) + scrape + this cache + the page's refresh (#348).
+WORKER_SCRAPE_INTERVAL_S = 5
 # Prometheus refuses more than 11,000 points per series (captured). Stay under.
 MAX_POINTS = 10_000
 
@@ -464,6 +468,7 @@ class PrometheusSource:
         transport: httpx.AsyncBaseTransport | None = None,
         clock: Callable[[], datetime] = utcnow,
         ttl: timedelta = timedelta(seconds=SCRAPE_INTERVAL_S),
+        network_ttl: timedelta = timedelta(seconds=WORKER_SCRAPE_INTERVAL_S),
     ) -> None:
         self._address = address.rstrip("/")
         self._namespace = namespace
@@ -472,6 +477,7 @@ class PrometheusSource:
         self._transport = transport
         self._clock = clock
         self._ttl = ttl
+        self._network_ttl = network_ttl
         self._cache: dict[tuple[MetricsViewName, RangePlan], tuple[datetime, MetricsData]] = {}
         self._network: NetworkSample | None = None
         self._error_remedy = f"Run the view's query in Prometheus's own UI, {self._address}/query, to see more."
@@ -547,13 +553,13 @@ class PrometheusSource:
         return data
 
     async def network(self) -> NetworkSample:
-        """Every network family now, by instant query (spec 016). Cached for one scrape interval.
+        """Every network family now, by instant query (spec 016). Cached for one worker scrape (#348).
 
         Raises:
             SourceUnavailable: as ``query``.
         """
         now = self._clock()
-        if self._network is not None and now - self._network.at < self._ttl:
+        if self._network is not None and now - self._network.at < self._network_ttl:
             return self._network
         window = rate_window(SCRAPE_INTERVAL_S)
         try:

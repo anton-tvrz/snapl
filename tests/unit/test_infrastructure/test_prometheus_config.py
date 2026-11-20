@@ -37,11 +37,21 @@ def test_exactly_the_worker_and_the_dashboard_are_scraped(config: dict) -> None:
 
 
 def test_the_scrape_interval_is_15_s(config: dict) -> None:
-    """The dashboard's cache and rate windows assume 15 s (SCRAPE_INTERVAL_S)."""
+    """The dashboard's views and rate windows assume 15 s (SCRAPE_INTERVAL_S)."""
     from snapl_presentation.dashboard.prometheus import SCRAPE_INTERVAL_S
 
     assert config["global"]["scrape_interval"] == f"{SCRAPE_INTERVAL_S}s" == "15s"
-    assert all("scrape_interval" not in job for job in _jobs(config).values())
+    assert "scrape_interval" not in _jobs(config)["snapl-dashboard"]
+
+
+def test_the_worker_is_scraped_every_5_s(config: dict) -> None:
+    """A downed link reaches the network view within 30 s (spec 016 SC-001, SC-002; #348).
+
+    Sample (10 s) + this scrape (5 s) + the dashboard's network cache (5 s) + the page's refresh (5 s).
+    """
+    from snapl_presentation.dashboard.prometheus import WORKER_SCRAPE_INTERVAL_S
+
+    assert _jobs(config)["snapl-worker"]["scrape_interval"] == f"{WORKER_SCRAPE_INTERVAL_S}s" == "5s"
 
 
 def test_both_targets_use_the_default_metrics_path(config: dict) -> None:

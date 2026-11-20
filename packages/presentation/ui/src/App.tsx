@@ -48,7 +48,9 @@ const TOPOLOGY_MS = 30_000;
 // The lanes, and every view of a past time, refresh once a minute: the past
 // changes only when a late audit row arrives (research R11, R12).
 const HISTORY_MS = 60_000;
-const NETWORK_MS = 30_000;
+// The drawer's interfaces and sessions: with the worker's 5 s scrape and the server's 5 s
+// cache, a downed link shows within 30 s of its 10 s sample (#348).
+const NETWORK_MS = 5000;
 
 const NO_FLAGS = new Map<string, number>();
 // The metrics in their groups (spec 015). The page asks for the views it knows.
