@@ -12,7 +12,7 @@ Lab addresses: spine-01 172.20.21.11, spine-02 .12, leaf-01 .13 to leaf-04 .16. 
 
 4. **An interface fault (SC-001).** Disable leaf-01's `ethernet-1/49` on the device, as in item 1, and note the time. The drawer shows it down within 30 s, and leaf-01 is flagged within 60 s with `ethernet-1/49 down (expected up)`. spine-01's `ethernet-1/1` goes down with it, and spine-01 is flagged too, for its interface and the session over it. Disabling it on the device is also drift, so the next scan shows leaf-01 drifted as well as unhealthy: two separate marks. (Item 3's spines are the other case, in sync and unhealthy.) Reconcile leaf-01: the scan returns to in sync, the interface comes up, and the flag clears within 60 s. Most of that is BGP: the session re-establishes about 40 s after the link (evidence.md, 2026-11-20).
 
-5. **A paused device (SC-006).** `docker pause clab-dcfabric-leaf-03` for 60 s. leaf-03 reads `unknown`, "no telemetry since …", never `unhealthy`. `docker unpause`: the stream is `streaming` again within 60 s, with no worker restart.
+5. **A paused device (SC-006).** `docker pause clab-dcfabric-leaf-03` for 60 s. leaf-03 reads `unknown`, "no telemetry since …", never `unhealthy`. `docker unpause`: leaf-03 is `healthy` again within 60 s, with no worker restart (the stream's own state isn't shown; its first sample is). Keep the pause under the 90 s BGP hold time, or the spines are flagged too.
 
 6. **Scan time (SC-005).** As spec 015 T044: the median of at least 10 scheduled scans with `SNAPL_TELEMETRY=off`, then 10 with it on. The difference is at most 10%.
 
