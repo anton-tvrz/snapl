@@ -27,8 +27,8 @@
 
 ## Phase 1: A UI Test That Waits (US1, #371) — PR A
 
-- [ ] T001 [US1] Make the failure show: delay the `runs` answer in `App.test.tsx > shows the loop for the latest run` in a throwaway edit, and see it fail with CI's message ("Number of calls: 0"). Record this in the PR, and don't commit the delay.
-- [ ] T002 [US1] Wait for the steps call (`await waitFor(...)`, after the "The loop, block by block" list). The test passes with the delay and without it. `cd packages/presentation/ui && npx vitest run && npm run lint`.
+- [x] T001 [US1] Make the failure show: delay the `runs` answer in `App.test.tsx > shows the loop for the latest run` in a throwaway edit, and see it fail with CI's message ("Number of calls: 0"). Record this in the PR, and don't commit the delay.
+- [x] T002 [US1] Wait for the steps call (`await waitFor(...)`, after the "The loop, block by block" list). The test passes with the delay and without it. `cd packages/presentation/ui && npx vitest run && npm run lint`.
 
 ## Phase 2: Cancel Only When Quiet (US2, #375) — PR B
 

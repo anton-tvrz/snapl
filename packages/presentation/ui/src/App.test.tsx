@@ -1,4 +1,4 @@
-import { act, render, screen, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -285,11 +285,15 @@ describe("App", () => {
     render(<App provider={provider({ steps })} />);
 
     const loop = await screen.findByRole("region", { name: "The loop" });
-    expect(steps).toHaveBeenCalledWith({
-      workflow_id: "scan-drift-dcfabric-68101896-6a9c-4c65-8a84-24af2b98b12a",
-      started_at: "2026-11-07T21:20:17.860408Z",
-    });
+    // The region can show before the effect that asks the steps has run (#371),
+    // so wait for the list, which needs them, and then for the call.
     expect(await within(loop).findByRole("list", { name: "The loop, block by block" })).toBeInTheDocument();
+    await waitFor(() =>
+      expect(steps).toHaveBeenCalledWith({
+        workflow_id: "scan-drift-dcfabric-68101896-6a9c-4c65-8a84-24af2b98b12a",
+        started_at: "2026-11-07T21:20:17.860408Z",
+      }),
+    );
     expect(loop).toHaveTextContent("Latest run");
   });
 
