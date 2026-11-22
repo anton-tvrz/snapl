@@ -46,6 +46,8 @@ from snapl_orchestrator.workflows.drift_response import DriftResponseWorkflow
 from snapl_orchestrator.workflows.reconcile_devices import ReconcileDevicesWorkflow
 from snapl_orchestrator.workflows.scan_drift import ScanDriftWorkflow
 
+from .quiet import SlowAfterCancel, until_quiet, where_it_stopped
+
 pytestmark = pytest.mark.unit
 
 TASK_QUEUE = "test-drift-response"
@@ -592,8 +594,21 @@ async def test_a_reconcile_that_fails_as_a_whole_stands_the_schedule_down_too(mi
 
 
 @pytest.mark.asyncio
-async def test_an_operator_cancel_during_the_repair_does_not_stand_down(mixed: Fabric) -> None:
-    """A cancel is the operator stopping the run, not a failed repair."""
+@pytest.mark.parametrize("widened", [False, True], ids=["as-is", "race-widened"])
+async def test_an_operator_cancel_during_the_repair_does_not_stand_down(mixed: Fabric, widened: bool) -> None:
+    """A cancel is the operator stopping the run, not a failed repair.
+
+    The repair deploys forward-01 and both-02 side by side, so when one apply
+    has started the other deploy may still be running its earlier steps.
+    So the cancel waits until the repair is quiet: each deploy holds only its
+    apply, and every run's last workflow task is answered (#375).
+
+    ``race-widened`` makes the race certain under a cancel sent as soon as
+    one apply starts. both-02's intent fetch returns 1.2 s late, and every
+    workflow task after the cancel takes 0.5 s, so the cancel reaches
+    both-02's deploy (through the run and the reconcile) while that fetch
+    completes. The time-skipping server then refuses the cancel's workflow
+    task (``ACTIVITY_UNKNOWN``) and never times it out."""
     deps = mixed.activities(InMemoryAuditLog())
     applying = asyncio.Event()
 
@@ -602,7 +617,18 @@ async def test_an_operator_cancel_during_the_repair_does_not_stand_down(mixed: F
         await asyncio.sleep(30)  # released by cancellation / worker shutdown
 
     deps.executor.apply = AsyncMock(side_effect=_blocking_apply)
+    if widened:
+        late_id = mixed.states[1].device.id
+        get_desired = deps.intent_store.get_desired_state.side_effect
+
+        async def _late_for_both_02(*, use_case=None, device_id=None):
+            if device_id == late_id:
+                await asyncio.sleep(1.2)
+            return await get_desired(use_case=use_case, device_id=device_id)
+
+        deps.intent_store.get_desired_state = AsyncMock(side_effect=_late_for_both_02)
     set_activities(deps)
+    executor = SlowAfterCancel(0.5) if widened else None
     async with (
         await WorkflowEnvironment.start_time_skipping(data_converter=pydantic_data_converter) as env,
         Worker(
@@ -611,16 +637,32 @@ async def test_an_operator_cancel_during_the_repair_does_not_stand_down(mixed: F
             workflows=_WORKFLOWS,
             workflow_runner=build_workflow_runner(),
             activities=_ACTIVITIES,
+            workflow_task_executor=executor,
         ),
     ):
         handle = await env.client.start_workflow(
             DriftResponseWorkflow.run, _request(DriftResponseMode.REMEDIATE), id=RUN_ID, task_queue=TASK_QUEUE
         )
         await asyncio.wait_for(applying.wait(), timeout=10)
+        reconcile = env.client.get_workflow_handle(f"{RUN_ID}-reconcile")
+        deploys = [env.client.get_workflow_handle(f"deploy-intent-{s.device.id}") for s in mixed.states[:2]]
+        runs = [handle, reconcile, *deploys]
+        await until_quiet([(handle, []), (reconcile, []), *((deploy, ["apply_config"]) for deploy in deploys)])
+        if executor is not None:
+            executor.slow = True
+            # By then the cancel has reached both deploys; the rest of the run
+            # needn't crawl.
+            asyncio.get_running_loop().call_later(2.5, setattr, executor, "slow", False)
         await handle.cancel()
-        with pytest.raises(WorkflowFailureError):
-            await handle.result()
+        try:
+            with pytest.raises(WorkflowFailureError):
+                await asyncio.wait_for(handle.result(), timeout=20)
+        except TimeoutError:
+            stopped = " | ".join([f"{run.id}: {await where_it_stopped(run)}" for run in runs])
+            raise AssertionError(f"the run did not finish within 20 s after its cancel: {stopped}") from None
 
+    if executor is not None:
+        executor.shutdown(wait=False)
     assert STAND_DOWNS == []
 
 

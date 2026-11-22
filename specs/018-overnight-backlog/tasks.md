@@ -32,14 +32,14 @@
 
 ## Phase 2: Cancel Only When Quiet (US2, #375) — PR B
 
-- [ ] T003 [US2] List every `handle.cancel()` in `tests/unit/test_orchestrator/`, with what each waits for before cancelling. Put the list in the PR.
-- [ ] T004 [US2] Move #373's quiet wait into one shared test helper. `test_workflow_cancellation.py` uses it, and its race-widened variant stays green.
-- [ ] T005 [US2] For each test from T003 that can race:
+- [x] T003 [US2] List every `handle.cancel()` in `tests/unit/test_orchestrator/`, with what each waits for before cancelling. Put the list in the PR.
+- [x] T004 [US2] Move #373's quiet wait into one shared test helper. `test_workflow_cancellation.py` uses it, and its race-widened variant stays green.
+- [x] T005 [US2] For each test from T003 that can race:
   - show it red under `_SlowAfterCancel`, or under a late-returning fake, with its old wait;
   - switch it to the helper;
   - show it green.
   - If one can't race, say why in the PR.
-- [ ] T006 [US2] Run each changed file 20 times under coverage and 16 busy processes, with `--cov-fail-under=0`, and record the passes and the slowest run.
+- [x] T006 [US2] Run each changed file 20 times under coverage and 16 busy processes, with `--cov-fail-under=0`, and record the passes and the slowest run.
 
 ## Phase 3: The Blast-Radius Guard (US3, #136) — PR C
 
