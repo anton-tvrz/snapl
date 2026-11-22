@@ -27,12 +27,19 @@ interface RunsProps {
   device?: string;
 }
 
+/** How many runs the table shows until the viewer asks for all (spec 018 US4, #305). */
+const CAP = 10;
+
 /** Recent runs from the audit trail (010 FR-013), running ones first. */
 export function Runs({ runs, now, device }: RunsProps) {
   const [all, setAll] = useState(false);
+  const [uncapped, setUncapped] = useState(false);
   const list = runs?.data ?? [];
   const filtered = device && !all ? list.filter((run) => run.target === device) : list;
-  const ordered = [...filtered.filter((run) => run.state === "running"), ...filtered.filter((run) => run.state !== "running")];
+  const running = filtered.filter((run) => run.state === "running");
+  const ordered = [...running, ...filtered.filter((run) => run.state !== "running")];
+  // Running runs come first and are never hidden, even past the cap.
+  const shown = uncapped ? ordered : ordered.slice(0, Math.max(CAP, running.length));
 
   return (
     <ViewFrame title="Runs" view={runs} now={now}>
@@ -47,50 +54,61 @@ export function Runs({ runs, now, device }: RunsProps) {
       {list.length === 0 ? (
         <p className="text-body text-muted">No runs recorded yet.</p>
       ) : (
-        <div className="overflow-x-auto">
-          <table aria-label="Runs" className="w-full text-left text-body">
-            <thead className="text-meta text-muted">
-              <tr>
-                <th className="cell py-1 pr-4 font-medium">Started</th>
-                <th className="cell py-1 pr-4 font-medium">Run</th>
-                <th className="cell py-1 pr-4 font-medium">Target</th>
-                <th className="cell py-1 pr-4 font-medium">Outcome</th>
-                <th className="cell py-1 pr-4 font-medium">Trigger</th>
-                <th className="cell py-1 font-medium">Duration</th>
-              </tr>
-            </thead>
-            <tbody>
-              {ordered.map((run) => {
-                const outcome = runEncoding(run.state);
-                return (
-                  <tr key={`${run.workflow_id}@${run.started_at}`} className="border-t border-line align-top">
-                    <td className="py-2 pr-4 whitespace-nowrap">{ageText(run.started_at, now)}</td>
-                    <td className="py-2 pr-4">
-                      <RunLink run={run} />
-                    </td>
-                    <td className="py-2 pr-4 font-mono text-meta">{run.target ?? ""}</td>
-                    <td className="py-2 pr-4">
-                      <span aria-hidden="true">{outcome.glyph} </span>
-                      {outcome.label}
-                      {run.reason && <span className="block max-w-prose text-meta break-words text-muted">{run.reason}</span>}
-                    </td>
-                    <td className="py-2 pr-4">
-                      {run.trigger}
-                      {run.actor ? ` (${run.actor})` : ""}
-                    </td>
-                    <td className="py-2 whitespace-nowrap">
-                      {run.state === "running"
-                        ? elapsed(run, now)
-                        : run.duration_s == null
-                          ? ""
-                          : durationText(run.duration_s)}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <>
+          <div className="overflow-x-auto">
+            <table aria-label="Runs" className="w-full text-left text-body">
+              <thead className="text-meta text-muted">
+                <tr>
+                  <th className="cell py-1 pr-4 font-medium">Started</th>
+                  <th className="cell py-1 pr-4 font-medium">Run</th>
+                  <th className="cell py-1 pr-4 font-medium">Target</th>
+                  <th className="cell py-1 pr-4 font-medium">Outcome</th>
+                  <th className="cell py-1 pr-4 font-medium">Trigger</th>
+                  <th className="cell py-1 font-medium">Duration</th>
+                </tr>
+              </thead>
+              <tbody>
+                {shown.map((run) => {
+                  const outcome = runEncoding(run.state);
+                  return (
+                    <tr key={`${run.workflow_id}@${run.started_at}`} className="border-t border-line align-top">
+                      <td className="py-2 pr-4 whitespace-nowrap">{ageText(run.started_at, now)}</td>
+                      <td className="py-2 pr-4">
+                        <RunLink run={run} />
+                      </td>
+                      <td className="py-2 pr-4 font-mono text-meta">{run.target ?? ""}</td>
+                      <td className="py-2 pr-4">
+                        <span aria-hidden="true">{outcome.glyph} </span>
+                        {outcome.label}
+                        {run.reason && <span className="block max-w-prose text-meta break-words text-muted">{run.reason}</span>}
+                      </td>
+                      <td className="py-2 pr-4">
+                        {run.trigger}
+                        {run.actor ? ` (${run.actor})` : ""}
+                      </td>
+                      <td className="py-2 whitespace-nowrap">
+                        {run.state === "running"
+                          ? elapsed(run, now)
+                          : run.duration_s == null
+                            ? ""
+                            : durationText(run.duration_s)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {shown.length < ordered.length && (
+            <button
+              type="button"
+              onClick={() => setUncapped(true)}
+              className="chip mt-2 rounded border border-line px-2 py-0.5 text-meta text-ink"
+            >
+              Show all {ordered.length} runs
+            </button>
+          )}
+        </>
       )}
     </ViewFrame>
   );

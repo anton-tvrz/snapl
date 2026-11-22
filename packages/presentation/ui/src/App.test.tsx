@@ -105,7 +105,8 @@ describe("App", () => {
       "Fabric history",
       "Drift by device",
       "Metrics",
-      "Workflow duration (95th percentile)",
+      // Every metrics group starts folded, so its label leads (spec 018 US4).
+      "The loop's timing",
       "Operations",
       "Schedule and worker",
       "Running now",
@@ -355,7 +356,8 @@ describe("App", () => {
 
     expect(await screen.findByRole("region", { name: "Schedule and worker" })).toHaveTextContent("Remediate every 5 min");
     expect(screen.getByRole("region", { name: "Running now" })).toHaveTextContent("ScanDrift");
-    expect(within(screen.getByRole("region", { name: "Runs" })).getAllByRole("row")).toHaveLength(13);
+    // The latest 10 of the fixtures' 12 runs, and the header (spec 018 US4).
+    expect(within(screen.getByRole("region", { name: "Runs" })).getAllByRole("row")).toHaveLength(11);
     expect(screen.getByRole("region", { name: "Undesired config" })).toHaveTextContent("leaf-01");
   });
 
@@ -396,8 +398,9 @@ describe("App", () => {
   });
 
   // spec 015 T028: the metrics in four groups, each under its label.
-  // #290 (spec 014 SC-003): only the first group is open, and a folded group asks nothing.
-  it("groups the metrics under four labels, with only the loop's timing open", async () => {
+  // #290 (spec 014 SC-003): a folded group asks nothing.
+  // Spec 018 US4 (#305): every metrics group starts folded, so the page is short.
+  it("groups the metrics under four labels, every one folded on a first visit", async () => {
     const metrics = vi.fn(async (view: keyof typeof METRICS) => METRICS[view]);
     render(<App provider={provider({ metrics })} />);
 
@@ -409,12 +412,11 @@ describe("App", () => {
     }
     expect(within(section).queryByRole("group", { name: "Other" })).not.toBeInTheDocument();
     const titles = (group: HTMLElement) => within(group).queryAllByRole("heading", { level: 2 }).map((h) => h.textContent);
-    expect(await within(groups[0]!).findAllByRole("region")).toHaveLength(5);
-    for (const group of groups.slice(1)) expect(titles(group)).toEqual([]);
+    for (const group of groups) expect(titles(group)).toEqual([]);
+    expect(within(groups[0]!).getByRole("button", { name: "Show The loop's timing" })).toHaveTextContent("Show 5 panels");
     expect(within(groups[1]!).getByRole("button", { name: "Show What the loop did" })).toHaveTextContent("Show 5 panels");
-    expect(new Set(metrics.mock.calls.map(([view]) => view))).toEqual(
-      new Set(["workflow-duration", "workflow-mean", "gnmi-duration", "gnmi-mean", "activity-time"]),
-    );
+    expect(metrics).not.toHaveBeenCalled();
+    expect(location.search).toBe("");
 
     await userEvent.click(within(groups[1]!).getByRole("button", { name: "Show What the loop did" }));
 
@@ -425,7 +427,33 @@ describe("App", () => {
       "Deploys ended (count)",
       "gNMI errors (rate)",
     ]);
-    expect(new URLSearchParams(location.search).get("open")).toBe("metrics-timing,metrics-work");
+    expect(new URLSearchParams(location.search).get("open")).toBe("metrics-work");
+  });
+
+  it("opens the loop's timing when the address names it", async () => {
+    history.replaceState(null, "", "/?open=metrics-timing");
+    const metrics = vi.fn(async (view: keyof typeof METRICS) => METRICS[view]);
+    render(<App provider={provider({ metrics })} />);
+
+    const timing = within(await screen.findByRole("region", { name: "Metrics" })).getByRole("group", { name: "The loop's timing" });
+    expect(await within(timing).findAllByRole("region")).toHaveLength(5);
+    expect(new Set(metrics.mock.calls.map(([view]) => view))).toEqual(
+      new Set(["workflow-duration", "workflow-mean", "gnmi-duration", "gnmi-mean", "activity-time"]),
+    );
+    expect(new URLSearchParams(location.search).get("open")).toBe("metrics-timing");
+  });
+
+  it("opens a metrics group a link points to", async () => {
+    render(<App provider={provider()} />);
+    await screen.findByRole("button", { name: "Show The worker" });
+
+    await act(async () => {
+      location.hash = "#metrics-worker";
+      window.dispatchEvent(new HashChangeEvent("hashchange"));
+    });
+
+    expect(screen.getByRole("button", { name: "Hide The worker" })).toBeInTheDocument();
+    history.replaceState(null, "", "/");
   });
 
   // Spec 016 data-model.md: "The network" after spec 015's four, folded by default.
@@ -468,7 +496,7 @@ describe("App", () => {
 
     const panel = screen.getByRole("region", { name: "Fabric history" });
     expect(await within(panel).findByRole("img", { name: /^Devices in sync at each scan/ })).toBeInTheDocument();
-    expect(new URLSearchParams(location.search).get("open")).toBe("fabric-history,metrics-timing");
+    expect(new URLSearchParams(location.search).get("open")).toBe("fabric-history");
 
     await userEvent.click(screen.getByRole("button", { name: "Hide Fabric history" }));
 
@@ -533,6 +561,7 @@ describe("App", () => {
   });
 
   it("reads the metrics every 30 s", async () => {
+    history.replaceState(null, "", "/?open=metrics-timing");
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const metrics = vi.fn(async (view: keyof typeof METRICS) => METRICS[view]);
     render(<App provider={provider({ metrics })} />);
@@ -543,7 +572,7 @@ describe("App", () => {
       await vi.advanceTimersByTimeAsync(30_000);
     });
 
-    // The five views of the one open group, twice (#290).
+    // The five views of the one group the address opens, twice (#290).
     expect(metrics).toHaveBeenCalledTimes(10);
   });
 

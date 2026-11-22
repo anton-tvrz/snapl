@@ -12,12 +12,15 @@ const runningView = OVERVIEW_UP.running as View<RunView[]>;
 
 const rows = () => within(screen.getByRole("table", { name: "Runs" })).getAllByRole("row").slice(1);
 const withRuns = (list: RunView[]) => ({ ...runsView, data: list });
+/** `count` finished runs, newest first, each its own workflow. */
+const many = (count: number, target = "spine-01"): RunView[] =>
+  Array.from({ length: count }, (_, i) => ({ ...runs[0]!, workflow_id: `scan-drift-${target}-${i}`, target }));
 
 describe("Runs", () => {
-  it("lists every run with its type, target, start, duration, outcome and trigger", () => {
+  it("lists the latest runs with their type, target, start, duration, outcome and trigger", () => {
     render(<Runs runs={runsView} now={NOW} />);
 
-    expect(rows()).toHaveLength(12);
+    expect(rows()).toHaveLength(10);
     const deploy = rows().find((row) => row.textContent?.includes("spine-01") && row.textContent.includes("33 s ago"))!;
     expect(deploy).toHaveTextContent("DeployIntent");
     expect(deploy).toHaveTextContent("Succeeded");
@@ -65,7 +68,59 @@ describe("Runs", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Show every device's runs" }));
 
+    expect(rows()).toHaveLength(10);
+    expect(screen.getByRole("button", { name: "Show all 12 runs" })).toBeInTheDocument();
+  });
+
+  // Spec 018 US4 (#305): the schedule writes two runs every 5 minutes, so the table is capped.
+  it("shows the latest 10 of 25 runs, and all 25 when asked", async () => {
+    const list = many(25);
+    render(<Runs runs={withRuns(list)} now={NOW} />);
+
+    expect(rows()).toHaveLength(10);
+    expect(rows()[0]).toHaveTextContent(list[0]!.workflow_type);
+    expect(within(rows()[9]!).getByRole("link")).toHaveAttribute("title", "scan-drift-spine-01-9");
+
+    await userEvent.click(screen.getByRole("button", { name: "Show all 25 runs" }));
+
+    expect(rows()).toHaveLength(25);
+    expect(screen.queryByRole("button", { name: /^Show all/ })).not.toBeInTheDocument();
+  });
+
+  it("has no button with 10 runs or fewer", () => {
+    render(<Runs runs={withRuns(many(10))} now={NOW} />);
+
+    expect(rows()).toHaveLength(10);
+    expect(screen.queryByRole("button", { name: /^Show all/ })).not.toBeInTheDocument();
+  });
+
+  it("never hides a running run", () => {
+    const running = Array.from({ length: 12 }, (_, i): RunView => ({
+      ...runs[0]!,
+      workflow_id: `scan-drift-live-${i}`,
+      state: "running",
+      ended_at: null,
+      duration_s: null,
+    }));
+    render(<Runs runs={withRuns([...many(5), ...running])} now={NOW} />);
+
     expect(rows()).toHaveLength(12);
+    for (const row of rows()) expect(row).toHaveTextContent("Running");
+    expect(screen.getByRole("button", { name: "Show all 17 runs" })).toBeInTheDocument();
+  });
+
+  it("caps the selected device's runs, not every device's", async () => {
+    render(<Runs runs={withRuns([...many(12, "leaf-01"), ...many(5, "spine-02")])} now={NOW} device="leaf-01" />);
+
+    expect(rows()).toHaveLength(10);
+    for (const row of rows()) expect(row).toHaveTextContent("leaf-01");
+    expect(screen.getByRole("button", { name: "Show all 12 runs" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Show every device's runs" }));
+
+    expect(rows()).toHaveLength(10);
+    await userEvent.click(screen.getByRole("button", { name: "Show all 17 runs" }));
+    expect(rows()).toHaveLength(17);
   });
 
   it("says when there is no run", () => {

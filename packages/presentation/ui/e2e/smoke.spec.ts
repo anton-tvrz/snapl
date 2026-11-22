@@ -204,7 +204,7 @@ test("drift by device lists the arc's two drifted devices and opens one", async 
 
   await panel.getByRole("button", { name: /^Open spine-01:/ }).click();
   await expect(page.getByRole("dialog", { name: "spine-01" })).toBeVisible();
-  await expect(page).toHaveURL(/\?device=spine-01&open=drift-by-device%2Cmetrics-timing$/);
+  await expect(page).toHaveURL(/\?device=spine-01&open=drift-by-device$/);
 });
 
 // #290: the number row's link opens the panel it points to.
@@ -276,18 +276,23 @@ test("the reconcile's deploy shows the loop with four blocks done", async ({ pag
   await expect(page).toHaveURL(/[?&]run=deploy-intent-18e29d6d-e0c5-0ba7-32d1-c510fc3ef077%4020/);
 });
 
-test("the runs panel lists the fixture's 12 runs, and each unavailable source's panel gives a reason and a remedy", async ({ page }) => {
+test("the runs panel lists the latest 10 of the fixture's 12 runs, and each unavailable source's panel gives a reason and a remedy", async ({ page }) => {
   await page.goto("/");
 
   const runs = page.getByRole("region", { name: "Runs" });
-  await expect(runs.getByRole("table", { name: "Runs" }).getByRole("row")).toHaveCount(13);
+  const rows = runs.getByRole("table", { name: "Runs" }).getByRole("row");
+  await expect(rows).toHaveCount(11);
+  await runs.getByRole("button", { name: "Show all 12 runs" }).click();
+  await expect(rows).toHaveCount(13);
+  // Every metrics group starts folded (spec 018 US4); open the first.
+  await page.getByRole("button", { name: "Show The loop's timing" }).click();
 
   const down = {
     "Schedule and worker": ["temporal is not part of the fixture server", "uv run invoke dev.deps"],
     "Running now": ["temporal is not part of the fixture server", "uv run invoke dev.deps"],
     CI: ["ci is not part of the fixture server", "export GITHUB_TOKEN=…"],
     "Live lab evidence": ["lab_runs is not part of the fixture server", "uv run invoke test-e2e"],
-    // The first metrics group is the one open by default (#290).
+    // In the first metrics group, opened above.
     "Workflow duration (95th percentile)": ["prometheus is not part of the fixture server", "uv run invoke dev.deps"],
   };
   for (const [panel, [reason, remedy]] of Object.entries(down)) {

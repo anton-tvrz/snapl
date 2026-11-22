@@ -58,9 +58,9 @@ const NO_FLAGS = new Map<string, number>();
 const PRESENT_ONLY: View<FabricNetwork> = { source: "prometheus", available: false, reason: "Shows only the present.", data: null };
 const METRIC_GROUPS_ON_PAGE = groupViews(METRIC_VIEWS.map((view) => view.name));
 // Folded until opened, so the metrics start near the top (spec 014 SC-003, #290).
-// The first metrics group is open by default.
+// Every metrics group starts folded too, so the page is short (spec 018 US4, #305).
 const FOLDS = new Set(["history", "fabric-history", "drift-by-device", ...METRIC_GROUPS_ON_PAGE.map((g) => `metrics-${g.id}`)]);
-const DEFAULT_OPEN = ["metrics-timing"];
+const DEFAULT_OPEN: readonly string[] = [];
 
 interface Props {
   provider: DataProvider;
