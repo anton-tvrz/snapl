@@ -75,25 +75,25 @@
 
 ## Phase 5: A Gzipped Snapshot (US5, #235) — PR E
 
-- [ ] T022 [US5] Tests first in `tests/unit/test_presentation/test_dashboard_snapshot.py`:
+- [x] T022 [US5] Tests first in `tests/unit/test_presentation/test_dashboard_snapshot.py`:
   - a written snapshot's element carries `data-encoding="gzip+base64"` and unpacks to the bundle;
   - `--bundle-json` writes equal JSON;
   - the summary prints the file's size and the unpacked size, and names `--bundle-json`.
   - Give the existing tests one unpacking helper.
-- [ ] T023 [US5] Tests first in `packages/presentation/ui/src/data/inline.test.ts`:
+- [x] T023 [US5] Tests first in `packages/presentation/ui/src/data/inline.test.ts`:
   - a packed bundle reads;
   - a plain one still reads;
   - a corrupt one is refused with a message;
   - with no `DecompressionStream`, the page says it needs a newer browser.
   - No new dependency.
-- [ ] T024 [US5] Implement in `snapshot.py`, the CLI's `--bundle-json`, `inline.ts` and `main.tsx`. Keep `e2e/snapshot.spec.ts` green with its 3 MB budget.
-- [ ] T025 [US5] Amend `specs/011-dashboard-ui/contracts/cli-and-build.md` (the element and the flag), and list it under "Spec amendments".
-- [ ] T026 [US5] SC-002, offline:
+- [x] T024 [US5] Implement in `snapshot.py`, the CLI's `--bundle-json`, `inline.ts` and `main.tsx`. Keep `e2e/snapshot.spec.ts` green with its 3 MB budget.
+- [x] T025 [US5] Amend `specs/011-dashboard-ui/contracts/cli-and-build.md` (the element and the flag), and list it under "Spec amendments".
+- [x] T026 [US5] SC-002, offline:
   - build the UI;
   - make 7-day and 30-day snapshots from the 2026-11-20 archive into a git-ignored path;
   - both must be under 3 MB;
   - record the sizes in the PR.
-- [ ] T027 [US5] `changelog/235.changed.md`.
+- [x] T027 [US5] `changelog/235.changed.md`.
 
 ## Phase 6: Task-Box Housekeeping (US6, #376) — PR F
 

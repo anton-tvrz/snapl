@@ -9,6 +9,8 @@ API responses only, so it carries no credential or environment value.
 from __future__ import annotations
 
 import asyncio
+import base64
+import gzip
 import json
 import re
 from datetime import datetime, timedelta
@@ -33,7 +35,10 @@ CONTAINS = (
     "devices, links, drift history, runs and their steps, schedule, CI status, lab runs, metrics, "
     "device health and the network"
 )
-NOTE = "error text and paths recorded from devices are included as recorded. Read it before publishing."
+NOTE = "error text and paths recorded from devices are included as recorded. Read it before publishing:"
+# Spec 018 US5 (#235): the bundle is gzipped and base64-encoded in the file,
+# which the page unpacks with the browser's DecompressionStream.
+ENCODING = "gzip+base64"
 
 # Spec 015 T045, research R8: the ten views spec 015 added would almost triple
 # a seven-day snapshot at the page's step (180 KB to 501 KB on the fixtures),
@@ -70,16 +75,7 @@ _LADDER = (
     (604800, "1 w"),
 )
 
-_ELEMENT = re.compile(r'(<script id="snapl-bundle" type="application/json">)(.*?)(</script>)', re.S)
-# Inside a script element, none of these may appear raw: `</script` or `<!--`
-# would end or change it, and U+2028/2029 end a line in older parsers.
-_ESCAPES: dict[str, str | int | None] = {
-    "<": "\\u003c",
-    ">": "\\u003e",
-    "&": "\\u0026",
-    chr(0x2028): "\\u2028",
-    chr(0x2029): "\\u2029",
-}
+_ELEMENT = re.compile(r'(<script id="snapl-bundle" type="application/json")(>)(.*?)(</script>)', re.S)
 
 
 class SnapshotError(Exception):
@@ -189,13 +185,26 @@ def collect_bundle(
         return asyncio.run(_collect(app, days, commit, source))
 
 
+def _compact(bundle: dict[str, Any]) -> bytes:
+    return json.dumps(bundle, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+
+
 def render(template: str, bundle: dict[str, Any]) -> str:
-    """The template with the bundle in its one ``snapl-bundle`` element."""
+    """The template with the bundle packed into its one ``snapl-bundle`` element.
+
+    Base64 has no character that could end or change a script element, so no
+    recorded text needs escaping. ``mtime=0`` keeps the same bundle's file the same.
+    """
     if len(_ELEMENT.findall(template)) != 1:
         raise SnapshotError("the snapshot template has no snapl-bundle element, or more than one")
-    payload = json.dumps(bundle, ensure_ascii=False, separators=(",", ":"))
-    payload = payload.translate(str.maketrans(_ESCAPES))
-    return _ELEMENT.sub(lambda match: match.group(1) + payload + match.group(3), template)
+    payload = base64.b64encode(gzip.compress(_compact(bundle), compresslevel=9, mtime=0)).decode("ascii")
+    marker = f' data-encoding="{ENCODING}"'
+    return _ELEMENT.sub(lambda match: match.group(1) + marker + match.group(2) + payload + match.group(4), template)
+
+
+def readable(bundle: dict[str, Any]) -> str:
+    """The bundle as indented JSON, for ``--bundle-json``: what to read before publishing."""
+    return json.dumps(bundle, ensure_ascii=False, indent=2) + "\n"
 
 
 def write(target: Path, html: str, *, force: bool = False) -> None:
@@ -210,19 +219,23 @@ def write(target: Path, html: str, *, force: bool = False) -> None:
         partial.unlink(missing_ok=True)
 
 
-def summary(target: Path, bundle: dict[str, Any], *, archive: str | None = None) -> list[str]:
+def summary(
+    target: Path, bundle: dict[str, Any], *, archive: str | None = None, bundle_json: Path | None = None
+) -> list[str]:
     """What the command prints once the file is written (contracts/cli-and-build.md)."""
     manifest = bundle["manifest"]
     start, end = datetime.fromisoformat(manifest["start"]), datetime.fromisoformat(manifest["end"])
     days = round((end - start) / timedelta(days=1))
     commit = (manifest["snapl_commit"] or "unknown")[:7]
     origin = f"archive {archive}" if archive else "live dashboard sources"
+    size, unpacked = round(target.stat().st_size / 1000), round(len(_compact(bundle)) / 1000)
+    where = f"it is in {bundle_json.name}." if bundle_json else "--bundle-json FILE writes it as readable JSON."
     lines = [
-        f"Snapshot written: {target.name} ({round(target.stat().st_size / 1000)} kB)",
+        f"Snapshot written: {target.name} ({size} kB; its data is {unpacked} kB unpacked)",
         f"  range: {start:%Y-%m-%d %H:%M} to {end:%Y-%m-%d %H:%M} UTC ({days} {'day' if days == 1 else 'days'})",
         f"  from: {origin}, commit {commit}",
         f"  contains: {CONTAINS}",
-        f"  note: {NOTE}",
+        f"  note: {NOTE} {where}",
     ]
     down = [view for view in bundle["sources"]["sources"] if not view["available"]]
     if down:

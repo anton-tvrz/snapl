@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { DevicesResponse, RunsResponse } from "../api/types";
 import { HEALTH, SNAPSHOT_BUNDLE, TIMELINE_AT_SCAN_2 } from "../test/fixtures";
@@ -158,31 +158,79 @@ describe("InlineProvider at the bundle's time", () => {
   });
 });
 
+/** Text gzipped and base64-encoded, as `snapl dashboard --snapshot` packs a bundle (spec 018 US5). */
+async function packed(text: string): Promise<string> {
+  const stream = new Response(new TextEncoder().encode(text)).body!.pipeThrough(new CompressionStream("gzip"));
+  const bytes = new Uint8Array(await new Response(stream).arrayBuffer());
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+/** The page's bundle element, holding `text`, packed when `encoding` is given. */
+function holding(text: string, encoding?: string) {
+  document.body.replaceChildren();
+  // Typed as data, as in the template: an untyped script would be run as code.
+  const element = document.createElement("script");
+  element.id = "snapl-bundle";
+  element.type = "application/json";
+  if (encoding) element.dataset.encoding = encoding;
+  element.textContent = text;
+  document.body.append(element);
+}
+
 describe("readBundle", () => {
   afterEach(() => {
     document.body.replaceChildren();
+    vi.unstubAllGlobals();
   });
 
-  it("reads the bundle from its element", () => {
-    document.body.replaceChildren();
-    const element = document.createElement("script");
-    element.id = "snapl-bundle";
-    element.type = "application/json";
-    element.textContent = JSON.stringify(bundle);
-    document.body.append(element);
+  it("reads a packed bundle: gzipped and base64-encoded (spec 018 US5)", async () => {
+    holding(await packed(JSON.stringify(bundle)), "gzip+base64");
 
-    expect(readBundle(document)).toEqual(bundle);
+    await expect(readBundle(document)).resolves.toEqual(bundle);
   });
 
-  it("is nothing when the element is absent or empty, as on the served page", () => {
-    document.body.replaceChildren();
-    expect(readBundle(document)).toBeNull();
+  it("still reads a plain bundle, as a snapshot written before spec 018 holds", async () => {
+    holding(JSON.stringify(bundle));
 
-    const element = document.createElement("script");
-    element.id = "snapl-bundle";
-    element.type = "application/json";
-    document.body.append(element);
-    expect(readBundle(document)).toBeNull();
+    await expect(readBundle(document)).resolves.toEqual(bundle);
+  });
+
+  it("refuses a packed bundle it cannot unpack, with a message", async () => {
+    holding("not base64 at all!", "gzip+base64");
+    await expect(readBundle(document)).rejects.toThrow("This snapshot's data is damaged and can't be unpacked.");
+
+    holding(btoa("valid base64, but not gzip"), "gzip+base64");
+    await expect(readBundle(document)).rejects.toThrow("This snapshot's data is damaged and can't be unpacked.");
+
+    holding(await packed("{ not json"), "gzip+base64");
+    await expect(readBundle(document)).rejects.toThrow("This snapshot's data is damaged and can't be unpacked.");
+  });
+
+  it("refuses a bundle packed in a way it does not know", async () => {
+    holding("abc", "brotli+base64");
+
+    await expect(readBundle(document)).rejects.toThrow(
+      "This snapshot's data is packed as brotli+base64; this page reads gzip+base64.",
+    );
+  });
+
+  it("says the browser is too old when it cannot unpack gzip", async () => {
+    holding(await packed(JSON.stringify(bundle)), "gzip+base64");
+    vi.stubGlobal("DecompressionStream", undefined);
+
+    await expect(readBundle(document)).rejects.toThrow(
+      "This snapshot needs a newer browser: this one can't unpack its data.",
+    );
+  });
+
+  it("is nothing when the element is absent or empty, as on the served page", async () => {
+    document.body.replaceChildren();
+    await expect(readBundle(document)).resolves.toBeNull();
+
+    holding("");
+    await expect(readBundle(document)).resolves.toBeNull();
   });
 
   it("refuses a bundle in a format it does not know", () => {
@@ -191,16 +239,11 @@ describe("readBundle", () => {
     );
   });
 
-  it("picks the provider: the bundle when the page holds one, the server otherwise", () => {
+  it("picks the provider: the bundle when the page holds one, the server otherwise", async () => {
     document.body.replaceChildren();
-    expect(providerFor(document)).toBeInstanceOf(HttpProvider);
+    expect(await providerFor(document)).toBeInstanceOf(HttpProvider);
 
-    // Typed as data, as in the template: an untyped script would be run as code.
-    const element = document.createElement("script");
-    element.id = "snapl-bundle";
-    element.type = "application/json";
-    element.textContent = JSON.stringify(bundle);
-    document.body.append(element);
-    expect(providerFor(document)).toBeInstanceOf(InlineProvider);
+    holding(await packed(JSON.stringify(bundle)), "gzip+base64");
+    expect(await providerFor(document)).toBeInstanceOf(InlineProvider);
   });
 });

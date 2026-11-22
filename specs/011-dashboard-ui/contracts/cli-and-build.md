@@ -6,7 +6,7 @@
 
 ```text
 snapl dashboard [--use-case TEXT] [--port INT] [--host TEXT]
-                [--archive FILE] [--snapshot FILE [--days INT]]
+                [--archive FILE] [--snapshot FILE [--days INT] [--bundle-json FILE]]
 ```
 
 | option | default | meaning |
@@ -14,6 +14,7 @@ snapl dashboard [--use-case TEXT] [--port INT] [--host TEXT]
 | `--archive FILE` | none | Serve from a `history.archive` tarball, read-only, with no stack. |
 | `--snapshot FILE` | none | Write a single-file snapshot to `FILE` and exit. Serves nothing. |
 | `--days INT` | `7` | With `--snapshot`: the range the snapshot covers, ending at the server's now. 1 to 90. |
+| `--bundle-json FILE` | none | With `--snapshot`: also write the snapshot's data to `FILE` as indented JSON, to read before publishing. *Added in spec 018 (#235).* |
 
 010's behaviour (port, host, the no-authentication warning, exit codes) is unchanged.
 
@@ -40,18 +41,20 @@ snapl dashboard [--use-case TEXT] [--port INT] [--host TEXT]
 - **Without `--archive`**: built from the live sources, exactly as the server would answer.
 - **With `--archive`**: built from the archive.
 - **Needs the built UI.** Without `static/ui/snapshot.html`: `error: the designed UI is not built. Build it with: uv run invoke dashboard.build`, exit `ExitCode.ERROR`. There is no plain-page snapshot.
-- **Refuses to overwrite** an existing file unless `--force` is given.
+- **Refuses to overwrite** an existing file unless `--force` is given. This holds for the `--bundle-json` file too, and both are checked before anything is collected.
 - **Writes** through a `.partial` file, renamed when complete.
 - **Prints**, on success, exit `0`:
 
   ```text
-  Snapshot written: demo.html (412 kB)
+  Snapshot written: demo.html (412 kB; its data is 1630 kB unpacked)
     range: 2026-11-02 21:20 to 2026-11-09 21:20 UTC (7 days)
     from: live dashboard sources, commit 6baff39
     contains: devices, links, drift history, runs and their steps, schedule, CI status, lab runs, metrics
-    note: error text and paths recorded from devices are included as recorded. Read it before publishing.
+    note: error text and paths recorded from devices are included as recorded. Read it before publishing: --bundle-json FILE writes it as readable JSON.
     unavailable when written: prometheus (connection refused)
   ```
+
+  With `--bundle-json demo.json`, the note ends `Read it before publishing: it is in demo.json.` *Amended in spec 018 (#235): the first line gives the data's unpacked size, and the note says where to read it.*
 
   The last line appears only when a source did not answer. The snapshot is still written, and those views say so inside it.
 
@@ -59,7 +62,7 @@ snapl dashboard [--use-case TEXT] [--port INT] [--host TEXT]
 
 - **One file.** Every script, style and font is inside it. It references nothing outside itself.
 - **Policy**: it carries `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:">`.
-- **Data**: one `<script id="snapl-bundle" type="application/json">` element holding `SnapshotBundle` (data-model.md). `<`, `>`, `&`, U+2028 and U+2029 are escaped inside it.
+- **Data**: one `<script id="snapl-bundle" type="application/json" data-encoding="gzip+base64">` element holding `SnapshotBundle` (data-model.md) as compact JSON, gzipped at level 9 with no timestamp, then base64-encoded. Base64 has no character that can end or change a script element. The page unpacks it with the browser's `DecompressionStream`. Without one, it says `This snapshot needs a newer browser: this one can't unpack its data.`, and a bundle it can't unpack is refused with `This snapshot's data is damaged and can't be unpacked.` An element with no `data-encoding` holds plain JSON, as a snapshot written before spec 018 does, and still opens. *Amended in spec 018 (#235): the bundle was plain JSON with `<`, `>`, `&`, U+2028 and U+2029 escaped. A 7-day snapshot of real data was 3.50 MB.*
 - **Contains no** credential, token or environment value. The bundle is built only from API responses.
 - **In the browser**:
   - A banner says it is a recording, when it was made, from which commit, and the range it covers.

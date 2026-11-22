@@ -7,6 +7,8 @@ bundle holds what a live dashboard would answer.
 
 from __future__ import annotations
 
+import base64
+import gzip
 import importlib.util
 import json
 import re
@@ -41,7 +43,10 @@ TEMPLATE = (
     '<script id="snapl-bundle" type="application/json"></script>'
     "<script>/* the app */</script></body></html>"
 )
-BUNDLE = re.compile(r'<script id="snapl-bundle" type="application/json">(.*?)</script>', re.S)
+# Spec 018 US5 (#235): the bundle is gzipped and base64-encoded, and says so.
+BUNDLE = re.compile(
+    r'<script id="snapl-bundle" type="application/json" data-encoding="gzip\+base64">(.*?)</script>', re.S
+)
 
 
 def _server():
@@ -63,8 +68,13 @@ def bundle() -> dict:
 
 
 def _parsed(html: str) -> dict:
+    """The bundle in a written snapshot, unpacked."""
     [payload] = BUNDLE.findall(html)
-    return json.loads(payload)
+    return json.loads(gzip.decompress(base64.b64decode(payload, validate=True)))
+
+
+def _unpacked_kb(bundle: dict) -> int:
+    return round(len(json.dumps(bundle, ensure_ascii=False, separators=(",", ":")).encode()) / 1000)
 
 
 # --- collect_bundle ---------------------------------------------------------------
@@ -278,6 +288,7 @@ def test_render_puts_the_bundle_in_its_element(bundle: dict):
     html = render(TEMPLATE, bundle)
 
     assert _parsed(html) == bundle
+    assert html.count("snapl-bundle") == 1
     assert html.startswith("<!doctype html>")
     assert "<script>/* the app */</script>" in html
 
@@ -291,9 +302,15 @@ def test_no_recorded_text_can_end_the_script_element(bundle: dict):
 
     assert len(re.findall(r'<script id="snapl-bundle"', html)) == 1
     payload = BUNDLE.findall(html)[0]
-    for raw in ("</script", "<!--", "&", "\u2028", "\u2029", ">"):
-        assert raw not in payload
+    assert re.fullmatch(r"[A-Za-z0-9+/]*=*", payload)
     assert _parsed(html)["devices"]["devices"]["data"][0]["error"] == hostile
+
+
+def test_render_packs_the_bundle_smaller_than_its_json(bundle: dict):
+    payload = BUNDLE.findall(render(TEMPLATE, bundle))[0]
+
+    assert len(payload) < _unpacked_kb(bundle) * 1000 / 2
+    assert render(TEMPLATE, bundle) == render(TEMPLATE, bundle)  # no timestamp in the gzip header
 
 
 def test_render_refuses_a_template_without_one_bundle_element(bundle: dict):
@@ -330,15 +347,28 @@ def test_summary_says_what_was_written(bundle: dict, tmp_path: Path):
 
     lines = summary(target, bundle)
 
-    assert lines[0] == "Snapshot written: demo.html (412 kB)"
+    assert lines[0] == f"Snapshot written: demo.html (412 kB; its data is {_unpacked_kb(bundle)} kB unpacked)"
     assert lines[1] == "  range: 2026-10-31 21:20 to 2026-11-07 21:20 UTC (7 days)"
     assert lines[2] == "  from: live dashboard sources, commit 6baff39"
     assert lines[3].startswith("  contains: devices, links, drift history, runs and their steps")
     assert lines[3].endswith("metrics, device health and the network")
     assert lines[4] == (
-        "  note: error text and paths recorded from devices are included as recorded. Read it before publishing."
+        "  note: error text and paths recorded from devices are included as recorded. Read it before publishing:"
+        " --bundle-json FILE writes it as readable JSON."
     )
     assert len(lines) == 5
+
+
+def test_summary_names_the_readable_bundle_when_one_was_written(bundle: dict, tmp_path: Path):
+    target = tmp_path / "demo.html"
+    target.write_text("x")
+
+    lines = summary(target, bundle, bundle_json=tmp_path / "demo.json")
+
+    assert lines[4] == (
+        "  note: error text and paths recorded from devices are included as recorded. Read it before publishing:"
+        " it is in demo.json."
+    )
 
 
 def test_summary_names_each_source_that_did_not_answer(tmp_path: Path):
@@ -410,6 +440,33 @@ def test_snapshot_refuses_to_overwrite_without_force(template, live_app, tmp_pat
     assert runner.invoke(cli.app, ["dashboard", "--snapshot", str(target), "--force"]).exit_code == 0
 
 
+def test_snapshot_writes_the_readable_bundle_with_bundle_json(template, live_app, tmp_path: Path):
+    target, readable = tmp_path / "demo.html", tmp_path / "demo.json"
+
+    result = runner.invoke(cli.app, ["dashboard", "--snapshot", str(target), "--bundle-json", str(readable)])
+
+    assert result.exit_code == 0, result.output
+    text = readable.read_text(encoding="utf-8")
+    assert json.loads(text) == _parsed(target.read_text())
+    assert text.startswith('{\n  "manifest": {')
+    assert "it is in demo.json." in result.output
+
+
+def test_snapshot_refuses_to_overwrite_the_readable_bundle_without_force(template, live_app, tmp_path: Path):
+    target, readable = tmp_path / "demo.html", tmp_path / "demo.json"
+    readable.write_text("keep me")
+
+    result = runner.invoke(cli.app, ["dashboard", "--snapshot", str(target), "--bundle-json", str(readable)])
+    assert result.exit_code == int(ExitCode.ERROR)
+    assert "demo.json already exists" in result.output
+    assert readable.read_text() == "keep me"
+    assert not target.exists()
+
+    args = ["dashboard", "--snapshot", str(target), "--bundle-json", str(readable), "--force"]
+    assert runner.invoke(cli.app, args).exit_code == 0
+    assert json.loads(readable.read_text())["manifest"]["format"] == FORMAT
+
+
 def test_snapshot_needs_the_built_ui(live_app, tmp_path: Path):
     with patch.object(cli, "_snapshot_template", return_value=None):
         result = runner.invoke(cli.app, ["dashboard", "--snapshot", str(tmp_path / "demo.html")])
@@ -432,10 +489,16 @@ def test_snapshot_of_an_archive_says_so(template, tmp_path: Path):
     archive = build_archive(tmp_path)
     target = tmp_path / "demo.html"
 
-    result = runner.invoke(cli.app, ["dashboard", "--archive", str(archive), "--snapshot", str(target)])
+    readable = tmp_path / "demo.json"
+
+    result = runner.invoke(
+        cli.app,
+        ["dashboard", "--archive", str(archive), "--snapshot", str(target), "--bundle-json", str(readable)],
+    )
 
     assert result.exit_code == 0, result.output
     assert f"  from: archive {archive.name}, commit 6baff39" in result.output
+    assert json.loads(readable.read_text()) == _parsed(target.read_text())
     manifest = _parsed(target.read_text())["manifest"]
     assert (manifest["source"], manifest["end"]) == ("archive", "2026-11-07T21:20:48Z")
     assert manifest["start"] == (

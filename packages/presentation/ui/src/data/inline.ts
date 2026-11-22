@@ -62,10 +62,37 @@ export interface SnapshotBundle {
   metrics: Partial<Record<MetricsViewName, MetricsResponse>>;
 }
 
-/** The bundle in the page's `snapl-bundle` element, or null on a served page. */
-export function readBundle(doc: Document): SnapshotBundle | null {
-  const text = doc.getElementById("snapl-bundle")?.textContent?.trim();
-  return text ? (JSON.parse(text) as SnapshotBundle) : null;
+// How `snapl dashboard --snapshot` packs the bundle (spec 018 US5, #235).
+const PACKED = "gzip+base64";
+
+/** Base64 text, gunzipped by the browser and parsed. Throws on any step that fails. */
+async function unpack(text: string): Promise<unknown> {
+  const bytes = Uint8Array.from(atob(text), (char) => char.charCodeAt(0));
+  const stream = new Response(bytes).body!.pipeThrough(new DecompressionStream("gzip"));
+  return JSON.parse(await new Response(stream).text());
+}
+
+/**
+ * The bundle in the page's `snapl-bundle` element, or null on a served page.
+ * A snapshot written before spec 018 holds it as plain JSON, with no `data-encoding`.
+ */
+export async function readBundle(doc: Document): Promise<SnapshotBundle | null> {
+  const element = doc.getElementById("snapl-bundle");
+  const text = element?.textContent?.trim();
+  if (!element || !text) return null;
+  const encoding = element.dataset.encoding;
+  if (!encoding) return JSON.parse(text) as SnapshotBundle;
+  if (encoding !== PACKED) {
+    throw new Error(`This snapshot's data is packed as ${encoding}; this page reads ${PACKED}.`);
+  }
+  if (typeof DecompressionStream === "undefined") {
+    throw new Error("This snapshot needs a newer browser: this one can't unpack its data.");
+  }
+  try {
+    return (await unpack(text)) as SnapshotBundle;
+  } catch {
+    throw new Error("This snapshot's data is damaged and can't be unpacked.");
+  }
 }
 
 const at = (iso: string | null | undefined) => (iso ? pointTime(iso) : Number.POSITIVE_INFINITY);
@@ -279,7 +306,7 @@ export class InlineProvider implements DataProvider {
 }
 
 /** The bundle's provider in a snapshot file; the server's on a served page. */
-export function providerFor(doc: Document): DataProvider {
-  const bundle = readBundle(doc);
+export async function providerFor(doc: Document): Promise<DataProvider> {
+  const bundle = await readBundle(doc);
   return bundle ? new InlineProvider(bundle) : new HttpProvider();
 }
