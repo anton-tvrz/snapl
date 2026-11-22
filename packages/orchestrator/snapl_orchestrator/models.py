@@ -68,6 +68,9 @@ class ExclusionReason(StrEnum):
     UNDESIRED_ONLY = "undesired_only"
     # The scan could not see the device; writing to it would be a guess.
     ERRORED = "errored"
+    # More than half of the scan drifted at once, which reads as a bad intent
+    # edit, not as drift: the run repaired nothing (spec 018, #136).
+    BLAST_RADIUS = "blast_radius"
 
 
 class ScheduleChange(StrEnum):
@@ -304,15 +307,19 @@ class DriftResponseResult(BaseModel):
     remediated: list[UUID] = Field(default_factory=list)
     excluded: dict[UUID, ExclusionReason] = Field(default_factory=dict)
     reconcile: ReconcileResult | None = None
-    # The run returned its schedule to report because a repair failed (#136).
+    # The run returned its schedule to report because a repair failed, or
+    # because the blast-radius guard held (#136).
     stood_down: bool = False
     started_at: datetime
     ended_at: datetime
 
     @model_validator(mode="after")
     def _check_invariants(self) -> DriftResponseResult:
-        if self.stood_down and not (self.reconcile is not None and self.reconcile.failed > 0):
-            raise ValueError("a run stands its schedule down only after a failed repair")
+        guarded = ExclusionReason.BLAST_RADIUS in self.excluded.values()
+        if self.stood_down and not (guarded or (self.reconcile is not None and self.reconcile.failed > 0)):
+            raise ValueError("a run stands its schedule down only after a failed repair or when its guard held")
+        if guarded and self.remediated:
+            raise ValueError("a run whose blast-radius guard held must repair nothing")
         if self.mode == DriftResponseMode.REPORT and (self.remediated or self.excluded or self.reconcile):
             raise ValueError("a REPORT run must not remediate, exclude or reconcile")
         if (self.reconcile is None) != (not self.remediated):

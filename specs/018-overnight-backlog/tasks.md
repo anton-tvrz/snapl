@@ -43,18 +43,18 @@
 
 ## Phase 3: The Blast-Radius Guard (US3, #136) — PR C
 
-- [ ] T007 [US3] Find which count is forward drift only (`DriftScanResult.drifted` or the reports). Write the answer in the PR.
-- [ ] T008 [US3] Tests first in `tests/unit/test_orchestrator/test_workflow_drift_response.py`:
+- [x] T007 [US3] Find which count is forward drift only (`DriftScanResult.drifted` or the reports). Write the answer in the PR.
+- [x] T008 [US3] Tests first in `tests/unit/test_orchestrator/test_workflow_drift_response.py`:
   - remediate with 3 of 4 drifted: no reconcile child, stood down, and the note names the run, "3 of 4" and "more than half";
   - remediate with 2 of 4: repairs;
   - remediate with 1 of 1: repairs;
   - report with 4 of 4: no guard and no stand-down;
   - an undesired-only device doesn't count;
   - the result and the audit payload say the guard held.
-- [ ] T009 [US3] A replay test: a history from before the guard replays unchanged (patch `drift-response-blast-radius-guard`).
-- [ ] T010 [US3] Implement in `workflows/drift_response.py` and `models.py`, and in the dashboard's run reason if it lists reasons.
-- [ ] T011 [US3] Amend `specs/009-scheduled-drift-response/contracts/orchestrator-schedules.md` and research R8. List them under "Spec amendments".
-- [ ] T012 [US3] `changelog/136.added.md`.
+- [x] T009 [US3] A replay test: a history from before the guard replays unchanged (patch `drift-response-blast-radius-guard`).
+- [x] T010 [US3] Implement in `workflows/drift_response.py` and `models.py`, and in the dashboard's run reason if it lists reasons.
+- [x] T011 [US3] Amend `specs/009-scheduled-drift-response/contracts/orchestrator-schedules.md` and research R8. List them under "Spec amendments".
+- [x] T012 [US3] `changelog/136.added.md`.
 - [ ] T013 [US3] **Needs the lab**: SC-003. Give a remediate schedule an intent edit that drifts the whole fabric, on a branch or with a revert the maintainer chooses. It repairs nothing, and `snapl schedule show` reads `report` with the guard's note.
 
 ## Phase 4: The Page's Height (US4, #305) — PR D

@@ -11,15 +11,16 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pydantic_core  # noqa: F401 — pre-import to keep workflow sandbox quiet
 import pytest
 from temporalio import activity
-from temporalio.client import WorkflowFailureError
+from temporalio.client import WorkflowFailureError, WorkflowHistory
 from temporalio.contrib.pydantic import pydantic_data_converter
 from temporalio.testing import WorkflowEnvironment
-from temporalio.worker import Worker
+from temporalio.worker import Replayer, Worker
 
 from snapl_collector.models import CollectResult
 from snapl_executor.models import ApplyResult
@@ -49,6 +50,8 @@ from snapl_orchestrator.workflows.scan_drift import ScanDriftWorkflow
 from .quiet import SlowAfterCancel, until_quiet, where_it_stopped
 
 pytestmark = pytest.mark.unit
+
+_FIXTURES = Path(__file__).parent / "fixtures"
 
 TASK_QUEUE = "test-drift-response"
 USE_CASE = "dcfabric"
@@ -520,8 +523,9 @@ async def test_remediate_with_nothing_eligible_starts_no_reconcile(make_desired)
 
 @pytest.mark.asyncio
 async def test_a_failed_repair_is_reported_and_the_run_still_succeeds(make_desired) -> None:
-    fabric = Fabric([make_desired("rejecting-01"), make_desired("forward-02")])
-    rejecting, forward = (s.device.id for s in fabric.states)
+    # Two clean devices keep the drift at half, under the blast-radius guard.
+    fabric = Fabric([make_desired(n) for n in ("rejecting-01", "forward-02", "clean-03", "clean-04")])
+    rejecting, forward = (s.device.id for s in fabric.states[:2])
     fabric.drift[rejecting] = [FORWARD]
     fabric.drift[forward] = [FORWARD]
     fabric.rejecting.add(rejecting)
@@ -541,8 +545,9 @@ async def test_a_failed_repair_is_reported_and_the_run_still_succeeds(make_desir
 async def test_a_failed_repair_stands_the_schedule_down(make_desired) -> None:
     """The next run must not try the same repair again (#136, FR-018). The
     reason names the run and the device, so the schedule's note explains itself."""
-    fabric = Fabric([make_desired("rejecting-01"), make_desired("forward-02")])
-    rejecting, forward = (s.device.id for s in fabric.states)
+    # Two clean devices keep the drift at half, under the blast-radius guard.
+    fabric = Fabric([make_desired(n) for n in ("rejecting-01", "forward-02", "clean-03", "clean-04")])
+    rejecting, forward = (s.device.id for s in fabric.states[:2])
     fabric.drift[rejecting] = [FORWARD]
     fabric.drift[forward] = [FORWARD]
     fabric.rejecting.add(rejecting)
@@ -766,3 +771,152 @@ async def test_a_run_timeout_mid_repair_lets_the_repair_finish_and_record(make_d
         assert [(e.outcome, e.reason) for e in terminal] == [("success", WorkflowReason.SUCCEEDED)]
     # The timed-out run wrote no DRIFT_RESPONSE: workflow code never ran again.
     assert await _response_events(audit) == []
+
+
+# ---------------------------------------------------------------------------
+# The blast-radius guard (spec 018 US3, #136)
+# ---------------------------------------------------------------------------
+
+
+def _guard_fabric(make_desired, *, forward: int, undesired: int = 0, unreachable: int = 0, clean: int = 0) -> Fabric:
+    """A fabric of ``forward`` devices with forward drift, then the others in order."""
+    names = (
+        [f"forward-{i:02}" for i in range(1, forward + 1)]
+        + [f"undesired-{i:02}" for i in range(1, undesired + 1)]
+        + [f"unreachable-{i:02}" for i in range(1, unreachable + 1)]
+        + [f"clean-{i:02}" for i in range(1, clean + 1)]
+    )
+    fabric = Fabric([make_desired(name) for name in names])
+    for state in fabric.states:
+        if state.device.name.startswith("forward-"):
+            fabric.drift[state.device.id] = [FORWARD]
+        elif state.device.name.startswith("undesired-"):
+            fabric.drift[state.device.id] = [UNDESIRED]
+        elif state.device.name.startswith("unreachable-"):
+            fabric.unreachable.add(state.device.id)
+    return fabric
+
+
+def _forward_ids(fabric: Fabric) -> list:
+    return [s.device.id for s in fabric.states if s.device.name.startswith("forward-")]
+
+
+@pytest.mark.asyncio
+async def test_remediate_repairs_nothing_when_more_than_half_drift_and_stands_down(make_desired) -> None:
+    """A bad intent edit drifts the whole fabric at once; the run must not push it everywhere."""
+    fabric = _guard_fabric(make_desired, forward=3, clean=1)
+    forward = _forward_ids(fabric)
+
+    result = await _run(fabric.activities(InMemoryAuditLog()), DriftResponseMode.REMEDIATE)
+
+    assert fabric.applied == []
+    assert result.reconcile is None
+    assert result.remediated == []
+    assert result.excluded == dict.fromkeys(forward, ExclusionReason.BLAST_RADIUS)
+    assert result.stood_down is True
+    [request] = STAND_DOWNS
+    assert request.use_case_id == USE_CASE
+    assert RUN_ID in request.reason
+    assert "3 of 4" in request.reason
+    assert "more than half" in request.reason
+
+
+@pytest.mark.asyncio
+async def test_the_guard_is_recorded_against_each_device_and_the_use_case(make_desired) -> None:
+    fabric = _guard_fabric(make_desired, forward=3, clean=1)
+    audit = InMemoryAuditLog()
+
+    await _run(fabric.activities(audit), DriftResponseMode.REMEDIATE)
+
+    for device_id in _forward_ids(fabric):
+        [record] = await _response_events(audit, target=device_id)
+        assert record.payload["decision"] == "blast_radius"
+    [summary] = await _response_events(audit, target=USE_CASE)
+    assert summary.payload["remediated"] == 0
+    assert summary.payload["excluded"] == {"blast_radius": 3}
+    assert summary.payload["reconcile_workflow_id"] is None
+    [request] = STAND_DOWNS
+    assert summary.payload["guard"] == request.reason
+    terminal = (await audit.query_by_workflow(RUN_ID))[-1]
+    assert (terminal.event_type, terminal.outcome) == (AuditEventType.WORKFLOW_TERMINATED, "success")
+
+
+@pytest.mark.asyncio
+async def test_remediate_repairs_when_exactly_half_drift(make_desired) -> None:
+    fabric = _guard_fabric(make_desired, forward=2, clean=2)
+
+    result = await _run(fabric.activities(InMemoryAuditLog()), DriftResponseMode.REMEDIATE)
+
+    assert sorted(fabric.applied, key=str) == sorted(_forward_ids(fabric), key=str)
+    assert result.remediated == _forward_ids(fabric)
+    assert STAND_DOWNS == []
+    assert result.stood_down is False
+
+
+@pytest.mark.asyncio
+async def test_remediate_repairs_a_use_case_of_one_drifted_device(make_desired) -> None:
+    """One device is not a blast radius."""
+    fabric = _guard_fabric(make_desired, forward=1)
+
+    result = await _run(fabric.activities(InMemoryAuditLog()), DriftResponseMode.REMEDIATE)
+
+    assert fabric.applied == _forward_ids(fabric)
+    assert result.remediated == _forward_ids(fabric)
+    assert STAND_DOWNS == []
+
+
+@pytest.mark.asyncio
+async def test_a_report_run_has_no_guard(make_desired) -> None:
+    fabric = _guard_fabric(make_desired, forward=4)
+    audit = InMemoryAuditLog()
+
+    result = await _run(fabric.activities(audit), DriftResponseMode.REPORT)
+
+    assert result.excluded == {}
+    assert result.stood_down is False
+    assert STAND_DOWNS == []
+    [summary] = await _response_events(audit, target=USE_CASE)
+    assert "guard" not in summary.payload
+
+
+@pytest.mark.asyncio
+async def test_an_undesired_only_device_does_not_count_towards_the_guard(make_desired) -> None:
+    """The scan reports four devices drifted, but only two have forward drift."""
+    fabric = _guard_fabric(make_desired, forward=2, undesired=2)
+
+    result = await _run(fabric.activities(InMemoryAuditLog()), DriftResponseMode.REMEDIATE)
+
+    assert result.scan.drifted == 4
+    assert sorted(fabric.applied, key=str) == sorted(_forward_ids(fabric), key=str)
+    assert STAND_DOWNS == []
+
+
+@pytest.mark.asyncio
+async def test_an_errored_device_counts_in_the_guards_total(make_desired) -> None:
+    """The denominator is every device the scan covered: 2 of 3 is more than half."""
+    fabric = _guard_fabric(make_desired, forward=2, unreachable=1)
+
+    result = await _run(fabric.activities(InMemoryAuditLog()), DriftResponseMode.REMEDIATE)
+
+    assert fabric.applied == []
+    [request] = STAND_DOWNS
+    assert "2 of 3" in request.reason
+    assert result.excluded[fabric.states[2].device.id] == ExclusionReason.ERRORED
+
+
+@pytest.mark.asyncio
+async def test_a_run_from_before_the_guard_replays_unchanged() -> None:
+    """A run in flight when the guard shipped replays as it ran (FR-004).
+
+    The history is a remediate run that repaired 3 of 4 devices, recorded from
+    the code before the guard (main at 4e90b1d) by running this file's fabric.
+    The guard would stand that run down instead, so without its patch id this
+    replay fails as nondeterministic.
+    """
+    history = WorkflowHistory.from_json(RUN_ID, (_FIXTURES / "drift_response_before_the_guard.json").read_text())
+
+    await Replayer(
+        workflows=_WORKFLOWS,
+        data_converter=pydantic_data_converter,
+        workflow_runner=build_workflow_runner(),
+    ).replay_workflow(history)

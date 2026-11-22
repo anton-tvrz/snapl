@@ -412,7 +412,7 @@ def test_audit_event_is_frozen_and_extra_forbidden() -> None:
 
 def test_drift_response_enums_have_the_documented_values() -> None:
     assert [m.value for m in DriftResponseMode] == ["report", "remediate"]
-    assert [m.value for m in ExclusionReason] == ["undesired_only", "errored"]
+    assert [m.value for m in ExclusionReason] == ["undesired_only", "errored", "blast_radius"]
     assert [m.value for m in ScheduleChange] == [
         "created",
         "interval_changed",
@@ -633,6 +633,43 @@ def test_remediate_result_rejects_remediating_an_ineligible_device(ineligible: s
             scan=_scan({device: report}),
             remediated=[device],
             reconcile=_reconcile({device: _make_workflow_result(device)}),
+        )
+
+
+def test_a_guarded_remediate_result_that_stood_down_is_valid() -> None:
+    """The blast-radius guard held: nothing repaired, the schedule stood down (spec 018, #136)."""
+    a, b = uuid4(), uuid4()
+    result = _response(
+        mode=DriftResponseMode.REMEDIATE,
+        scan=_scan({a: _make_report(a, DriftStatus.DRIFTED), b: _make_report(b, DriftStatus.DRIFTED)}),
+        excluded={a: ExclusionReason.BLAST_RADIUS, b: ExclusionReason.BLAST_RADIUS},
+        stood_down=True,
+    )
+    assert result.remediated == []
+    assert result.reconcile is None
+
+
+def test_a_guarded_remediate_result_must_repair_nothing() -> None:
+    a, b = uuid4(), uuid4()
+    with pytest.raises(ValidationError, match="guard"):
+        _response(
+            mode=DriftResponseMode.REMEDIATE,
+            scan=_scan({a: _make_report(a, DriftStatus.DRIFTED), b: _make_report(b, DriftStatus.DRIFTED)}),
+            remediated=[a],
+            excluded={b: ExclusionReason.BLAST_RADIUS},
+            reconcile=_reconcile({a: _make_workflow_result(a)}),
+        )
+
+
+def test_a_result_stands_down_only_after_a_failed_repair_or_a_held_guard() -> None:
+    forward = uuid4()
+    with pytest.raises(ValidationError, match="stands its schedule down"):
+        _response(
+            mode=DriftResponseMode.REMEDIATE,
+            scan=_scan({forward: _make_report(forward, DriftStatus.DRIFTED)}),
+            remediated=[forward],
+            reconcile=_reconcile({forward: _make_workflow_result(forward)}),
+            stood_down=True,
         )
 
 

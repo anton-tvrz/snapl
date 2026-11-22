@@ -66,7 +66,14 @@ Deferred in the first cut (former US4, FR-018), then built as research R8 design
 - `stand_down_drift_schedule` rebuilds the action with `report`, sets `state.note` to `stood down: <reason>` unless the schedule is paused (a pause keeps its own reason), leaves `paused` alone, and appends a `SCHEDULE_CHANGED` event with `change: stood_down` and `actor: snapl:stand-down`. On a schedule already in `report` it changes and records nothing. `set_drift_response` clears a note that starts with `stood down: ` when it switches the response, since the note no longer describes the schedule.
 - If the schedule was deleted during the run, the activity returns False. If the activity fails after its retries, the run still ends as before and the schedule stays in `remediate`.
 
-Not built: a proportional blast-radius guard, and a Temporal identity check (both listed in #136).
+Not built: a Temporal identity check (listed in #136). *(2026-11-22: the blast-radius guard is built, see below; spec 018 US3.)*
+
+### The blast-radius guard (spec 018, #136)
+
+- In `remediate` only, after `select_remediation` and before the reconcile child, behind the patch `drift-response-blast-radius-guard`, so a run in flight at upgrade replays its repair as it ran.
+- It holds when the devices with forward drift (`select_remediation`'s list, not `DriftScanResult.drifted`, which counts undesired-only devices too) are more than one **and** more than half of the scan's `total`, errored devices included. The threshold is fixed at one half.
+- When it holds, the run starts no reconcile. Every forward-drift device goes in `excluded` as `ExclusionReason.BLAST_RADIUS` (`"blast_radius"`), `remediated` is empty, and the run calls `stand_down_schedule` with the note `<run id>: <n> of <total> devices drifted, more than half; repaired nothing`. The result's `stood_down` says whether the schedule changed.
+- The run's use-case `DRIFT_RESPONSE` record carries the same note as `guard`. Each guarded device's record has `decision: blast_radius`. The run still ends `success`: holding back is what it should do.
 
 ---
 

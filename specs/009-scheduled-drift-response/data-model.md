@@ -24,6 +24,7 @@ Why a drifted device was left alone by a `remediate` run.
 | --- | --- | --- |
 | `UNDESIRED_ONLY` | `"undesired_only"` | `status == DRIFTED` and every `DriftItem.undesired is True`. Only a removal fixes it, and removal is never automatic (VIII.5). |
 | `ERRORED` | `"errored"` | `status == ERROR`. The scan could not see the device. |
+| `BLAST_RADIUS` | `"blast_radius"` | *(2026-11-22, spec 018.)* The device has forward drift, but so do more than half of the scan's devices (and more than one): the blast-radius guard held and the run repaired nothing. |
 
 ### ScheduleChange
 
@@ -31,7 +32,7 @@ The kind of change a `SCHEDULE_CHANGED` audit event records. It is stored as the
 
 `created`, `interval_changed`, `response_changed`, `paused`, `resumed`, `triggered`, `deleted`, `stood_down`.
 
-`stood_down` (#136) is recorded by a run that returned its own schedule to `report` after a failed repair. Its payload has `from`, `to` and `reason`, and its actor is `snapl:stand-down`.
+`stood_down` (#136) is recorded by a run that returned its own schedule to `report` after a failed repair, or *(2026-11-22, spec 018)* when its blast-radius guard held. Its payload has `from`, `to` and `reason`, and its actor is `snapl:stand-down`.
 
 ### AuditEventType (extended)
 
@@ -154,7 +155,7 @@ Using the schedule id as `workflow_id` means `snapl audit --workflow drift-respo
 
 **`DRIFT_RESPONSE`** (written by `DriftResponseWorkflow`, `workflow_type = "DriftResponse"`, `actor = f"schedule:{schedule_id}"`):
 
-- Use-case level, one per run, `target_id = use_case_id`: `mode`, `scan_workflow_id`, `clean`, `drifted`, `errored`, `remediated` (count), `excluded` (count by reason), `reconcile_workflow_id` (or `None`).
+- Use-case level, one per run, `target_id = use_case_id`: `mode`, `scan_workflow_id`, `clean`, `drifted`, `errored`, `remediated` (count), `excluded` (count by reason), `reconcile_workflow_id` (or `None`). *(2026-11-22, spec 018:)* `guard`, the stand-down note, only when the blast-radius guard held.
 - Device level, one per repaired or excluded device, `target_id = device_id`: `decision` (`remediated` or one of the `ExclusionReason` values), `scan_workflow_id`, `reconcile_workflow_id` (when remediated), `paths` (the drifted paths). This puts "repaired by schedule X from scan Y", or "left alone because undesired-only", into `snapl audit --device <name>` (FR-020).
 
 The existing lifecycle events (`WORKFLOW_STARTED`, `WORKFLOW_TERMINATED`, `WORKFLOW_CANCELLED`) are written by `DriftResponse` exactly as by the other workflows. The child scan, reconcile and per-device deploys keep writing their own events unchanged.
