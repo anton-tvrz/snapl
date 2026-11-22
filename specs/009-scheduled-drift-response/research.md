@@ -153,6 +153,8 @@ Two callers, both explicit acts: `snapl schedule create`, and `invoke demo.up` a
 - **No breaker; failed repairs simply retry next interval.** Idempotent applies make that harmless to the device, but it rewrites a device that rejects its intent every interval and buries the audit trail in identical failures. **This is the chosen behaviour for this cut**, until the stand-down follow-up lands. *(2026-11-15: implemented for #136, see research R8 and contracts/orchestrator-schedules.md.)*
 - **A `ConfigureSchedule` workflow for operator changes.** Fails FR-022. Rejected.
 
+*(2026-11-22, spec 018 US3: the same stand-down now also runs before any repair when more than half of the scan, and more than one device, has forward drift. That is the proportional guard spec.md's Assumptions left for later. See contracts/orchestrator-schedules.md, "The blast-radius guard".)*
+
 ## R9: Suppress is pause with a note; calendar windows are expressible later
 
 **Decision**: Suppress is `ScheduleHandle.pause(note=reason)`. `snapl schedule pause` requires a reason (`--reason`), so no pause is unexplained, and it records it in the audit trail. Resume is `unpause(note=...)`. Calendar maintenance windows are **not** built in this cut (settled 2026-10-28, FR-017).

@@ -50,6 +50,19 @@ _ABANDON_REPAIR_PATCH = "drift-response-abandon-repair-on-close"
 _STAND_DOWN_PATCH = "drift-response-stand-down-after-failed-repair"
 _STAND_DOWN_RETRY = RetryPolicy(initial_interval=timedelta(seconds=1), maximum_attempts=3)
 
+# Patch id for the blast-radius guard (spec 018, #136). A run in flight when
+# this shipped replays its repair as it ran.
+_GUARD_PATCH = "drift-response-blast-radius-guard"
+
+
+def _too_wide(forward: int, total: int) -> bool:
+    """More than one device with forward drift, and more than half of the scan (FR-003).
+
+    The threshold is fixed at one half. ``total`` is every device the scan
+    covered, errored ones included. One device is not a blast radius.
+    """
+    return forward > 1 and forward * 2 > total
+
 
 async def _record(
     *,
@@ -73,7 +86,7 @@ async def _record(
 
 
 async def _stand_down(request: DriftResponseRequest, reason: str) -> bool:
-    """Return the schedule to report after a failed repair (#136). Whether it changed.
+    """Return the schedule to report after a failed repair or a held guard (#136). Whether it changed.
 
     If the activity fails after its retries, the schedule stays in remediate
     and the next run tries again, as before #136: the repair's outcome is
@@ -120,11 +133,12 @@ def _use_case_payload(
     remediated: list[UUID],
     excluded: dict[UUID, ExclusionReason],
     reconcile_workflow_id: str | None,
+    guard: str | None = None,
 ) -> dict:
     excluded_counts: dict[str, int] = {}
     for reason in excluded.values():
         excluded_counts[reason.value] = excluded_counts.get(reason.value, 0) + 1
-    return {
+    payload: dict[str, Any] = {
         "mode": mode.value,
         "scan_workflow_id": scan.workflow_id,
         "clean": scan.clean,
@@ -134,6 +148,10 @@ def _use_case_payload(
         "excluded": excluded_counts,
         "reconcile_workflow_id": reconcile_workflow_id,
     }
+    if guard is not None:
+        # Why the run repaired nothing: the note it left on the schedule (#136).
+        payload["guard"] = guard
+    return payload
 
 
 def _remediation_result(reconcile: ReconcileResult | None, device_id: UUID) -> str:
@@ -236,12 +254,20 @@ class DriftResponseWorkflow:
         excluded: dict[UUID, ExclusionReason] = {}
         reconcile: ReconcileResult | None = None
         reconcile_failure: BaseException | None = None
+        guard: str | None = None
         if request.mode is DriftResponseMode.REMEDIATE:
             # Only forward drift: an undesired-only device would be rewritten
             # every interval without converging, and an errored one was never
             # seen (FR-013). The repair is the operator's reconcile path,
             # unchanged — per-device serialization and in-flight skips included.
             remediated, excluded = select_remediation(scan)
+            if _too_wide(len(remediated), scan.total) and workflow.patched(_GUARD_PATCH):
+                # A bad intent edit, such as a wrong ASN, drifts every device at
+                # once, and repairing would push it to all of them (#136). So
+                # the run repairs nothing and the schedule goes back to report.
+                guard = f"{wf_id}: {len(remediated)} of {scan.total} devices drifted, more than half; repaired nothing"
+                excluded = {**dict.fromkeys(remediated, ExclusionReason.BLAST_RADIUS), **excluded}
+                remediated = []
             if remediated:
                 # ABANDON: when this run hits RUN_TIMEOUT the server closes it
                 # without running workflow code. With the default TERMINATE that
@@ -293,6 +319,7 @@ class DriftResponseWorkflow:
                 remediated=remediated,
                 excluded=excluded,
                 reconcile_workflow_id=reconcile_workflow_id,
+                guard=guard,
             ),
         )
         if reconcile_failure is not None:
@@ -306,6 +333,8 @@ class DriftResponseWorkflow:
             await _record_end(request, reconcile_failure, reason=WorkflowReason.REMEDIATION_FAILED)
             raise reconcile_failure
         stood_down = False
+        if guard is not None:
+            stood_down = await _stand_down(request, guard)
         if reconcile is not None and reconcile.failed > 0 and workflow.patched(_STAND_DOWN_PATCH):
             # A device that rejects its intent would otherwise get one failed
             # repair per interval, indefinitely (#136, FR-018). A device skipped
