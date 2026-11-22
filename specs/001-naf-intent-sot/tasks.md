@@ -100,7 +100,7 @@
 - [X] T027 [US2] Write integration test for schema provisioning against live Infrahub (3-batch load, idempotent re-run) in tests/integration/test_intent/test_infrahub_schema.py
 - [X] T028 [US2] Write integration test for data seeding against live Infrahub (full dcfabric topology, upsert on re-run) in tests/integration/test_intent/test_infrahub_seed.py
   - **Scope note**: Milestone A of T028-followup landed — attribute-only sections plus `device_types`, `autonomous_systems`, and `devices` (with `manufacturer`, `organization`, `device_type`, `platform`, `location`, `asn` relationships) now load through `SEED_ORDER`. Remaining sections (`vrfs`, `ip_prefixes`, `interfaces`, `bgp_peer_groups`, `bgp_sessions`) are still parked in `SEED_DEFERRED`.
-- [ ] T028-followup [US2] Milestones for promoting the remaining `SEED_DEFERRED` sections in `packages/intent/snapl_intent/infrahub/seed.py`:
+- [x] T028-followup [US2] Milestones for promoting the remaining `SEED_DEFERRED` sections in `packages/intent/snapl_intent/infrahub/seed.py`:
   - [X] **Milestone A — device-chain relationships**: per-section `_Rel` declaration + peer-id substitution at upsert time, for `device_types`, `autonomous_systems`, `devices`. Raises `IntentValidationError` when a referenced peer does not exist.
   - [X] **Milestone B — IP-namespace bootstrap**: materialise the default namespace so `vrfs` + `ip_prefixes` can promote out of deferred.
   - [X] **Milestone C — interfaces + IP addressing**: resolve `device` parents, materialise `management_ip` on devices and per-link `ip_address` entries. Expand `test_seed.py::test_ingest_second_run_upserts_in_place` to cover device idempotency with interfaces in play.

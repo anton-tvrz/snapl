@@ -97,8 +97,8 @@
 
 ## Phase 6: Task-Box Housekeeping (US6, #376) — PR F
 
-- [ ] T028 [US6] Specs 001, 003 and 005: tick each open task whose file, test or behaviour exists on `origin/main`. Add "*Shipped as …*" where its shape changed. List the rest in the PR.
-- [ ] T029 [US6] In the run's final report, propose which umbrella issues could close (for example #146, #101, #246), with one line of evidence each. Close nothing.
+- [x] T028 [US6] Specs 001, 003 and 005: tick each open task whose file, test or behaviour exists on `origin/main`. Add "*Shipped as …*" where its shape changed. List the rest in the PR.
+- [x] T029 [US6] In the run's final report, propose which umbrella issues could close (for example #146, #101, #246), with one line of evidence each. Close nothing.
 
 ---
 
