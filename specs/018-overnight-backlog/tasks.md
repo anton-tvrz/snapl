@@ -59,18 +59,18 @@
 
 ## Phase 4: The Page's Height (US4, #305) — PR D
 
-- [ ] T014 [US4] Measure the fixture page with `e2e/look.mjs` before any change: its height and the Metrics section's top.
-- [ ] T015 [US4] Tests first in `components/panels/Runs.test.tsx`:
+- [x] T014 [US4] Measure the fixture page with `e2e/look.mjs` before any change: its height and the Metrics section's top.
+- [x] T015 [US4] Tests first in `components/panels/Runs.test.tsx`:
   - 25 runs show 10 and "Show all 25 runs";
   - pressing it shows 25;
   - with 10 or fewer, there's no button;
   - a running run is never hidden;
   - the cap applies after the device filter.
-- [ ] T016 [US4] Tests first in `App.test.tsx`: with no `?open=`, every metrics group is folded. `?open=metrics-timing` and the number row's links still open groups. Update the tests that assumed `metrics-timing` was open by default, including `e2e/smoke.spec.ts`.
-- [ ] T017 [US4] Implement in `Runs.tsx` and `App.tsx` (`DEFAULT_OPEN = []`).
-- [ ] T018 [US4] Amend spec 014 SC-003 to measure the Metrics section's first group heading, with `e2e/layout.spec.ts` and `e2e/look.mjs` to match, and list it under "Spec amendments". Run `npx vitest run`, `npm run lint` and the e2e tests (`npx playwright test`).
-- [ ] T019 [US4] Measure again as in T014, and put both measures in the PR.
-- [ ] T020 [US4] `changelog/305.changed.md`.
+- [x] T016 [US4] Tests first in `App.test.tsx`: with no `?open=`, every metrics group is folded. `?open=metrics-timing` and the number row's links still open groups. Update the tests that assumed `metrics-timing` was open by default, including `e2e/smoke.spec.ts`.
+- [x] T017 [US4] Implement in `Runs.tsx` and `App.tsx` (`DEFAULT_OPEN = []`).
+- [x] T018 [US4] Amend spec 014 SC-003 to measure the Metrics section's first group heading, with `e2e/layout.spec.ts` and `e2e/look.mjs` to match, and list it under "Spec amendments". Run `npx vitest run`, `npm run lint` and the e2e tests (`npx playwright test`).
+- [x] T019 [US4] Measure again as in T014, and put both measures in the PR.
+- [x] T020 [US4] `changelog/305.changed.md`.
 - [ ] T021 [US4] **Needs the lab**: SC-001. Measure the live page at 1280 px with `e2e/look.mjs`. If it is over 3062 px, the maintainer decides whether to amend spec 014 SC-002.
 
 ## Phase 5: A Gzipped Snapshot (US5, #235) — PR E

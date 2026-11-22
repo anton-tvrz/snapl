@@ -54,10 +54,11 @@ try {
     if (shot.measure) {
       measured = await page.evaluate(() => {
         const metrics = document.querySelector('section[aria-label="Metrics"]');
-        const first = metrics?.querySelector("section, [role='img']");
+        // The first group's heading: every group starts folded (spec 018 US4).
+        const first = metrics?.querySelector("[role='group']");
         return {
           pageHeight: document.documentElement.scrollHeight,
-          firstMetricsChartTop: first ? Math.round(first.getBoundingClientRect().top + window.scrollY) : null,
+          firstMetricsGroupTop: first ? Math.round(first.getBoundingClientRect().top + window.scrollY) : null,
           sidewaysScroll: document.documentElement.scrollWidth > document.documentElement.clientWidth,
         };
       });
