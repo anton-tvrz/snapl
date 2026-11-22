@@ -8,15 +8,12 @@ behaviour (reason=CANCELLED / WORKFLOW_CANCELLED audit event).
 from __future__ import annotations
 
 import asyncio
-import concurrent.futures
-import time
 from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 import pydantic_core  # noqa: F401 — pre-import to keep workflow sandbox quiet
 import pytest
 from temporalio import workflow
-from temporalio.api.enums.v1 import EventType, PendingActivityState
 from temporalio.contrib.pydantic import pydantic_data_converter
 from temporalio.testing import WorkflowEnvironment
 from temporalio.worker import Worker
@@ -36,6 +33,8 @@ from snapl_orchestrator.worker.sandbox import build_workflow_runner
 from snapl_orchestrator.workflows.deploy_intent import DeployIntentWorkflow
 from snapl_orchestrator.workflows.reconcile_devices import ReconcileDevicesWorkflow
 from snapl_orchestrator.workflows.scan_drift import ScanDriftWorkflow
+
+from .quiet import SlowAfterCancel, until_quiet, where_it_stopped, within
 
 pytestmark = pytest.mark.unit
 
@@ -76,51 +75,6 @@ def _install_blocking_intent(state, audit, started: asyncio.Event, release: asyn
     )
 
 
-class _SlowAfterCancel(concurrent.futures.ThreadPoolExecutor):
-    """Runs workflow activations, each ``delay`` seconds late once ``slow`` is set (#333).
-
-    Host code, outside the sandbox. It stands in for a slow CI runner, so a
-    test can make the cancel's workflow task long enough for an activity's
-    completion to land inside it. The delay stays under the SDK's 2 s
-    deadlock limit.
-    """
-
-    def __init__(self, delay: float) -> None:
-        super().__init__(max_workers=4)
-        self.delay = delay
-        self.slow = False
-
-    def submit(self, fn, /, *args, **kwargs):
-        def late():
-            if self.slow:
-                time.sleep(self.delay)
-            return fn(*args, **kwargs)
-
-        return super().submit(late)
-
-
-async def _within(awaitable, seconds: float, what: str):
-    """Await with a deadline; on a miss, fail naming the step instead of hanging (#298)."""
-    try:
-        return await asyncio.wait_for(awaitable, timeout=seconds)
-    except TimeoutError:
-        raise AssertionError(f"{what} did not finish within {seconds:g} s") from None
-
-
-async def _where_it_stopped(handle) -> str:
-    """The run's status, pending activities and last history events, for a failure message."""
-    try:
-        desc = await _within(handle.describe(), 5, "describing the run")
-        history = await _within(handle.fetch_history(), 5, "fetching the run's history")
-    except AssertionError as err:
-        return str(err)
-    pending = [
-        (p.activity_type.name, PendingActivityState.Name(p.state)) for p in desc.raw_description.pending_activities
-    ]
-    last = [EventType.Name(e.event_type).removeprefix("EVENT_TYPE_") for e in history.events[-12:]]
-    return f"status {desc.status.name if desc.status else None}; pending activities {pending}; last events {last}"
-
-
 async def _start_block_cancel(
     workflow_run,
     arg,
@@ -152,7 +106,7 @@ async def _start_block_cancel(
     audit and re-raise on cancellation (reconcile) — callers can then assert
     the audit trail regardless of how the workflow terminates.
     """
-    executor = _SlowAfterCancel(slow_after_cancel) if slow_after_cancel else None
+    executor = SlowAfterCancel(slow_after_cancel) if slow_after_cancel else None
     env = await WorkflowEnvironment.start_time_skipping(data_converter=pydantic_data_converter)
     try:
         worker = Worker(
@@ -166,7 +120,7 @@ async def _start_block_cancel(
         running = asyncio.create_task(worker.run())
         try:
             handle = await env.client.start_workflow(workflow_run, arg, id=wf_id, task_queue=task_queue)
-            await _within(started.wait(), 10, "the held activity's start")
+            await within(started.wait(), 10, "the held activity's start")
             if ready is not None:
                 await ready(handle)
             if executor is not None:
@@ -177,18 +131,18 @@ async def _start_block_cancel(
             except TimeoutError:
                 raise AssertionError(
                     f"{wf_id} did not finish within {result_within:g} s after its cancel: "
-                    f"{await _where_it_stopped(handle)}"
+                    f"{await where_it_stopped(handle)}"
                 ) from None
             except Exception as exc:
                 return exc
         finally:
             release.set()
             try:
-                await _within(worker.shutdown(), 15, "the worker's shutdown")
+                await within(worker.shutdown(), 15, "the worker's shutdown")
             finally:
                 running.cancel()
     finally:
-        await _within(env.shutdown(), 15, "the test server's shutdown")
+        await within(env.shutdown(), 15, "the test server's shutdown")
         if executor is not None:
             executor.shutdown(wait=False)
 
@@ -372,15 +326,7 @@ async def test_a_cancelled_scan_keeps_the_reports_that_completed(make_desired, w
         else:
             seen = [(e.activity_name, e.event_type.value) for e in await audit.query_by_workflow(wf_id)]
             raise AssertionError(f"spine-01's drift check was not recorded within 20 s; the trail had {seen}")
-        while asyncio.get_running_loop().time() < deadline:
-            pending = (await handle.describe()).raw_description.pending_activities
-            last = (await handle.fetch_history()).events[-1].event_type
-            if [p.activity_type.name for p in pending] == ["fetch_desired_state"] and (
-                last == EventType.EVENT_TYPE_WORKFLOW_TASK_COMPLETED
-            ):
-                return
-            await asyncio.sleep(0.05)
-        raise AssertionError(f"the scan was not quiet within 20 s: {await _where_it_stopped(handle)}")
+        await until_quiet([(handle, ["fetch_desired_state"])], seconds=deadline - asyncio.get_running_loop().time())
 
     intent_store = MagicMock()
     intent_store.get_desired_state = AsyncMock(side_effect=_get)
