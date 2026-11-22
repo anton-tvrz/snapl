@@ -808,12 +808,20 @@ def _check_address(host: str, port: int) -> None:
 
 
 def _write_snapshot(
-    target: Path, app: Any, days: int, commit: str | None, *, force: bool, archive: str | None = None
+    target: Path,
+    app: Any,
+    days: int,
+    commit: str | None,
+    *,
+    force: bool,
+    archive: str | None = None,
+    bundle_json: Path | None = None,
 ) -> None:
     """Collect the bundle from ``app``, write the file and print what it holds. Binds no port."""
     from snapl_presentation.dashboard.snapshot import (  # noqa: PLC0415
         SnapshotError,
         collect_bundle,
+        readable,
         render,
         summary,
         write,
@@ -823,19 +831,26 @@ def _write_snapshot(
     if template is None:  # pragma: no cover — checked before the app is built
         raise typer.Exit(int(ExitCode.ERROR))
     try:
-        if target.exists() and not force:
-            raise SnapshotError(f"{target} already exists. Pass --force to replace it.")
+        for path in (target, bundle_json):
+            if path is not None and path.exists() and not force:
+                raise SnapshotError(f"{path} already exists. Pass --force to replace it.")
         bundle = collect_bundle(app, days=days, commit=commit, source="archive" if archive else "live")
         write(target, render(template.read_text(encoding="utf-8"), bundle), force=force)
+        if bundle_json is not None:
+            write(bundle_json, readable(bundle), force=force)
     except SnapshotError as exc:
         _stderr.print(f"[red]error:[/] {exc}", highlight=False, soft_wrap=True)
         raise typer.Exit(int(ExitCode.ERROR)) from exc
-    for line in summary(target, bundle, archive=archive):
+    for line in summary(target, bundle, archive=archive, bundle_json=bundle_json):
         typer.echo(line)
 
 
 def _dashboard_archive(
-    path: Path, use_case: str | None, host: str, port: int, snapshot: tuple[Path, int, bool] | None = None
+    path: Path,
+    use_case: str | None,
+    host: str,
+    port: int,
+    snapshot: tuple[Path, int, bool, Path | None] | None = None,
 ) -> None:
     """Serve one history archive until interrupted, or write a snapshot of it.
 
@@ -853,9 +868,17 @@ def _dashboard_archive(
                 )
                 raise typer.Exit(int(ExitCode.ERROR))
             if snapshot is not None:
-                target, days, force = snapshot
+                target, days, force, bundle_json = snapshot
                 app_ = create_archive_app(opened)
-                _write_snapshot(target, app_, days, opened.info.snapl_commit, force=force, archive=opened.info.name)
+                _write_snapshot(
+                    target,
+                    app_,
+                    days,
+                    opened.info.snapl_commit,
+                    force=force,
+                    archive=opened.info.name,
+                    bundle_json=bundle_json,
+                )
                 raise typer.Exit(int(ExitCode.OK))
             _check_address(host, port)
             url_host = f"[{host}]" if ":" in host else host
@@ -902,6 +925,10 @@ def dashboard(
         int, typer.Option("--days", min=1, max=90, help="With --snapshot: the days it covers, ending now.")
     ] = 7,
     force: Annotated[bool, typer.Option("--force", help="With --snapshot: replace an existing file.")] = False,
+    bundle_json: Annotated[
+        Path | None,
+        typer.Option("--bundle-json", help="With --snapshot: also write its data to FILE as readable JSON."),
+    ] = None,
 ) -> None:
     """Serve a local, read-only dashboard of the fabric and the loop."""
     # Only the dashboard's own address comes from the environment in archive
@@ -915,10 +942,12 @@ def dashboard(
         _stderr.print(f"[red]error:[/] {NOT_BUILT}", highlight=False, soft_wrap=True)
         raise typer.Exit(int(ExitCode.ERROR))
     if archive is not None:
-        _dashboard_archive(archive, use_case, host, port, (snapshot, days, force) if snapshot else None)
+        _dashboard_archive(archive, use_case, host, port, (snapshot, days, force, bundle_json) if snapshot else None)
     use_case = use_case or DEFAULT_USE_CASE
     if snapshot is not None:
-        _write_snapshot(snapshot, _live_app(settings, use_case), days, _git_commit(), force=force)
+        _write_snapshot(
+            snapshot, _live_app(settings, use_case), days, _git_commit(), force=force, bundle_json=bundle_json
+        )
         raise typer.Exit(int(ExitCode.OK))
 
     _check_address(host, port)
