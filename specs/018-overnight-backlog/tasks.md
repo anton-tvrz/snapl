@@ -71,7 +71,7 @@
 - [x] T018 [US4] Amend spec 014 SC-003 to measure the Metrics section's first group heading, with `e2e/layout.spec.ts` and `e2e/look.mjs` to match, and list it under "Spec amendments". Run `npx vitest run`, `npm run lint` and the e2e tests (`npx playwright test`).
 - [x] T019 [US4] Measure again as in T014, and put both measures in the PR.
 - [x] T020 [US4] `changelog/305.changed.md`.
-- [ ] T021 [US4] **Needs the lab**: SC-001. Measure the live page at 1280 px with `e2e/look.mjs`. If it is over 3062 px, the maintainer decides whether to amend spec 014 SC-002.
+- [x] T021 [US4] **Needs the lab**: SC-001. Measure the live page at 1280 px with `e2e/look.mjs`. If it is over 3062 px, the maintainer decides whether to amend spec 014 SC-002. *Measured on 2026-11-24: 3661 px (7086 before), `firstMetricsGroupTop` 1906 px. The maintainer amended spec 014 SC-002 to 4000 px.*
 
 ## Phase 5: A Gzipped Snapshot (US5, #235) — PR E
 
@@ -108,6 +108,6 @@ There are none between slices. Run them in order, A to F, each from a fresh `ori
 
 ## Deferred to the maintainer
 
-- T013, T021 and spec 017's T006 and T012 (the lab).
+- T013 (the lab). T021 and spec 017's T006 and T012 were run on 2026-11-24.
 - #136's Temporal identity check.
 - #65, which waits for spec 013's captures.

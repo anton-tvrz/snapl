@@ -87,8 +87,8 @@ None new.
 
 ## Success Criteria
 
-- **SC-001**: On the lab, `scan-results` over the last hour adds up to the number of ScanDrift runs the audit trail has in that hour, and every point is a whole number.
-- **SC-002**: On the lab, an archive made at T exports every metrics view to T, not to T rounded down to its step.
+- **SC-001**: On the lab, `scan-results` over the last hour adds up to the number of ScanDrift runs the audit trail has in that hour, and every point is a whole number. *Met on 2026-11-24 (T006).*
+- **SC-002**: On the lab, an archive made at T exports every metrics view to T, not to T rounded down to its step. *Met on 2026-11-24 (T012), for the archive and for a snapshot.*
 - **SC-003**: The cancellation test passes 50 runs in a row locally under contention, or #333 says what was ruled out.
 - **SC-004**: `uv run invoke test-unit`, `mypy packages/`, `bandit` and the UI's tests pass after every slice.
 

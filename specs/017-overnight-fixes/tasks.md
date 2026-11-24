@@ -24,7 +24,7 @@
 - [x] T003 [US1] Amend `specs/015-more-metrics/contracts/metrics-views.md` ("The window note" and the counting views' query lines) and the "Look"/metrics notes in `dev/skills/dashboard/` if they mention the 60 s window. List each change under "Spec amendments" in the PR.
 - [x] T004 [US1] Regenerate the UI fixtures (`SNAPL_WRITE_UI_FIXTURES=1 uv run pytest tests/unit/test_presentation/test_ui_fixtures.py`) and the Prometheus fixtures' README if it names the window. Update the UI tests that read "events in the last 60 s"; the page itself needs no change unless a test shows it does. `cd packages/presentation/ui && npx vitest run && npm run lint`.
 - [x] T005 [US1] `changelog/308.fixed.md`.
-- [ ] T006 [US1] **Needs the lab**: SC-001. Over the last hour, compare `scan-results` (`/api/v1/metrics/scan-results?start=…`) with the ScanDrift runs in the audit trail. Every point must be whole and the sum equal.
+- [x] T006 [US1] **Needs the lab**: SC-001. Over the last hour, compare `scan-results` (`/api/v1/metrics/scan-results?start=…`) with the ScanDrift runs in the audit trail. Every point must be whole and the sum equal. *Run on 2026-11-24, 11:20 to 12:20 UTC: 13 ScanDrift runs, 13 scans on each of the six devices (78 `in_sync`), no fractional point. The fabric stayed clean, so only `in_sync` was exercised.*
 
 ## Phase 2: An Export Keeps Its Newest Step (US2, #306) — PR B
 
@@ -38,7 +38,7 @@
   - #351's detail windows still serve a sub-range.
 - [x] T010 [US2] Implement in `prometheus.py`, `app.py` and `tasks/history.py`. Check `snapshot.py` passes `end` for every ranged view, and add a test if one doesn't.
 - [x] T011 [US2] `changelog/306.fixed.md`.
-- [ ] T012 [US2] **Needs the lab**: SC-002. Make an archive and a snapshot, and check that every metrics view's exported `end` equals the archive's or snapshot's time.
+- [x] T012 [US2] **Needs the lab**: SC-002. Make an archive and a snapshot, and check that every metrics view's exported `end` equals the archive's or snapshot's time. *Run on 2026-11-24: the archive's 22 views end at 11:18:10Z, its `created_at`; the snapshot's 22 end at 11:18:38Z, its time to the second. The six 15 s detail windows end at 11:18:00Z, floored to their step by design (`archive.py`, #351), and are outside SC-002.*
 
 ## Phase 3: The Seed (US3, #62) — PR C
 
@@ -69,4 +69,4 @@ None between slices. Run them in order A to D. Each starts from a fresh `origin/
 
 ## Deferred to the maintainer
 
-T006 and T012 (the lab). #305, #235 and #136's ideas are out of scope (spec.md Input).
+None: T006 and T012 were run on the lab on 2026-11-24. #305, #235 and #136's ideas are out of scope (spec.md Input).
