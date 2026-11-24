@@ -27,7 +27,7 @@ No setup. There is no new package, dependency or directory: pygnmi's `set(delete
 
 ### Tests (write first, verify they fail)
 
-- [ ] T001 [P] Extend tests/unit/test_observability/test_models.py with the removal models from data-model.md:
+- [x] T001 [P] Extend tests/unit/test_observability/test_models.py with the removal models from data-model.md:
   - `RemovalRefusal` values `protected` and `not_removable`;
   - `PlannedDelete` rejects empty `answers`;
   - `RefusedEntity` rejects empty `paths`;
@@ -35,7 +35,7 @@ No setup. There is no new package, dependency or directory: pygnmi's `set(delete
   - `delete_paths` is the sorted list;
   - `is_empty` is true with no deletes, refusals or not;
   - every model is frozen and forbids extra fields.
-- [ ] T002 [P] Write tests/unit/test_observability/test_removal_plan.py for `structural/removal.py::plan_removal(report)`. It covers every row of contracts/blocks.md's table, using hand-built `DriftReport`s and the existing diff fixtures in tests/unit/test_observability/. It also asserts:
+- [x] T002 [P] Write tests/unit/test_observability/test_removal_plan.py for `structural/removal.py::plan_removal(report)`. It covers every row of contracts/blocks.md's table, using hand-built `DriftReport`s and the existing diff fixtures in tests/unit/test_observability/. It also asserts:
   - every undesired path lands in exactly one delete or refusal;
   - forward paths land only in `forward_drift`;
   - two calls on one report give equal plans;
@@ -44,36 +44,36 @@ No setup. There is no new package, dependency or directory: pygnmi's `set(delete
   - a port with an address and its `routed_interface` binding give two deletes;
   - `system0.0` and `mgmt0.0` bindings are refused as `protected`, read from `ENTITY_FIELD_MAP["interface"]["protected"]`;
   - the item's path is used verbatim for an extra address whose prefix contains `/` (C3).
-- [ ] T003 [P] Extend tests/unit/test_executor/test_models.py with `RemoveResult`'s invariants:
+- [x] T003 [P] Extend tests/unit/test_executor/test_models.py with `RemoveResult`'s invariants:
   - `success=True` means `error` is None and `refused` is empty;
   - `success=False` means `error` is set;
   - `dry_run=True` means `device_response` is None;
   - it is frozen.
-- [ ] T004 [P] Write the guard half of tests/unit/test_executor/test_gnmi_remove.py, for a pure `check_delete_paths(paths, protected) -> dict[str, str]` in packages/executor/snapl_executor/gnmi/executor.py. It returns refused paths with their reasons:
+- [x] T004 [P] Write the guard half of tests/unit/test_executor/test_gnmi_remove.py, for a pure `check_delete_paths(paths, protected) -> dict[str, str]` in packages/executor/snapl_executor/gnmi/executor.py. It returns refused paths with their reasons:
   - **Accepted**: the four shapes in contracts/blocks.md, with `X` containing `/` (`ethernet-1/7`), `P` containing `/` (`192.0.2.1/31`), and `X.N` bindings.
   - **Refused**: `/`, `/interface`, `/network-instance[name=default]`, `/network-instance[name=default]/protocols/bgp`, `/network-instance[name=default]/interface`, `/routing-policy`, a policy entry, leaf paths (`/interface[name=X]/description`, `…/neighbor[peer-address=A]/peer-as`), another network instance, and a path with trailing text.
   - **Protected**: `mgmt0`, `system0` and `system0.0` are refused with the reason `protected`.
   - **Fail closed**: `protected=None` refuses everything.
-- [ ] T005 [P] Extend tests/unit/test_orchestrator/test_models.py:
+- [x] T005 [P] Extend tests/unit/test_orchestrator/test_models.py:
   - `WorkflowReason` gains `plan_changed`, `deploy_in_flight` and `remove_failed`;
   - `RemovalRequest` rejects an empty actor, empty `confirmed_paths` and duplicates;
   - `RemovalVerification.passed` and `gone ∪ remaining`;
   - `RemovalResult` invariants from data-model.md, including the `collect_failed`-after-write exception;
   - an `AuditEvent` of `workflow_type="RemoveConfig"` and `WORKFLOW_STARTED` without `actor`, or without `payload["confirmed_paths"]`, is rejected;
   - other workflow types are unaffected.
-- [ ] T006 Write tests/unit/test_orchestrator/test_removal_paths.py (SC-003, FR-004). For every report in T002's set, plus adversarial reports naming `mgmt0`, `system0` and `system0.0`:
+- [x] T006 Write tests/unit/test_orchestrator/test_removal_paths.py (SC-003, FR-004). For every report in T002's set, plus adversarial reports naming `mgmt0`, `system0` and `system0.0`:
   - every planned delete path passes `check_delete_paths(paths, ENTITY_FIELD_MAP["interface"]["protected"])`;
   - every refused entity's path would also be refused by it;
   - every protected name in the field map is refused.
 
 ### Implementation
 
-- [ ] T007 Add `RemovalRefusal`, `PlannedDelete`, `RefusedEntity` and `RemovalPlan` to packages/observability/snapl_observability/models.py, and export them from the package's `__init__.py` (T001)
-- [ ] T008 Implement packages/observability/snapl_observability/structural/removal.py with `plan_removal(report) -> RemovalPlan`, following research R2. Reuse `diff._key_pattern` (or move it to a shared helper in `diff.py`) instead of writing new regexes. (T002)
-- [ ] T009 [P] Add `RemoveResult` to packages/executor/snapl_executor/models.py, with a `__post_init__` that enforces T003's invariants (T003)
-- [ ] T010 [P] Add `check_delete_paths` to packages/executor/snapl_executor/gnmi/executor.py, as module-level compiled patterns for the four shapes plus the protected check (T004)
-- [ ] T011 [P] Add the `WorkflowReason` values, `RemovalRequest`, `RemovalVerification`, `RemovalResult` and the `AuditEvent` validator branch to packages/orchestrator/snapl_orchestrator/models.py (T005)
-- [ ] T012 Run T006 and see it pass with T008 and T010 in place. Break the planner's protected check on purpose and see T006 fail, then restore it.
+- [x] T007 Add `RemovalRefusal`, `PlannedDelete`, `RefusedEntity` and `RemovalPlan` to packages/observability/snapl_observability/models.py, and export them from the package's `__init__.py` (T001)
+- [x] T008 Implement packages/observability/snapl_observability/structural/removal.py with `plan_removal(report) -> RemovalPlan`, following research R2. Reuse `diff._key_pattern` (or move it to a shared helper in `diff.py`) instead of writing new regexes. (T002)
+- [x] T009 [P] Add `RemoveResult` to packages/executor/snapl_executor/models.py, with a `__post_init__` that enforces T003's invariants (T003)
+- [x] T010 [P] Add `check_delete_paths` to packages/executor/snapl_executor/gnmi/executor.py, as module-level compiled patterns for the four shapes plus the protected check (T004)
+- [x] T011 [P] Add the `WorkflowReason` values, `RemovalRequest`, `RemovalVerification`, `RemovalResult` and the `AuditEvent` validator branch to packages/orchestrator/snapl_orchestrator/models.py (T005)
+- [x] T012 Run T006 and see it pass with T008 and T010 in place. Break the planner's protected check on purpose and see T006 fail, then restore it.
 
 **Checkpoint**: `uv run invoke test-unit` is green. The planner and the guard agree on every path. Nothing touches a device yet.
 
@@ -87,15 +87,15 @@ No setup. There is no new package, dependency or directory: pygnmi's `set(delete
 
 ### Tests (write first, verify they fail)
 
-- [ ] T013 [P] [US1] Extend tests/unit/test_observability/test_abc.py: an `Observer` subclass without `plan_removal` can't be instantiated, and the `Complete` subclass gains it. Extend tests/unit/test_observability/test_observer.py: `StructuralObserver.plan_removal` returns `structural.removal.plan_removal`'s result, and raises on an `ERROR` report.
-- [ ] T014 [P] [US1] Extend tests/unit/test_executor/test_abc.py: an `Executor` subclass without `dry_run_remove` can't be instantiated, and `GoodExecutor` gains it. Extend tests/unit/test_executor/test_gnmi_remove.py for `GnmiExecutor.dry_run_remove`:
+- [x] T013 [P] [US1] Extend tests/unit/test_observability/test_abc.py: an `Observer` subclass without `plan_removal` can't be instantiated, and the `Complete` subclass gains it. Extend tests/unit/test_observability/test_observer.py: `StructuralObserver.plan_removal` returns `structural.removal.plan_removal`'s result, and raises on an `ERROR` report.
+- [x] T014 [P] [US1] Extend tests/unit/test_executor/test_abc.py: an `Executor` subclass without `dry_run_remove` can't be instantiated, and `GoodExecutor` gains it. Extend tests/unit/test_executor/test_gnmi_remove.py for `GnmiExecutor.dry_run_remove`:
   - it never constructs `gNMIclient` (patched to fail if called);
   - it returns `dry_run=True`, `success=True` for allowed paths;
   - a refused path gives `success=False` with `refused` and `error` set;
   - the constructor without `protected_interfaces` refuses every path;
   - it raises `ValueError` on an empty list or a duplicate.
-- [ ] T015 [P] [US1] Extend tests/unit/test_orchestrator/test_activity_observability.py (`plan_removal` calls `observer.plan_removal`) and tests/unit/test_orchestrator/test_activity_executor.py (`dry_run_remove` calls `executor.dry_run_remove` and records no gNMI call metric, since nothing dials)
-- [ ] T016 [P] [US1] Write the `PlanRemoval` half of tests/unit/test_orchestrator/test_workflow_removal.py, using `WorkflowEnvironment.start_time_skipping()` with mocked activities. Cover:
+- [x] T015 [P] [US1] Extend tests/unit/test_orchestrator/test_activity_observability.py (`plan_removal` calls `observer.plan_removal`) and tests/unit/test_orchestrator/test_activity_executor.py (`dry_run_remove` calls `executor.dry_run_remove` and records no gNMI call metric, since nothing dials)
+- [x] T016 [P] [US1] Write the `PlanRemoval` half of tests/unit/test_orchestrator/test_workflow_removal.py, using `WorkflowEnvironment.start_time_skipping()` with mocked activities. Cover:
   - the call order intent → collect → detect → `plan_removal` → `dry_run_remove`;
   - `dry_run_remove` is skipped for an empty plan;
   - the plan is returned;
@@ -103,8 +103,8 @@ No setup. There is no new package, dependency or directory: pygnmi's `set(delete
   - intent not found, intent unavailable and collect failure each end with the matching reason and raise `ApplicationError`;
   - a dry-run refusal ends `remove_failed` and raises;
   - no executor write activity is ever scheduled.
-- [ ] T017 [P] [US1] Extend tests/unit/test_orchestrator/test_worker_run.py: `PlanRemovalWorkflow`, `plan_removal` and `dry_run_remove` are registered, and `_build_executor()` passes `ENTITY_FIELD_MAP["interface"]["protected"]` as `protected_interfaces`
-- [ ] T018 [P] [US1] Write the preview half of tests/unit/test_presentation/test_cli_remove.py, from contracts/cli-remove.md:
+- [x] T017 [P] [US1] Extend tests/unit/test_orchestrator/test_worker_run.py: `PlanRemovalWorkflow`, `plan_removal` and `dry_run_remove` are registered, and `_build_executor()` passes `ENTITY_FIELD_MAP["interface"]["protected"]` as `protected_interfaces`
+- [x] T018 [P] [US1] Write the preview half of tests/unit/test_presentation/test_cli_remove.py, from contracts/cli-remove.md:
   - with deletes: exit 2 and the human text;
   - nothing to remove: exit 0;
   - refusals only: exit 0, and the refusals are listed;
@@ -112,17 +112,17 @@ No setup. There is no new package, dependency or directory: pygnmi's `set(delete
   - a device not in intent is refused before any workflow starts;
   - no worker: exit 1 with the hint;
   - the workflow id has the shape `plan-removal-{id}-…`.
-- [ ] T019 [P] [US1] Extend tests/unit/test_presentation/test_render.py with the plan view, human and JSON. The human view shows deletes with their answers, the neighbour note (session torn down, group stays, research R4), refusals with reasons, the forward-drift line naming `snapl reconcile`, and "Nothing was written."
+- [x] T019 [P] [US1] Extend tests/unit/test_presentation/test_render.py with the plan view, human and JSON. The human view shows deletes with their answers, the neighbour note (session torn down, group stays, research R4), refusals with reasons, the forward-drift line naming `snapl reconcile`, and "Nothing was written."
 
 ### Implementation
 
-- [ ] T020 [US1] Add `Observer.plan_removal` to packages/observability/snapl_observability/abc.py and implement it in packages/observability/snapl_observability/structural/observer.py, delegating to `structural.removal` (T013)
-- [ ] T021 [US1] Add `Executor.dry_run_remove` to packages/executor/snapl_executor/abc.py. In packages/executor/snapl_executor/gnmi/executor.py, add the `protected_interfaces` constructor argument and `dry_run_remove` over `check_delete_paths` (T014)
-- [ ] T022 [P] [US1] Add the `plan_removal` activity to packages/orchestrator/snapl_orchestrator/activities/observability.py and the `dry_run_remove` activity to packages/orchestrator/snapl_orchestrator/activities/executor.py (T015)
-- [ ] T023 [US1] Create packages/orchestrator/snapl_orchestrator/workflows/removal.py with the shared scan helper (intent → collect → detect, with `DeployIntent`'s retry policies and failure reasons) and `PlanRemovalWorkflow` (T016)
-- [ ] T024 [US1] Register the workflow and activities in packages/orchestrator/snapl_orchestrator/worker/run.py, and pass the field map's protected set to `GnmiExecutor` in `_build_executor` (T017)
-- [ ] T025 [US1] Add the `remove` command (preview only) to packages/presentation/snapl_presentation/cli.py and the plan view to packages/presentation/snapl_presentation/render.py (T018, T019)
-- [ ] T026 [US1] Live check (quickstart steps 1 and 2) on leaf-04, with the worker running from the branch and the drift schedule paused. Record the preview outputs and the identical config diff in specs/013-remove-undesired-config/evidence.md. Remove the probe config afterwards and resume the schedule.
+- [x] T020 [US1] Add `Observer.plan_removal` to packages/observability/snapl_observability/abc.py and implement it in packages/observability/snapl_observability/structural/observer.py, delegating to `structural.removal` (T013)
+- [x] T021 [US1] Add `Executor.dry_run_remove` to packages/executor/snapl_executor/abc.py. In packages/executor/snapl_executor/gnmi/executor.py, add the `protected_interfaces` constructor argument and `dry_run_remove` over `check_delete_paths` (T014)
+- [x] T022 [P] [US1] Add the `plan_removal` activity to packages/orchestrator/snapl_orchestrator/activities/observability.py and the `dry_run_remove` activity to packages/orchestrator/snapl_orchestrator/activities/executor.py (T015)
+- [x] T023 [US1] Create packages/orchestrator/snapl_orchestrator/workflows/removal.py with the shared scan helper (intent → collect → detect, with `DeployIntent`'s retry policies and failure reasons) and `PlanRemovalWorkflow` (T016)
+- [x] T024 [US1] Register the workflow and activities in packages/orchestrator/snapl_orchestrator/worker/run.py, and pass the field map's protected set to `GnmiExecutor` in `_build_executor` (T017)
+- [x] T025 [US1] Add the `remove` command (preview only) to packages/presentation/snapl_presentation/cli.py and the plan view to packages/presentation/snapl_presentation/render.py (T018, T019)
+- [x] T026 [US1] Live check (quickstart steps 1 and 2) on leaf-04, with the worker running from the branch and the drift schedule paused. Record the preview outputs and the identical config diff in specs/013-remove-undesired-config/evidence.md. Remove the probe config afterwards and resume the schedule.
 
 **Checkpoint**: US1 ships on its own. Operators can see the exact deletes that would fix a device and apply them by hand. It ships as one PR (`feat(executor): preview removing undesired config`, `Closes` a slice issue under #65, with live evidence in the body).
 
