@@ -2,7 +2,7 @@
 
 **Feature Branch**: drafted on `ccr-a14a9b05-ogrz9i`; give it its own branch (`013-remove-undesired-config`) when it moves to a PR
 **Created**: 2026-11-15
-**Status**: Draft, clarified 2026-11-15. Live captures C1 to C5 run on 2026-11-24 (`captures.md`); ready for the plan.
+**Status**: Planned 2026-11-24 (`plan.md`). Clarified 2026-11-15; live captures C1 to C5 run on 2026-11-24 (`captures.md`).
 **Input**: Issue #65: "apply is merge-only gNMI update at '/' — config removed from intent never leaves the device". Spec 007's deferred User Story 3 ("Converge by removal").
 
 ## Context
@@ -105,7 +105,7 @@ Every removal shows in `snapl audit`, the dashboard's run list and the device's 
 - **FR-011**: A removal MUST be recorded in the audit trail as its own workflow type, with the actor, the planned paths, the device's response and the verification result.
 - **FR-012**: Scheduled runs (spec 009) MUST NOT remove config, in any response mode.
 - **FR-013**: The removal entry point MUST be a command of its own, `snapl remove <device>`, which previews by default and executes only with `--apply`. `snapl reconcile` stays a merge and never deletes.
-- **FR-014**: The first cut MUST remove whole undesired entities (an interface entry outside intent, a BGP neighbour outside intent) and extra addresses on intent-managed interfaces (#193). Individual undesired fields on an entity intent still manages (a description removed from intent, for example) are out of scope for this cut.
+- **FR-014**: The first cut MUST remove whole undesired entities (an interface entry outside intent, a BGP neighbour outside intent) and extra addresses on intent-managed interfaces (#193). Individual undesired fields on an entity intent still manages (a description removed from intent, for example) are out of scope for this cut. *Amended 2026-11-24 (maintainer, from C1): the whole entities include a subinterface's binding to the default network instance (`routed_interface`, #315), which must be deleted in the same Set as its port; a routing policy outside intent (#317) is listed as refused, not removed (research R3).*
 - **FR-015**: A removal MUST apply a device's whole plan or nothing. The operator confirms the plan as shown and cannot pick a subset of it in this cut.
 
 ### Key Entities
@@ -137,7 +137,8 @@ Every removal shows in `snapl audit`, the dashboard's run list and the device's 
 - `replace` semantics on any subtree.
 - Removal from a schedule, in any mode.
 - Decommissioning a device that has left intent.
-- Any other entity kind than interfaces, their IPv4 addresses and BGP neighbours (the kinds spec 007 detects).
+- Any other entity kind than interfaces, their IPv4 addresses, their default network-instance bindings and BGP neighbours. Routing policies (#317) are detected but not removed in this cut (research R3).
+- Config the scan does not report and a removal leaves behind: a peer group with no neighbours left, a subinterface's `ipv4 admin-state` (captures C3, C4; research R4).
 - Promoting undesired config into intent (VIII.1: an explicit, reviewed operation, not this one).
 
 ## Questions for planning (research, not decisions)
