@@ -74,6 +74,11 @@ Every removal shows in `snapl audit`, the dashboard's run list and the device's 
 
 1. **Given** a completed removal, **When** the operator reads the device's audit trail, **Then** it shows the removal, the actor, each delete path and the verification result.
 2. **Given** a removal that closed an undesired-only drift episode, **When** the dashboard shows that episode, **Then** what closed it is the removal, not `unknown`.
+3. **Given** a device with undesired config, **When** the operator opens it on the dashboard, **Then** it shows `snapl remove <device>` as a command to copy, beside `snapl reconcile <device>` when intent is also missing from the device.
+4. **Given** a completed removal, **When** the operator opens that run on the dashboard, **Then** it shows the paths deleted, the device's response, what the verifying scan found, and who confirmed it; for a removal that wrote nothing, it says why.
+5. **Given** a device that has been previewed, **When** the operator opens it on the dashboard, **Then** it shows the latest preview's time, its number of deletes and the entities it refused, so config left on the device by design is told apart from config nobody has looked at.
+
+*Scenarios 3 to 5 added 2026-11-24 (maintainer). The dashboard is for visibility only: it shows removals and the command to run, and never starts one (FR-016).*
 
 ---
 
@@ -107,6 +112,7 @@ Every removal shows in `snapl audit`, the dashboard's run list and the device's 
 - **FR-013**: The removal entry point MUST be a command of its own, `snapl remove <device>`, which previews by default and executes only with `--apply`. `snapl reconcile` stays a merge and never deletes.
 - **FR-014**: The first cut MUST remove whole undesired entities (an interface entry outside intent, a BGP neighbour outside intent) and extra addresses on intent-managed interfaces (#193). Individual undesired fields on an entity intent still manages (a description removed from intent, for example) are out of scope for this cut. *Amended 2026-11-24 (maintainer, from C1): the whole entities include a subinterface's binding to the default network instance (`routed_interface`, #315), which must be deleted in the same Set as its port; a routing policy outside intent (#317) is listed as refused, not removed (research R3).*
 - **FR-015**: A removal MUST apply a device's whole plan or nothing. The operator confirms the plan as shown and cannot pick a subset of it in this cut.
+- **FR-016**: The dashboard MUST show removals and previews read-only: the `snapl remove <device>` command to copy for a device with undesired config, each removal's deletes, response, verification and actor, and each device's latest preview. It MUST NOT offer any way to start a preview or a removal. *Added 2026-11-24 (maintainer): the dashboard is for visibility, not operations.*
 
 ### Key Entities
 
@@ -122,7 +128,7 @@ Every removal shows in `snapl audit`, the dashboard's run list and the device's 
 - **SC-002**: Across the same run, the preview causes zero device writes: the device's running config is identical before and after it.
 - **SC-003**: No test, preview or removal issues a delete at `/`, at a container above an entity, or on a protected entity. A unit test enforces it over every path the planner can produce.
 - **SC-004**: A removal whose device changed between preview and confirmation writes nothing (checked by changing the device in between).
-- **SC-005**: Every removal appears in `snapl audit --device` and the dashboard's run list with its deletes and verification result.
+- **SC-005**: Every removal appears in `snapl audit --device` and the dashboard's run list with its deletes and verification result. *Extended 2026-11-24:* the dashboard also shows the remove command for a device with undesired config, and the device's latest preview (FR-016).
 
 ## Assumptions
 

@@ -179,9 +179,9 @@ No setup. There is no new package, dependency or directory: pygnmi's `set(delete
 
 ## Phase 5: User Story 3: See Removals in the Record (P2)
 
-**Goal**: Removals appear in `snapl audit`, the run list and the device's history, told apart from deploys. An undesired-only episode is closed by its removal, not left without a cause (FR-011, SC-005).
+**Goal**: Removals appear in `snapl audit`, the run list and the device's history, told apart from deploys. An undesired-only episode is closed by its removal, not left without a cause (FR-011, SC-005). The dashboard shows the command to run, each removal's detail and each device's latest preview, and never starts either workflow (FR-016, US3 scenarios 3 to 5, amended 2026-11-24).
 
-**Independent Test**: quickstart step 5. `snapl audit --device leaf-04` shows the removal with its actor, deletes and verification. After the next scheduled scan, the dashboard's timeline shows leaf-04's episode closed by a removal.
+**Independent Test**: quickstart step 5. `snapl audit --device leaf-04` shows the removal with its actor, deletes and verification. After the next scheduled scan, the dashboard's timeline shows leaf-04's episode closed by a removal. The removal's run detail shows its deletes and verification, and leaf-04's drawer shows its latest preview.
 
 ### Tests (write first, verify they fail)
 
@@ -192,35 +192,48 @@ No setup. There is no new package, dependency or directory: pygnmi's `set(delete
   - a `RemoveConfig` for another device closes nothing;
   - when a deploy and a removal both qualify, the later end wins, as for two deploys.
 - [ ] T042 [P] [US3] Extend tests/unit/test_presentation/test_dashboard_projections.py: `project_runs` lists `RemoveConfig` and `PlanRemoval` runs with trigger `operator`, and a workflow-type filter for `RemoveConfig` selects only removals
-- [ ] T043 [P] [US3] Extend packages/presentation/ui/src/lib/episodes.test.ts ("closed by a removal") and the plain/designed parity test packages/presentation/ui/src/parity.test.ts with a removal-closed episode row, plus a case in packages/presentation/ui/src/components/timeline/Lanes.test.tsx for the new kind's key entry
+- [ ] T043 [P] [US3] Extend tests/unit/test_presentation/test_dashboard_projections.py for the command (FR-016):
+  - `remove_command` is `snapl remove <name>` for an `UNDESIRED` and a `MISSING_AND_UNDESIRED` device, and None otherwise;
+  - `suggested_command` is still `snapl reconcile <name>` for `MISSING_AND_UNDESIRED`, so both show;
+  - `UNDESIRED_NOTE` no longer says removal is unavailable.
+- [ ] T044 [P] [US3] Extend tests/unit/test_presentation/test_dashboard_projections.py for a removal's detail: a `RemoveConfig` run's `removal` holds the actor and `confirmed_paths` from its start event, and `deleted_paths`, `device_response`, the four verification lists and the reason from its terminal event. Cover a verified removal, `plan_changed` (no deletes, the new plan's paths), `remove_failed` (the device's text) and a run still in flight (no terminal event). Other workflow types have `removal` None.
+- [ ] T045 [P] [US3] Extend tests/unit/test_presentation/test_dashboard_projections.py for the latest preview: `last_removal_preview` is the device's latest successful `PlanRemoval` (time, workflow id, `plan_paths`, `refused_paths`); a failed preview and another device's preview are ignored; a device never previewed has None. It respects the `at=` time like the rest of `project_devices`.
+- [ ] T046 [P] [US3] Extend the UI tests:
+  - packages/presentation/ui/src/lib/episodes.test.ts ("closed by a removal") and packages/presentation/ui/src/components/timeline/Lanes.test.tsx for the new kind's key entry;
+  - packages/presentation/ui/src/components/panels/Undesired.test.tsx and DeviceDrawer.test.tsx: the remove command beside reconcile, the latest preview line and its refused entities, and no button or form anywhere (FR-016);
+  - packages/presentation/ui/src/components/panels/Runs.test.tsx: a removal's detail, verified and not;
+  - the plain/designed parity test packages/presentation/ui/src/parity.test.ts with a removal-closed episode, the remove command and a removal's detail.
 
 ### Implementation
 
-- [ ] T044 [US3] Add the `RemoveConfig` audit line to packages/presentation/snapl_presentation/render.py (T040)
-- [ ] T045 [US3] Add `"removal"` to `EpisodeClose.kind` in packages/presentation/snapl_presentation/dashboard/models.py. In packages/presentation/snapl_presentation/dashboard/projections.py, make `project_timeline`'s closers include successful `RemoveConfig` runs, and have `_close_kind` return `"removal"` for them (T041, T042)
-- [ ] T046 [US3] Regenerate packages/presentation/ui/src/api/schema.d.ts from the OpenAPI document. Add the label to packages/presentation/ui/src/lib/episodes.ts, packages/presentation/ui/src/components/timeline/Lanes.tsx and packages/presentation/snapl_presentation/dashboard/static/index.html. Rebuild with `uv run invoke dashboard.build` (T043)
-- [ ] T047 [US3] Live check: quickstart step 5 on leaf-04, recorded in specs/013-remove-undesired-config/evidence.md with a screenshot of the closed episode
+- [ ] T047 [US3] Add the `RemoveConfig` audit line to packages/presentation/snapl_presentation/render.py (T040)
+- [ ] T048 [US3] Add `"removal"` to `EpisodeClose.kind` in packages/presentation/snapl_presentation/dashboard/models.py. In packages/presentation/snapl_presentation/dashboard/projections.py, make `project_timeline`'s closers include successful `RemoveConfig` runs, and have `_close_kind` return `"removal"` for them (T041, T042)
+- [ ] T049 [US3] Add `DeviceView.remove_command` and `DeviceView.last_removal_preview` to dashboard/models.py, set them in `_drift_fields` and `project_devices`, and reword `UNDESIRED_NOTE` (T043, T045)
+- [ ] T050 [US3] Add `RunView.removal` to dashboard/models.py and fill it in `project_runs` from the run's start and terminal events (T044)
+- [ ] T051 [US3] Regenerate tests/unit/test_presentation/fixtures/openapi_v1.json and packages/presentation/ui/src/api/schema.d.ts. Add the label to packages/presentation/ui/src/lib/episodes.ts and Lanes.tsx; the command and the latest preview to panels/Undesired.tsx and DeviceDrawer.tsx; the removal detail to panels/Runs.tsx; and all of them to packages/presentation/snapl_presentation/dashboard/static/index.html. Rebuild with `uv run invoke dashboard.build` (T046)
+- [ ] T052 [US3] Render the page from fixtures with `e2e/look.mjs` and check the new views keep the look rules (dev/skills/dashboard/SKILL.md, "Look")
+- [ ] T053 [US3] Live check: quickstart step 5 on leaf-04, recorded in specs/013-remove-undesired-config/evidence.md with screenshots of the closed episode, the removal's run detail and leaf-04's drawer
 
-**Checkpoint**: every removal is accounted for in the CLI and on both dashboard pages.
+**Checkpoint**: every removal is accounted for in the CLI and on both dashboard pages, and the dashboard offers no way to start one.
 
 ---
 
 ## Phase 6: Polish & Cross-Cutting Concerns
 
-- [ ] T048 [P] Add the "Remove what intent never asked for" scenario to docs/demo-scenarios.md (quickstart steps 1, 2 and 4), and change the scenarios that say undesired config can't be removed
-- [ ] T049 [P] Update README.md's known limitations:
+- [ ] T054 [P] Add the "Remove what intent never asked for" scenario to docs/demo-scenarios.md (quickstart steps 1, 2 and 4), and change the scenarios that say undesired config can't be removed
+- [ ] T055 [P] Update README.md's known limitations:
   - removal is operator-only and never scheduled;
   - routing policies are detected, not removed (research R3);
   - an empty peer group and a subinterface's `ipv4 admin-state` remain after a removal (research R4).
-- [ ] T050 [P] Add changelog/65.added.md in the PR that closes #65 (the US2 PR), and a `Recent Changes` entry for 013 in CLAUDE.md, written by hand: `update-agent-context.sh` deletes older entries (see PR #395)
-- [ ] T051 Check that the new modules have at least 80% coverage, that `test_vendor_seams.py` covers workflows/removal.py unchanged, and that `uv run invoke lint`, `uv run invoke format` and `uv run invoke test-unit` pass
-- [ ] T052 Mark spec.md's status shipped and its success criteria met, each with a pointer to evidence.md
+- [ ] T056 [P] Add changelog/65.added.md in the PR that closes #65 (the US2 PR), and a `Recent Changes` entry for 013 in CLAUDE.md, written by hand: `update-agent-context.sh` deletes older entries (see PR #395)
+- [ ] T057 Check that the new modules have at least 80% coverage, that `test_vendor_seams.py` covers workflows/removal.py unchanged, and that `uv run invoke lint`, `uv run invoke format` and `uv run invoke test-unit` pass
+- [ ] T058 Mark spec.md's status shipped and its success criteria met, each with a pointer to evidence.md
 
 ---
 
 ## Dependencies & Execution Order
 
-- **Foundational (T001 to T012)** → **US1 (T013 to T026)** → **US2 (T027 to T039)** → **US3 (T040 to T047)** → **Polish**.
+- **Foundational (T001 to T012)** → **US1 (T013 to T026)** → **US2 (T027 to T039)** → **US3 (T040 to T053)** → **Polish**.
 - US2 depends on US1: `RemoveConfig` reuses the scan helper and the dry run, and `--apply` previews first.
 - US3 needs US2's `RemoveConfig` runs to exist in the trail. Its projection tests use hand-built events, so they can be written as early as Phase 2, but they ship after US2.
 - Within each phase, every test task comes before the implementation task that satisfies it (the T-numbers in brackets).
@@ -231,8 +244,8 @@ No setup. There is no new package, dependency or directory: pygnmi's `set(delete
 - Foundational tests T001 to T005 are five independent files. The implementations T009, T010 and T011 are independent of each other; T007 and T008 come before T012.
 - US1 tests T013 to T019 are seven independent files.
 - US2 tests T027 to T033 are independent files, except T029, which extends US1's workflow test file.
-- US3 tests T040 to T043 cover Python and TypeScript, and are independent.
-- Polish T048 to T050 are independent.
+- US3 tests T040 to T046 cover Python and TypeScript, and are independent.
+- Polish T054 to T056 are independent.
 
 ## Implementation Strategy
 
