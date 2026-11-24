@@ -255,6 +255,9 @@ function renderSchedule(view, worker) {
       if (s.paused) {
         const who = status.paused_by ? " by " + status.paused_by + " " + age(status.paused_at) : "";
         box.append(el("div", "Paused" + who + (s.note ? ": " + s.note : ""), "paths"));
+      } else if (s.note) {
+        // A stand-down leaves the schedule active, with why on its note (#389).
+        box.append(el("div", s.note, "paths"));
       }
       if (s.next_runs.length) box.append(el("div", "Next run " + s.next_runs[0], "paths"));
       const last = s.recent_runs[s.recent_runs.length - 1];

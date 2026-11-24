@@ -55,7 +55,7 @@
 - [x] T010 [US3] Implement in `workflows/drift_response.py` and `models.py`, and in the dashboard's run reason if it lists reasons.
 - [x] T011 [US3] Amend `specs/009-scheduled-drift-response/contracts/orchestrator-schedules.md` and research R8. List them under "Spec amendments".
 - [x] T012 [US3] `changelog/136.added.md`.
-- [ ] T013 [US3] **Needs the lab**: SC-003. Give a remediate schedule an intent edit that drifts the whole fabric, on a branch or with a revert the maintainer chooses. It repairs nothing, and `snapl schedule show` reads `report` with the guard's note.
+- [x] T013 [US3] **Needs the lab**: SC-003. Give a remediate schedule an intent edit that drifts the whole fabric, on a branch or with a revert the maintainer chooses. It repairs nothing, and `snapl schedule show` reads `report` with the guard's note. *Run on 2026-11-24 with the maintainer's go-ahead. The drift was made on the devices, not by an intent edit, since the guard counts forward drift whatever its source: `ethernet-1/1` disabled on both spines and `ethernet-1/49` on leaf-01 and leaf-02, 4 of 6 devices. The triggered remediate run (12:36:53Z) wrote nothing, excluded the four as `blast_radius` in the audit trail and stood the schedule down to `report`; `snapl reconcile --drifted` then repaired them. Its note was on the schedule but `snapl schedule show` printed a note only when paused; #389 shows it whenever it is set.*
 
 ## Phase 4: The Page's Height (US4, #305) — PR D
 
@@ -108,6 +108,6 @@ There are none between slices. Run them in order, A to F, each from a fresh `ori
 
 ## Deferred to the maintainer
 
-- T013 (the lab). T021 and spec 017's T006 and T012 were run on 2026-11-24.
+- None from the lab: T013, T021 and spec 017's T006 and T012 were run on 2026-11-24.
 - #136's Temporal identity check.
 - #65, which waits for spec 013's captures.

@@ -48,6 +48,7 @@ const FACTS: Row[] = [
   ["renderSchedule", "no schedule, with the command that creates one", Schedule],
   ["renderSchedule", "the mode, the interval, active or paused", Schedule],
   ["renderSchedule", "who paused it, when, and the note", Schedule],
+  ["renderSchedule", "the note on an active schedule, such as a stand-down's", Schedule],
   ["renderSchedule", "the next run and the last run", Schedule],
   ["renderSchedule", "repeated failed repairs, with the report-mode command", Schedule],
   ["renderSchedule", "the worker's pollers and task queue", Schedule],

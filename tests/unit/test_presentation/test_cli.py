@@ -415,6 +415,26 @@ class TestStatus:
         assert result.exit_code == ExitCode.OK
         assert "drift schedule — dcfabric: every 5m, report, active" in result.output
 
+    def test_reports_the_note_on_an_active_schedule(self, sot, temporal_client) -> None:
+        # A stand-down leaves the schedule active, with why on its note (#389).
+        from datetime import timedelta
+
+        from snapl_orchestrator.models import DriftResponseMode, DriftScheduleView
+
+        view = DriftScheduleView(
+            schedule_id="drift-response-dcfabric",
+            use_case_id="dcfabric",
+            interval=timedelta(minutes=5),
+            mode=DriftResponseMode.REPORT,
+            paused=False,
+            note="stood down: 4 of 6 devices drifted",
+        )
+        result = self._status_with(temporal_client, AsyncMock(return_value=view))
+        assert result.exit_code == ExitCode.OK
+        # Rich folds the row at the runner's 80 columns; the words are what count.
+        output = " ".join(result.output.split())
+        assert 'dcfabric: every 5m, report, active — "stood down: 4 of 6 devices drifted"' in output
+
     def test_a_missing_schedule_is_informational(self, sot, temporal_client) -> None:
         result = self._status_with(temporal_client, AsyncMock(return_value=None))
         assert result.exit_code == ExitCode.OK

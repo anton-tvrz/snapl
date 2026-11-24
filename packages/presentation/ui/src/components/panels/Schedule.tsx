@@ -42,6 +42,8 @@ function Current({ status, now }: { status: ScheduleStatus; now: Date }) {
           {s.note ? `: ${s.note}` : ""}
         </p>
       )}
+      {/* A stand-down leaves the schedule active, with why on its note (#389). */}
+      {!s.paused && s.note && <p>{s.note}</p>}
       {next && (
         <p>
           Next run in {durationText((Date.parse(next) - now.getTime()) / 1000)} ({utcText(new Date(next))})

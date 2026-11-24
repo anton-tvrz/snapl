@@ -269,6 +269,13 @@ class TestHumanSchedule:
         HumanRenderer(console).schedule(_schedule_view(paused=True, note="maintenance: spine swap"))
         assert 'paused — "maintenance: spine swap"' in _text(console)
 
+    def test_an_active_schedule_shows_its_note(self) -> None:
+        # A stand-down leaves the schedule active, with why on its note (#389).
+        note = "stood down: drift-response-dcfabric-1: 4 of 6 devices drifted, more than half; repaired nothing"
+        console, _ = _capture()
+        HumanRenderer(console).schedule(_schedule_view(note=note))
+        assert f'active — "{note}"' in _text(console)
+
     def test_a_completed_report_run_shows_its_summary(self) -> None:
         console, _ = _capture()
         view = _schedule_view(runs=[_run("drift-response-dcfabric-1", "completed", _summary())])
