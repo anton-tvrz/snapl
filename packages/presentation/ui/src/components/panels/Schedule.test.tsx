@@ -36,6 +36,15 @@ describe("Schedule", () => {
     expect(container).not.toHaveTextContent("Next run");
   });
 
+  it("gives the note on an active schedule, such as why it stood down to report", () => {
+    // A stand-down leaves the schedule active, with why on its note (#389).
+    const { container } = show({ schedule: { ...status.schedule!, mode: "report", note: "stood down: drift-response-dcfabric-1: 4 of 6 devices drifted, more than half; repaired nothing" } });
+
+    expect(container).toHaveTextContent("Report every 5 min · active");
+    expect(container).toHaveTextContent("stood down: drift-response-dcfabric-1: 4 of 6 devices drifted, more than half; repaired nothing");
+    expect(container).not.toHaveTextContent("Paused");
+  });
+
   it("gives the command that creates a schedule when there is none", () => {
     show({ exists: false, schedule: null, suggested_command: "snapl schedule create --use-case dcfabric" });
 

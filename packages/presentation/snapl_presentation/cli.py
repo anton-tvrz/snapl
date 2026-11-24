@@ -681,7 +681,10 @@ def _schedule_status_row(view: Any, use_case: str) -> tuple[str, bool, str]:
 
     if view is None:
         return ("drift schedule", True, "none — snapl schedule create")
-    state = f'paused — "{view.note}"' if view.paused and view.note else ("paused" if view.paused else "active")
+    # The note shows whether paused or not: a stand-down leaves the schedule active (#389).
+    state = "paused" if view.paused else "active"
+    if view.note:
+        state = f'{state} — "{view.note}"'
     return ("drift schedule", True, f"{use_case}: every {format_interval(view.interval)}, {view.mode.value}, {state}")
 
 

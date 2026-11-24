@@ -293,9 +293,11 @@ class HumanRenderer(Renderer):
         mode = view.mode.value
         # Remediate means unattended writes; it should never read as routine.
         response = f"[yellow]{mode}[/]" if mode == "remediate" else mode
-        state = (
-            f'paused — "{_esc(view.note)}"' if view.paused and view.note else ("paused" if view.paused else "active")
-        )
+        # The note shows whether paused or not: a stand-down leaves the schedule
+        # active, with why on its note (#389).
+        state = "paused" if view.paused else "active"
+        if view.note:
+            state = f'{state} — "{_esc(view.note)}"'
         rows = [
             ("drift schedule", _esc(view.schedule_id)),
             ("use case", _esc(view.use_case_id)),

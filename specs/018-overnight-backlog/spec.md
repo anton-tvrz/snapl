@@ -110,7 +110,7 @@ None new.
 
 - **SC-001**: On the lab, the live page at 1280 px wide is at most 3062 px (spec 014 SC-002), or SC-002 is amended with the new measure and the maintainer's reason. *Met on 2026-11-24 by amendment: 3661 px, and spec 014 SC-002 now reads at most 4000 px.*
 - **SC-002**: Snapshots of 7 and 30 days from the 2026-11-20 archive are each under 3 MB, and open in Chromium from disk in the e2e snapshot test.
-- **SC-003**: On the lab, a remediate schedule given an intent edit that drifts the whole fabric repairs nothing, and the schedule shows `report` with the guard's note.
+- **SC-003**: On the lab, a remediate schedule given an intent edit that drifts the whole fabric repairs nothing, and the schedule shows `report` with the guard's note. *Met on 2026-11-24 (T013), with the drift made on four devices rather than by an intent edit; showing the note on an active schedule needed #389.*
 - **SC-004**: `uv run invoke test-unit`, `mypy packages/`, `bandit` and the UI's tests pass after every slice.
 
 ## Assumptions
