@@ -2,7 +2,7 @@
 
 **Feature Branch**: drafted on `ccr-a14a9b05-ogrz9i`; give it its own branch (`013-remove-undesired-config`) when it moves to a PR
 **Created**: 2026-11-15
-**Status**: Draft, clarified 2026-11-15. The plan waits for live captures C1 to C5.
+**Status**: Draft, clarified 2026-11-15. Live captures C1 to C5 run on 2026-11-24 (`captures.md`); ready for the plan.
 **Input**: Issue #65: "apply is merge-only gNMI update at '/' — config removed from intent never leaves the device". Spec 007's deferred User Story 3 ("Converge by removal").
 
 ## Context
@@ -80,7 +80,7 @@ Every removal shows in `snapl audit`, the dashboard's run list and the device's 
 ### Edge Cases
 
 - **The protected set.** `mgmt0` and `system0` are never planned for removal, whatever the scan says, and the preview says so. The list is the one spec 007 defined next to the entity field map, not a copy.
-- **An undesired port that only carries `enabled: true`.** A leaf-level delete of the listed fields would leave `enabled`, and the port would still read as undesired, so the delete targets the interface entry. Whether deleting the entry returns the port to the unconfigured state the scan ignores (disabled, no config) is capture C2. If SR Linux leaves defaults behind that the diff reads as config, this edge case needs another answer before User Story 2 can pass. See Q2.
+- **An undesired port that only carries `enabled: true`.** A leaf-level delete of the listed fields would leave `enabled`, and the port would still read as undesired, so the delete targets the interface entry. Whether deleting the entry returns the port to the unconfigured state the scan ignores (disabled, no config) is capture C2. If SR Linux leaves defaults behind that the diff reads as config, this edge case needs another answer before User Story 2 can pass. See Q2. *C2 (2026-11-24): it does not. A deleted entry is absent from config, its state reads only `admin-state disable`, and the next scan is clean.*
 - **An extra address on an intent-managed interface (#193).** The interface is wanted; only the address is not. The delete targets the address under its subinterface, never the interface.
 - **A neighbour outside intent that is the BGP session the operator is logged in over.** The management session uses `mgmt0`, not BGP, so removing a BGP neighbour cannot cut snapl off. A neighbour removal can still drop traffic; the preview says that removing a neighbour tears its session down.
 - **The device is unreachable at confirmation time.** Nothing is removed; the error says which dial failed (#194).
@@ -127,8 +127,8 @@ Every removal shows in `snapl audit`, the dashboard's run list and the device's 
 ## Assumptions
 
 - Spec 007's detection is correct for the entities it reports. A removal is only as safe as the undesired items it is built from; the protected set and value-bearing-field rules carry over unchanged.
-- The deletes go in one gNMI Set request with only `delete` entries. SR Linux applies a Set as one transaction. To be confirmed live (plan, capture C1).
-- Deleting an interface entry returns the port to the state the scan already ignores (disabled, no config). To be confirmed live (capture C2), because if SR Linux leaves defaults behind the next scan would report them.
+- The deletes go in one gNMI Set request with only `delete` entries. SR Linux applies a Set as one transaction. *Confirmed by C1 (2026-11-24): a Set with one rejected delete changes nothing, and the order of deletes inside a Set does not matter.*
+- Deleting an interface entry returns the port to the state the scan already ignores (disabled, no config). *Confirmed by C2 (2026-11-24).*
 - `dry_run()` in the Executor ABC grows a removal counterpart, or the plan is computed outside the Executor and only the Set is the Executor's. The plan decides; the constitution only requires that a dry run precedes the write.
 - Single vendor. Delete paths are vendor-specific and live in the vendor seams (the drift field map or the gNMI executor), never in workflows.
 
@@ -142,7 +142,7 @@ Every removal shows in `snapl audit`, the dashboard's run list and the device's 
 
 ## Questions for planning (research, not decisions)
 
-These need the lab and belong in `research.md`. They do not block the spec.
+These need the lab and belong in `research.md`. They do not block the spec. *All five were answered on the lab on 2026-11-24; see `captures.md`, which also raises two questions for the plan (the `routed_interface` binding, and leftovers the scan does not see).*
 
 - **C1**: Does one SR Linux Set with several `delete` paths apply atomically, and what does a partial rejection return?
 - **C2**: What does `/interface[name=ethernet-1/7]` look like in a gNMI GET after a delete of its entry: absent, or present with defaults the diff would read as config?
