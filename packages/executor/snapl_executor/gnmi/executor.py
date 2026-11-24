@@ -12,7 +12,7 @@ from pygnmi.client import gNMIclient
 from snapl_executor.abc import Executor
 from snapl_executor.exceptions import ExecutorConfigError
 from snapl_executor.gnmi.renderer import ConfigRenderer
-from snapl_executor.models import ApplyResult, BatchResult, DryRunResult
+from snapl_executor.models import ApplyResult, BatchResult, DryRunResult, RemoveResult
 
 if TYPE_CHECKING:
     from collections.abc import Collection
@@ -75,6 +75,21 @@ def check_delete_paths(paths: list[str], protected: Collection[str] | None) -> d
     return refused
 
 
+def _check_path_list(paths: list[str]) -> None:
+    if not paths:
+        raise ValueError("paths is empty")
+    if len(set(paths)) != len(paths):
+        raise ValueError("paths holds a duplicate")
+
+
+def _refusal_summary(refused: dict[str, str]) -> str | None:
+    """``refused N of the paths: <path> (<reason>); …``, or None when nothing was refused."""
+    if not refused:
+        return None
+    listed = "; ".join(f"{path} ({reason})" for path, reason in refused.items())
+    return f"refused {len(refused)} path{'s' if len(refused) != 1 else ''}: {listed}"
+
+
 # How many devices one batch dials at once (#55). Each apply holds a gRPC
 # connection and a thread, so an uncapped batch over a large fabric would open
 # one of each per device.
@@ -107,6 +122,7 @@ class GnmiExecutor(Executor):
         insecure: bool = True,
         timeout: int = 30,
         max_concurrency: int = DEFAULT_MAX_CONCURRENCY,
+        protected_interfaces: Collection[str] | None = None,
     ) -> None:
         if not password:
             raise ExecutorConfigError("password is required")
@@ -119,6 +135,9 @@ class GnmiExecutor(Executor):
         self._password = password
         self._insecure = insecure
         self._timeout = timeout
+        # The drift field map's protected interfaces, which the worker bootstrap
+        # passes in (spec 013 research R5). Without them, removal refuses every path.
+        self._protected = tuple(protected_interfaces) if protected_interfaces is not None else None
         # SR Linux rejects concurrent exclusive config sessions, so gNMI
         # sets are serialized per dial host.
         self._set_locks: dict[str, asyncio.Lock] = {}
@@ -192,6 +211,21 @@ class GnmiExecutor(Executor):
             total=len(results_list),
             succeeded=succeeded,
             failed=failed,
+        )
+
+    # ------------------------------------------------------------------ removal (spec 013)
+
+    async def dry_run_remove(self, device: Device, paths: list[str]) -> RemoveResult:
+        _check_path_list(paths)
+        refused = check_delete_paths(paths, self._protected)
+        return RemoveResult(
+            device_id=device.id,
+            device_name=device.name,
+            success=not refused,
+            paths=list(paths),
+            dry_run=True,
+            refused=refused,
+            error=_refusal_summary(refused),
         )
 
     # ------------------------------------------------------------------ internals

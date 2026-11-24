@@ -599,3 +599,34 @@ class TestEvaluateHealth:
             expectation, HealthObservation(last_sample_at=None), now=datetime(2026, 11, 19, tzinfo=UTC), interval_s=10
         )
         assert observer.audit_log.all() == []
+
+
+class TestPlanRemoval:
+    """Spec 013 T013: the observer's plan is the structural planner's."""
+
+    def test_delegates_to_the_structural_planner(self):
+        from snapl_observability.structural.observer import StructuralObserver
+        from snapl_observability.structural.removal import plan_removal
+        from tests.unit.test_observability.removal_reports import reports
+
+        source = reports()["diffed"]
+        plan = StructuralObserver().plan_removal(source)
+        assert plan == plan_removal(source)
+        assert not plan.is_empty
+
+    def test_an_error_report_raises(self):
+        from datetime import UTC, datetime
+
+        from snapl_observability.models import DriftReport, DriftStatus
+        from snapl_observability.structural.observer import StructuralObserver
+
+        errored = DriftReport(
+            device_id=uuid4(),
+            device_name="leaf-04",
+            status=DriftStatus.ERROR,
+            items=[],
+            error="unreachable",
+            timestamp=datetime.now(tz=UTC),
+        )
+        with pytest.raises(ValueError, match="error"):
+            StructuralObserver().plan_removal(errored)

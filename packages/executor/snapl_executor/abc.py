@@ -17,8 +17,8 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from snapl_executor.models import ApplyResult, BatchResult, DryRunResult
-    from snapl_intent.models import DesiredState
+    from snapl_executor.models import ApplyResult, BatchResult, DryRunResult, RemoveResult
+    from snapl_intent.models import DesiredState, Device
 
 
 class Executor(ABC):
@@ -73,4 +73,17 @@ class Executor(ABC):
 
         Raises:
             ValueError: states is empty or contains duplicate device IDs.
+        """
+
+    # ---- Removal (spec 013) -------------------------------------------------
+
+    @abstractmethod
+    async def dry_run_remove(self, device: Device, paths: list[str]) -> RemoveResult:
+        """Check deletes against the executor's guard without connecting.
+
+        The dry run that precedes every removal (constitution VIII.4, VIII.5).
+        A refused path makes success=False with ``refused`` naming it.
+
+        Raises:
+            ValueError: paths is empty or holds a duplicate (programming error).
         """

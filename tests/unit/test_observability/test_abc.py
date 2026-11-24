@@ -97,6 +97,9 @@ class TestObserverABC:
             def evaluate_health(self, expectation, observation, *, now, interval_s):
                 return None
 
+            def plan_removal(self, report):
+                return None
+
         Complete()  # no exception
 
     def test_missing_evaluate_health_raises(self):
@@ -129,3 +132,37 @@ class TestObserverABC:
         assert params["now"].kind is inspect.Parameter.KEYWORD_ONLY
         assert params["interval_s"].kind is inspect.Parameter.KEYWORD_ONLY
         assert not inspect.iscoroutinefunction(Observer.evaluate_health)
+
+
+class TestPlanRemovalContract:
+    """Spec 013 T013: every observer plans removals, synchronously."""
+
+    def test_missing_plan_removal_raises(self):
+        from snapl_observability.abc import Observer
+
+        class Incomplete(Observer):
+            async def detect_drift(self, desired, actual):
+                return None
+
+            async def detect_drift_batch(self, pairs):
+                return None
+
+            async def emit_event(self, report):
+                return None
+
+            async def log_audit(self, entry):
+                return None
+
+            def evaluate_health(self, expectation, observation, *, now, interval_s):
+                return None
+
+        with pytest.raises(TypeError, match="plan_removal"):
+            Incomplete()
+
+    def test_plan_removal_signature(self):
+        import inspect
+
+        from snapl_observability.abc import Observer
+
+        assert list(inspect.signature(Observer.plan_removal).parameters) == ["self", "report"]
+        assert not inspect.iscoroutinefunction(Observer.plan_removal)

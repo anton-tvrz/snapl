@@ -10,8 +10,10 @@ drops colour and animation, which satisfies FR-013 without a flag.
 
 from __future__ import annotations
 
+import functools
 import json
 from dataclasses import dataclass
+from datetime import UTC
 from typing import TYPE_CHECKING, Any
 
 from rich.console import Console
@@ -24,6 +26,7 @@ from snapl_presentation.exit_codes import ExitCode
 if TYPE_CHECKING:
     from datetime import datetime, timedelta
 
+    from snapl_observability.models import RemovalPlan
     from snapl_orchestrator.models import (
         AuditEvent,
         DriftScanResult,
@@ -147,6 +150,21 @@ def _audit_outcome(event: AuditEvent) -> str:
     return event.outcome or ""
 
 
+_REFUSAL_TEXT = {
+    "protected": "protected",
+    "not_removable": "not removable in this version",
+}
+
+
+def _plural(count: int, word: str) -> str:
+    return f"{count} {word}{'' if count == 1 else 's'}"
+
+
+def _relative(path: str, entity: str) -> str:
+    """``…/description`` for a drift path under ``entity``; the whole path otherwise."""
+    return f"…{path[len(entity) :]}" if path.startswith(f"{entity}/") else path
+
+
 def _dump(model: Any) -> Any:
     """JSON-ready form of a pydantic model, with enums and UUIDs stringified."""
     return json.loads(model.model_dump_json())
@@ -181,6 +199,11 @@ class Renderer:
         return ExitCode.DRIFT if result.drifted else ExitCode.OK
 
     @staticmethod
+    def removal_plan_code(plan: RemovalPlan) -> ExitCode:
+        # Something to remove is drift found (spec 006 FR-011); refusals alone are not.
+        return ExitCode.OK if plan.is_empty else ExitCode.DRIFT
+
+    @staticmethod
     def reconcile_code(result: ReconcileResult) -> ExitCode:
         # Skips are not failures — a device already being deployed, or absent
         # from the SoT, is a reported outcome, not a broken run (#66/#35).
@@ -206,6 +229,9 @@ class Renderer:
         raise NotImplementedError
 
     def schedule(self, view: DriftScheduleView) -> None:
+        raise NotImplementedError
+
+    def removal_plan(self, plan: RemovalPlan) -> None:
         raise NotImplementedError
 
 
@@ -318,6 +344,37 @@ class HumanRenderer(Renderer):
             self._console.print(f"{'recent runs':<17} none yet")
         self._console.print(f"{'skipped (overlap)':<17} {view.skipped_overlap}")
 
+    def removal_plan(self, plan: RemovalPlan) -> None:
+        """The preview: each delete and what it answers, the refusals, and what reconcile heals instead.
+
+        Paths print whole, never wrapped: an operator may copy one to act on by hand.
+        """
+        out = functools.partial(self._console.print, soft_wrap=True)
+        device = _esc(plan.device_name)
+        if plan.is_empty:
+            out(f"{device}: nothing to remove")
+        else:
+            at = plan.scanned_at.astimezone(UTC).strftime("%H:%M:%SZ")
+            out(f"{device}: {_plural(len(plan.deletes), 'delete')} planned from a scan at {at}\n")
+            for delete in plan.deletes:
+                out(f"  delete {_esc(delete.path)}")
+                if delete.answers != [delete.path]:
+                    answers = ", ".join(_relative(path, delete.path) for path in delete.answers)
+                    out(f"         answers {_esc(answers)}")
+                if delete.entity_kind == "bgp_session":
+                    out("         removing a neighbour tears its session down; its peer group stays configured")
+        if plan.refused:
+            out("")
+            for refusal in plan.refused:
+                reason = _REFUSAL_TEXT.get(refusal.reason.value, refusal.reason.value)
+                out(f"  refused {_esc(refusal.entity_path)} — {reason}")
+        if plan.forward_drift:
+            count = len(plan.forward_drift)
+            verb = "is missing or differs" if count == 1 else "are missing or differ"
+            out(f"\n  {_plural(count, 'path')} {verb} from intent: snapl reconcile {device} heals those, not this.")
+        if not plan.is_empty:
+            out(f"\nNothing was written. To remove: snapl remove {device} --apply")
+
 
 class JsonRenderer(Renderer):
     """Machine output. Only JSON reaches stdout (FR-010)."""
@@ -355,6 +412,9 @@ class JsonRenderer(Renderer):
 
     def schedule(self, view: DriftScheduleView) -> None:
         self._emit(view.model_dump(mode="json"))
+
+    def removal_plan(self, plan: RemovalPlan) -> None:
+        self._emit({"plan": _dump(plan)})
 
 
 def build_renderer(*, as_json: bool, console: Console | None = None) -> Renderer:

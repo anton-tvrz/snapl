@@ -95,3 +95,64 @@ class TestProtected:
         refused = _check(_ACCEPTED, protected=None)
         assert set(refused) == set(_ACCEPTED)
         assert set(refused.values()) == {"no protected set configured"}
+
+
+# ---------------------------------------------------------------------------
+# dry_run_remove (T014)
+# ---------------------------------------------------------------------------
+
+_PORT = "/interface[name=ethernet-1/7]"
+_NEIGHBOR = "/network-instance[name=default]/protocols/bgp/neighbor[peer-address=192.0.2.0]"
+
+
+def _executor(**kwargs):
+    from snapl_executor.gnmi.executor import GnmiExecutor
+
+    return GnmiExecutor(password="test", **kwargs)  # pragma: allowlist secret
+
+
+@pytest.fixture
+def no_dial():
+    """pygnmi's client, patched to fail the test if anything constructs it."""
+    from unittest.mock import patch
+
+    with patch("snapl_executor.gnmi.executor.gNMIclient", side_effect=AssertionError("dialled")) as client:
+        yield client
+
+
+class TestDryRunRemove:
+    async def test_allowed_paths_pass_without_dialling(self, make_device, no_dial):
+        device = make_device("leaf-04")
+        result = await _executor(protected_interfaces=_PROTECTED).dry_run_remove(device, [_PORT, _NEIGHBOR])
+
+        assert result.success is True
+        assert result.dry_run is True
+        assert result.paths == [_PORT, _NEIGHBOR]
+        assert result.refused == {}
+        assert result.device_response is None
+        assert result.device_id == device.id
+        assert result.device_name == "leaf-04"
+        no_dial.assert_not_called()
+
+    async def test_a_refused_path_fails_the_dry_run(self, make_device, no_dial):
+        protected = "/interface[name=mgmt0]"
+        result = await _executor(protected_interfaces=_PROTECTED).dry_run_remove(
+            make_device("leaf-04"), [_PORT, protected]
+        )
+
+        assert result.success is False
+        assert result.refused == {protected: "protected"}
+        assert protected in result.error
+        no_dial.assert_not_called()
+
+    async def test_without_a_protected_set_every_path_is_refused(self, make_device, no_dial):
+        result = await _executor().dry_run_remove(make_device("leaf-04"), [_PORT, _NEIGHBOR])
+
+        assert result.success is False
+        assert set(result.refused) == {_PORT, _NEIGHBOR}
+        assert "no protected set configured" in result.error
+
+    @pytest.mark.parametrize("paths", [[], [_PORT, _PORT]], ids=["empty", "duplicate"])
+    async def test_a_bad_path_list_is_a_programming_error(self, make_device, paths):
+        with pytest.raises(ValueError, match="paths"):
+            await _executor(protected_interfaces=_PROTECTED).dry_run_remove(make_device("leaf-04"), paths)

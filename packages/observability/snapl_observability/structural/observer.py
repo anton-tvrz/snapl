@@ -25,7 +25,9 @@ from snapl_observability.models import (
     HealthExpectation,
     HealthObservation,
     ObservabilityEvent,
+    RemovalPlan,
 )
+from snapl_observability.structural import removal
 from snapl_observability.structural.diff import diff_desired_vs_actual
 
 if TYPE_CHECKING:
@@ -170,3 +172,8 @@ class StructuralObserver(Observer):
         interval_s: int,
     ) -> DeviceHealth:
         return evaluate_health(expectation, observation, now=now, interval_s=interval_s)
+
+    # ---- Removal (spec 013) -------------------------------------------------
+
+    def plan_removal(self, report: DriftReport) -> RemovalPlan:
+        return removal.plan_removal(report)

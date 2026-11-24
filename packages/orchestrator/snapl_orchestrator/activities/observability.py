@@ -1,4 +1,4 @@
-"""Observability activity — wraps snapl_observability.Observer.detect_drift()."""
+"""Observability activities — wrap snapl_observability.Observer.detect_drift() and plan_removal()."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from temporalio import activity
 
 from snapl_collector.models import CollectResult
 from snapl_intent.models import DesiredState
-from snapl_observability.models import DriftReport
+from snapl_observability.models import DriftReport, RemovalPlan
 from snapl_orchestrator.activities import get_activities
 from snapl_orchestrator.adapters.srlinux import normalize_srlinux_state
 from snapl_orchestrator.metrics import record_drift_paths, record_scan_result
@@ -41,6 +41,16 @@ async def detect_drift(desired: DesiredState, collected: CollectResult) -> Drift
         record_drift_paths(desired.device, report)
     await activities.observer.emit_event(report)
     return report
+
+
+@activity.defn(name="plan_removal")
+async def plan_removal(report: DriftReport) -> RemovalPlan:
+    """The deletes that would remove ``report``'s undesired config (spec 013).
+
+    Pure and synchronous in the Observer; an activity only so the workflow can
+    reach it without importing the drift field map (research R1).
+    """
+    return get_activities().observer.plan_removal(report)
 
 
 _SCAN_WORKFLOW_TYPE = "ScanDrift"

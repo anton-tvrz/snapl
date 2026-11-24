@@ -57,6 +57,22 @@ class TestBuildExecutor:
         with pytest.raises(OrchestratorConfigError, match="SRLINUX_PASSWORD"):
             _build_executor()
 
+    def test_gets_the_field_maps_protected_interfaces(self, monkeypatch):
+        """Spec 013 research R5: one protected list, handed over here and nowhere else."""
+        from snapl_observability.structural.diff import ENTITY_FIELD_MAP
+
+        monkeypatch.setenv("SRLINUX_PASSWORD", "pw")
+        executor = _build_executor()
+        assert executor._protected == tuple(ENTITY_FIELD_MAP["interface"]["protected"])
+
+    async def test_refuses_every_protected_interface(self, monkeypatch, make_device):
+        from snapl_observability.structural.diff import ENTITY_FIELD_MAP
+
+        monkeypatch.setenv("SRLINUX_PASSWORD", "pw")
+        paths = [f"/interface[name={name}]" for name in ENTITY_FIELD_MAP["interface"]["protected"]]
+        result = await _build_executor().dry_run_remove(make_device("leaf-04"), paths)
+        assert result.refused == dict.fromkeys(paths, "protected")
+
 
 class TestBuildCollector:
     def test_has_no_fixed_host(self, monkeypatch):
@@ -214,11 +230,36 @@ class TestWorkerRegistration:
         await run_mod.run_worker(activities=MagicMock())
 
         assert DriftResponseWorkflow in captured["workflows"]
-        # The six block activities and the schedule stand-down (#136).
-        assert len(captured["activities"]) == 7
+        # The six block activities, the schedule stand-down (#136) and the removal preview's two (spec 013).
+        assert len(captured["activities"]) == 9
         assert "stand_down_schedule" in {a.__name__ for a in captured["activities"]}
         client.create_schedule.assert_not_called()
         client.get_schedule_handle.assert_not_called()
+
+    async def test_registers_the_removal_preview(self, monkeypatch):
+        """Spec 013 T017: PlanRemoval and its two activities."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        import snapl_orchestrator.worker.run as run_mod
+        from snapl_orchestrator.workflows.removal import PlanRemovalWorkflow
+
+        monkeypatch.setenv("WORKER_METRICS_PORT", "off")
+        monkeypatch.setattr(run_mod.Client, "connect", AsyncMock(return_value=MagicMock()))
+        captured: dict = {}
+
+        class _FakeWorker:
+            def __init__(self, _client, **kwargs):
+                captured.update(kwargs)
+
+            async def run(self):
+                return None
+
+        monkeypatch.setattr(run_mod, "Worker", _FakeWorker)
+
+        await run_mod.run_worker(activities=MagicMock())
+
+        assert PlanRemovalWorkflow in captured["workflows"]
+        assert {"plan_removal", "dry_run_remove"} <= {a.__name__ for a in captured["activities"]}
 
 
 class TestWorkerMetrics:
