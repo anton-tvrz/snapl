@@ -7,6 +7,21 @@
 
 **Organization**: Tasks are grouped by the spec's user stories: US1 preview (P1), US2 remove (P1), US3 the record (P2). Each story is one implementation PR, and each closes with its live check from quickstart.md.
 
+**PR slicing** (each slice is one PR, in this order; each builds on the one before). Foundational and US1 shipped in #399.
+- **PR A**: Phase 4, US2 (T027 to T038), the confirmed removal
+- **PR B**: Phase 5, US3 (T040 to T052), the record and the dashboard
+- **PR C**: Phase 6 (T054 to T057), docs and the final gate
+
+**Issues**: each slice's issue already exists, so don't create a new one. Every PR `Refs #65`. #65 stays open until US2's live check (T039) has run on the lab, so no overnight PR closes it.
+
+| PR | Issue line | Changelog |
+| --- | --- | --- |
+| A | `Closes #400` | `changelog/400.added.md` |
+| B | `Closes #401` | `changelog/401.added.md` |
+| C | `Closes #402` | `skip-changelog` label |
+
+**The lab**: T039, T053 and T058 are **Needs the lab**. An unattended run never writes to a lab device, so it leaves them unticked and lists them under "Deferred to the lab". US2's code runs only when an operator types `snapl remove --apply`, so it can merge before its live check.
+
 ## Format: `[ID] [P?] [Story] Description`
 
 - **[P]**: Can run in parallel (different files, no dependencies on incomplete tasks)
@@ -171,7 +186,7 @@ No setup. There is no new package, dependency or directory: pygnmi's `set(delete
 - [ ] T036 [US2] Add `RemoveConfigWorkflow` to packages/orchestrator/snapl_orchestrator/workflows/removal.py. It follows the state diagram in data-model.md and the verification in research R9 (T029, T030)
 - [ ] T037 [US2] Register the workflow and activities in packages/orchestrator/snapl_orchestrator/worker/run.py (T031)
 - [ ] T038 [US2] Add `--apply` and `--yes`, the TTY check and the result view to `remove` in packages/presentation/snapl_presentation/cli.py and packages/presentation/snapl_presentation/render.py (T032, T033)
-- [ ] T039 [US2] Live check on leaf-04: quickstart steps 3 (SC-004), 4 (SC-001) and 6 (a port and its binding in one Set). Record them in specs/013-remove-undesired-config/evidence.md. Add the captured `remove` response and rejection text as fixtures under tests/unit/test_executor/fixtures/ (new directory) and use them in T027's tests (constitution III). Leave leaf-04 clean, with the schedule resumed.
+- [ ] T039 [US2] **Needs the lab.** Live check on leaf-04: quickstart steps 3 (SC-004), 4 (SC-001) and 6 (a port and its binding in one Set). Record them in specs/013-remove-undesired-config/evidence.md. Add the captured `remove` response and rejection text as fixtures under tests/unit/test_executor/fixtures/ (new directory) and use them in T027's tests (constitution III). Leave leaf-04 clean, with the schedule resumed.
 
 **Checkpoint**: #65's capability exists: undesired config can be removed, operator-confirmed, dry-run first, in one atomic Set, and verified. Scheduled runs still never remove.
 
@@ -212,7 +227,7 @@ No setup. There is no new package, dependency or directory: pygnmi's `set(delete
 - [ ] T050 [US3] Add `RunView.removal` to dashboard/models.py and fill it in `project_runs` from the run's start and terminal events (T044)
 - [ ] T051 [US3] Regenerate tests/unit/test_presentation/fixtures/openapi_v1.json and packages/presentation/ui/src/api/schema.d.ts. Add the label to packages/presentation/ui/src/lib/episodes.ts and Lanes.tsx; the command and the latest preview to panels/Undesired.tsx and DeviceDrawer.tsx; the removal detail to panels/Runs.tsx; and all of them to packages/presentation/snapl_presentation/dashboard/static/index.html. Rebuild with `uv run invoke dashboard.build` (T046)
 - [ ] T052 [US3] Render the page from fixtures with `e2e/look.mjs` and check the new views keep the look rules (dev/skills/dashboard/SKILL.md, "Look")
-- [ ] T053 [US3] Live check: quickstart step 5 on leaf-04, recorded in specs/013-remove-undesired-config/evidence.md with screenshots of the closed episode, the removal's run detail and leaf-04's drawer
+- [ ] T053 [US3] **Needs the lab.** Live check: quickstart step 5 on leaf-04, recorded in specs/013-remove-undesired-config/evidence.md with screenshots of the closed episode, the removal's run detail and leaf-04's drawer
 
 **Checkpoint**: every removal is accounted for in the CLI and on both dashboard pages, and the dashboard offers no way to start one.
 
@@ -225,9 +240,9 @@ No setup. There is no new package, dependency or directory: pygnmi's `set(delete
   - removal is operator-only and never scheduled;
   - routing policies are detected, not removed (research R3);
   - an empty peer group and a subinterface's `ipv4 admin-state` remain after a removal (research R4).
-- [ ] T056 [P] Add changelog/65.added.md in the PR that closes #65 (the US2 PR), and a `Recent Changes` entry for 013 in CLAUDE.md, written by hand: `update-agent-context.sh` deletes older entries (see PR #395)
+- [ ] T056 [P] Add a `Recent Changes` entry for 013 in CLAUDE.md (each slice's changelog is in the PR slicing table), written by hand: `update-agent-context.sh` deletes older entries (see PR #395)
 - [ ] T057 Check that the new modules have at least 80% coverage, that `test_vendor_seams.py` covers workflows/removal.py unchanged, and that `uv run invoke lint`, `uv run invoke format` and `uv run invoke test-unit` pass
-- [ ] T058 Mark spec.md's status shipped and its success criteria met, each with a pointer to evidence.md
+- [ ] T058 **Needs the lab** (after T039 and T053). Mark spec.md's status shipped and its success criteria met, each with a pointer to evidence.md
 
 ---
 
@@ -237,7 +252,7 @@ No setup. There is no new package, dependency or directory: pygnmi's `set(delete
 - US2 depends on US1: `RemoveConfig` reuses the scan helper and the dry run, and `--apply` previews first.
 - US3 needs US2's `RemoveConfig` runs to exist in the trail. Its projection tests use hand-built events, so they can be written as early as Phase 2, but they ship after US2.
 - Within each phase, every test task comes before the implementation task that satisfies it (the T-numbers in brackets).
-- **Merge order**: one PR per story (US1, US2, US3), each with its live check in the body. #65 closes with the US2 PR.
+- **Merge order**: one PR per story (US1, US2, US3), then the docs. US1's PR carries its live check. US2's and US3's live checks run on the lab after their PRs merge, and are recorded in evidence.md; #65 closes once US2's has passed.
 
 ## Parallel Opportunities
 
