@@ -37,8 +37,11 @@ Single vendor: Nokia SR Linux. Vendor-specific code is confined to a few named p
 
 ## Known limitations
 
-- **Removal is not implemented (#65).** Apply is a merge, so config deleted from intent stays on the device. snapl *detects* that undesired config and reports it, but does not remove it. Convergence is true for additions and changes.
-- **Self-healing is opt-in, per use case.** `demo.up` creates a report-only drift schedule (every 5 minutes); scheduled repairs happen only after `snapl schedule mode remediate`. A scheduled repair never removes config (#65). If a repair fails on any device, the run switches its schedule back to report, with the reason in the schedule's note and the audit trail; scans keep running. There is no guard against many devices drifting at once (#136).
+- **Removal is operator-only (spec 013).** Apply is a merge, so a deploy or a reconcile never deletes. A scan reports config that intent doesn't hold; `snapl remove <device>` previews deleting it, and `--apply` deletes it in one gNMI Set after the operator confirms, then scans again to verify. No schedule removes config, in any mode. Its live run on the lab is pending (#65). Within that:
+  - Only whole entities go: interfaces, their default network-instance bindings, BGP neighbours, and extra IPv4 addresses on interfaces intent manages. A field removed from intent on an entity intent still manages (a description, say) stays on the device.
+  - Routing policies are detected but never removed: the preview lists them as refused (#317).
+  - Two leftovers the scan doesn't see stay after a removal: a peer group whose last neighbour was removed, and `ipv4 admin-state enable` on a subinterface whose extra address was removed. Neither carries traffic.
+- **Self-healing is opt-in, per use case.** `demo.up` creates a report-only drift schedule (every 5 minutes); scheduled repairs happen only after `snapl schedule mode remediate`. A scheduled repair never removes config. If a repair fails on any device, the run switches its schedule back to report, with the reason in the schedule's note and the audit trail; scans keep running. There is no guard against many devices drifting at once (#136).
 - **A local, read-only dashboard, with no authentication.** `snapl dashboard` serves on 127.0.0.1 (specs 010 to 015). Some limits of what it shows:
   - The loop strip shows steps the audit trail recorded as finished. It never shows a step in progress. A scan records its steps since spec 015, and a drift response shows its scan's; a reconcile records none one by one, and nor does a scan recorded before spec 015.
   - At a past time, the drawing shows today's devices and links, because the Source of Truth keeps no history. Only their states are from the past.
