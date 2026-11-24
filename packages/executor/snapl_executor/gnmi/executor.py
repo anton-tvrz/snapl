@@ -228,6 +228,45 @@ class GnmiExecutor(Executor):
             error=_refusal_summary(refused),
         )
 
+    async def remove(self, device: Device, paths: list[str]) -> RemoveResult:
+        _check_path_list(paths)
+        refused = check_delete_paths(paths, self._protected)
+        if refused:
+            return RemoveResult(
+                device_id=device.id,
+                device_name=device.name,
+                success=False,
+                paths=list(paths),
+                dry_run=False,
+                refused=refused,
+                error=_refusal_summary(refused),
+            )
+        start = time.monotonic()
+        host: str | None = None
+        try:
+            host = self._dial_host(device)
+            async with self._set_locks.setdefault(host, asyncio.Lock()):
+                response = await asyncio.to_thread(self._blocking_delete, host, list(paths))
+        except Exception as exc:
+            return RemoveResult(
+                device_id=device.id,
+                device_name=device.name,
+                success=False,
+                paths=list(paths),
+                dry_run=False,
+                error=self._error_reason(exc, host),
+                duration_ms=int((time.monotonic() - start) * 1000),
+            )
+        return RemoveResult(
+            device_id=device.id,
+            device_name=device.name,
+            success=True,
+            paths=list(paths),
+            dry_run=False,
+            device_response=str(response),
+            duration_ms=int((time.monotonic() - start) * 1000),
+        )
+
     # ------------------------------------------------------------------ internals
 
     async def _deploy(self, desired: DesiredState, *, is_rollback: bool) -> ApplyResult:
@@ -294,3 +333,14 @@ class GnmiExecutor(Executor):
             timeout=self._timeout,
         ) as gc:
             return gc.set(update=[("/", payload)])
+
+    def _blocking_delete(self, host: str, paths: list[str]) -> Any:
+        """One Set of deletes only: SR Linux commits it whole or not at all (spec 013 C1)."""
+        with gNMIclient(
+            target=(host, self._port),
+            username=self._username,
+            password=self._password,
+            insecure=self._insecure,
+            timeout=self._timeout,
+        ) as gc:
+            return gc.set(delete=paths)

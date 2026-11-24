@@ -87,3 +87,16 @@ class Executor(ABC):
         Raises:
             ValueError: paths is empty or holds a duplicate (programming error).
         """
+
+    @abstractmethod
+    async def remove(self, device: Device, paths: list[str]) -> RemoveResult:
+        """Delete ``paths`` from the device in one gNMI Set of deletes only.
+
+        Checks the same guard as ``dry_run_remove`` first; if any path is
+        refused, nothing is sent. The device applies all of the deletes or
+        none (FR-008). A rejection is success=False with the device's reason
+        in ``error``, not an exception.
+
+        Raises:
+            ValueError: paths is empty or holds a duplicate (programming error).
+        """

@@ -97,3 +97,64 @@ async def test_dry_run_remove_delegates_to_the_executor_and_dials_nothing(dcfabr
     assert out is checked
     executor.dry_run_remove.assert_awaited_once_with(device, [_PORT])
     assert meter.samples() == []
+
+
+# ---------------------------------------------------------------------------
+# remove_config (spec 013 T028)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("success", "outcome"), [(True, "ok"), (False, "error")])
+async def test_remove_config_delegates_and_records_a_configure_call(dcfabric_desired_state, success, outcome) -> None:
+    from temporalio.testing import ActivityEnvironment
+
+    from snapl_executor.models import RemoveResult
+    from snapl_orchestrator.activities.executor import remove_config
+    from tests.unit.test_orchestrator.metric_fakes import FakeMeter
+
+    device = dcfabric_desired_state.device
+    sent = RemoveResult(
+        device_id=device.id,
+        device_name=device.name,
+        success=success,
+        paths=[_PORT],
+        dry_run=False,
+        device_response="ok" if success else None,
+        error=None if success else "[FailedPrecondition] subinterface ethernet-1/7.0 not found",
+    )
+    executor = MagicMock()
+    executor.remove = AsyncMock(return_value=sent)
+    _install(executor)
+    env = ActivityEnvironment()
+    meter = FakeMeter()
+    env.metric_meter = meter  # type: ignore[assignment]
+
+    out = await env.run(remove_config, device, [_PORT])
+
+    assert out is sent
+    executor.remove.assert_awaited_once_with(device, [_PORT])
+    [(name, _, _, attrs)] = meter.samples()
+    assert name == "snapl_gnmi_call_duration"
+    assert (attrs["operation"], attrs["outcome"]) == ("configure", outcome)
+
+
+@pytest.mark.asyncio
+async def test_remove_config_records_an_error_when_the_executor_raises(dcfabric_desired_state) -> None:
+    from temporalio.testing import ActivityEnvironment
+
+    from snapl_orchestrator.activities.executor import remove_config
+    from tests.unit.test_orchestrator.metric_fakes import FakeMeter
+
+    executor = MagicMock()
+    executor.remove = AsyncMock(side_effect=RuntimeError("boom"))
+    _install(executor)
+    env = ActivityEnvironment()
+    meter = FakeMeter()
+    env.metric_meter = meter  # type: ignore[assignment]
+
+    with pytest.raises(RuntimeError, match="boom"):
+        await env.run(remove_config, dcfabric_desired_state.device, [_PORT])
+
+    [(_, _, _, attrs)] = meter.samples()
+    assert attrs["outcome"] == "error"
