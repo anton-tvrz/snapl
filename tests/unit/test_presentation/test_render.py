@@ -433,3 +433,125 @@ class TestHealthRendering:
             [], [], health=FabricHealthSummary(healthy=[], unhealthy=[], unknown=["a"], recorded=False)
         )
         assert json.loads(console.export_text())["health"] is None
+
+
+# ---------------------------------------------------------------------------
+# The removal plan (spec 013 T019)
+# ---------------------------------------------------------------------------
+
+_PORT = "/interface[name=ethernet-1/7]"
+_NEIGHBOR = "/network-instance[name=default]/protocols/bgp/neighbor[peer-address=192.0.2.0]"
+_ADDRESS = "/interface[name=ethernet-1/49]/subinterface[index=0]/ipv4/address[ip-prefix=192.0.2.1/31]"
+_POLICY = "/routing-policy/policy[name=c-probe]"
+
+
+def _removal_plan(*, deletes=True, refused=True, forward=2):
+    from snapl_observability.models import PlannedDelete, RefusedEntity, RemovalPlan
+
+    return RemovalPlan(
+        device_id=uuid4(),
+        device_name="leaf-04",
+        scanned_at=datetime(2026, 11, 24, 14, 5, 12, tzinfo=UTC),
+        deletes=[
+            PlannedDelete(path=_ADDRESS, entity_kind="interface", answers=[_ADDRESS]),
+            PlannedDelete(path=_PORT, entity_kind="interface", answers=[f"{_PORT}/description", f"{_PORT}/enabled"]),
+            PlannedDelete(
+                path=_NEIGHBOR, entity_kind="bgp_session", answers=[f"{_NEIGHBOR}/peer_asn", f"{_NEIGHBOR}/peer_group"]
+            ),
+        ]
+        if deletes
+        else [],
+        refused=[
+            RefusedEntity(
+                entity_path="/interface[name=mgmt0]",
+                entity_kind="interface",
+                paths=["/interface[name=mgmt0]/description"],
+                reason="protected",
+            ),
+            RefusedEntity(
+                entity_path=_POLICY,
+                entity_kind="routing_policy",
+                paths=[f"{_POLICY}/default_action"],
+                reason="not_removable",
+            ),
+        ]
+        if refused
+        else [],
+        forward_drift=[f"/interface[name=ethernet-1/{n}]/description" for n in range(1, forward + 1)],
+    )
+
+
+class TestHumanRemovalPlan:
+    def _text(self, plan) -> str:
+        console = Console(record=True, width=80, force_terminal=False, no_color=True)
+        HumanRenderer(console).removal_plan(plan)
+        return console.export_text()
+
+    def test_heads_with_the_count_and_the_scan_time(self) -> None:
+        assert "leaf-04: 3 deletes planned from a scan at 14:05:12Z" in self._text(_removal_plan())
+
+    def test_lists_each_delete_whole_even_on_a_narrow_terminal(self) -> None:
+        text = self._text(_removal_plan())
+        for path in (_ADDRESS, _PORT, _NEIGHBOR):
+            assert f"delete {path}" in text
+
+    def test_names_what_each_delete_answers(self) -> None:
+        text = self._text(_removal_plan())
+        assert "answers …/description, …/enabled" in text
+        assert "answers …/peer_asn, …/peer_group" in text
+
+    def test_an_address_delete_answers_itself_without_saying_so(self) -> None:
+        assert text_count(self._text(_removal_plan()), "answers") == 2
+
+    def test_warns_that_a_neighbour_delete_tears_the_session_down(self) -> None:
+        text = self._text(_removal_plan())
+        assert "removing a neighbour tears its session down; its peer group stays configured" in text
+
+    def test_lists_the_refusals_with_their_reasons(self) -> None:
+        text = self._text(_removal_plan())
+        assert "refused /interface[name=mgmt0] — protected" in text
+        assert f"refused {_POLICY} — not removable in this version" in text
+
+    def test_points_forward_drift_at_reconcile(self) -> None:
+        text = self._text(_removal_plan())
+        assert "2 paths are missing or differ from intent: snapl reconcile leaf-04 heals those, not this." in text
+
+    def test_says_nothing_was_written_and_how_to_remove(self) -> None:
+        text = self._text(_removal_plan())
+        assert "Nothing was written. To remove: snapl remove leaf-04 --apply" in text
+
+    def test_nothing_to_remove(self) -> None:
+        text = self._text(_removal_plan(deletes=False, refused=False, forward=0))
+        assert "leaf-04: nothing to remove" in text
+        assert "--apply" not in text
+        assert "reconcile" not in text
+
+    def test_one_delete_is_singular(self) -> None:
+        from snapl_observability.models import PlannedDelete
+
+        plan = _removal_plan(refused=False, forward=1).model_copy(
+            update={"deletes": [PlannedDelete(path=_PORT, entity_kind="interface", answers=[f"{_PORT}/enabled"])]}
+        )
+        text = self._text(plan)
+        assert "1 delete planned" in text
+        assert "1 path is missing or differs from intent" in text
+
+
+def text_count(text: str, word: str) -> int:
+    return sum(line.strip().startswith(word) for line in text.splitlines())
+
+
+class TestJsonRemovalPlan:
+    def test_is_the_plan_under_one_key(self) -> None:
+        plan = _removal_plan()
+        console = Console(record=True, width=200, force_terminal=False)
+        JsonRenderer(console).removal_plan(plan)
+        assert json.loads(console.export_text()) == {"plan": json.loads(plan.model_dump_json())}
+
+
+class TestRemovalPlanCode:
+    def test_something_to_remove_is_drift(self) -> None:
+        assert HumanRenderer.removal_plan_code(_removal_plan()) == ExitCode.DRIFT
+
+    def test_nothing_to_remove_is_ok(self) -> None:
+        assert JsonRenderer.removal_plan_code(_removal_plan(deletes=False)) == ExitCode.OK

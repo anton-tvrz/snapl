@@ -134,3 +134,26 @@ async def test_detect_drift_emits_event_for_completed_check(dcfabric_desired_sta
 
     assert out is report
     observer.emit_event.assert_awaited_once_with(report)
+
+
+# ---------------------------------------------------------------------------
+# plan_removal (spec 013 T015)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_plan_removal_delegates_to_the_observer() -> None:
+    from snapl_observability.structural.removal import plan_removal as structural_plan
+    from snapl_orchestrator.activities.observability import plan_removal
+    from tests.unit.test_observability.removal_reports import reports
+
+    source = reports()["diffed"]
+    planned = structural_plan(source)
+    observer = MagicMock()
+    observer.plan_removal = MagicMock(return_value=planned)
+    _install(observer)
+
+    out = await plan_removal(source)
+
+    assert out is planned
+    observer.plan_removal.assert_called_once_with(source)

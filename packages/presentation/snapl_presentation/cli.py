@@ -25,6 +25,7 @@ from uuid import uuid4
 
 import typer
 from rich.console import Console
+from rich.markup import escape
 
 from snapl_observability.models import DriftStatus
 from snapl_presentation.exceptions import CliError, ConnectionCliError, first_line
@@ -76,7 +77,9 @@ def command(fn: Callable) -> Callable:
         try:
             code = asyncio.run(fn(*args, **kwargs))
         except CliError as exc:
-            _stderr.print(f"[red]error:[/] {exc.render()}")
+            # Escaped, and never hard-wrapped: a message may carry a gNMI path,
+            # whose brackets Rich would eat and which an operator may copy.
+            _stderr.print(f"[red]error:[/] {escape(exc.render())}", soft_wrap=True)
             raise typer.Exit(int(exc.code)) from None
         except KeyboardInterrupt:
             # The workflow is server-side; our exit does not stop it (FR /
@@ -175,6 +178,54 @@ async def deploy(
     renderer = build_renderer(as_json=as_json)
     renderer.deploy(result)
     return renderer.deploy_code(result)
+
+
+@app.command()
+@command
+async def remove(
+    device: Annotated[str, typer.Argument(help="Device name, as it appears in the SoT.")],
+    use_case: UseCaseOpt = DEFAULT_USE_CASE,
+    as_json: JsonOpt = False,
+) -> ExitCode:
+    """Preview removing config the device carries that intent never asked for (spec 013).
+
+    Scans the device, then lists each delete that would remove its undesired
+    config, the drift each answers, and what is refused and why. Writes nothing.
+    """
+    from temporalio.client import WorkflowFailureError  # noqa: PLC0415
+
+    from snapl_orchestrator.workflows.removal import PlanRemovalWorkflow  # noqa: PLC0415
+
+    settings = CliSettings.from_env()
+    states = await load_states(build_store(settings), settings, use_case=use_case)
+    # Only a device in intent: removing a device intent has dropped is
+    # decommissioning, a different operation.
+    device_id = resolve_device(states, device)
+
+    client = await _connect(settings)
+    await _require_worker(client, settings)
+    try:
+        plan = await client.execute_workflow(
+            PlanRemovalWorkflow.run,
+            device_id,
+            # A preview never collides with another: each is its own run.
+            id=f"plan-removal-{device_id}-{uuid4()}",
+            task_queue=settings.task_queue,
+        )
+    except WorkflowFailureError as exc:
+        raise _removal_failed(device, exc) from None
+
+    renderer = build_renderer(as_json=as_json)
+    renderer.removal_plan(plan)
+    return renderer.removal_plan_code(plan)
+
+
+def _removal_failed(device: str, exc: Exception) -> CliError:
+    """One line for a removal workflow that failed: its reason, its cause, and that nothing was written."""
+    cause = getattr(exc, "cause", None)
+    detail = first_line(getattr(cause, "message", None) or str(cause or exc))
+    reason = getattr(cause, "type", None) or "failed"
+    return CliError(f"{device}: {reason.replace('_', ' ')}: {detail}. Nothing was written.")
 
 
 @app.command()

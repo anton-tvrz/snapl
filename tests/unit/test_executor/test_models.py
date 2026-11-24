@@ -79,3 +79,64 @@ class TestBatchResult:
         batch = BatchResult(results={}, total=0, succeeded=0, failed=0)
         with pytest.raises((AttributeError, TypeError)):
             batch.total = 5  # type: ignore[misc]
+
+
+class TestRemoveResult:
+    """Spec 013 data-model.md: RemoveResult's invariants (T003)."""
+
+    _PATHS = ("/interface[name=ethernet-1/7]",)
+
+    def _result(self, **overrides):
+        from snapl_executor.models import RemoveResult
+
+        fields = {
+            "device_id": _DEV_ID,
+            "device_name": "leaf-04",
+            "success": True,
+            "paths": list(self._PATHS),
+            "dry_run": False,
+            "device_response": "{'timestamp': 1}",
+            **overrides,
+        }
+        return RemoveResult(**fields)
+
+    def test_a_successful_remove(self):
+        r = self._result()
+        assert r.refused == {}
+        assert r.error is None
+        assert r.duration_ms == 0
+
+    def test_a_successful_dry_run(self):
+        r = self._result(dry_run=True, device_response=None)
+        assert r.dry_run is True
+
+    def test_success_rejects_an_error(self):
+        with pytest.raises(ValueError, match="error"):
+            self._result(error="boom")
+
+    def test_success_rejects_refusals(self):
+        with pytest.raises(ValueError, match="refused"):
+            self._result(refused={self._PATHS[0]: "protected"}, device_response=None)
+
+    def test_failure_requires_an_error(self):
+        with pytest.raises(ValueError, match="error"):
+            self._result(success=False, device_response=None)
+
+    def test_a_refusal(self):
+        r = self._result(
+            success=False,
+            dry_run=True,
+            device_response=None,
+            refused={self._PATHS[0]: "protected"},
+            error="1 path refused",
+        )
+        assert r.refused == {self._PATHS[0]: "protected"}
+
+    def test_a_dry_run_has_no_device_response(self):
+        with pytest.raises(ValueError, match="device_response"):
+            self._result(dry_run=True)
+
+    def test_immutable(self):
+        r = self._result()
+        with pytest.raises((AttributeError, TypeError)):
+            r.success = False  # type: ignore[misc]

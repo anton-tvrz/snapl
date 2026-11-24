@@ -23,6 +23,7 @@ if TYPE_CHECKING:
         HealthExpectation,
         HealthObservation,
         ObservabilityEvent,
+        RemovalPlan,
     )
 
 
@@ -101,4 +102,18 @@ class Observer(ABC):
             now: The time to judge at.
             interval_s: The sample interval; the staleness limit and the
                 debounce follow it.
+        """
+
+    # ---- Removal (spec 013) -------------------------------------------------
+
+    @abstractmethod
+    def plan_removal(self, report: DriftReport) -> RemovalPlan:
+        """The deletes that would remove a report's undesired config, and what is refused.
+
+        Pure: no I/O and no events. Forward items never produce a delete
+        (FR-003). Every undesired item ends up in exactly one PlannedDelete's
+        ``answers`` or one RefusedEntity's ``paths``.
+
+        Raises:
+            ValueError: report.status is ERROR (nothing to plan from).
         """

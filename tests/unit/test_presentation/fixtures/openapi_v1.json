@@ -4201,7 +4201,10 @@
           "audit_failed",
           "cancelled",
           "device_not_found",
-          "remediation_failed"
+          "remediation_failed",
+          "plan_changed",
+          "deploy_in_flight",
+          "remove_failed"
         ],
         "title": "WorkflowReason",
         "type": "string"

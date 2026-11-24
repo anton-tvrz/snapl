@@ -23,6 +23,10 @@ from snapl_observability.models import (
     HealthReasonKind,
     ObservabilityEvent,
     ObservedItem,
+    PlannedDelete,
+    RefusedEntity,
+    RemovalPlan,
+    RemovalRefusal,
 )
 from snapl_observability.structural.observer import StructuralObserver
 
@@ -47,5 +51,9 @@ __all__ = [
     "ObservedItem",
     "Observer",
     "ObserverError",
+    "PlannedDelete",
+    "RefusedEntity",
+    "RemovalPlan",
+    "RemovalRefusal",
     "StructuralObserver",
 ]

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import sys
 from datetime import UTC, datetime
 from uuid import UUID
@@ -499,4 +500,146 @@ class TestDeviceHealth:
             "HealthObservation",
             "DeviceHealth",
         ):
+            assert hasattr(snapl_observability, name), name
+
+
+# ---------------------------------------------------------------------------
+# Removal plan (spec 013, T001)
+# ---------------------------------------------------------------------------
+
+_PORT = "/interface[name=ethernet-1/7]"
+_NEIGHBOR = "/network-instance[name=default]/protocols/bgp/neighbor[peer-address=192.0.2.0]"
+_POLICY = "/routing-policy/policy[name=c-probe]"
+
+
+def _delete(path: str, *answers: str, kind: str = "interface"):
+    from snapl_observability.models import PlannedDelete
+
+    return PlannedDelete(path=path, entity_kind=kind, answers=list(answers) or [f"{path}/description"])
+
+
+def _refused(path: str, *paths: str, reason: str = "not_removable", kind: str = "routing_policy"):
+    from snapl_observability.models import RefusedEntity
+
+    return RefusedEntity(
+        entity_path=path, entity_kind=kind, paths=list(paths) or [f"{path}/default_action"], reason=reason
+    )
+
+
+def _plan(**overrides):
+    from snapl_observability.models import RemovalPlan
+
+    fields = {
+        "device_id": _DEVICE_ID,
+        "device_name": "leaf-04",
+        "scanned_at": _NOW,
+        "deletes": [],
+        "refused": [],
+        "forward_drift": [],
+        **overrides,
+    }
+    return RemovalPlan(**fields)
+
+
+class TestRemovalRefusal:
+    def test_values(self):
+        from snapl_observability.models import RemovalRefusal
+
+        assert {r.value for r in RemovalRefusal} == {"protected", "not_removable"}
+
+
+class TestPlannedDelete:
+    def test_holds_the_path_and_what_it_answers(self):
+        d = _delete(_PORT, f"{_PORT}/description", f"{_PORT}/enabled")
+        assert d.path == _PORT
+        assert d.answers == [f"{_PORT}/description", f"{_PORT}/enabled"]
+
+    def test_rejects_empty_answers(self):
+        from snapl_observability.models import PlannedDelete
+
+        with pytest.raises(ValidationError, match="answers"):
+            PlannedDelete(path=_PORT, entity_kind="interface", answers=[])
+
+
+class TestRefusedEntity:
+    def test_rejects_empty_paths(self):
+        from snapl_observability.models import RefusedEntity
+
+        with pytest.raises(ValidationError, match="paths"):
+            RefusedEntity(entity_path=_POLICY, entity_kind="routing_policy", paths=[], reason="not_removable")
+
+    def test_rejects_an_unknown_reason(self):
+        with pytest.raises(ValidationError):
+            _refused(_POLICY, reason="because")
+
+
+class TestRemovalPlan:
+    def test_an_empty_plan(self):
+        plan = _plan()
+        assert plan.is_empty
+        assert plan.delete_paths == []
+
+    def test_refusals_alone_leave_the_plan_empty(self):
+        assert _plan(refused=[_refused(_POLICY)]).is_empty
+
+    def test_delete_paths_are_the_sorted_deletes(self):
+        plan = _plan(deletes=[_delete(_PORT), _delete(_NEIGHBOR, kind="bgp_session")])
+        assert plan.delete_paths == [_PORT, _NEIGHBOR]
+        assert not plan.is_empty
+
+    def test_rejects_unsorted_deletes(self):
+        with pytest.raises(ValidationError, match="sorted"):
+            _plan(deletes=[_delete(_NEIGHBOR, kind="bgp_session"), _delete(_PORT)])
+
+    def test_rejects_duplicate_deletes(self):
+        with pytest.raises(ValidationError, match="sorted"):
+            _plan(deletes=[_delete(_PORT), _delete(_PORT, f"{_PORT}/enabled")])
+
+    def test_rejects_unsorted_refusals(self):
+        other = "/routing-policy/policy[name=a-probe]"
+        with pytest.raises(ValidationError, match="sorted"):
+            _plan(refused=[_refused(_POLICY), _refused(other)])
+
+    def test_rejects_a_path_both_deleted_and_refused(self):
+        shared = f"{_PORT}/description"
+        with pytest.raises(ValidationError, match="both"):
+            _plan(deletes=[_delete(_PORT, shared)], refused=[_refused(_POLICY, shared)])
+
+    def test_rejects_forward_drift_among_the_deletes(self):
+        shared = f"{_PORT}/description"
+        with pytest.raises(ValidationError, match="forward"):
+            _plan(deletes=[_delete(_PORT, shared)], forward_drift=[shared])
+
+    def test_rejects_forward_drift_among_the_refusals(self):
+        shared = f"{_POLICY}/default_action"
+        with pytest.raises(ValidationError, match="forward"):
+            _plan(refused=[_refused(_POLICY, shared)], forward_drift=[shared])
+
+    def test_round_trips_through_json(self):
+        from snapl_observability.models import RemovalPlan
+
+        plan = _plan(deletes=[_delete(_PORT)], refused=[_refused(_POLICY)], forward_drift=["/x/y"])
+        assert RemovalPlan.model_validate_json(plan.model_dump_json()) == plan
+
+    @pytest.mark.parametrize(
+        "build",
+        [
+            functools.partial(_delete, _PORT),
+            functools.partial(_refused, _POLICY),
+            _plan,
+        ],
+        ids=["PlannedDelete", "RefusedEntity", "RemovalPlan"],
+    )
+    def test_is_frozen_and_forbids_extra_fields(self, build):
+        model = build()
+        first_field = next(iter(type(model).model_fields))
+        with pytest.raises(ValidationError):
+            setattr(model, first_field, "x")
+        with pytest.raises(ValidationError):
+            type(model)(**model.model_dump(), surprise=True)
+
+    def test_models_are_exported(self):
+        import snapl_observability
+
+        for name in ("RemovalRefusal", "PlannedDelete", "RefusedEntity", "RemovalPlan"):
             assert hasattr(snapl_observability, name), name

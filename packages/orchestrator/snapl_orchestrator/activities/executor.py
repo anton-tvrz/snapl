@@ -1,4 +1,4 @@
-"""Executor activity — wraps snapl_executor.Executor.apply()."""
+"""Executor activities — wrap snapl_executor.Executor.apply() and the removal dry run."""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ import time
 
 from temporalio import activity
 
-from snapl_executor.models import ApplyResult
-from snapl_intent.models import DesiredState
+from snapl_executor.models import ApplyResult, RemoveResult
+from snapl_intent.models import DesiredState, Device
 from snapl_orchestrator.activities import get_activities
 from snapl_orchestrator.metrics import CallOutcome, GnmiOperation, record_gnmi_call
 
@@ -32,3 +32,13 @@ async def apply_config(desired: DesiredState) -> ApplyResult:
         return result
     finally:
         record_gnmi_call(desired.device, GnmiOperation.CONFIGURE, started, outcome)
+
+
+@activity.defn(name="dry_run_remove")
+async def dry_run_remove(device: Device, paths: list[str]) -> RemoveResult:
+    """Check a removal's delete paths against the Executor's guard (spec 013).
+
+    Never dials, so it records no gNMI call. A refused path comes back as
+    ``success=False`` with ``refused`` set, not as an exception.
+    """
+    return await get_activities().executor.dry_run_remove(device, paths)

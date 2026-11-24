@@ -1836,7 +1836,7 @@ export interface components {
          * @description Terminal reason codes for any WorkflowResult.
          * @enum {string}
          */
-        WorkflowReason: "succeeded" | "intent_unavailable" | "apply_failed" | "collect_failed" | "verification_failed" | "audit_failed" | "cancelled" | "device_not_found" | "remediation_failed";
+        WorkflowReason: "succeeded" | "intent_unavailable" | "apply_failed" | "collect_failed" | "verification_failed" | "audit_failed" | "cancelled" | "device_not_found" | "remediation_failed" | "plan_changed" | "deploy_in_flight" | "remove_failed";
     };
     responses: never;
     parameters: never;

@@ -19,16 +19,17 @@ from snapl_intent.infrahub.store import InfrahubIntentStore
 from snapl_observability.audit import BoundedAuditLog
 from snapl_observability.events import EventBus
 from snapl_observability.models import EventType, ObservabilityEvent
+from snapl_observability.structural.diff import ENTITY_FIELD_MAP
 from snapl_observability.structural.observer import StructuralObserver
 from snapl_orchestrator.activities import Activities, set_activities
 from snapl_orchestrator.activities.audit import record_audit_event
 from snapl_orchestrator.activities.collector import collect_drift_state
-from snapl_orchestrator.activities.executor import apply_config
+from snapl_orchestrator.activities.executor import apply_config, dry_run_remove
 from snapl_orchestrator.activities.intent import (
     fetch_desired_state,
     fetch_devices_for_use_case,
 )
-from snapl_orchestrator.activities.observability import detect_drift
+from snapl_orchestrator.activities.observability import detect_drift, plan_removal
 from snapl_orchestrator.activities.schedule import stand_down_schedule
 from snapl_orchestrator.audit.sqlite import SqliteAuditLog
 from snapl_orchestrator.exceptions import OrchestratorConfigError
@@ -39,6 +40,7 @@ from snapl_orchestrator.worker.sandbox import build_workflow_runner
 from snapl_orchestrator.workflows.deploy_intent import DeployIntentWorkflow
 from snapl_orchestrator.workflows.drift_response import DriftResponseWorkflow
 from snapl_orchestrator.workflows.reconcile_devices import ReconcileDevicesWorkflow
+from snapl_orchestrator.workflows.removal import PlanRemovalWorkflow
 from snapl_orchestrator.workflows.scan_drift import ScanDriftWorkflow
 
 logger = logging.getLogger(__name__)
@@ -120,6 +122,8 @@ async def run_worker(*, activities: Activities | None = None) -> None:
             ReconcileDevicesWorkflow,
             # Started only by drift schedules; the worker never creates one (009 FR-009).
             DriftResponseWorkflow,
+            # Started only by `snapl remove`; a schedule never starts one (spec 013 FR-012).
+            PlanRemovalWorkflow,
         ],
         activities=[
             fetch_desired_state,
@@ -129,6 +133,8 @@ async def run_worker(*, activities: Activities | None = None) -> None:
             detect_drift,
             record_audit_event,
             stand_down_schedule,
+            plan_removal,
+            dry_run_remove,
         ],
     )
 
@@ -242,8 +248,10 @@ def _srlinux_conn_env() -> dict:
 
 def _build_executor():
     # No fixed host: the executor resolves the dial target per device
-    # (lab_node_name, then management_address).
-    return GnmiExecutor(**_srlinux_conn_env())
+    # (lab_node_name, then management_address). The protected interfaces are
+    # the drift field map's own list, so detection, planning and the executor's
+    # delete guard can never disagree (spec 013 FR-004, research R5).
+    return GnmiExecutor(**_srlinux_conn_env(), protected_interfaces=ENTITY_FIELD_MAP["interface"]["protected"])
 
 
 def _build_collector():
