@@ -235,13 +235,13 @@ No setup. There is no new package, dependency or directory: pygnmi's `set(delete
 
 ## Phase 6: Polish & Cross-Cutting Concerns
 
-- [ ] T054 [P] Add the "Remove what intent never asked for" scenario to docs/demo-scenarios.md (quickstart steps 1, 2 and 4), and change the scenarios that say undesired config can't be removed
-- [ ] T055 [P] Update README.md's known limitations:
+- [x] T054 [P] Add the "Remove what intent never asked for" scenario to docs/demo-scenarios.md (quickstart steps 1, 2 and 4), and change the scenarios that say undesired config can't be removed
+- [x] T055 [P] Update README.md's known limitations:
   - removal is operator-only and never scheduled;
   - routing policies are detected, not removed (research R3);
   - an empty peer group and a subinterface's `ipv4 admin-state` remain after a removal (research R4).
-- [ ] T056 [P] Add a `Recent Changes` entry for 013 in CLAUDE.md (each slice's changelog is in the PR slicing table), written by hand: `update-agent-context.sh` deletes older entries (see PR #395)
-- [ ] T057 Check that the new modules have at least 80% coverage, that `test_vendor_seams.py` covers workflows/removal.py unchanged, and that `uv run invoke lint`, `uv run invoke format` and `uv run invoke test-unit` pass
+- [x] T056 [P] Add a `Recent Changes` entry for 013 in CLAUDE.md (each slice's changelog is in the PR slicing table), written by hand: `update-agent-context.sh` deletes older entries (see PR #395)
+- [x] T057 Check that the new modules have at least 80% coverage, that `test_vendor_seams.py` covers workflows/removal.py unchanged, and that `uv run invoke lint`, `uv run invoke format` and `uv run invoke test-unit` pass
 - [ ] T058 **Needs the lab** (after T039 and T053). Mark spec.md's status shipped and its success criteria met, each with a pointer to evidence.md
 
 ---

@@ -269,7 +269,7 @@ snapl audit --device spine-01         # drift_response decision=remediated, then
 **Temporal UI:** the scheduled run has a child `ScanDrift` and a child
 `ReconcileDevices`, which has the per-device `DeployIntent`.
 
-Undesired config is reported but never removed. Add some, and watch it stay:
+A schedule reports undesired config and never removes it, in any mode. Add some, and watch it stay:
 
 ```bash
 docker exec clab-dcfabric-spine-01 sr_cli -ec 'set / interface ethernet-1/7 description hand-added'
@@ -277,10 +277,11 @@ snapl schedule trigger --yes
 snapl audit --device spine-01         # decision undesired_only — no DeployIntent started
 ```
 
-The scan reports two items: the description, and `enabled: True`. Creating an interface entry also enables the port. snapl won't remove either one (#65), so delete the whole entry by hand when you're done:
+The scan reports two items: the description, and `enabled: True`. Creating an interface entry also enables the port. Neither the schedule nor a reconcile removes them. An operator does, when you're done (Scenario 15):
 
 ```bash
-docker exec clab-dcfabric-spine-01 sr_cli -ec 'delete / interface ethernet-1/7'
+snapl remove spine-01                 # the preview: one delete, the whole interface entry
+snapl remove spine-01 --apply         # confirm, remove, verify
 ```
 
 Pause before planned hand work, and switch back afterwards:
@@ -309,7 +310,7 @@ Build the page once with `uv run invoke dashboard.build` (Node 22.12 or later). 
 **Point at:**
 - The four numbers at the top: devices in sync, open drifts, the latest repair from scan to scan, and the runs of the last 24 hours with the failures named. Each one links to the panel with its detail. A number the page can't know is said in words, never shown as zero.
 - The fabric: spines above leaves, with the links intent declares. Each device's drift state has its own shape and glyph, not just a colour. Select a device for its detail. With none selected, the ring next to it gives the share of devices in sync, and the devices that differ are listed below it, most paths first.
-- Devices: each device's drift state and its direction. A few seconds after `snapl scan`, the device you changed by hand shows `undesired` or `missing`, with the exact paths and the command that fixes it. Undesired-only drift gets a note and no command, because removal isn't automatic (#65).
+- Devices: each device's drift state and its direction. A few seconds after `snapl scan`, the device you changed by hand shows `undesired` or `missing`, with the exact paths and the command that fixes it: `snapl reconcile` for what is missing, `snapl remove` for what intent never asked for. The page shows the command to copy and never runs it. After a removal, the device's drawer shows the latest preview and the run list shows who confirmed the removal, what it deleted and whether the scan after agrees.
 - Recent runs: the deploy, scan and reconcile appear as each finishes, with its trigger (`operator` or `schedule`) and a link to the Temporal Web UI.
 - Schedule: the report-only schedule that `demo.up` created, its next run, and who paused it, if anyone did.
 - Last 24 hours: a chart of scans, the most drifted devices, deploys and scheduled repairs per hour. Failures are hatched and repairs outlined, so nothing depends on colour. An hour with no scans is left empty, and "Show the table" gives every number.
@@ -418,6 +419,46 @@ Measured on the lab on 2026-11-20 (spec 016 evidence, item 4): flagged in 19 s, 
 
 ---
 
+## Scenario 15 — Remove what intent never asked for
+
+**Story:** "A reconcile puts back what intent says and never deletes. Config someone added by hand stays until an operator removes it, after a preview, with a scan to prove it's gone."
+
+Pause the schedule so it doesn't race you, and start from a clean leaf-04. Then add three kinds of config intent doesn't hold:
+
+```bash
+snapl schedule pause --reason "demo: removal"
+L() { docker exec clab-dcfabric-leaf-04 sr_cli -ec "$1"; }
+L "info flat network-instance default protocols bgp group *"      # the group name to use below
+L "set / interface ethernet-1/7 description demo-probe"
+L "set / interface ethernet-1/7 admin-state enable"
+L "set / network-instance default protocols bgp neighbor 192.0.2.0 peer-as 65099 peer-group underlay-ipv4@leaf-04"
+L "set / interface ethernet-1/49 subinterface 0 ipv4 address 192.0.2.1/31"
+snapl scan                            # leaf-04 drifted: undesired items for each
+```
+
+Preview it. This writes nothing, however often you run it:
+
+```bash
+snapl remove leaf-04; echo $?         # one delete per entity, and what each one answers; exit 2
+```
+
+**Point at:** each delete is the entity's own path, never `/` or a container above it. Removing the neighbour says its session goes down and its peer group stays. `mgmt0`, `system0` and routing policies are listed as refused, with the reason, if they show up.
+
+Remove it:
+
+```bash
+snapl remove leaf-04 --apply          # the preview again, then: Remove 3 config entries from leaf-04?
+snapl scan                            # leaf-04 clean
+snapl audit --device leaf-04          # the removal: who confirmed it, what it deleted, verified
+snapl schedule resume
+```
+
+**Expect:** `removed 3 entries from leaf-04; the verifying scan finds none of them`. All the deletes go in one gNMI Set, which the device applies whole or not at all. If the device changes between the preview and your answer, nothing is written and the new plan is shown. If a deploy to the device is running, nothing is written either.
+
+A removal can leave config behind that the scan doesn't see: a peer group whose last neighbour it removed, and `ipv4 admin-state enable` on a subinterface whose extra address it removed. Neither carries traffic.
+
+---
+
 ## Suggested 10-minute demo arc
 
 | # | beat | command | *min* |
@@ -472,14 +513,18 @@ node, or a port mismatch all show up there as a named failing line.
 
 ## Known limitations to name before you are asked
 
-- **Config removed from intent is not removed from the device** — apply is a
-  merge-only gNMI update at `/` (#65).
-- **Config that exists only on the device is flagged, never removed** — a scan
-  reports an operator-added interface or BGP neighbour as not in intent (#54),
-  and a reconcile leaves it on the device (#65).
+- **Deploys and reconciles never delete** — apply is a merge-only gNMI update
+  at `/`. Config that intent doesn't hold is flagged by a scan and stays until
+  an operator removes it with `snapl remove` (Scenario 15). No schedule
+  removes it, in any mode.
+- **Removal covers whole entities only** — interfaces, their default
+  network-instance bindings, BGP neighbours and extra IPv4 addresses. A field
+  removed from intent on an entity intent still manages (a description, say)
+  stays on the device. Routing policies are detected and refused, not removed.
 
-Together these mean "we converge to intent" is currently true for additions and
-changes, not deletions. Say it before the audience finds it.
+Together these mean "we converge to intent" is true for additions and changes,
+and for deletions only when an operator removes them. Say it before the
+audience finds it.
 
 - **Health checks interfaces and BGP sessions only**: a device is flagged for
   an interface intent expects up that is down, or an expected session that is
