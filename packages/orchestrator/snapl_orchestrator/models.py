@@ -14,7 +14,7 @@ from uuid import UUID  # noqa: TC003
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
-from snapl_observability.models import DeviceHealthState, DriftItem, DriftReport, DriftStatus
+from snapl_observability.models import DeviceHealthState, DriftItem, DriftReport, DriftStatus, RemovalPlan
 
 # ---------------------------------------------------------------------------
 # Enums
@@ -34,6 +34,10 @@ class WorkflowReason(StrEnum):
     DEVICE_NOT_FOUND = "device_not_found"
     # A scheduled repair's reconcile failed as a whole; its deploys may have written.
     REMEDIATION_FAILED = "remediation_failed"
+    # Removal (spec 013). Each of these means nothing was written.
+    PLAN_CHANGED = "plan_changed"  # the re-scan's deletes differ from the confirmed ones (FR-007)
+    DEPLOY_IN_FLIGHT = "deploy_in_flight"  # a deploy to the device is running (FR-010)
+    REMOVE_FAILED = "remove_failed"  # the guard refused the plan, or the device rejected the Set
 
 
 class AuditEventType(StrEnum):
@@ -227,6 +231,7 @@ class AuditEvent(BaseModel):
                     f"schedule_changed requires payload['change'] in {sorted(ScheduleChange)}, "
                     f"got {self.payload.get('change')!r}"
                 )
+        self._check_removal_start()
         if self.event_type == AuditEventType.HEALTH_CHANGED:
             # Written by the worker's telemetry runner (spec 016, R7). Only the
             # change itself is held here; the reasons and the sample time are free.
@@ -238,6 +243,123 @@ class AuditEvent(BaseModel):
                     raise ValueError(
                         f"health_changed requires payload['{key}'] in {sorted(states)}, got {self.payload.get(key)!r}"
                     )
+        return self
+
+    def _check_removal_start(self) -> None:
+        """A removal deletes config from a device, so who confirmed it, and what, are not optional (spec 013 FR-011)."""
+        if self.event_type != AuditEventType.WORKFLOW_STARTED or self.workflow_type != REMOVE_CONFIG:
+            return
+        if not self.actor:
+            raise ValueError("a RemoveConfig start requires actor")
+        if not self.payload.get("confirmed_paths"):
+            raise ValueError("a RemoveConfig start requires payload['confirmed_paths']")
+
+
+# ---------------------------------------------------------------------------
+# Removal (spec 013)
+# ---------------------------------------------------------------------------
+
+REMOVE_CONFIG = "RemoveConfig"
+PLAN_REMOVAL = "PlanRemoval"
+
+# The outcomes of a removal that stop before its one Set, so nothing was deleted.
+_REMOVAL_NO_WRITE = frozenset(
+    {
+        WorkflowReason.PLAN_CHANGED,
+        WorkflowReason.DEPLOY_IN_FLIGHT,
+        WorkflowReason.REMOVE_FAILED,
+        WorkflowReason.DEVICE_NOT_FOUND,
+        WorkflowReason.INTENT_UNAVAILABLE,
+    }
+)
+
+
+def remove_config_id(device_id: UUID) -> str:
+    """The one removal a device can have running (research R8)."""
+    return f"remove-config-{device_id}"
+
+
+class RemovalRequest(BaseModel):
+    """What the operator confirmed: remove exactly these paths from this device."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    device_id: UUID
+    actor: str
+    confirmed_paths: list[str] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _check_invariants(self) -> RemovalRequest:
+        if not self.actor.strip():
+            raise ValueError("actor must not be empty")
+        if len(set(self.confirmed_paths)) != len(self.confirmed_paths):
+            raise ValueError("confirmed_paths holds a duplicate")
+        return self
+
+
+class RemovalVerification(BaseModel):
+    """What the scan after a removal's Set found (research R9)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    gone: list[str]
+    remaining: list[str]
+    new_forward: list[str]
+    still_refused: list[str]
+
+    @model_validator(mode="after")
+    def _check_apart(self) -> RemovalVerification:
+        if both := set(self.gone) & set(self.remaining):
+            raise ValueError(f"paths both gone and remaining: {sorted(both)}")
+        return self
+
+    @property
+    def planned(self) -> list[str]:
+        """The delete paths that were sent: gone plus remaining."""
+        return sorted([*self.gone, *self.remaining])
+
+    @property
+    def passed(self) -> bool:
+        """Every delete took, and nothing intent manages went missing (FR-009)."""
+        return not self.remaining and not self.new_forward
+
+
+class RemovalResult(BaseModel):
+    """The terminal outcome of a RemoveConfig run."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    workflow_id: str
+    device_id: UUID
+    device_name: str | None
+    success: bool
+    reason: WorkflowReason
+    detail: str | None = None
+    plan: RemovalPlan | None = None
+    deleted: list[str] = Field(default_factory=list)
+    device_response: str | None = None
+    verification: RemovalVerification | None = None
+    started_at: datetime
+    ended_at: datetime
+
+    @model_validator(mode="after")
+    def _check_invariants(self) -> RemovalResult:
+        if self.success != (self.reason == WorkflowReason.SUCCEEDED):
+            raise ValueError(f"success must be True exactly when reason is SUCCEEDED, got {self.reason}")
+        if self.ended_at < self.started_at:
+            raise ValueError("ended_at must be >= started_at")
+        if self.reason in _REMOVAL_NO_WRITE and self.deleted:
+            raise ValueError(f"{self.reason.value} writes nothing, so deleted must be empty")
+        if self.verification is not None and not self.deleted:
+            raise ValueError("a verification needs a write: deleted is empty")
+        if self.success and (self.verification is None or not self.verification.passed):
+            raise ValueError("success requires a verification that passed")
+        if self.reason == WorkflowReason.VERIFICATION_FAILED and (
+            self.verification is None or self.verification.passed
+        ):
+            raise ValueError("verification_failed requires a verification that failed")
+        if self.reason == WorkflowReason.PLAN_CHANGED and self.plan is None:
+            raise ValueError("plan_changed carries the new plan")
         return self
 
 

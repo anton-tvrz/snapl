@@ -814,3 +814,269 @@ def test_health_changed_event_requires_known_states(key: str, value: str | None)
 def test_health_changed_event_leaves_other_payload_keys_free() -> None:
     event = _health_event(payload={"before": "healthy", "after": "unknown", "anything": [1, 2]})
     assert event.payload["anything"] == [1, 2]
+
+
+# ---------------------------------------------------------------------------
+# Removal (spec 013, T005)
+# ---------------------------------------------------------------------------
+
+_REMOVAL_DEVICE = UUID("00000000-0000-0000-0000-000000000004")
+_PORT = "/interface[name=ethernet-1/7]"
+_NEIGHBOR = "/network-instance[name=default]/protocols/bgp/neighbor[peer-address=192.0.2.0]"
+
+
+def _removal_plan(*delete_paths: str):
+    from snapl_observability.models import PlannedDelete, RemovalPlan
+
+    return RemovalPlan(
+        device_id=_REMOVAL_DEVICE,
+        device_name="leaf-04",
+        scanned_at=_NOW,
+        deletes=[
+            PlannedDelete(path=path, entity_kind="interface", answers=[f"{path}/description"])
+            for path in sorted(delete_paths)
+        ],
+        refused=[],
+        forward_drift=[],
+    )
+
+
+def _verification(*, gone=(_PORT,), remaining=(), new_forward=(), still_refused=()):
+    from snapl_orchestrator.models import RemovalVerification
+
+    return RemovalVerification(
+        gone=list(gone),
+        remaining=list(remaining),
+        new_forward=list(new_forward),
+        still_refused=list(still_refused),
+    )
+
+
+def _removal_result(**overrides):
+    from snapl_orchestrator.models import RemovalResult
+
+    fields = {
+        "workflow_id": f"remove-config-{_REMOVAL_DEVICE}",
+        "device_id": _REMOVAL_DEVICE,
+        "device_name": "leaf-04",
+        "success": True,
+        "reason": WorkflowReason.SUCCEEDED,
+        "plan": _removal_plan(_PORT),
+        "deleted": [_PORT],
+        "device_response": "ok",
+        "verification": _verification(),
+        "started_at": _NOW,
+        "ended_at": _LATER,
+        **overrides,
+    }
+    return RemovalResult(**fields)
+
+
+class TestRemovalReasons:
+    def test_the_new_reasons(self) -> None:
+        assert WorkflowReason.PLAN_CHANGED.value == "plan_changed"
+        assert WorkflowReason.DEPLOY_IN_FLIGHT.value == "deploy_in_flight"
+        assert WorkflowReason.REMOVE_FAILED.value == "remove_failed"
+
+
+class TestRemovalRequest:
+    def _request(self, **overrides):
+        from snapl_orchestrator.models import RemovalRequest
+
+        fields = {"device_id": _REMOVAL_DEVICE, "actor": "anton", "confirmed_paths": [_PORT, _NEIGHBOR], **overrides}
+        return RemovalRequest(**fields)
+
+    def test_holds_the_confirmation(self) -> None:
+        r = self._request()
+        assert r.actor == "anton"
+        assert r.confirmed_paths == [_PORT, _NEIGHBOR]
+
+    @pytest.mark.parametrize("actor", ["", "   "])
+    def test_rejects_an_empty_actor(self, actor) -> None:
+        with pytest.raises(ValidationError, match="actor"):
+            self._request(actor=actor)
+
+    def test_rejects_no_paths(self) -> None:
+        with pytest.raises(ValidationError, match="confirmed_paths"):
+            self._request(confirmed_paths=[])
+
+    def test_rejects_a_duplicate_path(self) -> None:
+        with pytest.raises(ValidationError, match="duplicate"):
+            self._request(confirmed_paths=[_PORT, _PORT])
+
+    def test_is_frozen(self) -> None:
+        r = self._request()
+        with pytest.raises(ValidationError):
+            r.actor = "someone"  # type: ignore[misc]
+
+
+class TestRemovalVerification:
+    def test_passes_when_nothing_remains_and_nothing_new_is_missing(self) -> None:
+        assert _verification(still_refused=["/routing-policy/policy[name=p]/default_action"]).passed
+
+    def test_fails_with_something_remaining(self) -> None:
+        assert not _verification(gone=(), remaining=(_PORT,)).passed
+
+    def test_fails_with_new_forward_drift(self) -> None:
+        assert not _verification(new_forward=["/interface[name=ethernet-1/49]/enabled"]).passed
+
+    def test_planned_is_gone_and_remaining(self) -> None:
+        v = _verification(gone=(_PORT,), remaining=(_NEIGHBOR,))
+        assert v.planned == sorted([_PORT, _NEIGHBOR])
+
+    def test_a_path_cannot_be_both_gone_and_remaining(self) -> None:
+        with pytest.raises(ValidationError, match="both"):
+            _verification(gone=(_PORT,), remaining=(_PORT,))
+
+
+class TestRemovalResult:
+    def test_a_verified_removal(self) -> None:
+        r = _removal_result()
+        assert r.success
+        assert r.verification is not None
+        assert r.verification.passed
+
+    def test_success_requires_the_succeeded_reason(self) -> None:
+        with pytest.raises(ValidationError, match="SUCCEEDED"):
+            _removal_result(reason=WorkflowReason.VERIFICATION_FAILED)
+
+    def test_failure_rejects_the_succeeded_reason(self) -> None:
+        with pytest.raises(ValidationError, match="SUCCEEDED"):
+            _removal_result(success=False)
+
+    def test_success_requires_a_passed_verification(self) -> None:
+        with pytest.raises(ValidationError, match="verification"):
+            _removal_result(verification=None)
+        with pytest.raises(ValidationError, match="verification"):
+            _removal_result(verification=_verification(gone=(), remaining=(_PORT,)))
+
+    def test_a_failed_verification(self) -> None:
+        r = _removal_result(
+            success=False,
+            reason=WorkflowReason.VERIFICATION_FAILED,
+            verification=_verification(gone=(), remaining=(_PORT,)),
+        )
+        assert not r.success
+
+    def test_a_failed_verification_needs_one_that_failed(self) -> None:
+        with pytest.raises(ValidationError, match="verification"):
+            _removal_result(success=False, reason=WorkflowReason.VERIFICATION_FAILED)
+
+    def test_a_changed_plan_writes_nothing_and_carries_the_new_plan(self) -> None:
+        r = _removal_result(
+            success=False,
+            reason=WorkflowReason.PLAN_CHANGED,
+            plan=_removal_plan(_PORT, _NEIGHBOR),
+            deleted=[],
+            device_response=None,
+            verification=None,
+        )
+        assert r.plan is not None
+        assert r.plan.delete_paths == [_PORT, _NEIGHBOR]
+        with pytest.raises(ValidationError, match="plan"):
+            _removal_result(
+                success=False,
+                reason=WorkflowReason.PLAN_CHANGED,
+                plan=None,
+                deleted=[],
+                device_response=None,
+                verification=None,
+            )
+
+    @pytest.mark.parametrize(
+        "reason",
+        [
+            WorkflowReason.PLAN_CHANGED,
+            WorkflowReason.DEPLOY_IN_FLIGHT,
+            WorkflowReason.REMOVE_FAILED,
+            WorkflowReason.DEVICE_NOT_FOUND,
+            WorkflowReason.INTENT_UNAVAILABLE,
+        ],
+    )
+    def test_reasons_that_write_nothing_have_nothing_deleted(self, reason) -> None:
+        with pytest.raises(ValidationError, match="deleted"):
+            _removal_result(success=False, reason=reason, verification=None)
+
+    def test_a_verification_needs_a_write(self) -> None:
+        with pytest.raises(ValidationError, match="verification"):
+            _removal_result(success=False, reason=WorkflowReason.REMOVE_FAILED, deleted=[])
+
+    def test_a_collect_failure_after_the_write_keeps_what_was_deleted(self) -> None:
+        r = _removal_result(success=False, reason=WorkflowReason.COLLECT_FAILED, verification=None)
+        assert r.deleted == [_PORT]
+        assert r.verification is None
+
+    def test_a_collect_failure_before_the_write(self) -> None:
+        r = _removal_result(
+            success=False,
+            reason=WorkflowReason.COLLECT_FAILED,
+            plan=None,
+            deleted=[],
+            device_response=None,
+            verification=None,
+        )
+        assert r.deleted == []
+
+    def test_intent_unread_leaves_no_device_name(self) -> None:
+        r = _removal_result(
+            success=False,
+            reason=WorkflowReason.INTENT_UNAVAILABLE,
+            device_name=None,
+            plan=None,
+            deleted=[],
+            device_response=None,
+            verification=None,
+        )
+        assert r.device_name is None
+
+    def test_ended_before_started_is_rejected(self) -> None:
+        with pytest.raises(ValidationError, match="ended_at"):
+            _removal_result(ended_at=_NOW - timedelta(seconds=1))
+
+    def test_round_trips_through_json(self) -> None:
+        from snapl_orchestrator.models import RemovalResult
+
+        r = _removal_result()
+        assert RemovalResult.model_validate_json(r.model_dump_json()) == r
+
+
+class TestRemoveConfigAuditStart:
+    def _start(self, **overrides) -> AuditEvent:
+        fields = {
+            "event_id": uuid4(),
+            "workflow_id": f"remove-config-{_REMOVAL_DEVICE}",
+            "workflow_type": "RemoveConfig",
+            "target_id": _REMOVAL_DEVICE,
+            "event_type": AuditEventType.WORKFLOW_STARTED,
+            "payload": {"confirmed_paths": [_PORT]},
+            "timestamp": _NOW,
+            "actor": "anton",
+            **overrides,
+        }
+        return AuditEvent(**fields)
+
+    def test_a_removal_start_names_who_and_what(self) -> None:
+        e = self._start()
+        assert e.actor == "anton"
+
+    def test_a_removal_start_requires_an_actor(self) -> None:
+        with pytest.raises(ValidationError, match="actor"):
+            self._start(actor=None)
+
+    def test_a_removal_start_requires_the_confirmed_paths(self) -> None:
+        with pytest.raises(ValidationError, match="confirmed_paths"):
+            self._start(payload={})
+
+    def test_other_events_of_a_removal_are_unaffected(self) -> None:
+        e = self._start(
+            event_type=AuditEventType.WORKFLOW_TERMINATED,
+            reason=WorkflowReason.SUCCEEDED,
+            actor=None,
+            payload={},
+        )
+        assert e.actor is None
+
+    @pytest.mark.parametrize("workflow_type", ["DeployIntent", "PlanRemoval", "ScanDrift"])
+    def test_other_workflow_starts_are_unaffected(self, workflow_type) -> None:
+        e = self._start(workflow_type=workflow_type, actor=None, payload={})
+        assert e.actor is None

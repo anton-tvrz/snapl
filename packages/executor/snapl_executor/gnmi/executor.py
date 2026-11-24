@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 from typing import TYPE_CHECKING, Any
 
@@ -14,6 +15,7 @@ from snapl_executor.gnmi.renderer import ConfigRenderer
 from snapl_executor.models import ApplyResult, BatchResult, DryRunResult
 
 if TYPE_CHECKING:
+    from collections.abc import Collection
     from uuid import UUID
 
     from snapl_intent.models import DesiredState, Device
@@ -32,6 +34,45 @@ def _render(desired: DesiredState) -> tuple[dict[str, Any] | None, str | None]:
         return ConfigRenderer(use_case=use_case).render(desired), None
     except Exception as exc:
         return None, f"render failed for use case {use_case!r}: {type(exc).__name__}: {exc}"
+
+
+# The only paths a removal may delete (spec 013 FR-005, research R2): one
+# whole entity of a removable kind, or one address under an interface. Each
+# pattern captures the interface the path belongs to, if any, for the
+# protected check. A key may hold '/' (ethernet-1/7, 192.0.2.1/31) but never a
+# bracket, so no key can swallow a deeper path.
+_KEY = r"[^\[\]]+"
+_DELETE_SHAPES: tuple[re.Pattern[str], ...] = (
+    re.compile(rf"/interface\[name=({_KEY})\]"),
+    re.compile(rf"/interface\[name=({_KEY})\]/subinterface\[index=[0-9]+\]/ipv4/address\[ip-prefix={_KEY}\]"),
+    # A neighbour belongs to no interface: its empty group never matches a protected name.
+    re.compile(rf"/network-instance\[name=default\]/protocols/bgp/neighbor\[peer-address={_KEY}\]()"),
+    re.compile(rf"/network-instance\[name=default\]/interface\[name=({_KEY})\.[0-9]+\]"),
+)
+
+REFUSED_NO_PROTECTED_SET = "no protected set configured"
+REFUSED_PROTECTED = "protected"
+REFUSED_SHAPE = "not one entity this executor deletes"
+
+
+def check_delete_paths(paths: list[str], protected: Collection[str] | None) -> dict[str, str]:
+    """The paths a removal must not send, each with the reason; empty when all may go.
+
+    A path passes when it fully matches one of the entity shapes above and the
+    interface it belongs to is not protected. Without a protected set every
+    path is refused, so an executor built without one deletes nothing.
+    """
+    refused: dict[str, str] = {}
+    for path in paths:
+        if protected is None:
+            refused[path] = REFUSED_NO_PROTECTED_SET
+            continue
+        match = next((m for shape in _DELETE_SHAPES if (m := shape.fullmatch(path))), None)
+        if match is None:
+            refused[path] = REFUSED_SHAPE
+        elif match.group(1) in protected:
+            refused[path] = REFUSED_PROTECTED
+    return refused
 
 
 # How many devices one batch dials at once (#55). Each apply holds a gRPC

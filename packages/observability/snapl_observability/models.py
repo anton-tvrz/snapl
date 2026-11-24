@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Mapping  # noqa: TC003 — pydantic resolves field types at runtime
 from datetime import UTC, datetime
 from enum import StrEnum
+from itertools import pairwise
 from typing import Any, Self
 from uuid import UUID  # noqa: TC003
 
@@ -291,3 +292,82 @@ class DeviceHealth(BaseModel):
     state: DeviceHealthState
     reasons: tuple[HealthReason, ...] = ()
     evaluated_at: datetime
+
+
+# ---------------------------------------------------------------------------
+# Removal plan (spec 013)
+# ---------------------------------------------------------------------------
+
+
+class RemovalRefusal(StrEnum):
+    """Why an undesired entity is left in place."""
+
+    # The interface, or a binding's parent interface, is in the field map's protected set (FR-004).
+    PROTECTED = "protected"
+    # A kind or shape outside this cut: a routing policy, or a path the planner doesn't recognise (FR-014).
+    NOT_REMOVABLE = "not_removable"
+
+
+class PlannedDelete(BaseModel):
+    """One delete of a whole entity, or of an extra address, and the drift paths it answers."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    path: str
+    entity_kind: str
+    answers: list[str] = Field(min_length=1)
+
+
+class RefusedEntity(BaseModel):
+    """An undesired entity the plan leaves in place, with the reason."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    entity_path: str
+    entity_kind: str
+    paths: list[str] = Field(min_length=1)
+    reason: RemovalRefusal
+
+
+class RemovalPlan(BaseModel):
+    """The deletes that would remove a report's undesired config, and what is refused.
+
+    Every undesired path of the source report is in exactly one delete's
+    ``answers`` or one refusal's ``paths``; the planner checks that, since the
+    model doesn't hold the report. Forward drift is listed and never acted on.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    device_id: UUID
+    device_name: str
+    scanned_at: datetime
+    deletes: list[PlannedDelete]
+    refused: list[RefusedEntity]
+    forward_drift: list[str]
+
+    @model_validator(mode="after")
+    def _check_invariants(self) -> RemovalPlan:
+        paths = [d.path for d in self.deletes]
+        if any(a >= b for a, b in pairwise(paths)):
+            raise ValueError(f"deletes must be sorted by path, without duplicates: {paths}")
+        entities = [r.entity_path for r in self.refused]
+        if any(a >= b for a, b in pairwise(entities)):
+            raise ValueError(f"refused must be sorted by entity_path, without duplicates: {entities}")
+        answered = {path for d in self.deletes for path in d.answers}
+        refused = {path for r in self.refused for path in r.paths}
+        if both := answered & refused:
+            raise ValueError(f"paths both deleted and refused: {sorted(both)}")
+        if overlap := set(self.forward_drift) & (answered | refused):
+            raise ValueError(f"forward drift paths are never planned: {sorted(overlap)}")
+        return self
+
+    @property
+    def delete_paths(self) -> list[str]:
+        """The sorted delete paths: what two plans are compared by (research R7)."""
+        return [d.path for d in self.deletes]
+
+    @property
+    def is_empty(self) -> bool:
+        """No deletes. A plan with refusals only is still empty: there is nothing to write."""
+        return not self.deletes
