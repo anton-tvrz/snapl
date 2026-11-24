@@ -81,14 +81,65 @@ describe("DeviceDrawer", () => {
     });
   });
 
-  it("lists undesired paths apart, says removal is not automatic, and offers no command", () => {
+  it("lists undesired paths apart, with the remove command to copy and the note", () => {
     open();
 
     const undesired = screen.getByRole("region", { name: "On the device, not in intent" });
     expect(within(undesired).getByText("/interface[name=ethernet-1/7]/description")).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "In intent, missing from the device" })).not.toBeInTheDocument();
-    expect(screen.getByText("Config on the device but not in intent is not removed automatically (#65).")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /^Copy command/ })).not.toBeInTheDocument();
+    expect(screen.getByText(/Reconcile never removes config intent doesn't hold/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Copy command: snapl remove leaf-01" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Copy command: snapl reconcile/ })).not.toBeInTheDocument();
+  });
+
+  describe("removal (spec 013 FR-016)", () => {
+    const both: DeviceView = {
+      ...device("leaf-01"),
+      drift_state: "missing_and_undesired",
+      missing_paths: ["/interface[name=ethernet-1/1]/enabled"],
+      suggested_command: "snapl reconcile leaf-01",
+      remove_command: "snapl remove leaf-01",
+    };
+    const previewed: DeviceView = {
+      ...device("leaf-01"),
+      last_removal_preview: {
+        at: new Date(NOW.getTime() - 5 * 60_000).toISOString(),
+        workflow_id: "plan-removal-x",
+        plan_paths: ["/interface[name=ethernet-1/7]", "/network-instance[name=default]/interface[name=ethernet-1/7.0]"],
+        refused_paths: ["/routing-policy/policy[name=c-probe]"],
+      },
+    };
+
+    it("shows the remove command beside reconcile when intent is also missing", () => {
+      open({ device: both });
+
+      expect(screen.getByText("snapl reconcile leaf-01")).toBeInTheDocument();
+      expect(screen.getByText("snapl remove leaf-01")).toBeInTheDocument();
+    });
+
+    it("shows the latest preview: when, how many deletes, and the entities it refused", () => {
+      open({ device: previewed });
+
+      expect(screen.getByText("Last removal preview")).toBeInTheDocument();
+      expect(screen.getByText("2 deletes, 1 refused · 5 min ago")).toBeInTheDocument();
+      const refused = screen.getByRole("region", { name: "Left in place by the last preview" });
+      expect(within(refused).getByText("/routing-policy/policy[name=c-probe]")).toBeInTheDocument();
+    });
+
+    it("says when the device was never previewed", () => {
+      open();
+
+      expect(screen.getByText("Last removal preview")).toBeInTheDocument();
+      expect(screen.getByText("None recorded")).toBeInTheDocument();
+    });
+
+    it("offers no way to start a preview or a removal: only copy controls and close", () => {
+      open({ device: { ...both, ...previewed, drift_state: "missing_and_undesired" } });
+
+      const names = screen.getAllByRole("button").map((b) => b.getAttribute("aria-label") ?? b.textContent ?? "");
+      expect(names.filter((name) => name !== "Close" && !name.startsWith("Copy command:"))).toEqual([]);
+      expect(document.querySelector("form")).toBeNull();
+    });
   });
 
   it("lists missing paths and shows the reconcile command with a copy control", () => {

@@ -48,6 +48,7 @@
         "duration_s": 1,
         "ended_at": "2026-11-07T21:20:17.240047Z",
         "reason": null,
+        "removal": null,
         "started_at": "2026-11-07T21:20:15.648265Z",
         "state": "succeeded",
         "target": "spine-01",

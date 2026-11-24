@@ -143,13 +143,13 @@ On `plan_changed` the payload carries `"plan_paths"` (the new plan) in place of 
 
 ## Presentation (`snapl_presentation.dashboard.models`)
 
-`EpisodeClose.kind`: `Literal["remediation", "reconcile", "deploy"]` gains `"removal"`. `schema.d.ts` is regenerated from the OpenAPI document. The designed page labels it "closed by a removal", in `lib/episodes.ts` and the `Lanes.tsx` key, and so does the plain page (`static/index.html`). The parity test holds both pages to the same text.
+`EpisodeClose.kind`: `Literal["remediation", "reconcile", "deploy"]` gains `"removal"`. `schema.d.ts` is regenerated from the OpenAPI document. The designed page labels it "repaired by an operator's removal" in `lib/episodes.ts`, in the words it uses for the other kinds. *Amended 2026-11-24 (slice B): the `Lanes.tsx` key lists run markers (reconcile, scheduled remediation), not what closed an episode, and the plain page (`static/index.html`) shows no episodes, so neither has a label to add.*
 
 *Added 2026-11-24 (FR-016, research R10):*
 
 - `DeviceView.remove_command: str | None`: `snapl remove <name>` when the latest scan found undesired paths, else None. `suggested_command` keeps the reconcile command, so a device with both kinds of drift shows both.
 - `DeviceView.last_removal_preview: RemovalPreviewView | None`: `at`, `workflow_id`, `plan_paths` and `refused_paths` from the device's latest successful `PlanRemoval`.
-- `RunView.removal: RemovalView | None`, for `RemoveConfig` runs only: `actor`, `confirmed_paths`, `deleted_paths`, `device_response`, `gone`, `remaining`, `new_forward`, `still_refused`, `reason` and `detail`, from the run's start and terminal events. A run still in flight has only the first two set.
+- `RunView.removal: RemovalView | None`, for `RemoveConfig` runs only: `actor`, `confirmed_paths`, `deleted_paths`, `plan_paths`, `device_response`, `gone`, `remaining`, `new_forward`, `still_refused`, `reason` and `detail`, from the run's start and terminal events. A run still in flight has only the first two set. *`plan_paths` added 2026-11-24 (slice B): the new plan of a `plan_changed` run, which its terminal payload carries in place of `deleted_paths`.*
 
 None of these is a control: the dashboard shows removals and never starts one.
 

@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import type { RunView, View } from "../../api/types";
+import type { RemovalView, RunView, View } from "../../api/types";
 import { runEncoding } from "../../lib/encoding";
 import { ageText, durationText } from "../../lib/time";
 import { ExternalLink } from "../ExternalLink";
@@ -12,6 +12,60 @@ function RunLink({ run }: { run: RunView }) {
     <ExternalLink href={run.web_ui_url} title={run.workflow_id}>
       {run.workflow_type}
     </ExternalLink>
+  );
+}
+
+/** Why a removal wrote nothing, in words (spec 013 FR-016). A reason this page does not know is shown raw. */
+const NOTHING_WRITTEN: Record<string, string> = {
+  plan_changed: "The device changed after the preview; nothing was removed.",
+  deploy_in_flight: "A deploy to the device was running; nothing was removed.",
+  remove_failed: "The device rejected the removal; nothing was removed.",
+  device_not_found: "The device is not in intent; nothing was removed.",
+  intent_unavailable: "Intent could not be read; nothing was removed.",
+  collect_failed: "The device could not be read; nothing was removed.",
+  cancelled: "Cancelled; nothing was removed.",
+};
+
+function PathLine({ label, paths }: { label: string; paths: readonly string[] }) {
+  if (paths.length === 0) return null;
+  return (
+    <p className="font-mono break-all">
+      <span className="font-sans">{label}: </span>
+      {paths.join(", ")}
+    </p>
+  );
+}
+
+/** What a removal did: who confirmed what, what the one Set deleted, and what the scan after found. Shows, never acts. */
+function RemovalDetail({ run, removal }: { run: RunView; removal: RemovalView }) {
+  const deleted = removal.deleted_paths ?? [];
+  const confirmed = removal.confirmed_paths ?? [];
+  const reason = removal.reason;
+  const verified = reason === "succeeded";
+  return (
+    <section aria-label={`Removal ${run.workflow_id}`} className="mt-2 max-w-prose space-y-2 text-meta text-muted">
+      <p>
+        Confirmed by {removal.actor ?? "an unrecorded operator"}: {confirmed.length} {confirmed.length === 1 ? "path" : "paths"}
+      </p>
+      {reason == null && <p>Not finished.</p>}
+      {deleted.length > 0 && (
+        <ul className="space-y-2">
+          {deleted.map((path) => (
+            <li key={path} className="chip rounded bg-sunken px-2 py-1 font-mono break-all text-ink">
+              {path}
+            </li>
+          ))}
+        </ul>
+      )}
+      {reason != null && deleted.length === 0 && <p>{NOTHING_WRITTEN[reason] ?? `${reason}; nothing was removed.`}</p>}
+      <PathLine label="The plan now" paths={removal.plan_paths ?? []} />
+      {verified && <p>The verifying scan finds none of them.</p>}
+      <PathLine label="Still there" paths={removal.remaining ?? []} />
+      <PathLine label="Newly missing or different from intent" paths={removal.new_forward ?? []} />
+      <PathLine label="Left in place by design" paths={removal.still_refused ?? []} />
+      {removal.device_response && <p className="break-all">Device response: {removal.device_response}</p>}
+      {removal.detail && <p className="break-words">{removal.detail}</p>}
+    </section>
   );
 }
 
@@ -81,6 +135,7 @@ export function Runs({ runs, now, device }: RunsProps) {
                         <span aria-hidden="true">{outcome.glyph} </span>
                         {outcome.label}
                         {run.reason && <span className="block max-w-prose text-meta break-words text-muted">{run.reason}</span>}
+                        {run.removal && <RemovalDetail run={run} removal={run.removal} />}
                       </td>
                       <td className="py-2 pr-4">
                         {run.trigger}

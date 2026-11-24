@@ -150,3 +150,97 @@ describe("Running", () => {
     expect(container).toHaveTextContent("Shows only the present");
   });
 });
+
+describe("a removal's detail (spec 013 FR-016)", () => {
+  const PORT = "/interface[name=ethernet-1/7]";
+  const BINDING = "/network-instance[name=default]/interface[name=ethernet-1/7.0]";
+  const base: RunView = {
+    ...runs[0]!,
+    workflow_id: "remove-config-x",
+    workflow_type: "RemoveConfig",
+    target: "leaf-01",
+    trigger: "operator",
+    actor: "anton",
+    state: "succeeded",
+    reason: null,
+  };
+  const removal = (over: Partial<NonNullable<RunView["removal"]>>, run: Partial<RunView> = {}): RunView => ({
+    ...base,
+    ...run,
+    removal: {
+      actor: "anton",
+      confirmed_paths: [PORT, BINDING],
+      deleted_paths: [],
+      plan_paths: [],
+      device_response: null,
+      gone: [],
+      remaining: [],
+      new_forward: [],
+      still_refused: [],
+      reason: null,
+      detail: null,
+      ...over,
+    },
+  });
+  const detail = () => screen.getByRole("region", { name: "Removal remove-config-x" });
+
+  it("shows who confirmed it, what it deleted, the response and that the scan after agrees", () => {
+    const run = removal({
+      deleted_paths: [PORT, BINDING],
+      gone: [PORT, BINDING],
+      still_refused: ["/routing-policy/policy[name=c-probe]/default_action"],
+      device_response: "{'timestamp': 1}",
+      reason: "succeeded",
+    });
+    render(<Runs runs={withRuns([run])} now={NOW} />);
+
+    expect(detail()).toHaveTextContent("Confirmed by anton: 2 paths");
+    expect(within(detail()).getByText(PORT)).toBeInTheDocument();
+    expect(within(detail()).getByText(BINDING)).toBeInTheDocument();
+    expect(detail()).toHaveTextContent("The verifying scan finds none of them.");
+    expect(detail()).toHaveTextContent("Device response: {'timestamp': 1}");
+    expect(detail()).toHaveTextContent("Left in place by design: /routing-policy/policy[name=c-probe]/default_action");
+  });
+
+  it("shows what the verifying scan still found", () => {
+    const run = removal(
+      { deleted_paths: [PORT], gone: [], remaining: [PORT], new_forward: ["/interface[name=ethernet-1/2]/enabled"], reason: "verification_failed" },
+      { state: "failed", reason: "verification_failed" },
+    );
+    render(<Runs runs={withRuns([run])} now={NOW} />);
+
+    expect(detail()).toHaveTextContent(`Still there: ${PORT}`);
+    expect(detail()).toHaveTextContent("Newly missing or different from intent: /interface[name=ethernet-1/2]/enabled");
+  });
+
+  it.each([
+    ["plan_changed", "The device changed after the preview; nothing was removed."],
+    ["deploy_in_flight", "A deploy to the device was running; nothing was removed."],
+    ["remove_failed", "The device rejected the removal; nothing was removed."],
+  ])("says why a removal that ended %s wrote nothing", (reason, text) => {
+    render(<Runs runs={withRuns([removal({ reason, detail: "the detail" }, { state: "failed", reason })])} now={NOW} />);
+
+    expect(detail()).toHaveTextContent(text);
+    expect(detail()).toHaveTextContent("the detail");
+  });
+
+  it("shows the new plan when the device changed", () => {
+    render(<Runs runs={withRuns([removal({ reason: "plan_changed", plan_paths: [PORT] }, { state: "failed" })])} now={NOW} />);
+
+    expect(detail()).toHaveTextContent(`The plan now: ${PORT}`);
+  });
+
+  it("shows a removal still running by what was confirmed", () => {
+    render(<Runs runs={withRuns([removal({}, { state: "running", ended_at: null })])} now={NOW} />);
+
+    expect(detail()).toHaveTextContent("Confirmed by anton: 2 paths");
+    expect(detail()).toHaveTextContent("Not finished.");
+  });
+
+  it("shows no removal detail for other runs, and offers no way to start one", () => {
+    render(<Runs runs={withRuns([base, runs[0]!])} now={NOW} />);
+
+    expect(screen.queryByRole("region", { name: /^Removal / })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  });
+});

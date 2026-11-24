@@ -53,6 +53,8 @@ export type SessionState = Schemas["SessionState"];
 
 export type DeviceView = Schemas["DeviceView"];
 export type RunView = Schemas["RunView"];
+export type RemovalView = Schemas["RemovalView"];
+export type RemovalPreviewView = Schemas["RemovalPreviewView"];
 export type Topology = Schemas["Topology"];
 export type TopologyNode = Schemas["TopologyNode"];
 export type TopologyLink = Schemas["TopologyLink"];

@@ -1,4 +1,5 @@
 import type { DeviceView, View } from "../../api/types";
+import { Command } from "../Command";
 import { ViewFrame } from "../ViewFrame";
 
 interface Props {
@@ -8,7 +9,8 @@ interface Props {
 
 /**
  * Config on the devices that intent does not have, across the fabric (010
- * FR-011). No command: removing it is not automatic (#65).
+ * FR-011), with each device's `snapl remove` command to copy. The dashboard
+ * never runs it (spec 013 FR-016).
  */
 export function Undesired({ devices, now }: Props) {
   const found = (devices?.data ?? []).filter((device) => (device.undesired_paths ?? []).length > 0);
@@ -22,6 +24,11 @@ export function Undesired({ devices, now }: Props) {
             {found.map((device) => (
               <div key={device.device_id} role="group" aria-label={device.name}>
                 <p className="font-mono text-meta font-semibold">{device.name}</p>
+                {device.remove_command && (
+                  <p className="mt-2">
+                    <Command text={device.remove_command} />
+                  </p>
+                )}
                 <ul className="mt-2 space-y-2">
                   {(device.undesired_paths ?? []).map((path) => (
                     <li key={path} className="chip rounded bg-sunken px-2 py-1 font-mono text-meta break-all">
@@ -33,8 +40,9 @@ export function Undesired({ devices, now }: Props) {
             ))}
           </div>
         )}
-        <p className="mt-4 text-meta text-muted">
-          Config on a device but not in intent is not removed automatically (#65).
+        <p className="mt-4 max-w-prose text-meta text-muted">
+          Reconcile never removes it. An operator previews and removes it with the command above; it is never removed
+          on a schedule.
         </p>
       </div>
     </ViewFrame>

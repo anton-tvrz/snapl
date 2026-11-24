@@ -194,9 +194,41 @@ function deviceRow(device) {
 
   const next = el("td");
   if (device.suggested_command) next.append(el("code", device.suggested_command));
+  if (device.remove_command) next.append(el("code", device.remove_command));
   if (device.note) next.append(el("div", device.note, "paths"));
+  // The latest removal preview (spec 013 FR-016): what it would delete, and what it leaves by design.
+  const preview = device.last_removal_preview;
+  if (preview) {
+    next.append(el("div", "last removal preview: " + preview.plan_paths.length + " deletes, "
+      + preview.refused_paths.length + " refused · " + age(preview.at), "paths"));
+    for (const path of preview.refused_paths) next.append(el("div", "left in place: " + path, "paths"));
+  }
   row.append(next);
   return row;
+}
+
+const NOTHING_WRITTEN = {
+  plan_changed: "the device changed after the preview; nothing was removed",
+  deploy_in_flight: "a deploy to the device was running; nothing was removed",
+  remove_failed: "the device rejected the removal; nothing was removed",
+};
+
+// A removal's detail, one line each (spec 013 FR-016). The page shows removals and never starts one.
+function removalLines(removal) {
+  const lines = ["confirmed by " + (removal.actor || "unknown") + ": " + removal.confirmed_paths.length + " paths"];
+  if (removal.reason === null || removal.reason === undefined) return lines.concat(["not finished"]);
+  for (const path of removal.deleted_paths) lines.push("deleted " + path);
+  if (!removal.deleted_paths.length) {
+    lines.push(NOTHING_WRITTEN[removal.reason] || removal.reason + "; nothing was removed");
+  }
+  for (const path of removal.plan_paths) lines.push("the plan now: " + path);
+  if (removal.reason === "succeeded") lines.push("the verifying scan finds none of them");
+  for (const path of removal.remaining) lines.push("still there: " + path);
+  for (const path of removal.new_forward) lines.push("newly missing or different from intent: " + path);
+  for (const path of removal.still_refused) lines.push("left in place by design: " + path);
+  if (removal.device_response) lines.push("device response: " + removal.device_response);
+  if (removal.detail) lines.push(removal.detail);
+  return lines;
 }
 
 function seconds(total) {
@@ -225,6 +257,7 @@ function runRow(run) {
   row.append(el("td", run.target || ""));
   const state = el("td", run.state);
   if (run.reason) state.append(el("div", run.reason, "paths"));
+  if (run.removal) for (const line of removalLines(run.removal)) state.append(el("div", line, "paths"));
   row.append(state);
   row.append(el("td", run.trigger + (run.actor ? " (" + run.actor + ")" : ""), "wide"));
   row.append(el("td", seconds(run.duration_s), "wide"));

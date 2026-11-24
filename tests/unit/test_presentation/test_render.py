@@ -713,3 +713,101 @@ class TestRemovalResultCode:
     )
     def test_anything_else_is_an_error(self, reason) -> None:
         assert HumanRenderer.removal_code(_removal_result(reason)) == ExitCode.ERROR
+
+
+# ---------------------------------------------------------------------------
+# A removal in `snapl audit` (spec 013 T040, contracts/cli-remove.md "Audit rendering")
+# ---------------------------------------------------------------------------
+
+
+def _removal_events(reason="succeeded", *, workflow_type="RemoveConfig", payload=None, actor="anton"):
+    from datetime import timedelta
+
+    from snapl_orchestrator.models import AuditEvent, AuditEventType
+
+    device_id = uuid4()
+    at = datetime(2026, 11, 24, 14, 6, tzinfo=UTC)
+    common = {"workflow_id": f"remove-config-{device_id}", "workflow_type": workflow_type, "target_id": device_id}
+    start_payload = {"confirmed_paths": [_PORT, _NEIGHBOR]} if workflow_type == "RemoveConfig" else {}
+    terminal_payload = (
+        payload
+        if payload is not None
+        else {
+            "deleted_paths": [_PORT, _NEIGHBOR],
+            "device_response": "{}",
+            "gone": [_PORT, _NEIGHBOR],
+            "remaining": [],
+            "new_forward": [],
+            "still_refused": [],
+            "detail": None,
+        }
+    )
+    return [
+        AuditEvent(
+            event_id=uuid4(),
+            event_type=AuditEventType.WORKFLOW_STARTED,
+            timestamp=at,
+            actor=actor if workflow_type == "RemoveConfig" else None,
+            payload=start_payload,
+            **common,
+        ),
+        AuditEvent(
+            event_id=uuid4(),
+            event_type=AuditEventType.WORKFLOW_TERMINATED,
+            timestamp=at + timedelta(seconds=3),
+            outcome="success" if reason == "succeeded" else "failure",
+            reason=WorkflowReason(reason),
+            payload=terminal_payload,
+            **common,
+        ),
+    ]
+
+
+class TestRemovalAuditLine:
+    def _rows(self, events) -> list[str]:
+        console = Console(record=True, width=400, force_terminal=False, no_color=True)
+        HumanRenderer(console).audit(events)
+        return console.export_text().splitlines()
+
+    def test_a_verified_removal_names_its_deletes(self) -> None:
+        terminal = next(row for row in self._rows(_removal_events()) if "workflow_terminated" in row)
+        assert f"removed 2: {_PORT}, {_NEIGHBOR}; verified" in terminal
+
+    def test_the_terminal_row_carries_the_actor_from_the_start(self) -> None:
+        terminal = next(row for row in self._rows(_removal_events()) if "workflow_terminated" in row)
+        assert terminal.rstrip().endswith("anton")
+
+    def test_a_failed_verification_says_what_remains(self) -> None:
+        payload = {
+            "deleted_paths": [_PORT],
+            "device_response": "{}",
+            "gone": [],
+            "remaining": [_PORT],
+            "new_forward": [],
+            "still_refused": [],
+            "detail": None,
+        }
+        events = _removal_events("verification_failed", payload=payload)
+        terminal = next(row for row in self._rows(events) if "workflow_terminated" in row)
+        assert f"removed 1: {_PORT}; not verified, still there: {_PORT}" in terminal
+
+    @pytest.mark.parametrize(
+        ("reason", "payload", "text"),
+        [
+            ("plan_changed", {"plan_paths": [_PORT], "device_response": None, "detail": "changed"}, "plan changed"),
+            ("deploy_in_flight", {"deleted_paths": [], "device_response": None, "detail": "x"}, "deploy in flight"),
+            ("remove_failed", {"deleted_paths": [], "device_response": None, "detail": "rejected"}, "remove failed"),
+        ],
+    )
+    def test_a_removal_that_wrote_nothing_shows_its_reason(self, reason, payload, text) -> None:
+        terminal = next(
+            row for row in self._rows(_removal_events(reason, payload=payload)) if "workflow_terminated" in row
+        )
+        assert f"{text}; nothing removed" in terminal
+
+    def test_a_preview_renders_through_the_existing_table(self) -> None:
+        payload = {"plan_paths": [_PORT], "refused_paths": []}
+        rows = self._rows(_removal_events(workflow_type="PlanRemoval", payload=payload))
+        terminal = next(row for row in rows if "workflow_terminated" in row)
+        assert "success" in terminal
+        assert "removed" not in terminal

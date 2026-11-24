@@ -168,6 +168,16 @@ class HealthResponse(Envelope):
     health: View[FabricHealth]
 
 
+class RemovalPreviewView(_Model):
+    """A device's latest successful removal preview (spec 013 FR-016): what it would delete and leave."""
+
+    at: UtcDatetime
+    workflow_id: str
+    plan_paths: list[str]
+    # Entities the preview refused to remove; they stay on the device by design.
+    refused_paths: list[str]
+
+
 class DeviceView(_Model):
     device_id: UUID
     name: str
@@ -184,9 +194,13 @@ class DeviceView(_Model):
     last_scan_workflow_id: str | None = None
     last_deploy: DeployOutcome | None = None
     # `snapl reconcile <name>` for forward drift. None for undesired-only drift,
-    # whose removal is not automatic (#65); `note` says so.
+    # which reconcile never removes; `note` says so.
     suggested_command: str | None = None
+    # `snapl remove <name>` when the latest scan found undesired config (spec 013 FR-016).
+    remove_command: str | None = None
     note: str | None = None
+    # The device's latest successful `PlanRemoval`, or None when it was never previewed.
+    last_removal_preview: RemovalPreviewView | None = None
     # Spec 016: from the device's latest health_changed event; None when there is none.
     health: DeviceHealthView | None = None
 
@@ -221,6 +235,28 @@ class RunState(StrEnum):
     UNFINISHED = "unfinished"
 
 
+class RemovalView(_Model):
+    """What a `RemoveConfig` run did, from its start and terminal events (spec 013 FR-016).
+
+    A run still in flight has only `actor` and `confirmed_paths`.
+    """
+
+    actor: str | None = None
+    confirmed_paths: list[str] = Field(default_factory=list)
+    # The paths the one Set deleted; empty when it wrote nothing.
+    deleted_paths: list[str] = Field(default_factory=list)
+    # The new plan, when the device changed after the preview (`plan_changed`).
+    plan_paths: list[str] = Field(default_factory=list)
+    device_response: str | None = None
+    gone: list[str] = Field(default_factory=list)
+    remaining: list[str] = Field(default_factory=list)
+    new_forward: list[str] = Field(default_factory=list)
+    still_refused: list[str] = Field(default_factory=list)
+    # The terminal reason, e.g. "succeeded" or "plan_changed"; None while in flight.
+    reason: str | None = None
+    detail: str | None = None
+
+
 class RunView(_Model):
     """One workflow run. Its identity is (workflow_id, started_at), because
     `deploy-intent-{device}` is reused across runs (research R5)."""
@@ -239,6 +275,8 @@ class RunView(_Model):
     # Only when the audit trail records one.
     actor: str | None = None
     web_ui_url: str
+    # For a `RemoveConfig` run only (spec 013).
+    removal: RemovalView | None = None
 
 
 class RepeatedRepairFailure(_Model):
@@ -548,11 +586,12 @@ class DeviceLane(_Model):
 
 
 class EpisodeClose(_Model):
-    """The deploy that repaired a drift episode."""
+    """The deploy or removal that repaired a drift episode."""
 
-    # A scheduled repair, an operator's reconcile, or an operator's direct deploy.
-    kind: Literal["remediation", "reconcile", "deploy"]
-    # The DeployIntent run.
+    # A scheduled repair, an operator's reconcile, an operator's direct deploy,
+    # or an operator's confirmed removal (spec 013).
+    kind: Literal["remediation", "reconcile", "deploy", "removal"]
+    # The DeployIntent or RemoveConfig run.
     workflow_id: str
     trigger: Trigger
     ended_at: UtcDatetime

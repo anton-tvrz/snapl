@@ -13,6 +13,7 @@ describe("repairedBy", () => {
     ["reconcile", "repaired by an operator's reconcile"],
     ["remediation", "repaired by a scheduled remediation"],
     ["deploy", "repaired by an operator's deploy"],
+    ["removal", "repaired by an operator's removal"],
   ])("names a %s", (kind, expected) => {
     const episode = { ...spine, closed_by: { ...spine.closed_by!, kind } } as DriftEpisode;
     expect(repairedBy(episode)).toBe(expected);

@@ -1,6 +1,16 @@
 import { useEffect, useRef } from "react";
 
-import type { DeviceHealthView, DeviceNetwork, DeviceView, FabricNetwork, InterfaceState, RunView, SessionState, View } from "../api/types";
+import type {
+  DeviceHealthView,
+  DeviceNetwork,
+  DeviceView,
+  FabricNetwork,
+  InterfaceState,
+  RemovalPreviewView,
+  RunView,
+  SessionState,
+  View,
+} from "../api/types";
 import type { RunId } from "../data/provider";
 import { driftEncoding, runEncoding, TONES } from "../lib/encoding";
 import { healthMark } from "../lib/health";
@@ -43,6 +53,12 @@ function Paths({ title, paths }: { title: string; paths: readonly string[] }) {
       </ul>
     </section>
   );
+}
+
+/** "2 deletes, 1 refused": what a removal preview found. */
+function previewCounts(preview: RemovalPreviewView): string {
+  const deletes = preview.plan_paths.length;
+  return `${deletes} ${deletes === 1 ? "delete" : "deletes"}, ${preview.refused_paths.length} refused`;
 }
 
 /** The device's health (spec 016): its state, since when, and why. Beside the drift state, never instead of it. */
@@ -257,6 +273,7 @@ export function DeviceDrawer({ device, runs, linkNotes, now, onClose, copy = tru
   const close = useRef<HTMLButtonElement>(null);
   const own = runs.filter((run) => run.target === device.name);
   const deploy = device.last_deploy;
+  const preview = device.last_removal_preview;
 
   // Take the focus on opening and give it back on closing (spec 011 FR-044).
   useEffect(() => {
@@ -309,10 +326,15 @@ export function DeviceDrawer({ device, runs, linkNotes, now, onClose, copy = tru
       <Paths title="On the device, not in intent" paths={device.undesired_paths ?? []} />
       <Paths title="Differs from intent (direction not recorded)" paths={device.unclassified_paths ?? []} />
 
-      {device.note && <p className="mt-4 text-muted">{device.note}</p>}
+      {device.note && <p className="mt-4 max-w-prose text-muted">{device.note}</p>}
       {device.suggested_command && (
         <p className="mt-4">
           <Command text={device.suggested_command} copy={copy} />
+        </p>
+      )}
+      {device.remove_command && (
+        <p className="mt-4">
+          <Command text={device.remove_command} copy={copy} />
         </p>
       )}
 
@@ -325,7 +347,11 @@ export function DeviceDrawer({ device, runs, linkNotes, now, onClose, copy = tru
             ? `${deploy.success ? "Succeeded" : `Failed: ${deploy.reason ?? "no reason recorded"}`} · ${ageText(deploy.ended_at, now)}`
             : "No deploy recorded"}
         </dd>
+        <dt className="text-muted">Last removal preview</dt>
+        <dd>{preview ? `${previewCounts(preview)} · ${ageText(preview.at, now)}` : "None recorded"}</dd>
       </dl>
+      {/* What the latest preview left in place, so config kept by design reads apart from config nobody looked at (spec 013). */}
+      <Paths title="Left in place by the last preview" paths={preview?.refused_paths ?? []} />
 
       <section className="mt-4">
         <h3 className="text-meta font-semibold text-muted">Recent runs</h3>

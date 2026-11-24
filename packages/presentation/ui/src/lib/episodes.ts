@@ -9,6 +9,7 @@ const REPAIRED_BY: Record<string, string> = {
   reconcile: "repaired by an operator's reconcile",
   remediation: "repaired by a scheduled remediation",
   deploy: "repaired by an operator's deploy",
+  removal: "repaired by an operator's removal",
 };
 
 /** What repaired an episode, in words. */
