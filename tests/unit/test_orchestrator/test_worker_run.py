@@ -230,8 +230,9 @@ class TestWorkerRegistration:
         await run_mod.run_worker(activities=MagicMock())
 
         assert DriftResponseWorkflow in captured["workflows"]
-        # The six block activities, the schedule stand-down (#136) and the removal preview's two (spec 013).
-        assert len(captured["activities"]) == 9
+        # The six block activities, the schedule stand-down (#136), the removal preview's two
+        # and the confirmed removal's two (spec 013).
+        assert len(captured["activities"]) == 11
         assert "stand_down_schedule" in {a.__name__ for a in captured["activities"]}
         client.create_schedule.assert_not_called()
         client.get_schedule_handle.assert_not_called()
@@ -260,6 +261,31 @@ class TestWorkerRegistration:
 
         assert PlanRemovalWorkflow in captured["workflows"]
         assert {"plan_removal", "dry_run_remove"} <= {a.__name__ for a in captured["activities"]}
+
+    async def test_registers_the_confirmed_removal(self, monkeypatch):
+        """Spec 013 T031: RemoveConfig, the Set and the deploy check."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        import snapl_orchestrator.worker.run as run_mod
+        from snapl_orchestrator.workflows.removal import RemoveConfigWorkflow
+
+        monkeypatch.setenv("WORKER_METRICS_PORT", "off")
+        monkeypatch.setattr(run_mod.Client, "connect", AsyncMock(return_value=MagicMock()))
+        captured: dict = {}
+
+        class _FakeWorker:
+            def __init__(self, _client, **kwargs):
+                captured.update(kwargs)
+
+            async def run(self):
+                return None
+
+        monkeypatch.setattr(run_mod, "Worker", _FakeWorker)
+
+        await run_mod.run_worker(activities=MagicMock())
+
+        assert RemoveConfigWorkflow in captured["workflows"]
+        assert {"remove_config", "deploy_in_flight"} <= {a.__name__ for a in captured["activities"]}
 
 
 class TestWorkerMetrics:

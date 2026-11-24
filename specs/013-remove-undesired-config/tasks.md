@@ -151,25 +151,25 @@ No setup. There is no new package, dependency or directory: pygnmi's `set(delete
 
 ### Tests (write first, verify they fail)
 
-- [ ] T027 [P] [US2] Extend tests/unit/test_executor/test_abc.py (`remove` is abstract) and tests/unit/test_executor/test_gnmi_remove.py for `GnmiExecutor.remove`, with pygnmi mocked. Cover:
+- [x] T027 [P] [US2] Extend tests/unit/test_executor/test_abc.py (`remove` is abstract) and tests/unit/test_executor/test_gnmi_remove.py for `GnmiExecutor.remove`, with pygnmi mocked. Cover:
   - exactly one `set(delete=paths)`, with no `update` or `replace` keyword, inside the per-host lock;
   - a refused path means `gNMIclient` is never constructed;
   - a gRPC error gives `success=False` with the device text (use C1's `FailedPrecondition` text from captures.md as the fixture);
   - an empty `str(exc)` dial error gives the #194 message;
   - `device_response` is set on success;
   - it raises `ValueError` on an empty list or a duplicate.
-- [ ] T028 [P] [US2] Extend tests/unit/test_orchestrator/test_activity_executor.py for `remove_config`: it calls `executor.remove` and records `snapl_gnmi_call_duration{operation="configure"}`, with outcome `ok` or `error`. Write tests/unit/test_orchestrator/test_activity_workflows.py for `deploy_in_flight`, using a fake `activity.client()`:
+- [x] T028 [P] [US2] Extend tests/unit/test_orchestrator/test_activity_executor.py for `remove_config`: it calls `executor.remove` and records `snapl_gnmi_call_duration{operation="configure"}`, with outcome `ok` or `error`. Write tests/unit/test_orchestrator/test_activity_workflows.py for `deploy_in_flight`, using a fake `activity.client()`:
   - a RUNNING handle gives True;
   - COMPLETED, FAILED or TERMINATED gives False;
   - `RPCError` not-found gives False;
   - the id described is `deploy-intent-{id}`.
-- [ ] T029 [P] [US2] Write the `RemoveConfig` half of tests/unit/test_orchestrator/test_workflow_removal.py, covering every case listed in contracts/orchestrator-removal.md. In particular:
+- [x] T029 [P] [US2] Write the `RemoveConfig` half of tests/unit/test_orchestrator/test_workflow_removal.py, covering every case listed in contracts/orchestrator-removal.md. In particular:
   - `remove_config` is never scheduled when the plan changed, a deploy is in flight (first or second check), the dry run refused, or intent is missing;
   - its argument equals `request.confirmed_paths`;
   - the start event carries `actor` and `confirmed_paths`.
-- [ ] T030 [P] [US2] Write tests/unit/test_orchestrator/test_removal_never_scheduled.py (FR-012): an AST check that `workflows/drift_response.py`, `workflows/reconcile_devices.py` and `workflows/deploy_intent.py` import none of `workflows.removal`, `remove_config`, `dry_run_remove` or `plan_removal`
-- [ ] T031 [P] [US2] Extend tests/unit/test_orchestrator/test_worker_run.py: `RemoveConfigWorkflow`, `remove_config` and `deploy_in_flight` are registered
-- [ ] T032 [P] [US2] Write the apply half of tests/unit/test_presentation/test_cli_remove.py, from contracts/cli-remove.md:
+- [x] T030 [P] [US2] Write tests/unit/test_orchestrator/test_removal_never_scheduled.py (FR-012): an AST check that `workflows/drift_response.py`, `workflows/reconcile_devices.py` and `workflows/deploy_intent.py` import none of `workflows.removal`, `remove_config`, `dry_run_remove` or `plan_removal`
+- [x] T031 [P] [US2] Extend tests/unit/test_orchestrator/test_worker_run.py: `RemoveConfigWorkflow`, `remove_config` and `deploy_in_flight` are registered
+- [x] T032 [P] [US2] Write the apply half of tests/unit/test_presentation/test_cli_remove.py, from contracts/cli-remove.md:
   - `--apply --yes` starts `RemoveConfig` with id `remove-config-{id}`, `WorkflowIDConflictPolicy.FAIL`, `actor=_actor()` and `confirmed_paths` equal to the previewed plan's `delete_paths`;
   - a prompt answered no starts nothing;
   - non-TTY stdin without `--yes` refuses before connecting;
@@ -177,15 +177,15 @@ No setup. There is no new package, dependency or directory: pygnmi's `set(delete
   - an empty plan exits 0 without starting `RemoveConfig`;
   - each reason's text and exit code;
   - `WorkflowAlreadyStartedError` maps to "a removal of <device> is already running", exit 1.
-- [ ] T033 [P] [US2] Extend tests/unit/test_presentation/test_render.py with the result view, human and JSON, for each reason. `plan_changed` renders the new plan.
+- [x] T033 [P] [US2] Extend tests/unit/test_presentation/test_render.py with the result view, human and JSON, for each reason. `plan_changed` renders the new plan.
 
 ### Implementation
 
-- [ ] T034 [US2] Add `Executor.remove` to packages/executor/snapl_executor/abc.py and implement `GnmiExecutor.remove` (guard, then `_blocking_delete` under `_set_locks` in `asyncio.to_thread`) in packages/executor/snapl_executor/gnmi/executor.py (T027)
-- [ ] T035 [P] [US2] Add the `remove_config` activity to packages/orchestrator/snapl_orchestrator/activities/executor.py, and create packages/orchestrator/snapl_orchestrator/activities/workflows.py with `deploy_in_flight` (T028)
-- [ ] T036 [US2] Add `RemoveConfigWorkflow` to packages/orchestrator/snapl_orchestrator/workflows/removal.py. It follows the state diagram in data-model.md and the verification in research R9 (T029, T030)
-- [ ] T037 [US2] Register the workflow and activities in packages/orchestrator/snapl_orchestrator/worker/run.py (T031)
-- [ ] T038 [US2] Add `--apply` and `--yes`, the TTY check and the result view to `remove` in packages/presentation/snapl_presentation/cli.py and packages/presentation/snapl_presentation/render.py (T032, T033)
+- [x] T034 [US2] Add `Executor.remove` to packages/executor/snapl_executor/abc.py and implement `GnmiExecutor.remove` (guard, then `_blocking_delete` under `_set_locks` in `asyncio.to_thread`) in packages/executor/snapl_executor/gnmi/executor.py (T027)
+- [x] T035 [P] [US2] Add the `remove_config` activity to packages/orchestrator/snapl_orchestrator/activities/executor.py, and create packages/orchestrator/snapl_orchestrator/activities/workflows.py with `deploy_in_flight` (T028)
+- [x] T036 [US2] Add `RemoveConfigWorkflow` to packages/orchestrator/snapl_orchestrator/workflows/removal.py. It follows the state diagram in data-model.md and the verification in research R9 (T029, T030)
+- [x] T037 [US2] Register the workflow and activities in packages/orchestrator/snapl_orchestrator/worker/run.py (T031)
+- [x] T038 [US2] Add `--apply` and `--yes`, the TTY check and the result view to `remove` in packages/presentation/snapl_presentation/cli.py and packages/presentation/snapl_presentation/render.py (T032, T033)
 - [ ] T039 [US2] **Needs the lab.** Live check on leaf-04: quickstart steps 3 (SC-004), 4 (SC-001) and 6 (a port and its binding in one Set). Record them in specs/013-remove-undesired-config/evidence.md. Add the captured `remove` response and rejection text as fixtures under tests/unit/test_executor/fixtures/ (new directory) and use them in T027's tests (constitution III). Leave leaf-04 clean, with the schedule resumed.
 
 **Checkpoint**: #65's capability exists: undesired config can be removed, operator-confirmed, dry-run first, in one atomic Set, and verified. Scheduled runs still never remove.

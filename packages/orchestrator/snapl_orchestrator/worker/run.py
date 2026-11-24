@@ -24,13 +24,14 @@ from snapl_observability.structural.observer import StructuralObserver
 from snapl_orchestrator.activities import Activities, set_activities
 from snapl_orchestrator.activities.audit import record_audit_event
 from snapl_orchestrator.activities.collector import collect_drift_state
-from snapl_orchestrator.activities.executor import apply_config, dry_run_remove
+from snapl_orchestrator.activities.executor import apply_config, dry_run_remove, remove_config
 from snapl_orchestrator.activities.intent import (
     fetch_desired_state,
     fetch_devices_for_use_case,
 )
 from snapl_orchestrator.activities.observability import detect_drift, plan_removal
 from snapl_orchestrator.activities.schedule import stand_down_schedule
+from snapl_orchestrator.activities.workflows import deploy_in_flight
 from snapl_orchestrator.audit.sqlite import SqliteAuditLog
 from snapl_orchestrator.exceptions import OrchestratorConfigError
 from snapl_orchestrator.telemetry import TelemetryRunner
@@ -40,7 +41,7 @@ from snapl_orchestrator.worker.sandbox import build_workflow_runner
 from snapl_orchestrator.workflows.deploy_intent import DeployIntentWorkflow
 from snapl_orchestrator.workflows.drift_response import DriftResponseWorkflow
 from snapl_orchestrator.workflows.reconcile_devices import ReconcileDevicesWorkflow
-from snapl_orchestrator.workflows.removal import PlanRemovalWorkflow
+from snapl_orchestrator.workflows.removal import PlanRemovalWorkflow, RemoveConfigWorkflow
 from snapl_orchestrator.workflows.scan_drift import ScanDriftWorkflow
 
 logger = logging.getLogger(__name__)
@@ -122,8 +123,9 @@ async def run_worker(*, activities: Activities | None = None) -> None:
             ReconcileDevicesWorkflow,
             # Started only by drift schedules; the worker never creates one (009 FR-009).
             DriftResponseWorkflow,
-            # Started only by `snapl remove`; a schedule never starts one (spec 013 FR-012).
+            # Started only by `snapl remove`; a schedule never starts either (spec 013 FR-012).
             PlanRemovalWorkflow,
+            RemoveConfigWorkflow,
         ],
         activities=[
             fetch_desired_state,
@@ -135,6 +137,8 @@ async def run_worker(*, activities: Activities | None = None) -> None:
             stand_down_schedule,
             plan_removal,
             dry_run_remove,
+            remove_config,
+            deploy_in_flight,
         ],
     )
 

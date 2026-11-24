@@ -156,3 +156,106 @@ class TestDryRunRemove:
     async def test_a_bad_path_list_is_a_programming_error(self, make_device, paths):
         with pytest.raises(ValueError, match="paths"):
             await _executor(protected_interfaces=_PROTECTED).dry_run_remove(make_device("leaf-04"), paths)
+
+
+# ---------------------------------------------------------------------------
+# remove (T027)
+# ---------------------------------------------------------------------------
+
+# C1 (captures.md): SR Linux's rejection of a Set that deletes a bound port
+# without its binding. The whole Set is refused and the text names the path.
+_C1_REJECTION = (
+    'Error in path: .network-instance{.name=="default"}.interface{.name=="ethernet-1/7.0"}\n'
+    "    [FailedPrecondition] subinterface ethernet-1/7.0 not found"
+)
+_BINDING = "/network-instance[name=default]/interface[name=ethernet-1/7.0]"
+
+
+@pytest.fixture
+def gnmi(mock_gnmi_client):
+    """pygnmi's client class, patched to hand back the mock client."""
+    from unittest.mock import patch
+
+    with patch("snapl_executor.gnmi.executor.gNMIclient", return_value=mock_gnmi_client) as client:
+        yield client
+
+
+class TestRemove:
+    async def test_one_set_of_deletes_only(self, make_device, gnmi, mock_gnmi_client):
+        device = make_device("leaf-04", lab_node_name="clab-dcfabric-leaf-04")
+        paths = [_PORT, _BINDING, _NEIGHBOR]
+        result = await _executor(protected_interfaces=_PROTECTED).remove(device, paths)
+
+        assert result.success is True
+        assert result.dry_run is False
+        assert result.paths == paths
+        assert result.refused == {}
+        assert result.error is None
+        assert result.device_response is not None
+        assert result.duration_ms >= 0
+        gnmi.assert_called_once()
+        assert gnmi.call_args.kwargs["target"] == ("clab-dcfabric-leaf-04", 57400)
+        mock_gnmi_client.set.assert_called_once_with(delete=paths)
+
+    async def test_a_refused_path_means_nothing_is_dialled(self, make_device, no_dial):
+        protected = "/network-instance[name=default]/interface[name=system0.0]"
+        result = await _executor(protected_interfaces=_PROTECTED).remove(make_device("leaf-04"), [_PORT, protected])
+
+        assert result.success is False
+        assert result.dry_run is False
+        assert result.refused == {protected: "protected"}
+        assert protected in result.error
+        assert result.device_response is None
+        no_dial.assert_not_called()
+
+    async def test_without_a_protected_set_nothing_is_dialled(self, make_device, no_dial):
+        result = await _executor().remove(make_device("leaf-04"), [_PORT])
+
+        assert result.success is False
+        assert result.refused == {_PORT: "no protected set configured"}
+        no_dial.assert_not_called()
+
+    async def test_a_rejection_keeps_the_device_text(self, make_device, gnmi, mock_gnmi_client):
+        mock_gnmi_client.set.side_effect = Exception(_C1_REJECTION)
+        result = await _executor(protected_interfaces=_PROTECTED).remove(make_device("leaf-04"), [_PORT])
+
+        assert result.success is False
+        assert result.error == _C1_REJECTION
+        assert result.refused == {}
+        assert result.device_response is None
+
+    async def test_a_silent_dial_error_names_the_target(self, make_device):
+        """#194: a dial that never connects raises an exception with no message."""
+        from unittest.mock import patch
+
+        class _SilentError(Exception):
+            def __str__(self) -> str:
+                return ""
+
+        device = make_device("leaf-04", lab_node_name="clab-dcfabric-leaf-04")
+        with patch("snapl_executor.gnmi.executor.gNMIclient") as client:
+            client.return_value.__enter__.side_effect = _SilentError()
+            result = await _executor(protected_interfaces=_PROTECTED).remove(device, [_PORT])
+
+        assert result.success is False
+        assert result.error == "_SilentError, dialing clab-dcfabric-leaf-04:57400"
+
+    async def test_the_set_holds_the_hosts_lock(self, make_device, gnmi, mock_gnmi_client):
+        """SR Linux runs one exclusive config session at a time, so a removal
+        waits behind a deploy's Set to the same host."""
+        executor = _executor(protected_interfaces=_PROTECTED)
+        device = make_device("leaf-04", lab_node_name="clab-dcfabric-leaf-04")
+        held: list[bool] = []
+        mock_gnmi_client.set.side_effect = lambda **_: (
+            held.append(executor._set_locks["clab-dcfabric-leaf-04"].locked()) or {"response": []}
+        )
+
+        result = await executor.remove(device, [_PORT])
+
+        assert result.success is True
+        assert held == [True]
+
+    @pytest.mark.parametrize("paths", [[], [_PORT, _PORT]], ids=["empty", "duplicate"])
+    async def test_a_bad_path_list_is_a_programming_error(self, make_device, no_dial, paths):
+        with pytest.raises(ValueError, match="paths"):
+            await _executor(protected_interfaces=_PROTECTED).remove(make_device("leaf-04"), paths)

@@ -555,3 +555,161 @@ class TestRemovalPlanCode:
 
     def test_nothing_to_remove_is_ok(self) -> None:
         assert JsonRenderer.removal_plan_code(_removal_plan(deletes=False)) == ExitCode.OK
+
+
+# ---------------------------------------------------------------------------
+# The removal's result (spec 013 T033, contracts/cli-remove.md "Apply")
+# ---------------------------------------------------------------------------
+
+_C1_REJECTION = "[FailedPrecondition] subinterface ethernet-1/7.0 not found"
+
+
+def _removal_result(reason, *, deleted=(), verification=None, detail=None, plan=None, device_name="leaf-04"):
+    from snapl_orchestrator.models import RemovalResult, RemovalVerification
+
+    started = datetime(2026, 11, 24, 14, 6, 0, tzinfo=UTC)
+    return RemovalResult(
+        workflow_id="remove-config-x",
+        device_id=uuid4(),
+        device_name=device_name,
+        success=reason == WorkflowReason.SUCCEEDED,
+        reason=reason,
+        detail=detail,
+        plan=plan if plan is not None else _removal_plan(),
+        deleted=list(deleted),
+        device_response="{}" if deleted else None,
+        verification=RemovalVerification(**verification) if verification else None,
+        started_at=started,
+        ended_at=started,
+    )
+
+
+_ALL = sorted([_ADDRESS, _PORT, _NEIGHBOR])
+_VERIFIED = {"gone": _ALL, "remaining": [], "new_forward": [], "still_refused": [f"{_POLICY}/default_action"]}
+
+
+class TestHumanRemovalResult:
+    def _text(self, result) -> str:
+        console = Console(record=True, width=80, force_terminal=False, no_color=True)
+        HumanRenderer(console).removal(result.plan, result)
+        return console.export_text()
+
+    def test_succeeded(self) -> None:
+        text = self._text(_removal_result(WorkflowReason.SUCCEEDED, deleted=_ALL, verification=_VERIFIED))
+        assert "removed 3 entries from leaf-04; the verifying scan finds none of them" in text
+        for path in _ALL:
+            assert f"deleted {path}" in text
+        assert f"still there, refused: {_POLICY}/default_action" in text
+
+    def test_plan_changed_shows_the_new_plan(self) -> None:
+        text = self._text(_removal_result(WorkflowReason.PLAN_CHANGED))
+        assert "leaf-04 changed since the preview; nothing was removed" in text
+        assert "leaf-04: 3 deletes planned from a scan at 14:05:12Z" in text
+        assert f"delete {_PORT}" in text
+        assert "To remove: snapl remove leaf-04 --apply" in text
+
+    def test_deploy_in_flight(self) -> None:
+        text = self._text(_removal_result(WorkflowReason.DEPLOY_IN_FLIGHT))
+        assert "a deploy to leaf-04 is running; nothing was removed. Run this again when it ends." in text
+
+    def test_remove_failed_keeps_the_devices_reason(self) -> None:
+        text = self._text(_removal_result(WorkflowReason.REMOVE_FAILED, detail=_C1_REJECTION))
+        assert "leaf-04 rejected the removal; nothing was removed" in text
+        assert _C1_REJECTION in text
+
+    def test_verification_failed_lists_what_was_deleted_and_what_is_wrong(self) -> None:
+        lost = "/interface[name=ethernet-1/2]/enabled"
+        verification = {"gone": [_ADDRESS, _NEIGHBOR], "remaining": [_PORT], "new_forward": [lost], "still_refused": []}
+        text = self._text(_removal_result(WorkflowReason.VERIFICATION_FAILED, deleted=_ALL, verification=verification))
+        assert "deleted 3 entries from leaf-04, but the verifying scan disagrees" in text
+        for path in _ALL:
+            assert f"deleted {path}" in text
+        assert f"still there: {_PORT}" in text
+        assert f"newly missing or different from intent: {lost}" in text
+
+    def test_collect_failed_after_the_write(self) -> None:
+        result = _removal_result(WorkflowReason.COLLECT_FAILED, deleted=_ALL, detail="socket closed")
+        text = self._text(result)
+        assert "deleted 3 entries; the verifying scan could not read leaf-04" in text
+        assert "socket closed" in text
+        assert "snapl scan" in text
+
+    def test_collect_failed_before_the_write(self) -> None:
+        text = self._text(_removal_result(WorkflowReason.COLLECT_FAILED, detail="socket closed"))
+        assert "could not read leaf-04; nothing was removed" in text
+        assert "socket closed" in text
+
+    @pytest.mark.parametrize("reason", [WorkflowReason.DEVICE_NOT_FOUND, WorkflowReason.INTENT_UNAVAILABLE])
+    def test_intent_failures(self, reason) -> None:
+        text = self._text(_removal_result(reason, detail="infrahub unreachable", device_name=None, plan=None))
+        assert f"{reason.value.replace('_', ' ')}: nothing was removed" in text
+        assert "infrahub unreachable" in text
+
+    def test_cancelled_after_the_set_names_what_was_deleted(self) -> None:
+        text = self._text(_removal_result(WorkflowReason.CANCELLED, deleted=[_PORT]))
+        assert "the removal of leaf-04 was cancelled after deleting 1 entry" in text
+        assert f"deleted {_PORT}" in text
+
+    def test_cancelled_before_the_set(self) -> None:
+        text = self._text(_removal_result(WorkflowReason.CANCELLED))
+        assert "the removal of leaf-04 was cancelled; nothing was removed" in text
+
+    def test_nothing_to_remove_prints_nothing_more(self) -> None:
+        console = Console(record=True, width=80, force_terminal=False, no_color=True)
+        HumanRenderer(console).removal(_removal_plan(deletes=False), None)
+        assert console.export_text() == ""
+
+
+class TestHumanRemovalPlanBeforeApply:
+    def test_does_not_suggest_apply_while_applying(self) -> None:
+        console = Console(record=True, width=80, force_terminal=False, no_color=True)
+        HumanRenderer(console).removal_plan(_removal_plan(), applying=True)
+        text = console.export_text()
+        assert "Nothing was written." in text
+        assert "--apply" not in text
+
+
+class TestJsonRemovalResult:
+    def test_is_the_plan_and_the_result(self) -> None:
+        plan = _removal_plan()
+        result = _removal_result(WorkflowReason.SUCCEEDED, deleted=_ALL, verification=_VERIFIED, plan=plan)
+        console = Console(record=True, width=200, force_terminal=False)
+        JsonRenderer(console).removal(plan, result)
+        assert json.loads(console.export_text()) == {
+            "plan": json.loads(plan.model_dump_json()),
+            "result": json.loads(result.model_dump_json()),
+        }
+
+    def test_nothing_to_remove_has_no_result(self) -> None:
+        plan = _removal_plan(deletes=False)
+        console = Console(record=True, width=200, force_terminal=False)
+        JsonRenderer(console).removal(plan, None)
+        assert json.loads(console.export_text()) == {"plan": json.loads(plan.model_dump_json()), "result": None}
+
+    def test_the_json_plan_view_is_unchanged_while_applying(self) -> None:
+        """A JSON consumer gets one document: the apply prints plan and result together."""
+        console = Console(record=True, width=200, force_terminal=False)
+        JsonRenderer(console).removal_plan(_removal_plan(), applying=True)
+        assert console.export_text() == ""
+
+
+class TestRemovalResultCode:
+    def test_succeeded_is_ok(self) -> None:
+        result = _removal_result(WorkflowReason.SUCCEEDED, deleted=_ALL, verification=_VERIFIED)
+        assert HumanRenderer.removal_code(result) == ExitCode.OK
+
+    def test_nothing_to_remove_is_ok(self) -> None:
+        assert JsonRenderer.removal_code(None) == ExitCode.OK
+
+    @pytest.mark.parametrize(
+        "reason",
+        [
+            WorkflowReason.PLAN_CHANGED,
+            WorkflowReason.DEPLOY_IN_FLIGHT,
+            WorkflowReason.REMOVE_FAILED,
+            WorkflowReason.COLLECT_FAILED,
+            WorkflowReason.CANCELLED,
+        ],
+    )
+    def test_anything_else_is_an_error(self, reason) -> None:
+        assert HumanRenderer.removal_code(_removal_result(reason)) == ExitCode.ERROR

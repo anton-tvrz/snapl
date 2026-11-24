@@ -1,4 +1,4 @@
-"""Executor activities — wrap snapl_executor.Executor.apply() and the removal dry run."""
+"""Executor activities — wrap snapl_executor.Executor.apply() and the removal (dry run and Set)."""
 
 from __future__ import annotations
 
@@ -42,3 +42,21 @@ async def dry_run_remove(device: Device, paths: list[str]) -> RemoveResult:
     ``success=False`` with ``refused`` set, not as an exception.
     """
     return await get_activities().executor.dry_run_remove(device, paths)
+
+
+@activity.defn(name="remove_config")
+async def remove_config(device: Device, paths: list[str]) -> RemoveResult:
+    """Send a confirmed removal: one Set of deletes (spec 013 FR-008).
+
+    The device's rejection comes back as ``success=False``, not as an
+    exception. It is a configure call to the device, so it is recorded as
+    ``snapl_gnmi_call_duration{operation="configure"}`` as ``apply_config`` is.
+    """
+    outcome = CallOutcome.ERROR
+    started = time.monotonic()
+    try:
+        result = await get_activities().executor.remove(device, paths)
+        outcome = CallOutcome.OK if result.success else CallOutcome.ERROR
+        return result
+    finally:
+        record_gnmi_call(device, GnmiOperation.CONFIGURE, started, outcome)

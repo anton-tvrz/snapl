@@ -21,6 +21,7 @@ from rich.markup import escape
 from rich.table import Table
 
 from snapl_observability.models import DriftStatus
+from snapl_orchestrator.models import WorkflowReason
 from snapl_presentation.exit_codes import ExitCode
 
 if TYPE_CHECKING:
@@ -32,6 +33,7 @@ if TYPE_CHECKING:
         DriftScanResult,
         DriftScheduleView,
         ReconcileResult,
+        RemovalResult,
         RunSummary,
         ScheduledRunInfo,
         WorkflowResult,
@@ -204,6 +206,11 @@ class Renderer:
         return ExitCode.OK if plan.is_empty else ExitCode.DRIFT
 
     @staticmethod
+    def removal_code(result: RemovalResult | None) -> ExitCode:
+        # None: the plan had nothing to remove, so no removal started.
+        return ExitCode.OK if result is None or result.success else ExitCode.ERROR
+
+    @staticmethod
     def reconcile_code(result: ReconcileResult) -> ExitCode:
         # Skips are not failures — a device already being deployed, or absent
         # from the SoT, is a reported outcome, not a broken run (#66/#35).
@@ -231,7 +238,10 @@ class Renderer:
     def schedule(self, view: DriftScheduleView) -> None:
         raise NotImplementedError
 
-    def removal_plan(self, plan: RemovalPlan) -> None:
+    def removal_plan(self, plan: RemovalPlan, *, applying: bool = False) -> None:
+        raise NotImplementedError
+
+    def removal(self, plan: RemovalPlan, result: RemovalResult | None) -> None:
         raise NotImplementedError
 
 
@@ -344,10 +354,11 @@ class HumanRenderer(Renderer):
             self._console.print(f"{'recent runs':<17} none yet")
         self._console.print(f"{'skipped (overlap)':<17} {view.skipped_overlap}")
 
-    def removal_plan(self, plan: RemovalPlan) -> None:
+    def removal_plan(self, plan: RemovalPlan, *, applying: bool = False) -> None:
         """The preview: each delete and what it answers, the refusals, and what reconcile heals instead.
 
         Paths print whole, never wrapped: an operator may copy one to act on by hand.
+        ``applying``: the preview before ``--apply``'s prompt, which needs no hint to apply.
         """
         out = functools.partial(self._console.print, soft_wrap=True)
         device = _esc(plan.device_name)
@@ -373,7 +384,64 @@ class HumanRenderer(Renderer):
             verb = "is missing or differs" if count == 1 else "are missing or differ"
             out(f"\n  {_plural(count, 'path')} {verb} from intent: snapl reconcile {device} heals those, not this.")
         if not plan.is_empty:
-            out(f"\nNothing was written. To remove: snapl remove {device} --apply")
+            out("\nNothing was written." + ("" if applying else f" To remove: snapl remove {device} --apply"))
+
+    def removal(self, plan: RemovalPlan, result: RemovalResult | None) -> None:
+        """What a confirmed removal did (contracts/cli-remove.md, "Apply"). The preview is already shown."""
+        if result is None:
+            return
+        out = functools.partial(self._console.print, soft_wrap=True)
+        device = _esc(result.device_name or plan.device_name)
+        out(_removal_headline(result, device))
+        if result.reason == WorkflowReason.PLAN_CHANGED:
+            if result.plan is not None:
+                out("")
+                self.removal_plan(result.plan)
+            return
+        for line in _removal_details(result):
+            out(f"  {line}")
+
+
+def _removal_headline(result: RemovalResult, device: str) -> str:
+    count = len(result.deleted)
+    entries = f"{count} {'entry' if count == 1 else 'entries'}"
+    written = bool(result.deleted)
+    headlines = {
+        WorkflowReason.SUCCEEDED: f"removed {entries} from {device}; the verifying scan finds none of them",
+        WorkflowReason.PLAN_CHANGED: f"{device} changed since the preview; nothing was removed",
+        WorkflowReason.DEPLOY_IN_FLIGHT: (
+            f"a deploy to {device} is running; nothing was removed. Run this again when it ends."
+        ),
+        WorkflowReason.REMOVE_FAILED: f"{device} rejected the removal; nothing was removed",
+        WorkflowReason.VERIFICATION_FAILED: f"deleted {entries} from {device}, but the verifying scan disagrees",
+        WorkflowReason.COLLECT_FAILED: (
+            f"deleted {entries}; the verifying scan could not read {device}"
+            if written
+            else f"could not read {device}; nothing was removed"
+        ),
+        WorkflowReason.CANCELLED: (
+            f"the removal of {device} was cancelled after deleting {entries}"
+            if written
+            else f"the removal of {device} was cancelled; nothing was removed"
+        ),
+    }
+    default = f"{device}: {_esc(result.reason.value.replace('_', ' '))}: nothing was removed"
+    return headlines.get(result.reason, default)
+
+
+def _removal_details(result: RemovalResult) -> list[str]:
+    """What was deleted, what the verifying scan found, the cause, and what to do next."""
+    lines = [f"deleted {_esc(path)}" for path in result.deleted]
+    verification = result.verification
+    if verification is not None:
+        lines += [f"still there: {_esc(path)}" for path in verification.remaining]
+        lines += [f"newly missing or different from intent: {_esc(path)}" for path in verification.new_forward]
+        lines += [f"still there, refused: {_esc(path)}" for path in verification.still_refused]
+    if result.detail and result.reason != WorkflowReason.CANCELLED:
+        lines.append(_esc(result.detail))
+    if result.reason == WorkflowReason.COLLECT_FAILED and result.deleted:
+        lines.append("Run snapl scan to see what the device holds now.")
+    return lines
 
 
 class JsonRenderer(Renderer):
@@ -413,8 +481,13 @@ class JsonRenderer(Renderer):
     def schedule(self, view: DriftScheduleView) -> None:
         self._emit(view.model_dump(mode="json"))
 
-    def removal_plan(self, plan: RemovalPlan) -> None:
-        self._emit({"plan": _dump(plan)})
+    def removal_plan(self, plan: RemovalPlan, *, applying: bool = False) -> None:
+        # While applying, the plan goes out with the result as one document.
+        if not applying:
+            self._emit({"plan": _dump(plan)})
+
+    def removal(self, plan: RemovalPlan, result: RemovalResult | None) -> None:
+        self._emit({"plan": _dump(plan), "result": _dump(result) if result is not None else None})
 
 
 def build_renderer(*, as_json: bool, console: Console | None = None) -> Renderer:

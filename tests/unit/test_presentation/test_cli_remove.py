@@ -1,4 +1,4 @@
-"""`snapl remove`, the preview (spec 013 T018, contracts/cli-remove.md).
+"""`snapl remove`, the preview (spec 013 T018) and --apply (T032), from contracts/cli-remove.md.
 
 The Temporal client is mocked, as in the other CLI tests: what is asserted is
 which workflow starts with which id, what is printed and the exit code.
@@ -72,9 +72,9 @@ def _client(*results):
     return client
 
 
-def _remove(client, *args: str):
+def _remove(client, *args: str, answer: str | None = None):
     with patch.object(cli, "_connect", new=AsyncMock(return_value=client)):
-        return runner.invoke(cli.app, ["remove", "leaf-01", *args])
+        return runner.invoke(cli.app, ["remove", "leaf-01", *args], input=answer)
 
 
 class TestPreview:
@@ -170,3 +170,172 @@ class TestPreview:
         assert detail in result.output
         assert "Traceback" not in result.output
         assert "nothing was written" in result.output.lower()
+
+
+# ---------------------------------------------------------------------------
+# --apply (spec 013 T032)
+# ---------------------------------------------------------------------------
+
+
+def _result(device_ids, reason, *, deleted=(), plan=None, detail=None):
+    from snapl_orchestrator.models import RemovalResult, RemovalVerification, WorkflowReason
+
+    started = datetime(2026, 11, 24, 14, 6, tzinfo=UTC)
+    verified = reason in (WorkflowReason.SUCCEEDED, WorkflowReason.VERIFICATION_FAILED)
+    return RemovalResult(
+        workflow_id=f"remove-config-{device_ids['leaf-01']}",
+        device_id=device_ids["leaf-01"],
+        device_name="leaf-01",
+        success=reason == WorkflowReason.SUCCEEDED,
+        reason=reason,
+        detail=detail,
+        plan=plan,
+        deleted=list(deleted),
+        verification=RemovalVerification(
+            gone=list(deleted) if reason == WorkflowReason.SUCCEEDED else [],
+            remaining=[] if reason == WorkflowReason.SUCCEEDED else list(deleted),
+            new_forward=[],
+            still_refused=[],
+        )
+        if verified
+        else None,
+        started_at=started,
+        ended_at=started,
+    )
+
+
+@pytest.fixture
+def tty():
+    """stdin is a terminal, so --apply may prompt."""
+    with patch.object(cli, "_stdin_is_terminal", return_value=True):
+        yield
+
+
+def _deleted():
+    return sorted([PORT, NEIGHBOR])
+
+
+class TestApply:
+    def test_yes_starts_remove_config_with_the_previewed_plan(self, sot, device_ids) -> None:
+        from temporalio.common import WorkflowIDConflictPolicy
+
+        from snapl_orchestrator.models import WorkflowReason
+        from snapl_orchestrator.workflows.removal import RemoveConfigWorkflow
+
+        plan = _plan(device_ids, deletes=_some_deletes())
+        client = _client(plan, _result(device_ids, WorkflowReason.SUCCEEDED, deleted=_deleted(), plan=plan))
+        with patch.object(cli, "_actor", return_value="anton"):
+            result = _remove(client, "--apply", "--yes")
+
+        assert result.exit_code == ExitCode.OK, result.output
+        assert client.execute_workflow.await_count == 2
+        call = client.execute_workflow.call_args_list[1]
+        request = call.args[1]
+        assert call.args[0] == RemoveConfigWorkflow.run
+        assert call.kwargs["id"] == f"remove-config-{device_ids['leaf-01']}"
+        assert call.kwargs["id_conflict_policy"] == WorkflowIDConflictPolicy.FAIL
+        assert request.device_id == device_ids["leaf-01"]
+        assert request.actor == "anton"
+        assert request.confirmed_paths == plan.delete_paths
+        assert "removed 2 entries from leaf-01" in result.output
+
+    def test_the_preview_is_shown_before_the_prompt(self, sot, device_ids, tty) -> None:
+        from snapl_orchestrator.models import WorkflowReason
+
+        plan = _plan(device_ids, deletes=_some_deletes())
+        client = _client(plan, _result(device_ids, WorkflowReason.SUCCEEDED, deleted=_deleted(), plan=plan))
+
+        result = _remove(client, "--apply", answer="y\n")
+
+        assert result.exit_code == ExitCode.OK, result.output
+        preview, prompt = result.output.split("Remove 2 config entries from leaf-01?", 1)
+        assert f"delete {PORT}" in preview
+        assert "--apply" not in preview
+        assert "This deletes them from the device." in prompt
+        assert client.execute_workflow.await_count == 2
+
+    def test_a_prompt_answered_no_starts_nothing(self, sot, device_ids, tty) -> None:
+        client = _client(_plan(device_ids, deletes=_some_deletes()))
+
+        result = _remove(client, "--apply", answer="n\n")
+
+        assert result.exit_code == ExitCode.ERROR
+        assert "aborted" in result.output
+        assert client.execute_workflow.await_count == 1
+
+    def test_no_terminal_without_yes_refuses_before_connecting(self, sot) -> None:
+        connect = AsyncMock()
+        with (
+            patch.object(cli, "_stdin_is_terminal", return_value=False),
+            patch.object(cli, "_connect", new=connect),
+        ):
+            result = runner.invoke(cli.app, ["remove", "leaf-01", "--apply"])
+
+        assert result.exit_code == ExitCode.ERROR
+        assert "--apply needs --yes when there is no terminal to confirm at" in result.output
+        connect.assert_not_called()
+
+    def test_json_without_yes_refuses_before_connecting(self, sot, tty) -> None:
+        connect = AsyncMock()
+        with patch.object(cli, "_connect", new=connect):
+            result = runner.invoke(cli.app, ["remove", "leaf-01", "--apply", "--json"])
+
+        assert result.exit_code == ExitCode.ERROR
+        assert "--json requires --yes" in result.output
+        connect.assert_not_called()
+
+    def test_an_empty_plan_starts_no_removal(self, sot, device_ids) -> None:
+        client = _client(_plan(device_ids, refused=[(POLICY, "not_removable")]))
+
+        result = _remove(client, "--apply", "--yes")
+
+        assert result.exit_code == ExitCode.OK, result.output
+        assert "nothing to remove" in result.output
+        assert client.execute_workflow.await_count == 1
+
+    def test_json_is_one_document(self, sot, device_ids) -> None:
+        from snapl_orchestrator.models import WorkflowReason
+
+        plan = _plan(device_ids, deletes=_some_deletes())
+        outcome = _result(device_ids, WorkflowReason.SUCCEEDED, deleted=_deleted(), plan=plan)
+
+        result = _remove(_client(plan, outcome), "--apply", "--yes", "--json")
+
+        assert result.exit_code == ExitCode.OK
+        assert json.loads(result.stdout) == {
+            "plan": json.loads(plan.model_dump_json()),
+            "result": json.loads(outcome.model_dump_json()),
+        }
+
+    @pytest.mark.parametrize(
+        ("reason", "deleted", "detail", "text"),
+        [
+            ("plan_changed", (), None, "leaf-01 changed since the preview; nothing was removed"),
+            ("deploy_in_flight", (), None, "a deploy to leaf-01 is running; nothing was removed"),
+            ("remove_failed", (), "[FailedPrecondition] x", "leaf-01 rejected the removal; nothing was removed"),
+            ("verification_failed", (PORT,), None, "the verifying scan disagrees"),
+            ("collect_failed", (PORT,), "socket closed", "the verifying scan could not read leaf-01"),
+        ],
+    )
+    def test_each_reason_exits_one_with_its_text(self, sot, device_ids, reason, deleted, detail, text) -> None:
+        from snapl_orchestrator.models import WorkflowReason
+
+        plan = _plan(device_ids, deletes=_some_deletes())
+        outcome = _result(device_ids, WorkflowReason(reason), deleted=deleted, plan=plan, detail=detail)
+
+        result = _remove(_client(plan, outcome), "--apply", "--yes")
+
+        assert result.exit_code == ExitCode.ERROR, result.output
+        assert text in result.output
+
+    def test_a_removal_already_running(self, sot, device_ids) -> None:
+        from temporalio.exceptions import WorkflowAlreadyStartedError
+
+        plan = _plan(device_ids, deletes=_some_deletes())
+        busy = WorkflowAlreadyStartedError(f"remove-config-{device_ids['leaf-01']}", "RemoveConfig")
+
+        result = _remove(_client(plan, busy), "--apply", "--yes")
+
+        assert result.exit_code == ExitCode.ERROR
+        assert "a removal of leaf-01 is already running" in result.output
+        assert "Traceback" not in result.output

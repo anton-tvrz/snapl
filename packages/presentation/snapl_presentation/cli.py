@@ -18,6 +18,7 @@ import contextlib
 import functools
 import getpass
 import re
+import sys
 from datetime import timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any
@@ -184,17 +185,30 @@ async def deploy(
 @command
 async def remove(
     device: Annotated[str, typer.Argument(help="Device name, as it appears in the SoT.")],
+    apply: Annotated[
+        bool, typer.Option("--apply", help="Remove what the preview lists, after a confirmation.")
+    ] = False,
+    yes: YesOpt = False,
     use_case: UseCaseOpt = DEFAULT_USE_CASE,
     as_json: JsonOpt = False,
 ) -> ExitCode:
-    """Preview removing config the device carries that intent never asked for (spec 013).
+    """Remove config the device carries that intent never asked for (spec 013).
 
-    Scans the device, then lists each delete that would remove its undesired
-    config, the drift each answers, and what is refused and why. Writes nothing.
+    Without --apply, a preview: scans the device, then lists each delete that
+    would remove its undesired config, the drift each answers, and what is
+    refused and why. Writes nothing. With --apply, it confirms, then re-scans,
+    sends the deletes in one Set only if nothing changed, and verifies.
     """
     from temporalio.client import WorkflowFailureError  # noqa: PLC0415
 
     from snapl_orchestrator.workflows.removal import PlanRemovalWorkflow  # noqa: PLC0415
+
+    if apply and not yes:
+        # Refused before anything connects: a write needs someone to confirm it (FR-006).
+        if as_json:
+            raise CliError("--json requires --yes for a command that writes to devices")
+        if not _stdin_is_terminal():
+            raise CliError("--apply needs --yes when there is no terminal to confirm at")
 
     settings = CliSettings.from_env()
     states = await load_states(build_store(settings), settings, use_case=use_case)
@@ -216,8 +230,50 @@ async def remove(
         raise _removal_failed(device, exc) from None
 
     renderer = build_renderer(as_json=as_json)
-    renderer.removal_plan(plan)
-    return renderer.removal_plan_code(plan)
+    renderer.removal_plan(plan, applying=apply)
+    if not apply:
+        return renderer.removal_plan_code(plan)
+    if plan.is_empty:
+        renderer.removal(plan, None)
+        return renderer.removal_code(None)
+
+    _confirm(
+        f"Remove {len(plan.deletes)} config entr{'y' if len(plan.deletes) == 1 else 'ies'} from {device}? "
+        "This deletes them from the device.",
+        yes=yes,
+        as_json=as_json,
+    )
+    result = await _run_removal(client, settings, device, device_id, plan.delete_paths)
+    renderer.removal(plan, result)
+    return renderer.removal_code(result)
+
+
+def _stdin_is_terminal() -> bool:
+    return sys.stdin.isatty()
+
+
+async def _run_removal(client: Any, settings: CliSettings, device: str, device_id: UUID, paths: list[str]) -> Any:
+    """Start ``RemoveConfig`` for exactly the paths the operator saw; one removal per device at a time."""
+    from temporalio.client import WorkflowFailureError  # noqa: PLC0415
+    from temporalio.common import WorkflowIDConflictPolicy  # noqa: PLC0415
+    from temporalio.exceptions import WorkflowAlreadyStartedError  # noqa: PLC0415
+
+    from snapl_orchestrator.models import RemovalRequest, remove_config_id  # noqa: PLC0415
+    from snapl_orchestrator.workflows.removal import RemoveConfigWorkflow  # noqa: PLC0415
+
+    try:
+        return await client.execute_workflow(
+            RemoveConfigWorkflow.run,
+            RemovalRequest(device_id=device_id, actor=_actor(), confirmed_paths=paths),
+            id=remove_config_id(device_id),
+            task_queue=settings.task_queue,
+            # A second removal while one runs is refused, not joined (research R8).
+            id_conflict_policy=WorkflowIDConflictPolicy.FAIL,
+        )
+    except WorkflowAlreadyStartedError:
+        raise CliError(f"a removal of {device} is already running") from None
+    except WorkflowFailureError as exc:
+        raise _removal_failed(device, exc) from None
 
 
 def _removal_failed(device: str, exc: Exception) -> CliError:
