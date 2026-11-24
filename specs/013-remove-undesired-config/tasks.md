@@ -200,20 +200,20 @@ No setup. There is no new package, dependency or directory: pygnmi's `set(delete
 
 ### Tests (write first, verify they fail)
 
-- [ ] T040 [P] [US3] Extend tests/unit/test_presentation/test_render.py: the `RemoveConfig` terminal audit line (`removed N: <paths>; verified`, or the reason) with the actor from the start event; `PlanRemoval` rows render through the existing table
-- [ ] T041 [P] [US3] Extend tests/unit/test_presentation/test_dashboard_timeline.py:
+- [x] T040 [P] [US3] Extend tests/unit/test_presentation/test_render.py: the `RemoveConfig` terminal audit line (`removed N: <paths>; verified`, or the reason) with the actor from the start event; `PlanRemoval` rows render through the existing table
+- [x] T041 [P] [US3] Extend tests/unit/test_presentation/test_dashboard_timeline.py:
   - an undesired-only episode whose last drifted scan is followed by a successful `RemoveConfig` targeting the device, then a clean `ScanDrift`, closes with `closed_by.kind == "removal"` and the removal's workflow id and trigger `operator`;
   - a failed `RemoveConfig` closes nothing;
   - a `RemoveConfig` for another device closes nothing;
   - when a deploy and a removal both qualify, the later end wins, as for two deploys.
-- [ ] T042 [P] [US3] Extend tests/unit/test_presentation/test_dashboard_projections.py: `project_runs` lists `RemoveConfig` and `PlanRemoval` runs with trigger `operator`, and a workflow-type filter for `RemoveConfig` selects only removals
-- [ ] T043 [P] [US3] Extend tests/unit/test_presentation/test_dashboard_projections.py for the command (FR-016):
+- [x] T042 [P] [US3] Extend tests/unit/test_presentation/test_dashboard_projections.py: `project_runs` lists `RemoveConfig` and `PlanRemoval` runs with trigger `operator`, and a workflow-type filter for `RemoveConfig` selects only removals
+- [x] T043 [P] [US3] Extend tests/unit/test_presentation/test_dashboard_projections.py for the command (FR-016):
   - `remove_command` is `snapl remove <name>` for an `UNDESIRED` and a `MISSING_AND_UNDESIRED` device, and None otherwise;
   - `suggested_command` is still `snapl reconcile <name>` for `MISSING_AND_UNDESIRED`, so both show;
   - `UNDESIRED_NOTE` no longer says removal is unavailable.
-- [ ] T044 [P] [US3] Extend tests/unit/test_presentation/test_dashboard_projections.py for a removal's detail: a `RemoveConfig` run's `removal` holds the actor and `confirmed_paths` from its start event, and `deleted_paths`, `device_response`, the four verification lists and the reason from its terminal event. Cover a verified removal, `plan_changed` (no deletes, the new plan's paths), `remove_failed` (the device's text) and a run still in flight (no terminal event). Other workflow types have `removal` None.
-- [ ] T045 [P] [US3] Extend tests/unit/test_presentation/test_dashboard_projections.py for the latest preview: `last_removal_preview` is the device's latest successful `PlanRemoval` (time, workflow id, `plan_paths`, `refused_paths`); a failed preview and another device's preview are ignored; a device never previewed has None. It respects the `at=` time like the rest of `project_devices`.
-- [ ] T046 [P] [US3] Extend the UI tests:
+- [x] T044 [P] [US3] Extend tests/unit/test_presentation/test_dashboard_projections.py for a removal's detail: a `RemoveConfig` run's `removal` holds the actor and `confirmed_paths` from its start event, and `deleted_paths`, `device_response`, the four verification lists and the reason from its terminal event. Cover a verified removal, `plan_changed` (no deletes, the new plan's paths), `remove_failed` (the device's text) and a run still in flight (no terminal event). Other workflow types have `removal` None.
+- [x] T045 [P] [US3] Extend tests/unit/test_presentation/test_dashboard_projections.py for the latest preview: `last_removal_preview` is the device's latest successful `PlanRemoval` (time, workflow id, `plan_paths`, `refused_paths`); a failed preview and another device's preview are ignored; a device never previewed has None. It respects the `at=` time like the rest of `project_devices`.
+- [x] T046 [P] [US3] Extend the UI tests:
   - packages/presentation/ui/src/lib/episodes.test.ts ("closed by a removal") and packages/presentation/ui/src/components/timeline/Lanes.test.tsx for the new kind's key entry;
   - packages/presentation/ui/src/components/panels/Undesired.test.tsx and DeviceDrawer.test.tsx: the remove command beside reconcile, the latest preview line and its refused entities, and no button or form anywhere (FR-016);
   - packages/presentation/ui/src/components/panels/Runs.test.tsx: a removal's detail, verified and not;
@@ -221,12 +221,12 @@ No setup. There is no new package, dependency or directory: pygnmi's `set(delete
 
 ### Implementation
 
-- [ ] T047 [US3] Add the `RemoveConfig` audit line to packages/presentation/snapl_presentation/render.py (T040)
-- [ ] T048 [US3] Add `"removal"` to `EpisodeClose.kind` in packages/presentation/snapl_presentation/dashboard/models.py. In packages/presentation/snapl_presentation/dashboard/projections.py, make `project_timeline`'s closers include successful `RemoveConfig` runs, and have `_close_kind` return `"removal"` for them (T041, T042)
-- [ ] T049 [US3] Add `DeviceView.remove_command` and `DeviceView.last_removal_preview` to dashboard/models.py, set them in `_drift_fields` and `project_devices`, and reword `UNDESIRED_NOTE` (T043, T045)
-- [ ] T050 [US3] Add `RunView.removal` to dashboard/models.py and fill it in `project_runs` from the run's start and terminal events (T044)
-- [ ] T051 [US3] Regenerate tests/unit/test_presentation/fixtures/openapi_v1.json and packages/presentation/ui/src/api/schema.d.ts. Add the label to packages/presentation/ui/src/lib/episodes.ts and Lanes.tsx; the command and the latest preview to panels/Undesired.tsx and DeviceDrawer.tsx; the removal detail to panels/Runs.tsx; and all of them to packages/presentation/snapl_presentation/dashboard/static/index.html. Rebuild with `uv run invoke dashboard.build` (T046)
-- [ ] T052 [US3] Render the page from fixtures with `e2e/look.mjs` and check the new views keep the look rules (dev/skills/dashboard/SKILL.md, "Look")
+- [x] T047 [US3] Add the `RemoveConfig` audit line to packages/presentation/snapl_presentation/render.py (T040)
+- [x] T048 [US3] Add `"removal"` to `EpisodeClose.kind` in packages/presentation/snapl_presentation/dashboard/models.py. In packages/presentation/snapl_presentation/dashboard/projections.py, make `project_timeline`'s closers include successful `RemoveConfig` runs, and have `_close_kind` return `"removal"` for them (T041, T042)
+- [x] T049 [US3] Add `DeviceView.remove_command` and `DeviceView.last_removal_preview` to dashboard/models.py, set them in `_drift_fields` and `project_devices`, and reword `UNDESIRED_NOTE` (T043, T045)
+- [x] T050 [US3] Add `RunView.removal` to dashboard/models.py and fill it in `project_runs` from the run's start and terminal events (T044)
+- [x] T051 [US3] Regenerate tests/unit/test_presentation/fixtures/openapi_v1.json and packages/presentation/ui/src/api/schema.d.ts. Add the label to packages/presentation/ui/src/lib/episodes.ts and Lanes.tsx; the command and the latest preview to panels/Undesired.tsx and DeviceDrawer.tsx; the removal detail to panels/Runs.tsx; and all of them to packages/presentation/snapl_presentation/dashboard/static/index.html. Rebuild with `uv run invoke dashboard.build` (T046)
+- [x] T052 [US3] Render the page from fixtures with `e2e/look.mjs` and check the new views keep the look rules (dev/skills/dashboard/SKILL.md, "Look")
 - [ ] T053 [US3] **Needs the lab.** Live check: quickstart step 5 on leaf-04, recorded in specs/013-remove-undesired-config/evidence.md with screenshots of the closed episode, the removal's run detail and leaf-04's drawer
 
 **Checkpoint**: every removal is accounted for in the CLI and on both dashboard pages, and the dashboard offers no way to start one.

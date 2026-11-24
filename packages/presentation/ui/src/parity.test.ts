@@ -37,12 +37,16 @@ const FACTS: Row[] = [
   ["deviceRow", "when it was last scanned", DeviceDrawer],
   ["deviceRow", "its last deploy and outcome", DeviceDrawer],
   ["deviceRow", "the command that would reconcile it, and its note", DeviceDrawer],
+  // Spec 013 FR-016: DeviceDrawer.test.tsx "removal", panels/Runs.test.tsx "a removal's detail"
+  ["deviceRow", "the command that would remove its undesired config", DeviceDrawer],
+  ["deviceRow", "its latest removal preview, and what it left in place", DeviceDrawer],
   // showProblem: ViewFrame.test.tsx
   ["showProblem", "a source unavailable, with its reason and remedy", ViewFrame],
   ["showProblem", "stale data, with its age", ViewFrame],
   // renderRuns / runningItem: panels/Runs.test.tsx
   ["renderRuns", "each run's start, type, target, state, reason, trigger, actor and duration", Runs],
   ["renderRuns", "each run's link into the Temporal Web UI", Runs],
+  ["renderRuns", "a removal's confirmer, deletes, response and verification, or why it wrote nothing", Runs],
   ["runningItem", "what is running now, its target, how long and its trigger", Running],
   // renderSchedule: panels/Schedule.test.tsx
   ["renderSchedule", "no schedule, with the command that creates one", Schedule],

@@ -44,6 +44,8 @@ from snapl_presentation.dashboard.models import (
     Marker,
     NafBlock,
     Point,
+    RemovalPreviewView,
+    RemovalView,
     RepeatedRepairFailure,
     RunState,
     RunStep,
@@ -67,8 +69,11 @@ if TYPE_CHECKING:
     from snapl_orchestrator.models import AuditEvent
     from snapl_orchestrator.worker.client import RunningWorkflowInfo
 
-# Undesired config is reported, never removed automatically (#65).
-UNDESIRED_NOTE = "Config on the device but not in intent is not removed automatically (#65)."
+# Undesired config is reported, and removed only by an operator with snapl remove (spec 013).
+UNDESIRED_NOTE = (
+    "Reconcile never removes config intent doesn't hold. "
+    "An operator previews and removes it with snapl remove; nothing removes it on a schedule."
+)
 
 _DEPLOY_TERMINAL = {AuditEventType.WORKFLOW_TERMINATED, AuditEventType.WORKFLOW_CANCELLED}
 
@@ -192,9 +197,11 @@ def _drift_fields(paths: list[str], payload: dict, name: str) -> dict:
 
     Reconcile is suggested whenever intent may be missing from the device,
     including a pre-FR-012a scan whose direction is unknown. Undesired config is
-    not removed by reconcile (#65), so it gets a note and no command.
+    never removed by reconcile, so it gets the remove command and a note
+    (spec 013 FR-016). A device with both directions shows both commands.
     """
     reconcile = f"snapl reconcile {name}"
+    remove = f"snapl remove {name}"
     if "undesired_paths" not in payload:
         # Recorded before FR-012a: the direction is unknown, so do not guess it.
         return {"drift_state": DriftState.DRIFTED, "unclassified_paths": paths, "suggested_command": reconcile}
@@ -204,14 +211,40 @@ def _drift_fields(paths: list[str], payload: dict, name: str) -> dict:
     if not undesired:
         return {"drift_state": DriftState.MISSING, "missing_paths": missing, "suggested_command": reconcile}
     if not missing:
-        return {"drift_state": DriftState.UNDESIRED, "undesired_paths": undesired, "note": UNDESIRED_NOTE}
+        return {
+            "drift_state": DriftState.UNDESIRED,
+            "undesired_paths": undesired,
+            "remove_command": remove,
+            "note": UNDESIRED_NOTE,
+        }
     return {
         "drift_state": DriftState.MISSING_AND_UNDESIRED,
         "missing_paths": missing,
         "undesired_paths": undesired,
         "suggested_command": reconcile,
+        "remove_command": remove,
         "note": UNDESIRED_NOTE,
     }
+
+
+def _is_preview_end(event: AuditEvent) -> bool:
+    """A successful ``PlanRemoval``'s end: the plan it showed (spec 013)."""
+    return (
+        event.workflow_type == "PlanRemoval"
+        and event.event_type is AuditEventType.WORKFLOW_TERMINATED
+        and event.outcome == "success"
+    )
+
+
+def _preview_view(event: AuditEvent | None) -> RemovalPreviewView | None:
+    if event is None:
+        return None
+    return RemovalPreviewView(
+        at=event.timestamp,
+        workflow_id=event.workflow_id,
+        plan_paths=list(event.payload.get("plan_paths") or []),
+        refused_paths=list(event.payload.get("refused_paths") or []),
+    )
 
 
 def _deploy_outcome(event: AuditEvent | None) -> DeployOutcome | None:
@@ -245,6 +278,7 @@ def project_devices(
     """
     last_scan: dict[UUID, AuditEvent] = {}
     last_deploy: dict[UUID, AuditEvent] = {}
+    last_preview: dict[UUID, AuditEvent] = {}
     seen: set[UUID] = set()
     health = latest_health(events)
     for event in sorted(events, key=lambda e: e.timestamp):
@@ -257,6 +291,8 @@ def project_devices(
             last_scan[device_id] = event
         elif _is_deploy_end(event):
             last_deploy[device_id] = event
+        elif _is_preview_end(event):
+            last_preview[device_id] = event
 
     devices: list[tuple[UUID, str, str | None, bool]]
     if states is not None:
@@ -272,6 +308,7 @@ def project_devices(
             in_intent=in_intent,
             last_deploy=_deploy_outcome(last_deploy.get(device_id)),
             health=health.get(device_id),
+            last_removal_preview=_preview_view(last_preview.get(device_id)),
             **_scan_fields(last_scan.get(device_id), name),
         )
         for device_id, name, role, in_intent in devices
@@ -448,6 +485,29 @@ def _end_reason(end: AuditEvent | None) -> str | None:
     return f"{code}: {first_line(str(detail))}" if detail else code
 
 
+_REMOVAL_LISTS = ("deleted_paths", "plan_paths", "gone", "remaining", "new_forward", "still_refused")
+
+
+def _removal_view(run: _Run) -> RemovalView | None:
+    """A ``RemoveConfig`` run's detail: who confirmed what at its start, what happened at its end."""
+    if run.workflow_type != "RemoveConfig":
+        return None
+    confirmed = list(run.start.payload.get("confirmed_paths") or [])
+    if run.end is None:
+        return RemovalView(actor=run.start.actor, confirmed_paths=confirmed)
+    payload = run.end.payload
+    response = payload.get("device_response")
+    detail = payload.get("detail")
+    return RemovalView(
+        actor=run.start.actor,
+        confirmed_paths=confirmed,
+        device_response=str(response) if response is not None else None,
+        reason=run.end.reason.value if run.end.reason is not None else None,
+        detail=str(detail) if detail is not None else None,
+        **{key: [str(path) for path in payload.get(key) or []] for key in _REMOVAL_LISTS},
+    )
+
+
 def web_ui_url(ui_address: str, namespace: str, workflow_id: str) -> str:
     """The Temporal Web UI page of a workflow id (research R12).
 
@@ -515,6 +575,7 @@ def project_runs(
                 trigger=_trigger(run, scheduled),
                 actor=run.actor,
                 web_ui_url=web_ui_url(ui_address, namespace, run.workflow_id),
+                removal=_removal_view(run),
             )
         )
         if len(views) >= limit:
@@ -971,7 +1032,9 @@ def _scan_point(event: AuditEvent) -> ScanPoint:
     )
 
 
-def _close_kind(run: _Run, trigger: Trigger) -> Literal["remediation", "reconcile", "deploy"]:
+def _close_kind(run: _Run, trigger: Trigger) -> Literal["remediation", "reconcile", "deploy", "removal"]:
+    if run.workflow_type == "RemoveConfig":
+        return "removal"
     if trigger is Trigger.SCHEDULE:
         return "remediation"
     return "reconcile" if run.start.payload.get("parent_workflow_id") else "deploy"
@@ -1048,6 +1111,7 @@ def _scan_state(event: AuditEvent) -> DriftState:
 
 
 _ENDED = itemgetter(0)
+_CLOSERS = {"DeployIntent", "RemoveConfig"}
 
 
 def _episode(
@@ -1103,8 +1167,8 @@ def project_timeline(
     ``end``. An episode opens at the first scan that finds a device drifted and
     closes at the first later scan that finds it in sync. A scan that could not
     collect the device does neither. What closed an episode is the latest
-    successful deploy of that device between its last drifted scan and its
-    closing scan: only a deploy that targeted the device is evidence.
+    successful deploy or removal of that device between its last drifted scan
+    and its closing scan: only a run that targeted the device is evidence.
 
     Args:
         states: the devices in intent, or None when the Source of Truth could
@@ -1133,9 +1197,10 @@ def project_timeline(
     flow = sorted(_flow(known), key=_BY_TIME)
     runs = _split_runs(flow, ordered=True)
     scheduled = _scheduled_ids(runs, flow)
+    # What can close an episode: a successful deploy or removal of the device (spec 013 R10).
     deploys: dict[UUID, list[tuple[datetime, _Run]]] = {}
     for run in runs:
-        if run.workflow_type != "DeployIntent" or run.end is None:
+        if run.workflow_type not in _CLOSERS or run.end is None:
             continue
         target = run.start.target_id
         succeeded = run.end.event_type is AuditEventType.WORKFLOW_TERMINATED and run.end.outcome == "success"

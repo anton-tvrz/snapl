@@ -578,6 +578,7 @@ export interface components {
             /** In Intent */
             in_intent: boolean;
             last_deploy?: components["schemas"]["DeployOutcome"] | null;
+            last_removal_preview?: components["schemas"]["RemovalPreviewView"] | null;
             /** Last Scan Workflow Id */
             last_scan_workflow_id?: string | null;
             /** Last Scanned At */
@@ -588,6 +589,8 @@ export interface components {
             name: string;
             /** Note */
             note?: string | null;
+            /** Remove Command */
+            remove_command?: string | null;
             /** Role */
             role: string | null;
             /** Suggested Command */
@@ -758,7 +761,7 @@ export interface components {
         };
         /**
          * EpisodeClose
-         * @description The deploy that repaired a drift episode.
+         * @description The deploy or removal that repaired a drift episode.
          */
         EpisodeClose: {
             /**
@@ -770,7 +773,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "remediation" | "reconcile" | "deploy";
+            kind: "remediation" | "reconcile" | "deploy" | "removal";
             trigger: components["schemas"]["Trigger"];
             /** Workflow Id */
             workflow_id: string;
@@ -1212,6 +1215,53 @@ export interface components {
             /** Value */
             value?: number | null;
         };
+        /**
+         * RemovalPreviewView
+         * @description A device's latest successful removal preview (spec 013 FR-016): what it would delete and leave.
+         */
+        RemovalPreviewView: {
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /** Plan Paths */
+            plan_paths: string[];
+            /** Refused Paths */
+            refused_paths: string[];
+            /** Workflow Id */
+            workflow_id: string;
+        };
+        /**
+         * RemovalView
+         * @description What a `RemoveConfig` run did, from its start and terminal events (spec 013 FR-016).
+         *
+         *     A run still in flight has only `actor` and `confirmed_paths`.
+         */
+        RemovalView: {
+            /** Actor */
+            actor?: string | null;
+            /** Confirmed Paths */
+            confirmed_paths?: string[];
+            /** Deleted Paths */
+            deleted_paths?: string[];
+            /** Detail */
+            detail?: string | null;
+            /** Device Response */
+            device_response?: string | null;
+            /** Gone */
+            gone?: string[];
+            /** New Forward */
+            new_forward?: string[];
+            /** Plan Paths */
+            plan_paths?: string[];
+            /** Reason */
+            reason?: string | null;
+            /** Remaining */
+            remaining?: string[];
+            /** Still Refused */
+            still_refused?: string[];
+        };
         /** RepeatedRepairFailure */
         RepeatedRepairFailure: {
             /** Consecutive Failures */
@@ -1317,6 +1367,7 @@ export interface components {
             ended_at?: string | null;
             /** Reason */
             reason?: string | null;
+            removal?: components["schemas"]["RemovalView"] | null;
             /**
              * Started At
              * Format: date-time

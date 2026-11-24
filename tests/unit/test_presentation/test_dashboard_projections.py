@@ -134,7 +134,7 @@ def test_forward_only_drift_is_missing(states):
     assert leaf.suggested_command == "snapl reconcile leaf-01"
 
 
-def test_undesired_only_drift_has_no_command_and_names_65(states):
+def test_undesired_only_drift_has_the_remove_command_and_no_reconcile(states):
     event = _scan(LEAF, T0, status="drifted", paths=["/x"], undesired=["/x"])
 
     leaf = _by_name(project_devices([event], states, {}))["leaf-01"]
@@ -143,8 +143,8 @@ def test_undesired_only_drift_has_no_command_and_names_65(states):
     assert leaf.undesired_paths == ["/x"]
     assert leaf.missing_paths == []
     assert leaf.suggested_command is None
+    assert leaf.remove_command == "snapl remove leaf-01"
     assert leaf.note is not None
-    assert "#65" in leaf.note
 
 
 def test_both_directions_is_missing_and_undesired(states):
@@ -156,8 +156,8 @@ def test_both_directions_is_missing_and_undesired(states):
     assert leaf.missing_paths == ["/a", "/b"]
     assert leaf.undesired_paths == ["/x"]
     assert leaf.suggested_command == "snapl reconcile leaf-01"
+    assert leaf.remove_command == "snapl remove leaf-01"
     assert leaf.note is not None
-    assert "#65" in leaf.note
 
 
 def test_scan_without_direction_is_drifted(states):
@@ -1629,3 +1629,226 @@ class TestHealthLeavesEveryProjectionAlone:
                 assert project_series(mixed, series, start, end, bucket, states=states, names=names) == project_series(
                     events, series, start, end, bucket, states=states, names=names
                 ), (series, bucket)
+
+
+# --- removals (spec 013 T042 to T045, research R10) ---------------------------------
+
+REMOVE_LEAF = f"remove-config-{LEAF}"
+_PORT = "/interface[name=ethernet-1/7]"
+_NEIGHBOR = "/network-instance[name=default]/protocols/bgp/neighbor[peer-address=192.0.2.0]"
+_POLICY = "/routing-policy/policy[name=c-probe]"
+
+
+def _removal(start, end=None, *, reason=WorkflowReason.SUCCEEDED, payload=None, device=LEAF):
+    """A RemoveConfig run as ``workflows/removal.py`` writes it: actor and confirmed paths on the start."""
+    workflow_id = f"remove-config-{device}"
+    events = [
+        _wf(
+            workflow_id,
+            "RemoveConfig",
+            AuditEventType.WORKFLOW_STARTED,
+            start,
+            target=device,
+            payload={"confirmed_paths": [_PORT, _NEIGHBOR]},
+            actor="anton",
+        )
+    ]
+    if end is not None:
+        events.append(
+            _wf(
+                workflow_id,
+                "RemoveConfig",
+                AuditEventType.WORKFLOW_TERMINATED,
+                end,
+                target=device,
+                outcome="success" if reason is WorkflowReason.SUCCEEDED else "failure",
+                reason=reason,
+                payload=payload,
+            )
+        )
+    return events
+
+
+_VERIFIED = {
+    "deleted_paths": [_PORT, _NEIGHBOR],
+    "device_response": "{'timestamp': 1}",
+    "gone": [_PORT, _NEIGHBOR],
+    "remaining": [],
+    "new_forward": [],
+    "still_refused": [f"{_POLICY}/default_action"],
+    "detail": None,
+}
+
+
+def _preview(at, *, device=LEAF, ok=True, plan=(_PORT,), refused=(_POLICY,), suffix="a"):
+    workflow_id = f"plan-removal-{device}-{suffix}"
+    return [
+        _wf(workflow_id, "PlanRemoval", AuditEventType.WORKFLOW_STARTED, at, target=device),
+        _wf(
+            workflow_id,
+            "PlanRemoval",
+            AuditEventType.WORKFLOW_TERMINATED,
+            at + timedelta(seconds=2),
+            target=device,
+            outcome="success" if ok else "failure",
+            reason=WorkflowReason.SUCCEEDED if ok else WorkflowReason.COLLECT_FAILED,
+            payload={"plan_paths": list(plan), "refused_paths": list(refused)} if ok else {"detail": "timeout"},
+        ),
+    ]
+
+
+class TestRemovalRuns:
+    def test_removals_and_previews_are_operator_runs(self):
+        events = [*_preview(T0), *_removal(T0 + timedelta(minutes=1), T0 + timedelta(minutes=2), payload=_VERIFIED)]
+
+        runs = _runs(events)
+
+        assert [(r.workflow_type, r.trigger, r.target) for r in runs] == [
+            ("RemoveConfig", Trigger.OPERATOR, "leaf-01"),
+            ("PlanRemoval", Trigger.OPERATOR, "leaf-01"),
+        ]
+        assert runs[0].actor == "anton"
+
+    def test_the_type_filter_selects_only_removals(self):
+        events = [
+            *_preview(T0),
+            *_removal(T0 + timedelta(minutes=1), T0 + timedelta(minutes=2), payload=_VERIFIED),
+            *_run(DEPLOY_LEAF, "DeployIntent", T0 + timedelta(minutes=3), T0 + timedelta(minutes=4), target=LEAF),
+        ]
+
+        removals = _runs(events, filters=RunFilters(workflow_types=frozenset({"RemoveConfig"})))
+
+        assert [r.workflow_id for r in removals] == [REMOVE_LEAF]
+
+
+class TestRemoveCommand:
+    @pytest.mark.parametrize(
+        ("paths", "undesired", "command"),
+        [
+            (["/x"], ["/x"], "snapl remove leaf-01"),
+            (["/a", "/x"], ["/x"], "snapl remove leaf-01"),
+            (["/a"], [], None),
+            (["/a"], None, None),
+        ],
+        ids=["undesired", "missing-and-undesired", "missing", "unclassified"],
+    )
+    def test_only_a_device_with_undesired_config_gets_it(self, states, paths, undesired, command):
+        event = _scan(LEAF, T0, status="drifted", paths=paths, undesired=undesired)
+
+        assert _by_name(project_devices([event], states, {}))["leaf-01"].remove_command == command
+
+    def test_in_sync_and_errored_devices_have_none(self, states):
+        events = [_scan(LEAF, T0), _scan(SPINE, T0, error="timeout")]
+
+        views = _by_name(project_devices(events, states, {}))
+
+        assert views["leaf-01"].remove_command is None
+        assert views["spine-01"].remove_command is None
+
+    def test_the_note_no_longer_says_removal_is_unavailable(self):
+        from snapl_presentation.dashboard.projections import UNDESIRED_NOTE
+
+        assert "not removed automatically" not in UNDESIRED_NOTE
+        assert "#65" not in UNDESIRED_NOTE
+        assert "snapl remove" in UNDESIRED_NOTE
+
+
+class TestRemovalDetail:
+    def _view(self, events):
+        (run,) = _runs(events, filters=RunFilters(workflow_types=frozenset({"RemoveConfig"})))
+        return run.removal
+
+    def test_a_verified_removal(self):
+        removal = self._view(_removal(T0, T0 + timedelta(seconds=5), payload=_VERIFIED))
+
+        assert removal is not None
+        assert removal.actor == "anton"
+        assert removal.confirmed_paths == [_PORT, _NEIGHBOR]
+        assert removal.deleted_paths == [_PORT, _NEIGHBOR]
+        assert removal.device_response == "{'timestamp': 1}"
+        assert removal.gone == [_PORT, _NEIGHBOR]
+        assert removal.remaining == []
+        assert removal.new_forward == []
+        assert removal.still_refused == [f"{_POLICY}/default_action"]
+        assert removal.reason == "succeeded"
+        assert removal.detail is None
+
+    def test_a_changed_plan_deleted_nothing_and_shows_the_new_plan(self):
+        payload = {"plan_paths": [_PORT], "device_response": None, "detail": "leaf-01 changed since the preview"}
+
+        removal = self._view(
+            _removal(T0, T0 + timedelta(seconds=5), reason=WorkflowReason.PLAN_CHANGED, payload=payload)
+        )
+
+        assert removal.reason == "plan_changed"
+        assert removal.deleted_paths == []
+        assert removal.plan_paths == [_PORT]
+        assert removal.detail == "leaf-01 changed since the preview"
+
+    def test_a_rejection_keeps_the_devices_text(self):
+        text = "[FailedPrecondition] subinterface ethernet-1/7.0 not found"
+        payload = {"deleted_paths": [], "device_response": None, "detail": text}
+
+        removal = self._view(
+            _removal(T0, T0 + timedelta(seconds=5), reason=WorkflowReason.REMOVE_FAILED, payload=payload)
+        )
+
+        assert (removal.reason, removal.detail, removal.deleted_paths) == ("remove_failed", text, [])
+
+    def test_a_removal_in_flight_has_only_its_start(self):
+        removal = self._view(_removal(T0))
+
+        assert removal.actor == "anton"
+        assert removal.confirmed_paths == [_PORT, _NEIGHBOR]
+        assert removal.reason is None
+        assert removal.deleted_paths == []
+        assert removal.device_response is None
+
+    def test_other_runs_have_no_removal(self):
+        events = [*_run(DEPLOY_LEAF, "DeployIntent", T0, T0 + timedelta(minutes=1), target=LEAF), *_preview(T0)]
+
+        assert all(run.removal is None for run in _runs(events))
+
+
+class TestLatestPreview:
+    def test_is_the_latest_successful_preview_of_the_device(self, states):
+        events = [
+            _scan(LEAF, T0, status="drifted", paths=["/x"], undesired=["/x"]),
+            *_preview(T0 + timedelta(minutes=1), plan=(_PORT, _NEIGHBOR), suffix="a"),
+            *_preview(T0 + timedelta(minutes=2), plan=(_PORT,), refused=(_POLICY,), suffix="b"),
+            *_preview(T0 + timedelta(minutes=3), ok=False, suffix="c"),
+            *_preview(T0 + timedelta(minutes=4), device=SPINE, suffix="d"),
+        ]
+
+        leaf = _by_name(project_devices(events, states, {}))["leaf-01"]
+
+        preview = leaf.last_removal_preview
+        assert preview is not None
+        assert preview.at == T0 + timedelta(minutes=2, seconds=2)
+        assert preview.workflow_id == f"plan-removal-{LEAF}-b"
+        assert preview.plan_paths == [_PORT]
+        assert preview.refused_paths == [_POLICY]
+
+    def test_a_device_never_previewed_has_none(self, states):
+        leaf = _by_name(project_devices([_scan(LEAF, T0)], states, {}))["leaf-01"]
+
+        assert leaf.last_removal_preview is None
+
+    def test_it_respects_the_as_of_time(self, states):
+        from snapl_presentation.dashboard.projections import events_until
+
+        events = [
+            _scan(LEAF, T0),
+            *_preview(T0 + timedelta(minutes=1), suffix="a"),
+            *_preview(T0 + timedelta(minutes=5), plan=(_NEIGHBOR,), suffix="b"),
+        ]
+
+        leaf = _by_name(project_devices(events_until(events, T0 + timedelta(minutes=3)), states, {}))["leaf-01"]
+
+        assert leaf.last_removal_preview.workflow_id == f"plan-removal-{LEAF}-a"
+
+    def test_a_preview_never_counts_as_a_scan_or_a_deploy(self, states):
+        leaf = _by_name(project_devices(_preview(T0), states, {}))["leaf-01"]
+
+        assert leaf.drift_state is DriftState.NEVER_SCANNED
+        assert leaf.last_deploy is None

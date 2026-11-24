@@ -413,3 +413,71 @@ def test_a_closed_episode_has_its_duration():
     with pytest.raises(ValidationError, match="duration_s"):
         _episode(closed_at=_at(6))
     assert _episode(closed_at=_at(6), duration_s=300).duration_s == 300
+
+
+# --- closed by a removal (spec 013 T041, research R10) ------------------------------
+
+UNDESIRED = {
+    "paths": ["/interface[name=ethernet-1/7]/description"],
+    "undesired": ["/interface[name=ethernet-1/7]/description"],
+}
+
+
+def _removal(start: float, end: float, *, device: UUID = LEAF, success: bool = True) -> list[AuditEvent]:
+    """One RemoveConfig run: its start and its end, as ``workflows/removal.py`` writes them."""
+    common = {"workflow_id": f"remove-config-{device}", "workflow_type": "RemoveConfig", "target_id": device}
+    return [
+        AuditEvent(
+            event_id=uuid4(),
+            event_type=AuditEventType.WORKFLOW_STARTED,
+            actor="anton",
+            payload={"confirmed_paths": ["/interface[name=ethernet-1/7]"]},
+            timestamp=_at(start),
+            **common,
+        ),
+        AuditEvent(
+            event_id=uuid4(),
+            event_type=AuditEventType.WORKFLOW_TERMINATED,
+            outcome="success" if success else "failure",
+            reason=WorkflowReason.SUCCEEDED if success else WorkflowReason.REMOVE_FAILED,
+            payload={"deleted_paths": ["/interface[name=ethernet-1/7]"] if success else []},
+            timestamp=_at(end),
+            **common,
+        ),
+    ]
+
+
+def test_an_undesired_only_episode_is_closed_by_the_removal():
+    (episode,) = _timeline([_scan(1, **UNDESIRED), *_removal(2, 3), _scan(6)]).episodes
+
+    assert episode.closed_by is not None
+    assert episode.closed_by.kind == "removal"
+    assert episode.closed_by.workflow_id == f"remove-config-{LEAF}"
+    assert episode.closed_by.trigger is Trigger.OPERATOR
+    assert episode.closed_by.ended_at == _at(3)
+
+
+def test_a_failed_removal_closes_nothing():
+    (episode,) = _timeline([_scan(1, **UNDESIRED), *_removal(2, 3, success=False), _scan(6)]).episodes
+
+    assert episode.closed_by is None
+
+
+def test_a_removal_from_another_device_closes_nothing():
+    (episode,) = _timeline([_scan(1, **UNDESIRED), *_removal(2, 3, device=SPINE), _scan(6)]).episodes
+
+    assert episode.closed_by is None
+
+
+@pytest.mark.parametrize(
+    ("deploy", "removal", "kind"),
+    [((2, 3), (3.5, 4), "removal"), ((3.5, 4), (2, 3), "deploy")],
+    ids=["removal-last", "deploy-last"],
+)
+def test_the_later_of_a_deploy_and_a_removal_closed_it(deploy, removal, kind):
+    events = [_scan(1, paths=["/a", "/b"], undesired=["/b"]), *_deploy(*deploy), *_removal(*removal), _scan(6)]
+
+    (episode,) = _timeline(events).episodes
+
+    assert episode.closed_by.kind == kind
+    assert episode.closed_by.ended_at == _at(4)

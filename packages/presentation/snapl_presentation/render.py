@@ -132,24 +132,60 @@ class FabricHealthSummary:
         return {"healthy": self.healthy, "unhealthy": self.unhealthy, "unknown": self.unknown}
 
 
+def _schedule_outcome(event: AuditEvent) -> str:
+    payload = event.payload
+    change = str(payload.get("change", ""))
+    if "from" in payload and "to" in payload:
+        return f"{change} {payload['from']}→{payload['to']}"
+    if "from_seconds" in payload and "to_seconds" in payload:
+        return f"{change} {payload['from_seconds']}s→{payload['to_seconds']}s"
+    return change
+
+
+def _response_outcome(event: AuditEvent) -> str:
+    return str(event.payload.get("decision") or event.payload.get("mode") or event.outcome or "")
+
+
+def _health_outcome(event: AuditEvent) -> str:
+    # The change, then each reason on its own line (spec 016).
+    payload = event.payload
+    reasons = [str(reason.get("text", "")) for reason in payload.get("reasons") or []]
+    return "\n".join([f"{payload.get('before')}→{payload.get('after')}", *reasons])
+
+
+_OUTCOME_BY_EVENT = {
+    "schedule_changed": _schedule_outcome,
+    "drift_response": _response_outcome,
+    "health_changed": _health_outcome,
+}
+
+
 def _audit_outcome(event: AuditEvent) -> str:
     """What the outcome column says. Schedule events carry their meaning in the
     payload, so a bare event type would hide which policy changed (spec 009)."""
+    if event.workflow_type == "RemoveConfig" and event.event_type.value == "workflow_terminated":
+        return _removal_outcome(event)
+    by_type = _OUTCOME_BY_EVENT.get(event.event_type.value)
+    return by_type(event) if by_type is not None else event.outcome or ""
+
+
+def _removal_outcome(event: AuditEvent) -> str:
+    """A removal's end in one cell: what it deleted and whether the scan after agreed (spec 013)."""
     payload = event.payload
-    if event.event_type.value == "schedule_changed":
-        change = str(payload.get("change", ""))
-        if "from" in payload and "to" in payload:
-            return f"{change} {payload['from']}→{payload['to']}"
-        if "from_seconds" in payload and "to_seconds" in payload:
-            return f"{change} {payload['from_seconds']}s→{payload['to_seconds']}s"
-        return change
-    if event.event_type.value == "drift_response":
-        return str(payload.get("decision") or payload.get("mode") or event.outcome or "")
-    if event.event_type.value == "health_changed":
-        # The change, then each reason on its own line (spec 016).
-        reasons = [str(reason.get("text", "")) for reason in payload.get("reasons") or []]
-        return "\n".join([f"{payload.get('before')}→{payload.get('after')}", *reasons])
-    return event.outcome or ""
+    deleted = [str(path) for path in payload.get("deleted_paths") or []]
+    reason = event.reason.value if event.reason is not None else (event.outcome or "")
+    if not deleted:
+        return f"{reason.replace('_', ' ')}; nothing removed"
+    removed = f"removed {len(deleted)}: {', '.join(deleted)}"
+    if reason == "succeeded":
+        return f"{removed}; verified"
+    remaining = [str(path) for path in payload.get("remaining") or []]
+    lost = [str(path) for path in payload.get("new_forward") or []]
+    notes = [f"still there: {', '.join(remaining)}"] if remaining else []
+    notes += [f"newly missing: {', '.join(lost)}"] if lost else []
+    if reason == "verification_failed":
+        return f"{removed}; not verified, {'; '.join(notes)}"
+    return f"{removed}; {reason.replace('_', ' ')}"
 
 
 _REFUSAL_TEXT = {
@@ -298,14 +334,19 @@ class HumanRenderer(Renderer):
         table.add_column("activity")
         table.add_column("outcome")
         table.add_column("actor")
+        # A removal's end row names who confirmed it, which only its start event records (spec 013).
+        started_by = {e.workflow_id: e.actor for e in events if e.event_type.value == "workflow_started" and e.actor}
         for event in events:
+            actor = event.actor
+            if actor is None and event.workflow_type == "RemoveConfig":
+                actor = started_by.get(event.workflow_id)
             table.add_row(
                 event.timestamp.isoformat(timespec="seconds"),
                 _esc(event.workflow_id),
                 _esc(event.event_type.value),
                 _esc(event.activity_name or ""),
                 _esc(_audit_outcome(event)),
-                _esc(event.actor or ""),
+                _esc(actor or ""),
             )
         self._console.print(table)
 

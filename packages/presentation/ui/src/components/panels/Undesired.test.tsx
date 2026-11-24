@@ -18,11 +18,21 @@ describe("Undesired", () => {
     expect(screen.queryByRole("group", { name: "spine-01" })).not.toBeInTheDocument();
   });
 
-  it("says removal is not automatic, and offers no command", () => {
+  it("shows each device's remove command to copy, and nothing that would run it (spec 013 FR-016)", () => {
     render(<Undesired devices={devices} now={NOW} />);
 
-    expect(screen.getByText(/not removed automatically \(#65\)/)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /^Copy/ })).not.toBeInTheDocument();
+    const leaf01 = screen.getByRole("group", { name: "leaf-01" });
+    expect(within(leaf01).getByText("snapl remove leaf-01")).toBeInTheDocument();
+    expect(within(leaf01).getByRole("button", { name: "Copy command: snapl remove leaf-01" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button").every((b) => b.getAttribute("aria-label")?.startsWith("Copy command:"))).toBe(true);
+    expect(document.querySelector("form")).toBeNull();
+  });
+
+  it("says removal is never automatic", () => {
+    render(<Undesired devices={devices} now={NOW} />);
+
+    expect(screen.getByText(/never removed on a schedule/)).toBeInTheDocument();
+    expect(screen.queryByText(/#65/)).not.toBeInTheDocument();
   });
 
   it("says when no device has any", () => {

@@ -162,7 +162,8 @@ test("selecting a device opens its detail, and the address reopens it", async ({
 
   const drawer = page.getByRole("dialog", { name: "leaf-01" });
   await expect(drawer).toContainText("/interface[name=ethernet-1/7]/description");
-  await expect(drawer).toContainText("not removed automatically");
+  await expect(drawer).toContainText("Reconcile never removes config intent doesn't hold");
+  await expect(drawer).toContainText("snapl remove leaf-01");
   await expect(page).toHaveURL(/\?device=leaf-01$/);
 
   await page.reload();

@@ -2086,3 +2086,32 @@ def test_network_with_the_sot_down_lists_the_devices_it_last_named():
 
 def test_network_rejects_another_use_case():
     assert _client().get("/api/v1/network", params={"use_case": "campus"}).status_code == 422
+
+
+# --- the plain page's removals (spec 013 T046, FR-016) ---------------------------
+
+
+def test_page_shows_the_remove_command_beside_reconcile():
+    page = _client().get("/").text
+
+    assert 'if (device.remove_command) next.append(el("code", device.remove_command));' in page
+
+
+def test_page_shows_the_latest_removal_preview_and_what_it_left_in_place():
+    page = _client().get("/").text
+
+    assert "device.last_removal_preview" in page
+    assert '"last removal preview: "' in page
+    assert '"left in place: "' in page
+
+
+def test_page_shows_a_removals_detail_and_never_starts_one():
+    page = _client().get("/").text
+
+    assert "function removalLines(removal)" in page
+    assert '"confirmed by "' in page
+    assert '"the verifying scan finds none of them"' in page
+    assert "nothing was removed" in page
+    # Visibility only: the page never posts and never names the workflows it could start.
+    assert "method:" not in page
+    assert '"POST"' not in page

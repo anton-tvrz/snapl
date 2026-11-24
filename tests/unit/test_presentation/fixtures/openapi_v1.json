@@ -653,6 +653,16 @@
               }
             ]
           },
+          "last_removal_preview": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RemovalPreviewView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "last_scan_workflow_id": {
             "anyOf": [
               {
@@ -697,6 +707,17 @@
               }
             ],
             "title": "Note"
+          },
+          "remove_command": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remove Command"
           },
           "role": {
             "anyOf": [
@@ -1107,7 +1128,7 @@
       },
       "EpisodeClose": {
         "additionalProperties": false,
-        "description": "The deploy that repaired a drift episode.",
+        "description": "The deploy or removal that repaired a drift episode.",
         "properties": {
           "ended_at": {
             "format": "date-time",
@@ -1118,7 +1139,8 @@
             "enum": [
               "remediation",
               "reconcile",
-              "deploy"
+              "deploy",
+              "removal"
             ],
             "title": "Kind",
             "type": "string"
@@ -2311,6 +2333,144 @@
         "title": "Point",
         "type": "object"
       },
+      "RemovalPreviewView": {
+        "additionalProperties": false,
+        "description": "A device's latest successful removal preview (spec 013 FR-016): what it would delete and leave.",
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "plan_paths": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Plan Paths",
+            "type": "array"
+          },
+          "refused_paths": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Refused Paths",
+            "type": "array"
+          },
+          "workflow_id": {
+            "title": "Workflow Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "at",
+          "workflow_id",
+          "plan_paths",
+          "refused_paths"
+        ],
+        "title": "RemovalPreviewView",
+        "type": "object"
+      },
+      "RemovalView": {
+        "additionalProperties": false,
+        "description": "What a `RemoveConfig` run did, from its start and terminal events (spec 013 FR-016).\n\nA run still in flight has only `actor` and `confirmed_paths`.",
+        "properties": {
+          "actor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor"
+          },
+          "confirmed_paths": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Confirmed Paths",
+            "type": "array"
+          },
+          "deleted_paths": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Deleted Paths",
+            "type": "array"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "device_response": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Response"
+          },
+          "gone": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Gone",
+            "type": "array"
+          },
+          "new_forward": {
+            "items": {
+              "type": "string"
+            },
+            "title": "New Forward",
+            "type": "array"
+          },
+          "plan_paths": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Plan Paths",
+            "type": "array"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "remaining": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Remaining",
+            "type": "array"
+          },
+          "still_refused": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Still Refused",
+            "type": "array"
+          }
+        },
+        "title": "RemovalView",
+        "type": "object"
+      },
       "RepeatedRepairFailure": {
         "additionalProperties": false,
         "properties": {
@@ -2574,6 +2734,16 @@
               }
             ],
             "title": "Reason"
+          },
+          "removal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RemovalView"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "started_at": {
             "format": "date-time",
