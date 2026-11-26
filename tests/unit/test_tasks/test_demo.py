@@ -454,7 +454,7 @@ def test_up_creates_the_schedule_after_seeding_and_before_the_preflight() -> Non
     order: list[str] = []
     with (
         patch.object(dev, "deps", side_effect=lambda _c: order.append("deps")),
-        patch.object(dev, "lab_deploy", side_effect=lambda _c: order.append("lab")),
+        patch.object(dev, "lab_deploy", side_effect=lambda _c, **_kw: order.append("lab")),
         patch.object(demo, "seed", side_effect=lambda _c, use_case: order.append(f"seed:{use_case}")),
         patch.object(
             demo,
@@ -466,6 +466,27 @@ def test_up_creates_the_schedule_after_seeding_and_before_the_preflight() -> Non
         demo.up(_ctx(), use_case="dcfabric")
 
     assert order == ["deps", "lab", "seed:dcfabric", "schedule:dcfabric", "check:dcfabric"]
+
+
+def test_up_passes_the_use_case_to_the_lab_the_seed_the_schedule_and_the_preflight() -> None:
+    """Spec 008 FR-020: `demo.up --use-case site_edge` brings up the site edge, not dcfabric."""
+    from tasks import dev
+
+    order: list[str] = []
+    with (
+        patch.object(dev, "deps"),
+        patch.object(dev, "lab_deploy", side_effect=lambda _c, use_case: order.append(f"lab:{use_case}")),
+        patch.object(demo, "seed", side_effect=lambda _c, use_case: order.append(f"seed:{use_case}")),
+        patch.object(
+            demo,
+            "ensure_schedule",
+            AsyncMock(side_effect=lambda _s, use_case: order.append(f"schedule:{use_case}") or _schedule_view()),
+        ),
+        patch.object(demo, "check", side_effect=lambda _c, use_case: order.append(f"check:{use_case}")),
+    ):
+        demo.up(_ctx(), use_case="site_edge")
+
+    assert order == ["lab:site_edge", "seed:site_edge", "schedule:site_edge", "check:site_edge"]
 
 
 def test_up_creates_no_schedule_when_seed_refuses() -> None:

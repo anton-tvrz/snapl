@@ -101,6 +101,67 @@ def test_lab_tasks_use_dockerized_containerlab() -> None:
     assert "/var/run/docker.sock" in command
 
 
+# ---------------------------------------------------------------------------
+# One lab per use case (spec 008 research R15)
+# ---------------------------------------------------------------------------
+
+
+def test_lab_tasks_default_to_dcfabric() -> None:
+    ctx = _ctx()
+    dev.lab_deploy(ctx)
+    dev.lab_destroy(ctx)
+    commands = _run_commands(ctx)
+    assert "containerlab/dcfabric.yml" in commands[0]
+    assert "c=clab-dcfabric-spine-01" in commands[1]
+    assert "containerlab/dcfabric.yml" in commands[2]
+
+
+def test_lab_deploy_site_edge_uses_its_topology_and_prefix() -> None:
+    ctx = _ctx()
+    dev.lab_deploy(ctx, use_case="site_edge")
+    deploy, tls_strip = _run_commands(ctx)[:2]
+    assert "containerlab deploy" in deploy
+    assert "containerlab/site_edge.yml" in deploy
+    assert "c=clab-site-edge-site-edge-01" in tls_strip
+    assert "c=clab-site-edge-carrier-a" in tls_strip
+    assert "clab-dcfabric-" not in tls_strip
+
+
+def test_lab_deploy_strips_tls_on_routers_only_never_on_a_host() -> None:
+    """A linux host has no sr_cli: the wait loop would spin forever on one."""
+    ctx = _ctx()
+    dev.lab_deploy(ctx, use_case="site_edge")
+    tls_strip = _run_commands(ctx)[1]
+    for host in ("ot-host", "office-host", "historian", "wan-host"):
+        assert host not in tls_strip
+
+
+def test_lab_destroy_site_edge_uses_its_topology() -> None:
+    ctx = _ctx()
+    dev.lab_destroy(ctx, use_case="site_edge")
+    (command,) = _run_commands(ctx)
+    assert "containerlab destroy" in command
+    assert "containerlab/site_edge.yml" in command
+
+
+@pytest.mark.parametrize("task", ["lab_deploy", "lab_destroy"])
+def test_an_unknown_use_case_raises_before_any_command(task: str) -> None:
+    ctx = _ctx()
+    with pytest.raises(ValueError, match="no lab for use case 'nope'"):
+        getattr(dev, task)(ctx, use_case="nope")
+    ctx.run.assert_not_called()
+
+
+def test_every_lab_topology_exists_and_names_its_routers() -> None:
+    """The table and the topology files are one registry: each router listed is a node."""
+    import yaml
+
+    for use_case, lab in dev.LABS.items():
+        topology = yaml.safe_load(lab.topology.read_text())
+        assert f"clab-{topology['name']}-" == lab.prefix, use_case
+        assert set(lab.routers) <= set(topology["topology"]["nodes"]), use_case
+
+
 def test_dev_collection_is_registered() -> None:
     collection = ns.collections["dev"]
     assert set(collection.tasks) == {"deps", "stop", "down", "lab-deploy", "lab-destroy"}

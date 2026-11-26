@@ -1,0 +1,82 @@
+# snapl site_edge lab: one SR Linux site edge, one SR Linux carrier, four
+# Linux hosts (spec 008, research R13, R14 and R18).
+#
+# The site edge carries the office and OT segments and an eBGP uplink to the
+# carrier. Behind the carrier sit the allowed subnet (historian) and another
+# WAN destination (wan-host). The hosts are traffic endpoints only: they are
+# not in intent, and nothing snapl manages lives on them.
+#
+# Deploy / destroy beside dcfabric (see README.md in this directory):
+#   uv run invoke dev.lab-deploy --use-case site_edge
+#   uv run invoke dev.lab-destroy --use-case site_edge
+
+name: site-edge
+
+# Its own management network, the next free /24 after dcfabric's (#90), so
+# both labs run at once without sharing an address (FR-015). Registered in
+# dev/knowledge/host-resource-registry.md. The router pins are the SoT's gNMI
+# dial targets (lab_node_name), as in dcfabric.yml: change both together.
+mgmt:
+  network: clab-snapl-site-edge
+  ipv4-subnet: 172.20.22.0/24
+
+topology:
+  defaults:
+    kind: nokia_srlinux
+
+  kinds:
+    nokia_srlinux:
+      # The same pinned image as dcfabric (#122).
+      image: ghcr.io/nokia/srlinux:26.3.1
+      # Strips TLS from the mgmt grpc-server, as in dcfabric.yml. Set on the
+      # kind, not the defaults, so the hosts never get it. dev.lab-deploy
+      # enforces it too, on the routers only.
+      startup-config: srlinux-insecure-gnmi.partial.cfg
+    linux:
+      # Pinned by digest: the hosts are part of the traffic test (R18).
+      image: ghcr.io/srl-labs/network-multitool:v0.10.0@sha256:9bc1e46dd105a054bce724b6744200e951e8fdf4c17658912fbc54fd2e8a4b06
+
+  nodes:
+    site-edge-01:
+      type: ixr-d2
+      mgmt-ipv4: 172.20.22.11
+    carrier-a:
+      type: ixr-d2
+      mgmt-ipv4: 172.20.22.21
+
+    # Each host's default route points into the lab, so its traffic crosses
+    # the site edge and the carrier rather than the management network.
+    ot-host:
+      kind: linux
+      mgmt-ipv4: 172.20.22.31
+      exec:
+        - ip addr add 10.40.20.10/24 dev eth1
+        - ip route replace default via 10.40.20.1 dev eth1
+    office-host:
+      kind: linux
+      mgmt-ipv4: 172.20.22.32
+      exec:
+        - ip addr add 10.40.10.10/24 dev eth1
+        - ip route replace default via 10.40.10.1 dev eth1
+    historian:
+      kind: linux
+      mgmt-ipv4: 172.20.22.33
+      exec:
+        - ip addr add 10.50.10.10/24 dev eth1
+        - ip route replace default via 10.50.10.1 dev eth1
+    wan-host:
+      kind: linux
+      mgmt-ipv4: 172.20.22.34
+      exec:
+        - ip addr add 10.50.99.10/24 dev eth1
+        - ip route replace default via 10.50.99.1 dev eth1
+
+  links:
+    # WAN: the site edge's uplink to the carrier, over eBGP.
+    - endpoints: ["site-edge-01:e1-1", "carrier-a:e1-1"]
+    # The site's segments: office on e1-2, OT on e1-3.
+    - endpoints: ["site-edge-01:e1-2", "office-host:eth1"]
+    - endpoints: ["site-edge-01:e1-3", "ot-host:eth1"]
+    # Behind the carrier: the allowed subnet and another WAN destination.
+    - endpoints: ["carrier-a:e1-2", "historian:eth1"]
+    - endpoints: ["carrier-a:e1-3", "wan-host:eth1"]

@@ -102,7 +102,7 @@
 
 #### Tests (write first, verify they fail)
 
-- [ ] T012 [P] Write tests/unit/test_containerlab/test_site_edge_topology.py, a sibling of test_topology.py (contracts C-7):
+- [x] T012 [P] Write tests/unit/test_containerlab/test_site_edge_topology.py, a sibling of test_topology.py (contracts C-7):
   - bridge `clab-snapl-site-edge`, subnet `172.20.22.0/24`;
   - every node's mgmt pin is inside it: `site-edge-01` .11, `carrier-a` .21, hosts .31 to .34;
   - the /24 overlaps neither 172.20.20.0/24 nor 172.20.21.0/24;
@@ -111,21 +111,21 @@
   - every enabled port of the two routers has a link partner (health, FR-019).
 
   The seed `lab_node_name` check is added in T055, once the seed exists.
-- [ ] T013 [P] Extend tests/unit/test_tasks/test_dev.py: `lab_deploy` and `lab_destroy` take `use_case` (default `dcfabric`). It selects the topology file, the SR Linux node list and the container prefix (`clab-dcfabric-` or `clab-site-edge-`). `_strip_gnmi_tls` runs on the SR Linux nodes only, never on a host. An unknown use case raises before any command runs.
-- [ ] T014 [P] Extend tests/unit/test_tasks/test_demo.py: `demo.up --use-case site_edge` passes the use case to `dev.lab_deploy`, to the seed and to `ensure_schedule` (FR-020), and the preflight lists that use case's routers.
+- [x] T013 [P] Extend tests/unit/test_tasks/test_dev.py: `lab_deploy` and `lab_destroy` take `use_case` (default `dcfabric`). It selects the topology file, the SR Linux node list and the container prefix (`clab-dcfabric-` or `clab-site-edge-`). `_strip_gnmi_tls` runs on the SR Linux nodes only, never on a host. An unknown use case raises before any command runs.
+- [x] T014 [P] Extend tests/unit/test_tasks/test_demo.py: `demo.up --use-case site_edge` passes the use case to `dev.lab_deploy`, to the seed and to `ensure_schedule` (FR-020), and the preflight lists that use case's routers.
 
 #### Implementation
 
-- [ ] T015 Write containerlab/site_edge.yml per research R13 and R14:
+- [x] T015 Write containerlab/site_edge.yml per research R13 and R14:
   - lab name `site-edge`;
   - `site-edge-01` and `carrier-a` as `nokia_srlinux` `ixr-d2`;
   - `ot-host`, `office-host`, `historian` and `wan-host` as `linux` with `ghcr.io/srl-labs/network-multitool` pinned by digest;
   - each host's address and default route as `exec` lines.
-- [ ] T016 Register `172.20.22.0/24` / `clab-snapl-site-edge` in dev/knowledge/host-resource-registry.md, and add a site_edge section to containerlab/README.md.
-- [ ] T017 In tasks/dev.py, replace `LAB_TOPOLOGY`, `LAB_NODES` and the hardcoded prefix with a per-use-case table, and thread `use_case` through `lab_deploy`, `lab_destroy` and `_strip_gnmi_tls` (research R15).
-- [ ] T018 In tasks/demo.py, pass `use_case` from `up` to `dev.lab_deploy` and to the preflight.
-- [ ] T019 Write dev/scripts/site_edge_capture.cli: the `sr_cli` lines that configure the rule, the binding, the interfaces, eBGP and the export policy by hand for the captures (research R16). PR D uses it before snapl can render ACLs, so the captures do not depend on code written from them.
-- [ ] T020 Write dev/scripts/capture_srlinux_acl_state.py, a sibling of capture_srlinux_state.py:
+- [x] T016 Register `172.20.22.0/24` / `clab-snapl-site-edge` in dev/knowledge/host-resource-registry.md, and add a site_edge section to containerlab/README.md.
+- [x] T017 In tasks/dev.py, replace `LAB_TOPOLOGY`, `LAB_NODES` and the hardcoded prefix with a per-use-case table, and thread `use_case` through `lab_deploy`, `lab_destroy` and `_strip_gnmi_tls` (research R15).
+- [x] T018 In tasks/demo.py, pass `use_case` from `up` to `dev.lab_deploy` and to the preflight.
+- [x] T019 Write dev/scripts/site_edge_capture.cli: the `sr_cli` lines that configure the rule, the binding, the interfaces, eBGP and the export policy by hand for the captures (research R16). PR D uses it before snapl can render ACLs, so the captures do not depend on code written from them.
+- [x] T020 Write dev/scripts/capture_srlinux_acl_state.py, a sibling of capture_srlinux_state.py:
   - `--node`, `--case` with values `baseline`, `applied`, `deny-deleted`, `permit-inserted`, `action-flipped`, `action-flipped-applied`, `binding-removed` and `binding-moved`;
   - an optional `--change` that runs one `sr_cli -ec` line first;
   - collects `["/acl"]` with `GnmiCollector`, prunes statistics, and writes tests/unit/test_orchestrator/fixtures/srlinux_v26_3_1_acl_<case>.json.

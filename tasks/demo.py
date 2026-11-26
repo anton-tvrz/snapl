@@ -341,13 +341,13 @@ def check(ctx, use_case: str = DEFAULT_USE_CASE):
     return results
 
 
-@task(help={"use-case": f"Use case to seed (default: {DEFAULT_USE_CASE})"})
+@task(help={"use-case": f"Use case whose lab to deploy and seed (default: {DEFAULT_USE_CASE})"})
 def up(ctx, use_case: str = DEFAULT_USE_CASE):
-    """Clean checkout to demo-ready: deps + lab + seed + report-only drift schedule + preflight."""
+    """Clean checkout to demo-ready: deps + the use case's lab + seed + report-only drift schedule + preflight."""
     from . import dev  # noqa: PLC0415 — avoids a circular import at module load
 
     dev.deps(ctx)
-    dev.lab_deploy(ctx)
+    dev.lab_deploy(ctx, use_case=use_case)
     # seed refuses a foreign or unidentifiable SoT, so a schedule is never
     # created against intent that is not snapl's (spec 009 FR-031).
     seed(ctx, use_case=use_case)
