@@ -1016,7 +1016,8 @@ def test_devices_and_schedule_agree_with_snapl_status_and_schedule_show():
     assert [w["workflow_id"] for w in status["running_workflows"]] == [
         r["workflow_id"] for r in overview["running"]["data"]
     ]
-    assert overview["schedule"]["data"]["schedule"] == shown
+    # The CLI also names the Temporal it asked (#391); the schedule's own fields are what must agree.
+    assert overview["schedule"]["data"]["schedule"] == {k: v for k, v in shown.items() if k != "temporal"}
 
 
 def test_every_device_view_agrees_on_each_device_state_and_the_schedule():

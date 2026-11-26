@@ -18,6 +18,7 @@ from rich.console import Console
 from snapl_orchestrator.models import WorkflowReason
 from snapl_presentation.exit_codes import ExitCode
 from snapl_presentation.render import HumanRenderer, JsonRenderer, build_renderer
+from snapl_presentation.settings import TemporalTarget
 
 pytestmark = pytest.mark.unit
 
@@ -210,6 +211,10 @@ class TestBuildRenderer:
 # ---------------------------------------------------------------------------
 
 
+# Which Temporal the schedule lives on (#391).
+_TEMPORAL = TemporalTarget(host="temporal.test:7233", namespace="snapl-test")
+
+
 def _schedule_view(*, mode: str = "report", paused: bool = False, note: str | None = None, runs=None):
     from datetime import timedelta
 
@@ -252,10 +257,28 @@ def _summary(*, clean=5, drifted=1, errored=0, succeeded=0, failed=0):
     )
 
 
+class TestScheduleNamesItsTemporal:
+    """#391: a schedule is shared state on one Temporal; the operator sees which."""
+
+    def test_human_names_the_host_and_namespace_after_the_use_case(self) -> None:
+        console, _ = _capture()
+        HumanRenderer(console).schedule(_schedule_view(), temporal=_TEMPORAL)
+        lines = _text(console).splitlines()
+        use_case = next(i for i, line in enumerate(lines) if line.startswith("use case"))
+        assert lines[use_case + 1] == "temporal          temporal.test:7233, namespace snapl-test"
+
+    def test_json_carries_the_host_and_namespace(self) -> None:
+        console, _ = _capture()
+        JsonRenderer(console).schedule(_schedule_view(), temporal=_TEMPORAL)
+        payload = json.loads(_text(console))
+        assert payload["temporal"] == {"host": "temporal.test:7233", "namespace": "snapl-test"}
+        assert payload["schedule_id"] == "drift-response-dcfabric"
+
+
 class TestHumanSchedule:
     def test_shows_the_schedule_settings(self) -> None:
         console, _ = _capture()
-        HumanRenderer(console).schedule(_schedule_view())
+        HumanRenderer(console).schedule(_schedule_view(), temporal=_TEMPORAL)
         text = _text(console)
         assert "drift-response-dcfabric" in text
         assert "every" in text
@@ -266,20 +289,20 @@ class TestHumanSchedule:
 
     def test_a_paused_schedule_shows_its_reason(self) -> None:
         console, _ = _capture()
-        HumanRenderer(console).schedule(_schedule_view(paused=True, note="maintenance: spine swap"))
+        HumanRenderer(console).schedule(_schedule_view(paused=True, note="maintenance: spine swap"), temporal=_TEMPORAL)
         assert 'paused — "maintenance: spine swap"' in _text(console)
 
     def test_an_active_schedule_shows_its_note(self) -> None:
         # A stand-down leaves the schedule active, with why on its note (#389).
         note = "stood down: drift-response-dcfabric-1: 4 of 6 devices drifted, more than half; repaired nothing"
         console, _ = _capture()
-        HumanRenderer(console).schedule(_schedule_view(note=note))
+        HumanRenderer(console).schedule(_schedule_view(note=note), temporal=_TEMPORAL)
         assert f'active — "{note}"' in _text(console)
 
     def test_a_completed_report_run_shows_its_summary(self) -> None:
         console, _ = _capture()
         view = _schedule_view(runs=[_run("drift-response-dcfabric-1", "completed", _summary())])
-        HumanRenderer(console).schedule(view)
+        HumanRenderer(console).schedule(view, temporal=_TEMPORAL)
         text = _text(console)
         assert "completed" in text
         assert "6 devices: 5 clean, 1 drifted, 0 errored" in text
@@ -290,20 +313,20 @@ class TestHumanSchedule:
         view = _schedule_view(
             mode="remediate", runs=[_run("drift-response-dcfabric-1", "completed", _summary(succeeded=1))]
         )
-        HumanRenderer(console).schedule(view)
+        HumanRenderer(console).schedule(view, temporal=_TEMPORAL)
         assert "wrote: 1 device (1 ok, 0 failed)" in _text(console)
 
     def test_a_run_without_a_summary_shows_its_workflow_id(self) -> None:
         console, _ = _capture()
         view = _schedule_view(runs=[_run("drift-response-dcfabric-2026-10-28T03:05:00Z", "running")])
-        HumanRenderer(console).schedule(view)
+        HumanRenderer(console).schedule(view, temporal=_TEMPORAL)
         text = _text(console)
         assert "running" in text
         assert "drift-response-dcfabric-2026-10-28T03:05:00Z" in text
 
     def test_remediate_renders_in_the_warning_colour_on_a_tty(self) -> None:
         console = Console(record=True, width=200, force_terminal=True, color_system="standard")
-        HumanRenderer(console).schedule(_schedule_view(mode="remediate"))
+        HumanRenderer(console).schedule(_schedule_view(mode="remediate"), temporal=_TEMPORAL)
         styled = console.export_text(styles=True)
         assert "\x1b[33mremediate" in styled or "\x1b[1;33mremediate" in styled
 
@@ -312,7 +335,7 @@ class TestJsonSchedule:
     def test_emits_the_view_as_json(self) -> None:
         console = Console(record=True, width=200, force_terminal=False)
         view = _schedule_view(runs=[_run("drift-response-dcfabric-1", "completed", _summary())])
-        JsonRenderer(console).schedule(view)
+        JsonRenderer(console).schedule(view, temporal=_TEMPORAL)
         payload = json.loads(console.export_text())
         assert payload["schedule_id"] == "drift-response-dcfabric"
         assert payload["interval"] == 300
@@ -369,7 +392,7 @@ def test_a_run_line_is_never_hard_wrapped_on_a_narrow_console() -> None:
     line, splitting one run's facts across two rows of the view."""
     console = Console(record=True, width=80, force_terminal=False, no_color=True)
     view = _schedule_view(runs=[_run("drift-response-dcfabric-1", "completed", _summary())])
-    HumanRenderer(console).schedule(view)
+    HumanRenderer(console).schedule(view, temporal=_TEMPORAL)
     lines = console.export_text().splitlines()
     assert any("6 devices: 5 clean, 1 drifted, 0 errored" in line and "wrote: no" in line for line in lines)
 

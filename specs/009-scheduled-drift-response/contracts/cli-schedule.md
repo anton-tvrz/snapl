@@ -35,13 +35,15 @@ The audit log is opened as `snapl audit` opens it (`SqliteAuditLog(settings.audi
 The wording is part of the contract, because FR-012 requires it to state what is being authorized:
 
 ```
-Switch dcfabric to remediate?
+Switch dcfabric to remediate on Temporal localhost:18033, namespace default?
   Every 5m, devices whose scan shows drift a deploy can fix will be redeployed
   without asking — including devices whose intent was changed in the Source of
   Truth. Undesired config is never removed. Devices: 6.
   If a repair fails, the schedule switches itself back to report and says why.
 Continue? [y/N]
 ```
+
+The question names the Temporal the schedule lives on, from `TEMPORAL_HOST` and `TEMPORAL_NAMESPACE`, and so does `trigger`'s on a remediate schedule (`Trigger a remediate run of dcfabric now, on Temporal …?`). *Added 2026-11-26 (#391).*
 
 The device count comes from the same SoT lookup `snapl deploy` uses (`load_states`). If the SoT is unreachable, the count line reads `Devices: unknown (SoT unreachable)`. The command does not fail on it: switching to remediate does not itself write anything.
 
@@ -50,6 +52,7 @@ The device count comes from the same SoT lookup `snapl deploy` uses (`load_state
 ```
 drift schedule  drift-response-dcfabric
 use case        dcfabric
+temporal        localhost:18033, namespace default
 every           5m
 response        report
 state           active                       # or: paused — "maintenance: spine swap"
@@ -63,7 +66,7 @@ skipped (overlap) 0
 
 ## `--json` shape (`show`, `create`, `mode`)
 
-`DriftScheduleView.model_dump(mode="json")`: `interval` in seconds, datetimes in ISO 8601 UTC.
+`DriftScheduleView.model_dump(mode="json")`: `interval` in seconds, datetimes in ISO 8601 UTC. It also carries `temporal`: `{"host": …, "namespace": …}`, the Temporal the command asked. *Added 2026-11-26 (#391).*
 
 ## `snapl status` addition (FR-026)
 
@@ -73,6 +76,8 @@ One extra row in the existing checks list, always `ok=True`, so it never changes
 drift schedule      dcfabric: every 5m, report, active
 drift schedule      none — snapl schedule create
 ```
+
+`status`'s `temporal` row names the namespace beside the host: `temporal  localhost:18033, namespace default` (#391).
 
 A Temporal error while looking the schedule up renders as `drift schedule  could not inspect: <first line>`, also `ok=True`. `status` already has a `temporal` row that fails on its own.
 

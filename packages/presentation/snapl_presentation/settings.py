@@ -36,6 +36,18 @@ DEFAULT_PROJECT_BOARD_URL = "https://github.com/users/anton-tvrz/projects/4"
 
 
 @dataclass(frozen=True)
+class TemporalTarget:
+    """The Temporal a command talks to. A schedule is shared state on one of them,
+    so every schedule command names it (#391)."""
+
+    host: str
+    namespace: str
+
+    def __str__(self) -> str:
+        return f"{self.host}, namespace {self.namespace}"
+
+
+@dataclass(frozen=True)
 class CliSettings:
     """Where the CLI talks to, and which env var moves each one."""
 
@@ -59,6 +71,10 @@ class CliSettings:
     project_board_url: str | None = DEFAULT_PROJECT_BOARD_URL
     # Metrics store (spec 012).
     prometheus_address: str = f"http://localhost:{DEFAULT_PROMETHEUS_PORT}"
+
+    @property
+    def temporal(self) -> TemporalTarget:
+        return TemporalTarget(host=self.temporal_host, namespace=self.temporal_namespace)
 
     @classmethod
     def from_env(cls) -> CliSettings:

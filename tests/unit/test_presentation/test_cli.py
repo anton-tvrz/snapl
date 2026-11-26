@@ -390,6 +390,14 @@ class TestStatus:
 
         assert result.exit_code == ExitCode.OK
 
+    def test_names_the_temporal_and_its_namespace(self, sot, temporal_client, monkeypatch) -> None:
+        """#391: the Temporal a schedule lives on, host and namespace."""
+        monkeypatch.setenv("TEMPORAL_HOST", "temporal.test:7233")
+        monkeypatch.setenv("TEMPORAL_NAMESPACE", "snapl-test")
+        result = self._status_with(temporal_client, AsyncMock(return_value=None))
+
+        assert "temporal — temporal.test:7233, namespace snapl-test" in result.output
+
     def _status_with(self, temporal_client, find) -> object:
         client = temporal_client()
         with (

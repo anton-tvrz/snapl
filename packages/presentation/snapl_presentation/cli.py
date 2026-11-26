@@ -408,7 +408,7 @@ async def status(use_case: UseCaseOpt = DEFAULT_USE_CASE, as_json: JsonOpt = Fal
         checks.append(("temporal", False, exc.message))
         client = None
     else:
-        checks.append(("temporal", True, settings.temporal_host))
+        checks.append(("temporal", True, str(settings.temporal)))
         running = await list_running_workflows(client, task_queue=settings.task_queue)
         # Poller count, not mere queue existence: a queue nothing polls looks
         # identical to a healthy one until a workflow sits in it forever
@@ -606,7 +606,7 @@ async def schedule_create(
     finally:
         await log.close()
 
-    build_renderer(as_json=as_json).schedule(view)
+    build_renderer(as_json=as_json).schedule(view, temporal=settings.temporal)
     return ExitCode.OK
 
 
@@ -627,7 +627,7 @@ async def schedule_show(use_case: UseCaseOpt = DEFAULT_USE_CASE, as_json: JsonOp
     except UnreadableScheduleError as exc:
         raise _unreadable_schedule(use_case, exc) from None
 
-    build_renderer(as_json=as_json).schedule(view)
+    build_renderer(as_json=as_json).schedule(view, temporal=settings.temporal)
     return ExitCode.OK
 
 
@@ -725,13 +725,15 @@ async def schedule_mode(
         current = await schedules.describe_drift_schedule(client, use_case_id=use_case)
         if target is DriftResponseMode.REMEDIATE:
             body = await _remediate_authorization(settings, use_case, current.interval)
-            _confirm(f"Switch {use_case} to remediate?\n{body}", yes=yes, as_json=as_json)
+            _confirm(
+                f"Switch {use_case} to remediate on Temporal {settings.temporal}?\n{body}", yes=yes, as_json=as_json
+            )
         return await schedules.set_drift_response(
             client, use_case_id=use_case, mode=target, audit_log=log, actor=_actor()
         )
 
     view = await _schedule_write(settings, use_case, _switch)
-    build_renderer(as_json=as_json).schedule(view)
+    build_renderer(as_json=as_json).schedule(view, temporal=settings.temporal)
     return ExitCode.OK
 
 
@@ -749,7 +751,11 @@ async def schedule_trigger(use_case: UseCaseOpt = DEFAULT_USE_CASE, yes: YesOpt 
         if current.mode is DriftResponseMode.REMEDIATE:
             # A triggered remediate run may write, so it needs the same consent (FR-025).
             body = await _remediate_authorization(settings, use_case, current.interval)
-            _confirm(f"Trigger a remediate run of {use_case} now?\n{body}", yes=yes, as_json=False)
+            _confirm(
+                f"Trigger a remediate run of {use_case} now, on Temporal {settings.temporal}?\n{body}",
+                yes=yes,
+                as_json=False,
+            )
         return await schedules.trigger_drift_schedule(client, use_case_id=use_case, audit_log=log, actor=_actor())
 
     mode = await _schedule_write(settings, use_case, _trigger)
