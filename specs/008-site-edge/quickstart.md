@@ -3,7 +3,7 @@
 **Feature**: 008-site-edge
 **Date**: 2026-10-28
 
-> **This describes the feature once it is built.** Nothing here runs today. There is no site_edge seed, template or lab yet, and implementation waits on #103. The `sr_cli` commands that make the hand changes are **provisional**: their exact syntax is confirmed while taking captures C3 to C6 (research R16), and this file is updated then.
+> **This describes the feature once it is built.** Nothing here runs today. There is no site_edge seed, template or lab yet. The `sr_cli` commands that make the hand changes are **provisional**: their exact syntax is confirmed while taking captures C3 to C6 (research R16), and this file is updated then.
 
 ## Prerequisites
 
@@ -25,7 +25,7 @@ uv run invoke demo.up --use-case site_edge   # deps -> site_edge lab -> provisio
 uv run invoke orchestrator.start             # own terminal
 ```
 
-The preflight must list `site-edge-01` (`172.20.22.11`) and `carrier-a` (`172.20.22.21`) as reachable on gNMI. The site_edge lab runs on its own management network (`172.20.22.0/24`), so it can run alongside dcfabric.
+The preflight must list `site-edge-01` (`172.20.22.11`) and `carrier-a` (`172.20.22.21`) as reachable on gNMI. The site_edge lab runs on its own management network (`172.20.22.0/24`), so it can run alongside dcfabric. `demo.up` also creates the use case's report-only drift schedule (spec 009). The worker streams telemetry for both use cases (FR-019): `snapl status --use-case site_edge` shows both devices healthy once converged.
 
 ## Demo arc: a deny rule removed by hand (User Story 2)
 
@@ -57,7 +57,26 @@ Run each from a converged lab.
 | `set / acl acl-filter ot-ingress type ipv4 entry 20 action accept` | `entry 20 / action` desired `drop`, actual `accept` | clean |
 | `set / acl acl-filter ot-ingress type ipv4 entry 10 match ipv4 destination-ip prefix 10.50.0.0/16` | `entry 10 / destination_prefix` both values | clean |
 | `delete / acl interfaces interface ethernet-1/3.0 input acl-filter ot-ingress type ipv4` | binding on `ethernet-1/3.0` missing | clean |
-| `set / acl acl-filter ot-ingress type ipv4 entry 5 action accept` | `entry 5` reported **undesired** | **still reported** under the default answer to Q3. Reconcile does not remove it (#65). |
+| `set / acl acl-filter ot-ingress type ipv4 entry 5 action accept` | `entry 5` reported **undesired** | **still reported**: reconcile never deletes. Remove it below. |
+| `set / acl interfaces interface ethernet-1/2.0 input acl-filter ot-ingress type ipv4` | binding on `ethernet-1/2.0` reported **undesired** | **still reported**. Remove it below. |
+
+## Removing an inserted permit (User Story 4, FR-016)
+
+```bash
+snapl remove site-edge-01                       # preview: one delete per undesired entry or binding, nothing written
+snapl remove site-edge-01 --apply               # confirm; one Set, then a verifying scan
+snapl scan --use-case site_edge                 # expect: clean, exit 0; entries 10 and 20 and the OT binding untouched
+```
+
+## Traffic checks (User Story 5, SC-008)
+
+```bash
+docker exec clab-site-edge-ot-host ping -c 3 -W 1 10.50.10.10   # historian: delivered
+docker exec clab-site-edge-ot-host ping -c 3 -W 1 10.50.99.10   # wan-host: blocked
+uv run invoke test-e2e -- -k site_edge_traffic                  # the whole sequence, recorded under .snapl/test-runs/
+```
+
+The e2e test repeats the blocked check with the deny removed by hand (delivered), after reconcile (blocked), with a permit inserted (delivered) and after `snapl remove --apply` (blocked).
 
 ## Regression check on dcfabric (SC-005)
 

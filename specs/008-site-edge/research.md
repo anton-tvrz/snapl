@@ -4,7 +4,7 @@
 **Date**: 2026-10-28
 **Method**: desk research against the current code on `main` (026f631), with no lab. The lab, Docker, Infrahub and Temporal were not used. Everything below about SR Linux's ACL model is **provisional until captured on the live 26.3.1 lab** (R1, R16). Nothing here is presented as observed device behaviour.
 
-The spec carries three open scope questions (Q1 to Q3). The decisions below take each question's proposed default, so the plan is buildable as written. R17 and R18 say what changes if the maintainer answers the other way.
+The spec carried three open scope questions (Q1 to Q3). The maintainer answered them on 2026-11-26 (spec Clarifications): one carrier, the traffic test in, and removal of an inserted permit through `snapl remove`. R11, R13, R17 and R18 were revised to match, and R21 was added for telemetry. The revision was again desk work against `main` (3930f69), with no lab.
 
 ---
 
@@ -103,7 +103,7 @@ The spec carries three open scope questions (Q1 to Q3). The decisions below take
 
 ## R7: Templates for the new use case
 
-**Decision**: `templates/site_edge/` contains `interfaces.j2` and `bgp.j2` as **copies** of dcfabric's, plus a new `acl.j2`.
+**Decision**: `templates/site_edge/` contains `interfaces.j2`, `bgp.j2` and `routing_policy.j2` (added to dcfabric by #317) as **copies** of dcfabric's, plus a new `acl.j2`.
 
 - `ConfigRenderer.render` renders `acl.j2` only when `acl_entries` or `acl_bindings` is non-empty, and merges it under the payload's `acl` key.
 - A use case with ACL intent but no `acl.j2` fails loudly with a `TemplateError`.
@@ -155,20 +155,18 @@ If C5 shows both cases present, or the SET rejected, merge cannot heal an action
 
 ## R11: The hand-inserted permit (Q3, FR-016)
 
-**Decision (proposed default)**: Report it, do not remove it.
+**Decision (maintainer, 2026-11-26)**: Removed by an operator with `snapl remove`, which this feature extends. Reconcile still never deletes.
 
-- Detection reuses spec 007 unchanged: an `acl_entry` whose `(acl_name, sequence)` is not in intent, inside any filter, is undesired.
-- Reconcile restores what intent declares. The inserted entry survives, and post-reconcile verification passes because it fails only on forward drift (#124).
-- The reconcile summary and `docs/demo-scenarios.md` must say this in so many words.
+The draft priced this as "roughly the size of this feature again": a new `Executor` ABC method, a new CLI flow, a new audit shape. Spec 013 has since shipped all of it for interfaces, BGP neighbours and addresses. What is left for ACLs:
 
-**If the maintainer answers "remove it"**: This is the first slice of #65, scoped to undesired entries **inside an ACL that snapl declares on that device**.
+1. **Planner** (`structural/removal.py`): `acl_entry` and `acl_binding` join `_REMOVABLE_KINDS`. Each undesired item becomes one delete of its whole entity (spec 013 FR-014). The deny entry and the OT binding are in intent, so they are never undesired and never planned.
+2. **Executor guard** (`gnmi/executor.py`): `_DELETE_SHAPES` gains the entry path (`/acl/acl-filter[name=…][type=ipv4]/entry[sequence-id=N]`) and the binding path (`/acl/interfaces/interface[interface-id=…]/input/acl-filter[name=…][type=ipv4]`). Both are provisional until captures C4 and C6. The filter container alone, `/acl/acl-filter[name=…][type=…]`, is **not** admitted: removing a whole ACL is out of scope, and refusing it is what keeps a typo from deleting the deny.
+3. **Protected set**: the planner already refuses anything in `ENTITY_FIELD_MAP[kind]["protected"]` (spec 013 FR-004), so the factory filters R9 names are refused as `protected` with no new code.
+4. **Everything else is spec 013 unchanged**: preview by default, `--apply` with confirmation, re-plan before writing, one Set, a verifying scan, serialized with deploys, audited, never scheduled.
 
-1. `Executor` gains a targeted-delete operation, which is a contract change to `abc.py` (Principle V). Its `dry_run` lists the paths it would delete.
-2. Deletion is a gNMI SET `delete` on `/acl/acl-filter[name][type]/entry[sequence-id]` only. It is never a `replace` at `/` (spec 007 FR-011), and never touches anything in the protected set.
-3. It is operator-triggered and confirmed, for example by a reconcile flag that shows the dry-run first. It never happens by default (Principle VIII.2 and VIII.5).
-4. Spec 007's User Story 3 is the design of record. This feature would implement it for one entity kind.
+A prefix added by hand to an entry's match is a field, not an entity. Removal cannot take it away (spec 013 FR-014), which is why the seed spells "any" as `0.0.0.0/0` (R2).
 
-The cost is a new executor write path, a new CLI confirmation flow and their live evidence: roughly the size of this feature again. That is why the default leaves it in #65.
+**Rationale**: the bypass an insider would actually use is the inserted permit. Detecting it and leaving it in place would make the demo's strongest beat end with "and then you fix it by hand".
 
 ## R12: Extending the render→diff contract test
 
@@ -193,7 +191,9 @@ The cost is a new executor write path, a new CLI confirmation flow and their liv
 | `site-edge-01` | nokia_srlinux / ixr-d2 | 172.20.22.11 | site edge |
 | `carrier-a` | nokia_srlinux / ixr-d2 | 172.20.22.21 | carrier (stands in for the underlay) |
 
-Links: `site-edge-01:e1-1 ↔ carrier-a:e1-1` (WAN). In the config-level first cut, the office (`e1-2`) and OT (`e1-3`) ports have no link partner. Their config applies and they are simply oper-down. Hosts are added only under R18.
+| `ot-host`, `office-host`, `historian`, `wan-host` | linux / network-multitool | 172.20.22.31 to .34 | traffic endpoints (R18); not in intent |
+
+Links: `site-edge-01:e1-1 ↔ carrier-a:e1-1` (WAN), `site-edge-01:e1-2 ↔ office-host:eth1`, `site-edge-01:e1-3 ↔ ot-host:eth1`, `carrier-a:e1-2 ↔ historian:eth1`, `carrier-a:e1-3 ↔ wan-host:eth1`. Every port intent enables has a partner, so health reads them up.
 
 **Rationale**:
 - One /24 per lab is the registry rule (#90).
@@ -222,7 +222,7 @@ Links: `site-edge-01:e1-1 ↔ carrier-a:e1-1` (WAN). In the config-level first c
 | ASNs | site edge `65210`, carrier-a `64610` | dcfabric `65000–65014`; test_edge `65100–65101` |
 | Organization / location | `snapl Site Edge` / `site-edge-lab` | dcfabric `snapl Lab` / `local-lab` |
 
-The two carrier-side subnets are configured on carrier-a even in the config-level first cut. That way the allowed subnet in the rule names something that exists, and R18 needs no re-addressing.
+The two carrier-side subnets are configured on carrier-a, with the historian and wan-host behind them (R13, R18).
 
 ## R15: Lab tasks become use-case aware
 
@@ -253,7 +253,7 @@ Every PR that lands a seam change (template, adapter, field map, store mapper) s
 
 ## R17: Single vs dual carrier (Q1, FR-014)
 
-**Decision (proposed default)**: A **single carrier**.
+**Decision (maintainer, 2026-11-26)**: A **single carrier**.
 
 **Rationale**: A second carrier adds one interface, one eBGP session and one link: entity kinds snapl already handles. For drift it demonstrates nothing new. What it would really add is path selection and failover, which snapl does not verify. Claiming dual-homing without verifying failover would be an implied claim (constitution Vision).
 
@@ -261,31 +261,24 @@ Every PR that lands a seam change (template, adapter, field map, store mapper) s
 
 ## R18: The traffic test (Q2, FR-017)
 
-**Decision (proposed default)**: A **follow-on**, not the first cut.
+**Decision (maintainer, 2026-11-26)**: **In the first cut.**
 
-**Rationale**: Behavioural evidence needs routed forwarding through `site-edge-01` and `carrier-a`. Desk reading of the templates shows dcfabric renders neither of the following:
+**What changed since the draft**: the draft found that dcfabric rendered neither network-instance membership for routed subinterfaces nor BGP policy, so forwarding needed new intent. Both have since shipped for dcfabric: each addressed subinterface joins the `default` network instance (#315), and the eBGP underlay exports loopbacks through a routing policy (#317). Its sessions are established, and health (spec 016) watches them. The site edge reuses both kinds (`routed_interface`, `routing_policy`) with no new forwarding entity.
 
-- **Subinterface membership in the `default` network-instance.** `bgp.j2` renders only `protocols/bgp`.
-- **BGP import or export policy.** Neighbours have no policy.
+**What is still new**:
 
-On SR Linux, both are expected to be needed for forwarding and route exchange. Routed subinterfaces must belong to a network-instance, and eBGP without policy is expected to exchange no routes. **Both are unconfirmed here**, as is whether dcfabric's sessions establish today. Verification compares config only, so nothing in snapl currently checks.
+- **Policy content.** dcfabric's policy exports loopbacks only. The site edge must advertise the office and OT segments to the carrier, and the carrier the historian and wan-host subnets back. That is seed data for the existing `routing_policy` kind (prefix sets), confirmed by capture C10. If the kind cannot express it, it gains a field; that is decided against the capture, not here.
+- **Hosts.** `ot-host` (`10.40.20.10`), `office-host` (`10.40.10.10`), `historian` (`10.50.10.10`) and `wan-host` (`10.50.99.10`), image `ghcr.io/srl-labs/network-multitool` pinned by digest, mgmt pins `172.20.22.31` to `.34`. Their addresses and default routes are containerlab `exec` lines: hosts are not intent devices, and nothing snapl manages lives on them.
+- **Enforcement.** Whether the emulated `ixr-d2` dataplane enforces an interface ACL is unknown. Capture C10 checks it first, in slice (a). If it does not, the node type changes or US5 returns to a follow-on; that is escalated, not decided silently.
+- **The check.** An e2e test (`tests/e2e/test_site_edge_traffic.py`) runs `ping -c 3 -W 1` from `ot-host` over `docker exec`: historian delivered, wan-host blocked; then with the deny removed by hand, with a permit inserted, after reconcile and after `snapl remove`. Results go under `.snapl/test-runs/` like every live run.
 
-The traffic test therefore needs, at minimum:
-
-- a network-instance interface list and a routing policy, *as intent*. They would be new rendered and compared fields, or the lab's behaviour is not from intent.
-- Linux hosts (for example `ghcr.io/srl-labs/network-multitool`) on OT and behind carrier-a.
-- a way to run the check from the loop or from the e2e suite.
-- confirmation that the virtual SR Linux dataplane actually enforces interface ACLs.
-
-That is a second feature's worth of boundary changes.
-
-**If "in the first cut"**: Add hosts `ot-host` (`10.40.20.10`), `historian` (`10.50.10.10`) and `wan-host` (`10.50.99.10`), with pins in `172.20.22.31+`. Add network-instance interface membership and a minimal export policy to intent, templates and the field map. Add an e2e test asserting SC-008. The capture list gains state after routing converges and a forwarding check of the ACL. The observation about dcfabric BGP state above should then become its own issue whatever is decided, since it touches the dcfabric claim.
+**Health**: with hosts on office and OT, every port intent enables has a link partner, so a converged site edge reads healthy (FR-019). Without them, health would flag the site edge forever.
 
 ## R19: Documentation and claims
 
 **Decision**: When site_edge ships:
 
-- `docs/demo-scenarios.md` gains a site_edge scenario (User Story 2's arc) and states its limits: the inserted permit per Q3, unmanaged match criteria, and config-level only per Q2.
+- `docs/demo-scenarios.md` gains a site_edge scenario (User Story 2's arc) and states its limits: an inserted permit survives reconcile and is removed only with `snapl remove`, unmanaged match criteria are not compared, and the traffic test runs in the lab only.
 - `AGENTS.md`'s "dcfabric is the only implemented use case" line is updated.
 - The constitution's "Site Edge (next)" heading becomes current through the amendment process (ADR plus patch bump), in the maintainer's PR.
 
@@ -301,3 +294,13 @@ Until the live arc runs green, none of these claim anything.
 **Risk, confirmed by capture C7**: `network_interface.yml` (Batch 3) re-declares `role` on `InterfacePhysical` with only `fabric`, `loopback`, `management` and `access`. How Infrahub resolves that against the base Dropdown, whether by merge or by override, is not established from the desk. If the extension overrides it, `upstream` is rejected at seed time. The fix is then to add a `wan` choice to the project-owned `network_interface.yml` extension, which is allowed because Batch 3 is snapl's own file, and seed that instead.
 
 **Rationale**: The seed must use values the provisioned schema accepts, or the seed fails. dcfabric only exercises `fabric` and `loopback`, so the base/extension interplay has never been tested with another value.
+
+## R21: Telemetry for every use case (FR-019)
+
+**Decision (maintainer, 2026-11-26)**: One worker streams the devices of every use case.
+
+Today the worker's `TelemetryRunner` streams the use case `SNAPL_TELEMETRY_USE_CASE` names, default `dcfabric` (`worker/run.py`). The runner already passes its use case to `IntentStore.get_desired_state(use_case=...)`, and the store reads every use case when it is `None`. So the change is in `run.py`: with the variable unset, the runner gets `None`. Setting it still narrows telemetry to one use case, which keeps a way to run a second worker for one lab.
+
+The dashboard serves one use case per process (`_check_use_case`), and `snapl status` takes `--use-case`, so each shows its own devices' health. Capture C9 checks both with telemetry for every use case. Two more streams is well inside what spec 016 measured for six devices; capture C9 confirms it.
+
+**Alternative rejected**: a second worker per use case with the variable set. No code change, but one more process to run and document, and its metrics port would collide on 18091.

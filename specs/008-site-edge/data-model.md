@@ -4,6 +4,8 @@
 **Date**: 2026-10-28
 **Source**: spec.md and research.md (R3, R4, R6, R9, R14)
 
+> **Revised 2026-11-26.** Unchanged in substance by the answers to Q1 to Q3: removal (Q3) adds no model, only removable kinds and guard shapes (contracts C-8), and the traffic test (Q2) adds lab hosts, not intent entities. The seed (§6) additionally carries routing-policy prefix sets that export the office and OT segments and the carrier's two subnets (research R18), in the existing `routing_policy` shape.
+
 ## Overview
 
 This feature adds one concept, the access-control list, at every layer it crosses:

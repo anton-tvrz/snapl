@@ -2,7 +2,7 @@
 
 **Feature Branch**: `008-site-edge`
 **Created**: 2026-10-28
-**Status**: Draft. Written now, built later: implementation starts only after the dcfabric MVP epic (#103) ships. This is the second use case, not part of the first demo.
+**Status**: Draft, revised 2026-11-26 against main (specs 009 to 018 had shipped since it was written). Q1 to Q3 answered (Clarifications). The second use case: the public demo post waits until it ships.
 **Input**: Issue #117. A manufacturing site edge on SR Linux with office and OT segments and a WAN uplink over eBGP to a carrier router. Intent includes a segmentation rule: the OT segment cannot reach the WAN except one named subnet. Drift on that rule is detected and reconciled like any other drift.
 
 ## Context
@@ -17,6 +17,18 @@ The constitution already lists Site Edge as the next use case. This feature make
 
 Interfaces and eBGP config already run end to end on dcfabric. The new capability is the **access-control list (ACL) as an intent entity**. That means it is modelled in the Source of Truth, rendered and deployed, collected back, compared field by field, and reported when it differs. Every one of those is a system boundary snapl has not crossed before.
 
+## Clarifications
+
+### Session 2026-11-26
+
+The draft of 2026-10-28 proposed report-only removal and a config-level first cut, because removal and routed forwarding did not exist yet. Both have shipped since: `snapl remove` (spec 013) and dcfabric's network-instance bindings and routing policies (#315, #317). Health (spec 016) also shipped, and it judges every interface intent expects up.
+
+- Q1: One carrier router, or two? → A: One (FR-014). A second adds nothing about drift and would imply a failover claim.
+- Q2: Is the traffic test (User Story 5) in the first cut? → A: Yes (FR-017). The lab gets hosts on the office and OT segments and behind the carrier, forwarding is built from intent, and an end-to-end check shows the rule blocking traffic. The hosts are needed anyway: without a link partner the office and OT ports are down, and health would flag the site edge forever.
+- Q3: Is a hand-inserted permit removed? → A: Yes, by an operator with `snapl remove`, which this feature extends to ACL entries and bindings (FR-016). Reconcile still never deletes (spec 013 FR-013), and no schedule removes anything (spec 013 FR-012).
+- Q4: How does the site edge get health? → A: One worker streams the devices of every use case, not one use case per worker (FR-019).
+- Q5: When does it land? → A: Now. The public demo post waits until site_edge ships, so it can claim two use cases.
+
 ### What this feature lets snapl claim, and what it does not
 
 | Claim | After this feature |
@@ -25,8 +37,9 @@ Interfaces and eBGP config already run end to end on dcfabric. The new capabilit
 | Removing or weakening that rule by hand is reported as drift, naming the rule and the field | Yes |
 | Reconcile restores a removed or altered rule | Yes |
 | A permit rule inserted by hand ahead of the deny is reported as drift | Yes |
-| Reconcile removes a permit rule inserted by hand | Depends on Q3 (FR-016) |
-| The rule actually blocks OT traffic in the lab | Only if Q2 brings the traffic test into scope (User Story 5) |
+| Reconcile removes a permit rule inserted by hand | No: reconcile never deletes. An operator removes it with `snapl remove`, after a preview, and a scan verifies it (FR-016) |
+| The rule actually blocks OT traffic in the lab | Yes: hosts in the lab, checked before the bypass, with it, and after the repair (User Story 5) |
+| The site edge's links and eBGP session are judged for health | Yes, from the same worker as dcfabric (FR-019) |
 | Multi-vendor, firewall or zone-policy support | No. Single vendor, one interface ACL (Principle VI) |
 
 ## User Scenarios & Testing *(mandatory)*
@@ -78,7 +91,7 @@ A deny rule can be defeated without deleting it. Its action can be flipped to ac
 1. **Given** a converged site edge, **When** the deny entry's action is changed to accept by hand, **Then** the scan names the entry's action field with desired "drop" and actual "accept", and reconcile restores "drop".
 2. **Given** a converged site edge, **When** the allowed entry's destination prefix is widened by hand, **Then** the scan names that entry's destination prefix with both values, and reconcile restores the intended prefix.
 3. **Given** a converged site edge, **When** the ACL is unbound from the OT interface by hand, **Then** the scan reports the binding as missing, and reconcile restores it.
-4. **Given** a converged site edge, **When** the ACL is bound to a different interface by hand in addition to OT, **Then** the scan reports the extra binding as undesired.
+4. **Given** a converged site edge, **When** the ACL is bound to a different interface by hand in addition to OT, **Then** the scan reports the extra binding as undesired, and `snapl remove site-edge-01 --apply` deletes it.
 
 ---
 
@@ -94,15 +107,16 @@ The more realistic bypass does not touch the deny rule at all. Someone adds a ne
 
 1. **Given** a converged site edge, **When** an accept entry is inserted ahead of the deny entry by hand, **Then** the scan reports the site edge drifted and marks the inserted entry's fields as undesired.
 2. **Given** the same report, **When** it is rendered, **Then** the inserted entry is visibly distinct from a missing or mismatched rule, with no need to compare values by eye (spec 007 FR-007).
-3. **Given** the drifted site edge, **When** the operator reconciles it, **Then** the outcome is what FR-016 specifies, and the reconcile summary and the demo documentation say so plainly.
+3. **Given** the drifted site edge, **When** the operator reconciles it, **Then** reconcile succeeds, the inserted entry is still on the device, and the next scan still reports it as undesired. Nothing implies otherwise.
+4. **Given** the inserted entry still there, **When** the operator runs `snapl remove site-edge-01`, **Then** the preview lists one delete for the entry and writes nothing. With `--apply` and confirmation, the entry is deleted in one Set, the verifying scan finds it gone, and the deny entry and the binding are untouched (FR-016).
 
 ---
 
-### User Story 5: Behavioural Evidence That the Rule Blocks Traffic (Priority: P3, stretch)
+### User Story 5: Behavioural Evidence That the Rule Blocks Traffic (Priority: P2)
 
 Config that matches intent is not the same as a control that works (Principle VIII.3). With traffic endpoints in the lab, verification shows the effect of the rule as well as its presence. A host on the OT segment can reach the allowed subnet across the WAN but nothing else across the WAN. After the deny rule is removed by hand, the blocked traffic gets through. After reconcile, it is blocked again.
 
-**Why this priority**: It is the strongest form of the claim, and #117 lists it as optional. Its cost is real: routed forwarding through the site edge and carrier, and confirmation that the lab's virtual dataplane enforces interface ACLs. Whether it belongs in the first cut is open (FR-017).
+**Why this priority**: It is the strongest form of the claim. Its cost fell once dcfabric rendered network-instance bindings and routing policies from intent (#315, #317): the site edge reuses them for forwarding. What is left is hosts in the lab and confirmation that the virtual dataplane enforces interface ACLs (capture C10). In scope since 2026-11-26 (FR-017).
 
 **Independent Test**: Use a lab with hosts on the OT segment and behind the carrier. Run the traffic checks against a converged site edge, again after removing the deny rule, and again after reconcile.
 
@@ -127,6 +141,9 @@ Config that matches intent is not the same as a control that works (Principle VI
 - **The ACL bound to the OT interface in the wrong direction** (egress instead of ingress). This reads as the intended ingress binding missing. The egress binding itself is not compared in the first cut, because only ingress is managed.
 - **The ACL bound by hand to an interface where intent declares no binding.** This is reported as an undesired binding. It is not a mismatch on that interface, so it never blocks verification.
 - **The site edge is unreachable.** The scan reports it as errored, as for any device. The carrier is still evaluated.
+- **A port with nothing connected.** Health judges every interface intent expects up (spec 016). The office and OT ports have hosts in the lab, so a converged site edge reads healthy. A port intent enables with no link partner would read unhealthy, correctly.
+- **A hand-inserted permit removed while traffic flows.** Removal deletes only the inserted entry, in one Set. The deny entry and the binding are never in the plan, because they are in intent.
+- **A factory ACL in the protected set.** If a scan ever reports it, `snapl remove` refuses it as protected (FR-011, spec 013 FR-004).
 
 ## Requirements *(mandatory)*
 
@@ -156,13 +173,20 @@ Config that matches intent is not the same as a control that works (Principle VI
 
 **Lab**
 
-- **FR-014**: The System MUST provide a lab for the site_edge use case. It contains one SR Linux site edge with an office segment, an OT segment and a WAN uplink over eBGP to [NEEDS CLARIFICATION: one carrier router, or two (the site edge dual-homed to two carriers)?]. Every router in it is SR Linux.
+- **FR-014**: The System MUST provide a lab for the site_edge use case. It contains one SR Linux site edge with an office segment, an OT segment and a WAN uplink over eBGP to one SR Linux carrier router. Every router in it is SR Linux. Linux hosts sit on the office and OT segments and behind the carrier, on the allowed subnet and on one other subnet.
 - **FR-015**: The site_edge lab MUST be able to run on the same host as the dcfabric lab without sharing its management network or address block.
 
 **Scope decisions**
 
-- **FR-016**: When an access-control-list entry is present on the device but absent from intent, inside an ACL that snapl declares (the hand-inserted permit of User Story 4), reconcile MUST [NEEDS CLARIFICATION: remove it in this feature? That would pull targeted removal of undesired config forward from #65 for snapl-owned ACLs only: dry-run first, operator-confirmed, never against the protected set (Principle VIII.5). Or only report it, leaving removal to #65?].
-- **FR-017**: Verification of the site_edge use case MUST [NEEDS CLARIFICATION: include the behavioural traffic test of User Story 5 (Linux hosts in the lab; OT can reach the allowed subnet and nothing else across the WAN), or is the first cut config-level only, with User Story 5 as a follow-on?].
+- **FR-016**: `snapl remove` (spec 013) MUST cover undesired access-control-list entries and undesired bindings: the removal plan deletes each as a whole entity, and the executor's delete guard admits their paths. Everything spec 013 requires still holds: operator-confirmed, previewed first, one Set per device, verified by a scan, never scheduled, never against the protected set. Reconcile MUST still never delete.
+- **FR-017**: The site_edge use case MUST include the traffic test of User Story 5. Forwarding through the site edge and the carrier MUST come from intent (interfaces, their network-instance bindings and the routing policy, as dcfabric renders them), not from lab config. The test runs in the end-to-end suite against the live lab.
+
+**Health, schedule and dashboard**
+
+- **FR-019**: One worker MUST stream device telemetry for the devices of every use case in intent, and judge each device's health as spec 016 does. The site edge's interfaces and its eBGP session to the carrier are judged like dcfabric's.
+- **FR-020**: The site_edge use case MUST work with the drift schedule (spec 009) as dcfabric does: `invoke demo.up --use-case site_edge` creates a report-only schedule for it, and remediate is opt-in.
+- **FR-021**: `snapl dashboard --use-case site_edge` and `snapl status --use-case site_edge` MUST show the site_edge use case with the existing views. No view is added for it.
+- **FR-022**: When a scan or a reconcile leaves undesired config on a device, its CLI output MUST name `snapl remove <device>`, as the dashboard already does (spec 013 FR-016). This holds for every use case.
 
 **Documentation**
 
@@ -188,27 +212,32 @@ Config that matches intent is not the same as a control that works (Principle VI
 - **SC-005**: A converged six-device dcfabric fabric still scans clean, with 0 drifted and 0 items, after ACL collection is added. No dcfabric device reports any ACL drift item.
 - **SC-006**: A scan of either use case writes nothing to any device.
 - **SC-007**: Every new boundary shape (device ACL config, the Source of Truth's response for ACL entities) is pinned by a fixture captured from the live lab, not written by hand.
-- **SC-008** *(only if FR-017 brings User Story 5 into scope)*: Before and after reconcile, traffic from OT to a non-allowed WAN destination is blocked in 100% of checks. Traffic to the allowed subnet is delivered in 100% of checks. With the deny removed, the blocked check is delivered.
+- **SC-008**: Before and after reconcile, traffic from OT to a non-allowed WAN destination is blocked in 100% of checks. Traffic to the allowed subnet is delivered in 100% of checks. With the deny removed, the blocked check is delivered. With a permit inserted ahead of the deny, it is delivered, and after `snapl remove` it is blocked again.
+- **SC-009**: After a permit is inserted by hand, one confirmed `snapl remove` leaves the next scan with no undesired items, and the deny entry and binding unchanged.
+- **SC-010**: A converged site edge and carrier read healthy, from the same worker that streams dcfabric. Taking the WAN link down flags both within the time spec 016 measures for dcfabric.
 
 ## Assumptions
 
-- **Sequencing.** Implementation starts after #103 (the dcfabric MVP demo epic) closes. The spec can be reviewed now. Nothing in it changes dcfabric behaviour.
+- **Sequencing.** The draft waited on #103, the dcfabric MVP epic. Every item on its list has closed except #101, the umbrella of dashboard specs 010 to 012, which have all shipped. Nothing in this feature changes dcfabric behaviour.
 - **One rule, one direction, IPv4.** The first cut has one ACL, bound ingress on the OT interface, and matches on IPv4 source and destination prefixes only. Protocol and port matching, egress binding, IPv6 and multiple ACLs per interface are out of scope. The intent model does not anticipate them (Principle VII).
 - **How "cannot reach the WAN except X" is enforced.** The lab enforces it as an ingress filter on the OT segment with two entries: accept to the named subnet, then drop everything else. As a side effect, OT also cannot reach the office segment, which matches common IT/OT segmentation practice. If the maintainer wants OT to reach the office, that is one more accept entry in the seed, not a design change.
 - **The final drop is explicit.** The rule ends with an explicit drop-all entry, so its meaning does not depend on the device's implicit default action.
 - **The rule is an ACL, not a zone policy.** Intent holds the access-control list directly. A higher-level "segment A may reach segment B" policy compiled into ACLs is deferred until a second rule or a second device needs it.
 - **The carrier is in intent.** The carrier router belongs to the site_edge use case and snapl deploys it like any other device, the way dcfabric models its spines. A real enterprise would not manage its provider's router. The lab does it so that one config path builds the whole lab, and the demo documentation notes the simplification.
 - **Hand-added match criteria are a known limitation.** If someone adds a match criterion snapl does not manage, such as a protocol or port on the deny entry, the entry is narrowed and this goes undetected in the first cut. This is listed as a known limitation in the demo documentation, not implied away.
-- **Merge-only apply still holds (#65).** Unless FR-016 says otherwise, reconcile restores what intent declares and does not remove anything. Verification after reconcile fails only on forward drift. Undesired config is reported, not fatal (#124). A hand-inserted permit therefore survives a "successful" reconcile, and the reconcile summary must not imply otherwise.
-- **Operational BGP state is not verified.** As on dcfabric today, verification compares configuration. Whether the eBGP session to the carrier is established is not a pass/fail criterion unless FR-017 brings the traffic test in, which needs working routing.
+- **Apply stays a merge; removal is its own command.** Reconcile restores what intent declares and removes nothing (spec 013 FR-013). Verification after reconcile fails only on forward drift (#124), so a hand-inserted permit survives a successful reconcile, and the summary says so. An operator removes it with `snapl remove` (FR-016). Removal deletes whole entities only (spec 013 FR-014): a prefix added by hand to an entry's match cannot be removed on its own, which is why the seed spells "any" as `0.0.0.0/0` (Edge Cases).
+- **Operational state is judged by health, behaviour by the traffic test.** Verification after a deploy still compares configuration. Health (spec 016, FR-019) judges whether the eBGP session to the carrier is established and the ports are up. The traffic test (FR-017) shows the rule's effect.
 - **Device names, addresses and ASNs are new.** They do not reuse dcfabric's or test_edge's (test_edge already seeds `edge-01` and `edge-02`).
 - **The platform is unchanged.** SR Linux at the version the dcfabric lab pins (26.3.1). The protected set, like the interface one, is a property of the platform, not the use case.
 
 ## Dependencies
 
-- **#103**: the dcfabric MVP demo epic. Must close first.
+- **#103**: the dcfabric MVP demo epic. Met in substance (Assumptions, Sequencing).
 - **Spec 007 / #54**: undesired-config detection. Reused for User Story 4 and FR-010.
-- **#65**: targeted removal of undesired config. FR-016 decides whether part of it comes forward for snapl-owned ACLs.
+- **Spec 013 / #65**: `snapl remove`, shipped 2026-11-26. FR-016 extends its removable kinds.
+- **Spec 009**: the drift schedule (FR-020).
+- **Spec 016**: device telemetry and health. FR-019 widens its runner from one use case to all of them.
+- **#315, #317**: network-instance bindings and routing policies from intent, reused for forwarding (FR-017).
 - **#124**: verification fails only on forward drift. It defines what "reconcile succeeded" means while an undesired entry remains.
 - **#117**: the use-case issue this spec answers.
 
@@ -217,5 +246,6 @@ Config that matches intent is not the same as a control that works (Principle VI
 - A second vendor, firewall appliances, or zone and security-policy models (Principle VI).
 - Higher-level segmentation policy compiled into ACLs.
 - Protocol and port matching, IPv6, egress filters, and multiple ACLs per interface.
-- Scheduled or automatic remediation. Reconcile stays operator-triggered (Principle VIII.2).
+- Scheduled removal, in any mode (spec 013 FR-012). Scheduled remediate is available for site_edge as for any use case, opt-in (spec 009).
+- Removing a single field from an entry (a prefix added by hand to a match): removal deletes whole entities only (spec 013 FR-014).
 - Any change to dcfabric's intent, templates or lab.

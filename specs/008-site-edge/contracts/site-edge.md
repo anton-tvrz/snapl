@@ -3,9 +3,9 @@
 **Feature**: 008-site-edge
 **Date**: 2026-10-28
 
-Each package's `abc.py` is the source of truth for its contract (Principle V). Under the proposed defaults for Q1 to Q3, this feature **changes no ABC**. It changes three shared data contracts and three seams, and adds no CLI command. This document lists each change and the test that pins it. The full model definitions are in `data-model.md`.
+**Revised**: 2026-11-26 (Q2 traffic test in, Q3 extend `snapl remove`, telemetry for every use case)
 
-If Q3 is answered "remove it", the `Executor` ABC gains a targeted-delete operation. That case is described at the end and is not part of the default plan.
+Each package's `abc.py` is the source of truth for its contract (Principle V). This feature **changes no ABC**: `Executor.remove` already exists (spec 013). It changes three shared data contracts and five seams, and adds no CLI command. This document lists each change and the test that pins it. The full model definitions are in `data-model.md`.
 
 ---
 
@@ -68,7 +68,7 @@ For a `DesiredState` with both lists empty, which includes all of dcfabric, the 
 
 - **Workflows**: unchanged. `test_vendor_seams.py` still passes: no workflow imports an adapter, `snapl_executor.gnmi` or `snapl_collector.gnmi`.
 - **Activities**: unchanged. `collect_drift_state` picks up the new path through `DRIFT_PATHS`.
-- **CLI**: no new command or option. The site_edge arc is `snapl deploy site-edge-01`, then `snapl scan --use-case site_edge`, then `snapl reconcile site-edge-01` or `snapl reconcile --use-case site_edge --drifted`. `render.py` already prints `undesired` items distinctly (spec 007).
+- **CLI**: no new command or option. The site_edge arc is `snapl deploy site-edge-01`, then `snapl scan --use-case site_edge`, then `snapl reconcile site-edge-01` or `snapl reconcile --use-case site_edge --drifted`, and `snapl remove site-edge-01 [--apply]` for an inserted entry. `render.py` already prints `undesired` items distinctly (spec 007). It gains one line: when undesired config remains after a scan or a reconcile, it names `snapl remove <device>` (FR-022), pinned by `tests/unit/test_presentation/test_render.py`.
 - **Tasks**: `invoke dev.lab-deploy`, `dev.lab-destroy` and `demo.up` take `--use-case` (default `dcfabric`, R15). Pinned by `tests/unit/test_tasks/`.
 
 ## C-7. Lab
@@ -83,18 +83,25 @@ For a `DesiredState` with both lists empty, which includes all of dcfabric, the 
 
 ---
 
-## Only if Q3 = "remove injected entries" (not in the default plan)
+## C-8. Removal (Observability planner, Executor guard)
 
-```python
-class Executor(ABC):
-    @abstractmethod
-    async def remove(self, device: Device, paths: list[str], *, dry_run: bool = True) -> ApplyResult:
-        """Targeted gNMI delete of undesired entities at exactly these paths.
+`Executor.remove`, `PlanRemoval`, `RemoveConfig` and `snapl remove` are unchanged in signature and behaviour (spec 013 contracts). What they admit widens:
 
-        Never a replace at '/'. Paths must be undesired ACL entries inside an
-        ACL the device's intent declares, and outside the protected set. With
-        dry_run=True (the default) nothing is sent and the result lists the paths.
-        """
-```
+| Change | Pinned by |
+| --- | --- |
+| `_REMOVABLE_KINDS` gains `acl_entry` and `acl_binding`. An undesired item of either kind plans one delete of its entity path. | `tests/unit/test_observability/test_removal.py` |
+| A desired entry or binding is never planned (it is never undesired). A protected filter or binding is refused as `protected`. | same |
+| `_DELETE_SHAPES` admits `/acl/acl-filter[name=K][type=ipv4]/entry[sequence-id=N]` and `/acl/interfaces/interface[interface-id=K]/input/acl-filter[name=K][type=ipv4]` (exact shapes from C4 and C6). It still refuses `/acl`, `/acl/acl-filter[...]` and every other shape. | `tests/unit/test_executor/test_gnmi_remove.py` |
+| The device's response to a delete of each shape is a captured fixture (C11). | same |
 
-It would be paired with a reconcile option that shows the dry run and asks for confirmation (`--yes` for scripts, as today), plus an audit event per removed path. Spec 007 User Story 3 is the design of record. This document names only the shape, so the maintainer can judge its size.
+## C-9. Telemetry (Orchestrator worker)
+
+| Change | Pinned by |
+| --- | --- |
+| With `SNAPL_TELEMETRY_USE_CASE` unset, the runner streams every use case's devices (`use_case=None`). Set, it narrows to that use case as today. | `tests/unit/test_orchestrator/test_worker_run.py` |
+
+`TelemetryRunner` and `Observer.evaluate_health` are unchanged.
+
+## C-10. Traffic test (e2e only)
+
+`tests/e2e/test_site_edge_traffic.py` drives SC-008 on the live lab. It is not a contract of any block: hosts are lab fixtures, not intent devices, and no package imports it.
