@@ -69,11 +69,17 @@ One `/24` per lab, on a dedicated bridge (issue #90):
 | --- | --- | --- |
 | 172.20.20.0/24 | `clab` (default) | project-network-synapse-quattro — spine-leaf-lab |
 | **172.20.21.0/24** | **`clab-snapl`** | **snapl — dcfabric** |
+| **172.20.22.0/24** | **`clab-snapl-site-edge`** | **snapl — site_edge** (spec 008) |
 
 snapl's node pins live in `containerlab/dcfabric.yml` and are seeded as each
 device's `lab_node_name` (issue #96). Those two files are one address registry
 split across two places; `tests/unit/test_containerlab/test_topology.py` fails
 if they diverge.
+
+The site_edge lab's pins live in `containerlab/site_edge.yml`: `site-edge-01`
+.11, `carrier-a` .21, and the four traffic hosts .31 to .34.
+`tests/unit/test_containerlab/test_site_edge_topology.py` guards them, and
+checks that the /24 overlaps neither of the two above.
 
 > On OrbStack all container bridges are mutually routable, so this is address
 > isolation, not L3 isolation. The guarantee is "no collision", not "no route".

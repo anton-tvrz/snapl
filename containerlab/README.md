@@ -114,3 +114,38 @@ GRPC_DNS_RESOLVER=native SRLINUX_HOST=clab-dcfabric-spine-01.orb.local \
   binary and gNMI answers TLS instead of plaintext, run the same strip
   manually:
   `docker exec clab-dcfabric-<node> sr_cli -ec 'delete / system grpc-server mgmt tls-profile'`
+
+## The site_edge lab (spec 008)
+
+A second lab, `containerlab/site_edge.yml`, for the site_edge use case. It runs
+beside dcfabric on its own bridge, `clab-snapl-site-edge` on `172.20.22.0/24`:
+
+```text
+ office-host ── e1-2 ┐                       ┌ e1-2 ── historian   (10.50.10.0/24, allowed)
+                     site-edge-01 ── e1-1 ── carrier-a
+     ot-host ── e1-3 ┘   (WAN, eBGP)         └ e1-3 ── wan-host    (10.50.99.0/24)
+```
+
+| node | kind / type | mgmt pin | role |
+| --- | --- | --- | --- |
+| `site-edge-01` | SR Linux `ixr-d2` | `172.20.22.11` | site edge: office on e1-2, OT on e1-3, WAN on e1-1 |
+| `carrier-a` | SR Linux `ixr-d2` | `172.20.22.21` | carrier, standing in for the underlay |
+| `ot-host` | linux | `172.20.22.31` | `10.40.20.10/24`, via `10.40.20.1` |
+| `office-host` | linux | `172.20.22.32` | `10.40.10.10/24`, via `10.40.10.1` |
+| `historian` | linux | `172.20.22.33` | `10.50.10.10/24`, via `10.50.10.1` |
+| `wan-host` | linux | `172.20.22.34` | `10.50.99.10/24`, via `10.50.99.1` |
+
+The routers use the same pinned SR Linux image as dcfabric. The hosts run
+`ghcr.io/srl-labs/network-multitool`, pinned by digest. They are traffic
+endpoints, not intent devices: containerlab sets their address and default
+route, and snapl never configures them.
+
+```bash
+uv run invoke dev.lab-deploy --use-case site_edge
+uv run invoke dev.lab-destroy --use-case site_edge
+uv run invoke demo.up --use-case site_edge   # needs the site_edge seed (spec 008 PR F)
+```
+
+`dev.lab-deploy` strips gNMI TLS on the two routers only. The capture tooling
+for spec 008 is `dev/scripts/site_edge_capture.cli` and
+`dev/scripts/capture_srlinux_acl_state.py`.

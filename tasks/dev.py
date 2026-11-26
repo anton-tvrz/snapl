@@ -3,18 +3,47 @@
 from __future__ import annotations
 
 import shlex
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from invoke import task
 
 from .shared import PROJECT_ROOT, execute_command
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 COMPOSE = f"docker compose -f {PROJECT_ROOT / 'development' / 'docker-compose.yml'}"
 
 # Containerlab runs Docker-outside-of-Docker (no native binary needed):
 # the clab container drives the host Docker daemon through the mounted socket.
 CLAB_IMAGE = "ghcr.io/srl-labs/clab:latest"
-LAB_TOPOLOGY = PROJECT_ROOT / "containerlab" / "dcfabric.yml"
-LAB_NODES = ("spine-01", "spine-02", "leaf-01", "leaf-02", "leaf-03", "leaf-04")
+DEFAULT_LAB = "dcfabric"
+
+
+@dataclass(frozen=True)
+class Lab:
+    """One use case's containerlab topology (spec 008 research R15)."""
+
+    topology: Path
+    # Container names are clab-<lab name>-<node>.
+    prefix: str
+    # The SR Linux nodes. Hosts are left out: they have no gNMI to fix.
+    routers: tuple[str, ...]
+
+
+LABS: dict[str, Lab] = {
+    "dcfabric": Lab(
+        topology=PROJECT_ROOT / "containerlab" / "dcfabric.yml",
+        prefix="clab-dcfabric-",
+        routers=("spine-01", "spine-02", "leaf-01", "leaf-02", "leaf-03", "leaf-04"),
+    ),
+    "site_edge": Lab(
+        topology=PROJECT_ROOT / "containerlab" / "site_edge.yml",
+        prefix="clab-site-edge-",
+        routers=("site-edge-01", "carrier-a"),
+    ),
+}
 
 # Prometheus's data, bind-mounted by the compose file (spec 012 R6). Under
 # .snapl/ so that `down --volumes` (demo.reset) never touches it.
@@ -66,15 +95,23 @@ def down(ctx, volumes=False):
     execute_command(ctx, command)
 
 
-@task
-def lab_deploy(ctx):
-    """Deploy the dcfabric Containerlab topology (2 spines, 4 leaves, SR Linux)."""
-    execute_command(ctx, _clab_command(f"containerlab deploy --topo {shlex.quote(str(LAB_TOPOLOGY))}"))
-    _strip_gnmi_tls(ctx)
-    print("Lab is up. gNMI (plaintext) on clab-dcfabric-{spine,leaf}-NN:57400, admin/NokiaSrl1!")
+def _lab(use_case: str) -> Lab:
+    try:
+        return LABS[use_case]
+    except KeyError:
+        raise ValueError(f"no lab for use case {use_case!r}; known: {', '.join(sorted(LABS))}") from None
 
 
-def _strip_gnmi_tls(ctx):
+@task(help={"use-case": f"Whose lab to deploy: {', '.join(sorted(LABS))} (default: {DEFAULT_LAB})"})
+def lab_deploy(ctx, use_case: str = DEFAULT_LAB):
+    """Deploy a use case's Containerlab topology (dcfabric: 2 spines, 4 leaves; site_edge: R13)."""
+    lab = _lab(use_case)
+    execute_command(ctx, _clab_command(f"containerlab deploy --topo {shlex.quote(str(lab.topology))}"))
+    _strip_gnmi_tls(ctx, lab)
+    print(f"Lab is up. gNMI (plaintext) on {', '.join(lab.prefix + r for r in lab.routers)}:57400, admin/NokiaSrl1!")
+
+
+def _strip_gnmi_tls(ctx, lab: Lab):
     """Force plaintext gNMI on 57400 on every node, waiting for boot first.
 
     The topology ships srlinux-insecure-gnmi.partial.cfg for this, but
@@ -85,7 +122,7 @@ def _strip_gnmi_tls(ctx):
     """
     script = "\n".join(
         f"""
-        c=clab-dcfabric-{node}
+        c={lab.prefix}{node}
         until docker exec $c sr_cli 'info flat system grpc-server mgmt' >/dev/null 2>&1; do sleep 2; done
         if docker exec $c sr_cli 'info flat system grpc-server mgmt' | grep -q tls-profile; then
           docker exec $c sr_cli -ec 'delete / system grpc-server mgmt tls-profile' >/dev/null
@@ -94,12 +131,13 @@ def _strip_gnmi_tls(ctx):
           echo "{node}: gNMI already plaintext"
         fi
         """
-        for node in LAB_NODES
+        for node in lab.routers
     )
     execute_command(ctx, script)
 
 
-@task
-def lab_destroy(ctx):
-    """Destroy the dcfabric Containerlab topology."""
-    execute_command(ctx, _clab_command(f"containerlab destroy --topo {shlex.quote(str(LAB_TOPOLOGY))}"))
+@task(help={"use-case": f"Whose lab to destroy: {', '.join(sorted(LABS))} (default: {DEFAULT_LAB})"})
+def lab_destroy(ctx, use_case: str = DEFAULT_LAB):
+    """Destroy a use case's Containerlab topology."""
+    lab = _lab(use_case)
+    execute_command(ctx, _clab_command(f"containerlab destroy --topo {shlex.quote(str(lab.topology))}"))

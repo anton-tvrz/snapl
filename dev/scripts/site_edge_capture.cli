@@ -1,0 +1,120 @@
+# The site_edge configuration, by hand, for spec 008's live captures (T019, research R16).
+#
+# PR D captures what SR Linux 26.3.1 does with an interface ACL before snapl can
+# render one, so the captures do not depend on code written from them. This file
+# is that configuration: the interfaces, eBGP between the site edge and the
+# carrier, the export policies that carry the segments across it (R18), the
+# ot-ingress rule and its binding on the OT port.
+#
+# NOT YET RUN. The syntax is recalled from SR Linux documentation, not checked
+# on 26.3.1. Research R1 recalls the binding at /acl/interfaces/interface; the
+# 24.x CLI reference, as recalled here, puts it at `acl interface`. T022 runs
+# this file, corrects it in place, and records what it changed.
+#
+# Each block is one router's candidate, committed at its end. Paste a block into
+#   docker exec -it clab-site-edge-<node> sr_cli
+# Addresses and ASNs are research R14's.
+
+# >>> site-edge-01 (AS 65210) ------------------------------------------------
+enter candidate
+
+set / interface ethernet-1/1 description "WAN to carrier-a"
+set / interface ethernet-1/1 admin-state enable
+set / interface ethernet-1/1 subinterface 0 ipv4 admin-state enable
+set / interface ethernet-1/1 subinterface 0 ipv4 address 10.41.1.0/31
+set / interface ethernet-1/2 description "office segment"
+set / interface ethernet-1/2 admin-state enable
+set / interface ethernet-1/2 subinterface 0 ipv4 admin-state enable
+set / interface ethernet-1/2 subinterface 0 ipv4 address 10.40.10.1/24
+set / interface ethernet-1/3 description "OT segment"
+set / interface ethernet-1/3 admin-state enable
+set / interface ethernet-1/3 subinterface 0 ipv4 admin-state enable
+set / interface ethernet-1/3 subinterface 0 ipv4 address 10.40.20.1/24
+
+set / network-instance default interface ethernet-1/1.0
+set / network-instance default interface ethernet-1/2.0
+set / network-instance default interface ethernet-1/3.0
+
+set / routing-policy prefix-set site-segments prefix 10.40.10.0/24 mask-length-range exact
+set / routing-policy prefix-set site-segments prefix 10.40.20.0/24 mask-length-range exact
+set / routing-policy policy export-site default-action policy-result reject
+set / routing-policy policy export-site statement 10 match prefix prefix-set site-segments
+set / routing-policy policy export-site statement 10 action policy-result accept
+set / routing-policy policy accept-all default-action policy-result accept
+
+set / network-instance default protocols bgp autonomous-system 65210
+set / network-instance default protocols bgp router-id 10.40.0.1
+set / network-instance default protocols bgp afi-safi ipv4-unicast admin-state enable
+set / network-instance default protocols bgp group carrier export-policy [ export-site ]
+set / network-instance default protocols bgp group carrier import-policy [ accept-all ]
+set / network-instance default protocols bgp neighbor 10.41.1.1 peer-as 64610
+set / network-instance default protocols bgp neighbor 10.41.1.1 peer-group carrier
+
+# The rule, as data-model.md writes the lab seed's: OT may reach the historian subnet, nothing else.
+# "Any" is written as an explicit 0.0.0.0/0 (research R2).
+set / acl acl-filter ot-ingress type ipv4 description "OT segmentation"
+set / acl acl-filter ot-ingress type ipv4 entry 10 description "OT to historian"
+set / acl acl-filter ot-ingress type ipv4 entry 10 match ipv4 source-ip prefix 10.40.20.0/24
+set / acl acl-filter ot-ingress type ipv4 entry 10 match ipv4 destination-ip prefix 10.50.10.0/24
+set / acl acl-filter ot-ingress type ipv4 entry 10 action accept
+set / acl acl-filter ot-ingress type ipv4 entry 20 description "deny OT to anything else"
+set / acl acl-filter ot-ingress type ipv4 entry 20 match ipv4 source-ip prefix 0.0.0.0/0
+set / acl acl-filter ot-ingress type ipv4 entry 20 match ipv4 destination-ip prefix 0.0.0.0/0
+set / acl acl-filter ot-ingress type ipv4 entry 20 action drop
+
+# The binding: ingress on the OT port's subinterface 0.
+set / acl interface ethernet-1/3.0 interface-ref interface ethernet-1/3
+set / acl interface ethernet-1/3.0 interface-ref subinterface 0
+set / acl interface ethernet-1/3.0 input acl-filter ot-ingress type ipv4
+
+commit now
+# <<< site-edge-01 -----------------------------------------------------------
+
+# >>> carrier-a (AS 64610) ---------------------------------------------------
+enter candidate
+
+set / interface ethernet-1/1 description "to site-edge-01"
+set / interface ethernet-1/1 admin-state enable
+set / interface ethernet-1/1 subinterface 0 ipv4 admin-state enable
+set / interface ethernet-1/1 subinterface 0 ipv4 address 10.41.1.1/31
+set / interface ethernet-1/2 description "historian (allowed subnet)"
+set / interface ethernet-1/2 admin-state enable
+set / interface ethernet-1/2 subinterface 0 ipv4 admin-state enable
+set / interface ethernet-1/2 subinterface 0 ipv4 address 10.50.10.1/24
+set / interface ethernet-1/3 description "wan-host (another destination)"
+set / interface ethernet-1/3 admin-state enable
+set / interface ethernet-1/3 subinterface 0 ipv4 admin-state enable
+set / interface ethernet-1/3 subinterface 0 ipv4 address 10.50.99.1/24
+
+set / network-instance default interface ethernet-1/1.0
+set / network-instance default interface ethernet-1/2.0
+set / network-instance default interface ethernet-1/3.0
+
+set / routing-policy prefix-set carrier-subnets prefix 10.50.10.0/24 mask-length-range exact
+set / routing-policy prefix-set carrier-subnets prefix 10.50.99.0/24 mask-length-range exact
+set / routing-policy policy export-carrier default-action policy-result reject
+set / routing-policy policy export-carrier statement 10 match prefix prefix-set carrier-subnets
+set / routing-policy policy export-carrier statement 10 action policy-result accept
+set / routing-policy policy accept-all default-action policy-result accept
+
+set / network-instance default protocols bgp autonomous-system 64610
+set / network-instance default protocols bgp router-id 10.41.0.1
+set / network-instance default protocols bgp afi-safi ipv4-unicast admin-state enable
+set / network-instance default protocols bgp group site export-policy [ export-carrier ]
+set / network-instance default protocols bgp group site import-policy [ accept-all ]
+set / network-instance default protocols bgp neighbor 10.41.1.0 peer-as 65210
+set / network-instance default protocols bgp neighbor 10.41.1.0 peer-group site
+
+commit now
+# <<< carrier-a --------------------------------------------------------------
+
+# The hand changes, one `--change` each for capture_srlinux_acl_state.py
+# (run on site-edge-01, after the block above):
+#   deny-deleted     delete / acl acl-filter ot-ingress type ipv4 entry 20
+#   permit-inserted  set / acl acl-filter ot-ingress type ipv4 entry 5 action accept
+#                    (then its match lines, as for entry 10, to 0.0.0.0/0)
+#   action-flipped   set / acl acl-filter ot-ingress type ipv4 entry 20 action accept
+#   binding-removed  delete / acl interface ethernet-1/3.0
+#   binding-moved    the three binding lines above, for ethernet-1/2.0
+# Each sr_cli -ec line commits on its own. A change that needs more than one
+# line is made in sr_cli by hand, then captured with no --change.
