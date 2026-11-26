@@ -1,0 +1,2 @@
+Error in path: .network-instance{.name=="default"}.interface{.name=="ethernet-1/7.0"}
+    [FailedPrecondition] subinterface ethernet-1/7.0 not found

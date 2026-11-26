@@ -8,6 +8,7 @@ workflows actually write (Principle III).
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -1852,3 +1853,58 @@ class TestLatestPreview:
 
         assert leaf.drift_state is DriftState.NEVER_SCANNED
         assert leaf.last_deploy is None
+
+
+class TestLiveRemovalTrail:
+    """Spec 013 T039 and T053: the three RemoveConfig runs recorded on the lab's leaf-04
+    on 2026-11-26 (evidence.md, US2), as `snapl audit --json` read them back."""
+
+    LEAF_04 = UUID("18e67b75-bdcd-e7ea-371e-c51b22443f1d")
+
+    def _runs(self):
+        trail = Path(__file__).parent / "fixtures" / "remove_config_leaf04_trail.json"
+        # The audit log reads target_id back as a UUID; JSON leaves it a string.
+        events = [
+            AuditEvent.model_validate({**event, "target_id": UUID(event["target_id"])})
+            for event in json.loads(trail.read_text())
+        ]
+        return project_runs(
+            events,
+            set(),
+            datetime(2026, 11, 26, 9, 0, tzinfo=UTC),
+            names={self.LEAF_04: "leaf-04"},
+            ui_address=UI,
+            namespace="default",
+            filters=RunFilters(workflow_types=frozenset({"RemoveConfig"})),
+        )
+
+    def test_each_run_shows_who_confirmed_it_and_how_it_ended(self):
+        runs = self._runs()
+
+        assert [(run.target, run.state, run.removal.reason) for run in runs] == [
+            ("leaf-04", RunState.SUCCEEDED, "succeeded"),
+            ("leaf-04", RunState.SUCCEEDED, "succeeded"),
+            ("leaf-04", RunState.FAILED, "plan_changed"),
+        ]
+        assert {run.removal.actor for run in runs} == {"anton"}
+
+    def test_a_verified_removal_deleted_what_was_confirmed_and_the_scan_after_agrees(self):
+        port_and_binding, four, _ = self._runs()
+
+        for run in (port_and_binding, four):
+            removal = run.removal
+            assert removal.deleted_paths == removal.confirmed_paths == removal.gone
+            assert removal.remaining == removal.new_forward == removal.still_refused == []
+            assert removal.device_response.count("'op': 'DELETE'") == len(removal.deleted_paths)
+        assert port_and_binding.removal.deleted_paths == [
+            "/interface[name=ethernet-1/7]",
+            "/network-instance[name=default]/interface[name=ethernet-1/7.0]",
+        ]
+
+    def test_the_device_changing_at_the_prompt_wrote_nothing_and_shows_the_new_plan(self):
+        *_, changed = self._runs()
+
+        assert len(changed.removal.confirmed_paths) == 3
+        assert changed.removal.deleted_paths == []
+        assert "/interface[name=ethernet-1/8]" in changed.removal.plan_paths
+        assert len(changed.removal.plan_paths) == 4

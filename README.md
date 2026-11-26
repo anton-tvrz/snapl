@@ -37,7 +37,7 @@ Single vendor: Nokia SR Linux. Vendor-specific code is confined to a few named p
 
 ## Known limitations
 
-- **Removal is operator-only (spec 013).** Apply is a merge, so a deploy or a reconcile never deletes. A scan reports config that intent doesn't hold; `snapl remove <device>` previews deleting it, and `--apply` deletes it in one gNMI Set after the operator confirms, then scans again to verify. No schedule removes config, in any mode. Its live run on the lab is pending (#65). Within that:
+- **Removal is operator-only (spec 013).** Apply is a merge, so a deploy or a reconcile never deletes. A scan reports config that intent doesn't hold; `snapl remove <device>` previews deleting it, and `--apply` deletes it in one gNMI Set after the operator confirms, then scans again to verify. No schedule removes config, in any mode. Run on the lab on 2026-11-26 (`specs/013-remove-undesired-config/evidence.md`). Within that:
   - Only whole entities go: interfaces, their default network-instance bindings, BGP neighbours, and extra IPv4 addresses on interfaces intent manages. A field removed from intent on an entity intent still manages (a description, say) stays on the device.
   - Routing policies are detected but never removed: the preview lists them as refused (#317).
   - Two leftovers the scan doesn't see stay after a removal: a peer group whose last neighbour was removed, and `ipv4 admin-state enable` on a subinterface whose extra address was removed. Neither carries traffic.

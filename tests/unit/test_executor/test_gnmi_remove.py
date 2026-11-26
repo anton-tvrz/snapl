@@ -7,6 +7,9 @@ a removable kind, and never a protected interface, whatever the plan says
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 
 pytestmark = pytest.mark.unit
@@ -162,13 +165,17 @@ class TestDryRunRemove:
 # remove (T027)
 # ---------------------------------------------------------------------------
 
-# C1 (captures.md): SR Linux's rejection of a Set that deletes a bound port
-# without its binding. The whole Set is refused and the text names the path.
-_C1_REJECTION = (
-    'Error in path: .network-instance{.name=="default"}.interface{.name=="ethernet-1/7.0"}\n'
-    "    [FailedPrecondition] subinterface ethernet-1/7.0 not found"
-)
+# Captured on the lab (constitution III). C1 (captures.md, 2026-11-24): SR
+# Linux's rejection of a Set that deletes a bound port without its binding; the
+# whole Set is refused and the text names the path. The responses: T039 on
+# leaf-04, 2026-11-26 (evidence.md, US2), as pygnmi hands them back.
+_FIXTURES = Path(__file__).parent / "fixtures"
+_C1_REJECTION = (_FIXTURES / "remove_rejection_c1.txt").read_text().rstrip("\n")
 _BINDING = "/network-instance[name=default]/interface[name=ethernet-1/7.0]"
+
+
+def _captured(name: str) -> dict:
+    return json.loads((_FIXTURES / name).read_text())
 
 
 @pytest.fixture
@@ -196,6 +203,30 @@ class TestRemove:
         gnmi.assert_called_once()
         assert gnmi.call_args.kwargs["target"] == ("clab-dcfabric-leaf-04", 57400)
         mock_gnmi_client.set.assert_called_once_with(delete=paths)
+
+    @pytest.mark.parametrize(
+        "fixture",
+        ["remove_response_leaf04_four_entities.json", "remove_response_leaf04_port_and_binding.json"],
+    )
+    async def test_the_devices_answer_is_kept_as_it_gave_it(self, make_device, gnmi, mock_gnmi_client, fixture):
+        """T039: the device answers one DELETE per path of the one Set, and the result keeps that answer."""
+        response = _captured(fixture)
+        paths = ["/" + entry["path"] for entry in response["response"]]
+        mock_gnmi_client.set.return_value = response
+        result = await _executor(protected_interfaces=_PROTECTED).remove(make_device("leaf-04"), paths)
+
+        assert result.success is True
+        assert result.device_response == str(response)
+        assert [entry["op"] for entry in response["response"]] == ["DELETE"] * len(paths)
+        mock_gnmi_client.set.assert_called_once_with(delete=paths)
+
+    async def test_a_port_and_its_binding_go_in_one_set(self, make_device, gnmi, mock_gnmi_client):
+        """R3, step 6 on the lab: deleting the port alone is rejected (C1); together they are one Set."""
+        mock_gnmi_client.set.return_value = _captured("remove_response_leaf04_port_and_binding.json")
+        result = await _executor(protected_interfaces=_PROTECTED).remove(make_device("leaf-04"), [_PORT, _BINDING])
+
+        assert result.success is True
+        mock_gnmi_client.set.assert_called_once_with(delete=[_PORT, _BINDING])
 
     async def test_a_refused_path_means_nothing_is_dialled(self, make_device, no_dial):
         protected = "/network-instance[name=default]/interface[name=system0.0]"

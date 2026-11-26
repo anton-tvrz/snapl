@@ -224,6 +224,30 @@ describe("a removal's detail (spec 013 FR-016)", () => {
     expect(detail()).toHaveTextContent("the detail");
   });
 
+  it("does not repeat a detail the outcome line already gives (seen on the lab, T053)", () => {
+    const detail = "leaf-04 changed since the preview; nothing was removed";
+    render(
+      <Runs
+        runs={withRuns([removal({ reason: "plan_changed", detail }, { state: "failed", reason: `plan_changed: ${detail}` })])}
+        now={NOW}
+      />,
+    );
+
+    expect(screen.getAllByText(detail, { exact: false })).toHaveLength(1);
+  });
+
+  it("shows a detail with more than the outcome line has", () => {
+    const detail = "Error in path: .interface\n    [FailedPrecondition] not found";
+    render(
+      <Runs
+        runs={withRuns([removal({ reason: "remove_failed", detail }, { state: "failed", reason: "remove_failed: Error in path: .interface" })])}
+        now={NOW}
+      />,
+    );
+
+    expect(screen.getByRole("region", { name: "Removal remove-config-x" })).toHaveTextContent("[FailedPrecondition] not found");
+  });
+
   it("shows the new plan when the device changed", () => {
     render(<Runs runs={withRuns([removal({ reason: "plan_changed", plan_paths: [PORT] }, { state: "failed" })])} now={NOW} />);
 

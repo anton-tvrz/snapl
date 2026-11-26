@@ -186,7 +186,7 @@ No setup. There is no new package, dependency or directory: pygnmi's `set(delete
 - [x] T036 [US2] Add `RemoveConfigWorkflow` to packages/orchestrator/snapl_orchestrator/workflows/removal.py. It follows the state diagram in data-model.md and the verification in research R9 (T029, T030)
 - [x] T037 [US2] Register the workflow and activities in packages/orchestrator/snapl_orchestrator/worker/run.py (T031)
 - [x] T038 [US2] Add `--apply` and `--yes`, the TTY check and the result view to `remove` in packages/presentation/snapl_presentation/cli.py and packages/presentation/snapl_presentation/render.py (T032, T033)
-- [ ] T039 [US2] **Needs the lab.** Live check on leaf-04: quickstart steps 3 (SC-004), 4 (SC-001) and 6 (a port and its binding in one Set). Record them in specs/013-remove-undesired-config/evidence.md. Add the captured `remove` response and rejection text as fixtures under tests/unit/test_executor/fixtures/ (new directory) and use them in T027's tests (constitution III). Leave leaf-04 clean, with the schedule resumed.
+- [x] T039 [US2] **Needs the lab.** Live check on leaf-04: quickstart steps 3 (SC-004), 4 (SC-001) and 6 (a port and its binding in one Set). Record them in specs/013-remove-undesired-config/evidence.md. Add the captured `remove` response and rejection text as fixtures under tests/unit/test_executor/fixtures/ (new directory) and use them in T027's tests (constitution III). Leave leaf-04 clean, with the schedule resumed.
 
 **Checkpoint**: #65's capability exists: undesired config can be removed, operator-confirmed, dry-run first, in one atomic Set, and verified. Scheduled runs still never remove.
 
@@ -227,7 +227,7 @@ No setup. There is no new package, dependency or directory: pygnmi's `set(delete
 - [x] T050 [US3] Add `RunView.removal` to dashboard/models.py and fill it in `project_runs` from the run's start and terminal events (T044)
 - [x] T051 [US3] Regenerate tests/unit/test_presentation/fixtures/openapi_v1.json and packages/presentation/ui/src/api/schema.d.ts. Add the label to packages/presentation/ui/src/lib/episodes.ts and Lanes.tsx; the command and the latest preview to panels/Undesired.tsx and DeviceDrawer.tsx; the removal detail to panels/Runs.tsx; and all of them to packages/presentation/snapl_presentation/dashboard/static/index.html. Rebuild with `uv run invoke dashboard.build` (T046)
 - [x] T052 [US3] Render the page from fixtures with `e2e/look.mjs` and check the new views keep the look rules (dev/skills/dashboard/SKILL.md, "Look")
-- [ ] T053 [US3] **Needs the lab.** Live check: quickstart step 5 on leaf-04, recorded in specs/013-remove-undesired-config/evidence.md with screenshots of the closed episode, the removal's run detail and leaf-04's drawer
+- [x] T053 [US3] **Needs the lab.** Live check: quickstart step 5 on leaf-04, recorded in specs/013-remove-undesired-config/evidence.md with screenshots of the closed episode, the removal's run detail and leaf-04's drawer
 
 **Checkpoint**: every removal is accounted for in the CLI and on both dashboard pages, and the dashboard offers no way to start one.
 
@@ -242,7 +242,7 @@ No setup. There is no new package, dependency or directory: pygnmi's `set(delete
   - an empty peer group and a subinterface's `ipv4 admin-state` remain after a removal (research R4).
 - [x] T056 [P] Add a `Recent Changes` entry for 013 in CLAUDE.md (each slice's changelog is in the PR slicing table), written by hand: `update-agent-context.sh` deletes older entries (see PR #395)
 - [x] T057 Check that the new modules have at least 80% coverage, that `test_vendor_seams.py` covers workflows/removal.py unchanged, and that `uv run invoke lint`, `uv run invoke format` and `uv run invoke test-unit` pass
-- [ ] T058 **Needs the lab** (after T039 and T053). Mark spec.md's status shipped and its success criteria met, each with a pointer to evidence.md
+- [x] T058 **Needs the lab** (after T039 and T053). Mark spec.md's status shipped and its success criteria met, each with a pointer to evidence.md
 
 ---
 

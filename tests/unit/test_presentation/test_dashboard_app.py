@@ -2108,7 +2108,9 @@ def test_page_shows_the_latest_removal_preview_and_what_it_left_in_place():
 def test_page_shows_a_removals_detail_and_never_starts_one():
     page = _client().get("/").text
 
-    assert "function removalLines(removal)" in page
+    assert "function removalLines(run, removal)" in page
+    # The run's reason already gives the detail's first line (seen on the lab, T053).
+    assert 'if (removal.detail && !(run.reason || "").endsWith(removal.detail)) lines.push(removal.detail);' in page
     assert '"confirmed by "' in page
     assert '"the verifying scan finds none of them"' in page
     assert "nothing was removed" in page

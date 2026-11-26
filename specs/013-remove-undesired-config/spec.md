@@ -2,7 +2,7 @@
 
 **Feature Branch**: drafted on `ccr-a14a9b05-ogrz9i`; give it its own branch (`013-remove-undesired-config`) when it moves to a PR
 **Created**: 2026-11-15
-**Status**: Planned 2026-11-24 (`plan.md`). Clarified 2026-11-15; live captures C1 to C5 run on 2026-11-24 (`captures.md`).
+**Status**: Shipped 2026-11-26 (#399, #403, #404, #405; live run in `evidence.md`). Planned 2026-11-24 (`plan.md`). Clarified 2026-11-15; live captures C1 to C5 run on 2026-11-24 (`captures.md`).
 **Input**: Issue #65: "apply is merge-only gNMI update at '/' — config removed from intent never leaves the device". Spec 007's deferred User Story 3 ("Converge by removal").
 
 ## Context
@@ -124,11 +124,11 @@ Every removal shows in `snapl audit`, the dashboard's run list and the device's 
 
 ### Measurable Outcomes
 
-- **SC-001**: On the dcfabric lab, with a hand-added port description outside intent, a hand-added BGP neighbour outside intent and an extra address on an intent-managed interface (#193) on one leaf, one confirmed removal leaves that leaf's next scan with no undesired items and its intent-managed config still clean.
-- **SC-002**: Across the same run, the preview causes zero device writes: the device's running config is identical before and after it.
-- **SC-003**: No test, preview or removal issues a delete at `/`, at a container above an entity, or on a protected entity. A unit test enforces it over every path the planner can produce.
-- **SC-004**: A removal whose device changed between preview and confirmation writes nothing (checked by changing the device in between).
-- **SC-005**: Every removal appears in `snapl audit --device` and the dashboard's run list with its deletes and verification result. *Extended 2026-11-24:* the dashboard also shows the remove command for a device with undesired config, and the device's latest preview (FR-016).
+- **SC-001**: On the dcfabric lab, with a hand-added port description outside intent, a hand-added BGP neighbour outside intent and an extra address on an intent-managed interface (#193) on one leaf, one confirmed removal leaves that leaf's next scan with no undesired items and its intent-managed config still clean. *Met on the lab on 2026-11-26: `evidence.md`, US2 step 4.*
+- **SC-002**: Across the same run, the preview causes zero device writes: the device's running config is identical before and after it. *Met on the lab on 2026-11-24: `evidence.md`, US1 step 2.*
+- **SC-003**: No test, preview or removal issues a delete at `/`, at a container above an entity, or on a protected entity. A unit test enforces it over every path the planner can produce. *Met: `tests/unit/test_orchestrator/test_removal_paths.py`.*
+- **SC-004**: A removal whose device changed between preview and confirmation writes nothing (checked by changing the device in between). *Met on the lab on 2026-11-26: `evidence.md`, US2 step 3.*
+- **SC-005**: Every removal appears in `snapl audit --device` and the dashboard's run list with its deletes and verification result. *Extended 2026-11-24:* the dashboard also shows the remove command for a device with undesired config, and the device's latest preview (FR-016). *Met on the lab on 2026-11-26: `evidence.md`, US3.*
 
 ## Assumptions
 

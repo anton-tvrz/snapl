@@ -64,7 +64,8 @@ function RemovalDetail({ run, removal }: { run: RunView; removal: RemovalView })
       <PathLine label="Newly missing or different from intent" paths={removal.new_forward ?? []} />
       <PathLine label="Left in place by design" paths={removal.still_refused ?? []} />
       {removal.device_response && <p className="break-all">Device response: {removal.device_response}</p>}
-      {removal.detail && <p className="break-words">{removal.detail}</p>}
+      {/* The outcome line above already gives the detail's first line; show it only when it says more. */}
+      {removal.detail && !(run.reason ?? "").endsWith(removal.detail) && <p className="break-words">{removal.detail}</p>}
     </section>
   );
 }

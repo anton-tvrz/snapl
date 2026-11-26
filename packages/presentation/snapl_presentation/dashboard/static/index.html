@@ -214,7 +214,7 @@ const NOTHING_WRITTEN = {
 };
 
 // A removal's detail, one line each (spec 013 FR-016). The page shows removals and never starts one.
-function removalLines(removal) {
+function removalLines(run, removal) {
   const lines = ["confirmed by " + (removal.actor || "unknown") + ": " + removal.confirmed_paths.length + " paths"];
   if (removal.reason === null || removal.reason === undefined) return lines.concat(["not finished"]);
   for (const path of removal.deleted_paths) lines.push("deleted " + path);
@@ -227,7 +227,8 @@ function removalLines(removal) {
   for (const path of removal.new_forward) lines.push("newly missing or different from intent: " + path);
   for (const path of removal.still_refused) lines.push("left in place by design: " + path);
   if (removal.device_response) lines.push("device response: " + removal.device_response);
-  if (removal.detail) lines.push(removal.detail);
+  // The run's reason already gives the detail's first line; repeat it only when the detail says more.
+  if (removal.detail && !(run.reason || "").endsWith(removal.detail)) lines.push(removal.detail);
   return lines;
 }
 
@@ -257,7 +258,7 @@ function runRow(run) {
   row.append(el("td", run.target || ""));
   const state = el("td", run.state);
   if (run.reason) state.append(el("div", run.reason, "paths"));
-  if (run.removal) for (const line of removalLines(run.removal)) state.append(el("div", line, "paths"));
+  if (run.removal) for (const line of removalLines(run, run.removal)) state.append(el("div", line, "paths"));
   row.append(state);
   row.append(el("td", run.trigger + (run.actor ? " (" + run.actor + ")" : ""), "wide"));
   row.append(el("td", seconds(run.duration_s), "wide"));

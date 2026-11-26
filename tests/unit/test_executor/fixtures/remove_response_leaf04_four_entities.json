@@ -1,0 +1,22 @@
+{
+  "timestamp": 1795683001466403657,
+  "prefix": null,
+  "response": [
+    {
+      "path": "interface[name=ethernet-1/49]/subinterface[index=0]/ipv4/address[ip-prefix=192.0.2.1/31]",
+      "op": "DELETE"
+    },
+    {
+      "path": "interface[name=ethernet-1/7]",
+      "op": "DELETE"
+    },
+    {
+      "path": "interface[name=ethernet-1/8]",
+      "op": "DELETE"
+    },
+    {
+      "path": "network-instance[name=default]/protocols/bgp/neighbor[peer-address=192.0.2.0]",
+      "op": "DELETE"
+    }
+  ]
+}

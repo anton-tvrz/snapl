@@ -1,0 +1,478 @@
+[
+  {
+    "event_id": "e2741fd6-f66e-4f3d-adc4-0a8b63821f82",
+    "workflow_id": "remove-config-18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "workflow_type": "RemoveConfig",
+    "target_id": "18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "event_type": "workflow_started",
+    "activity_name": null,
+    "outcome": null,
+    "reason": null,
+    "payload": {
+      "confirmed_paths": [
+        "/interface[name=ethernet-1/49]/subinterface[index=0]/ipv4/address[ip-prefix=192.0.2.1/31]",
+        "/interface[name=ethernet-1/7]",
+        "/network-instance[name=default]/protocols/bgp/neighbor[peer-address=192.0.2.0]"
+      ]
+    },
+    "timestamp": "2026-11-26T08:49:42.028992Z",
+    "actor": "anton"
+  },
+  {
+    "event_id": "c8dfa56f-c23c-44af-945b-318900f392ab",
+    "workflow_id": "remove-config-18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "workflow_type": "RemoveConfig",
+    "target_id": "18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "event_type": "activity_completed",
+    "activity_name": "deploy_in_flight",
+    "outcome": "success",
+    "reason": null,
+    "payload": {},
+    "timestamp": "2026-11-26T08:49:42.156137Z",
+    "actor": null
+  },
+  {
+    "event_id": "157497c6-f1f1-4e85-8f45-25f74e8a4507",
+    "workflow_id": "remove-config-18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "workflow_type": "RemoveConfig",
+    "target_id": "18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "event_type": "activity_completed",
+    "activity_name": "fetch_desired_state",
+    "outcome": "success",
+    "reason": null,
+    "payload": {},
+    "timestamp": "2026-11-26T08:49:42.317026Z",
+    "actor": null
+  },
+  {
+    "event_id": "d640d5ff-29f2-46e4-9d53-811038711bf0",
+    "workflow_id": "remove-config-18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "workflow_type": "RemoveConfig",
+    "target_id": "18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "event_type": "activity_completed",
+    "activity_name": "collect_drift_state",
+    "outcome": "success",
+    "reason": null,
+    "payload": {},
+    "timestamp": "2026-11-26T08:49:42.631131Z",
+    "actor": null
+  },
+  {
+    "event_id": "5758b341-8e7e-4e05-8ccc-7333368bbe8b",
+    "workflow_id": "remove-config-18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "workflow_type": "RemoveConfig",
+    "target_id": "18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "event_type": "activity_completed",
+    "activity_name": "detect_drift",
+    "outcome": "success",
+    "reason": null,
+    "payload": {},
+    "timestamp": "2026-11-26T08:49:42.761659Z",
+    "actor": null
+  },
+  {
+    "event_id": "566e6e70-90bd-4559-b065-b3262a1e630d",
+    "workflow_id": "remove-config-18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "workflow_type": "RemoveConfig",
+    "target_id": "18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "event_type": "activity_completed",
+    "activity_name": "plan_removal",
+    "outcome": "success",
+    "reason": null,
+    "payload": {},
+    "timestamp": "2026-11-26T08:49:42.870002Z",
+    "actor": null
+  },
+  {
+    "event_id": "5643a272-38f2-43fb-8d3d-257cd6a9cb28",
+    "workflow_id": "remove-config-18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "workflow_type": "RemoveConfig",
+    "target_id": "18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "event_type": "workflow_terminated",
+    "activity_name": null,
+    "outcome": "failure",
+    "reason": "plan_changed",
+    "payload": {
+      "plan_paths": [
+        "/interface[name=ethernet-1/49]/subinterface[index=0]/ipv4/address[ip-prefix=192.0.2.1/31]",
+        "/interface[name=ethernet-1/7]",
+        "/interface[name=ethernet-1/8]",
+        "/network-instance[name=default]/protocols/bgp/neighbor[peer-address=192.0.2.0]"
+      ],
+      "device_response": null,
+      "detail": "leaf-04 changed since the preview; nothing was removed"
+    },
+    "timestamp": "2026-11-26T08:49:42.926278Z",
+    "actor": null
+  },
+  {
+    "event_id": "9337e596-8394-4e43-aa9a-4633c35e1441",
+    "workflow_id": "remove-config-18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "workflow_type": "RemoveConfig",
+    "target_id": "18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "event_type": "workflow_started",
+    "activity_name": null,
+    "outcome": null,
+    "reason": null,
+    "payload": {
+      "confirmed_paths": [
+        "/interface[name=ethernet-1/49]/subinterface[index=0]/ipv4/address[ip-prefix=192.0.2.1/31]",
+        "/interface[name=ethernet-1/7]",
+        "/interface[name=ethernet-1/8]",
+        "/network-instance[name=default]/protocols/bgp/neighbor[peer-address=192.0.2.0]"
+      ]
+    },
+    "timestamp": "2026-11-26T08:50:00.325446Z",
+    "actor": "anton"
+  },
+  {
+    "event_id": "e9dc727a-9fdb-41fa-8802-d8e57f3015ba",
+    "workflow_id": "remove-config-18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "workflow_type": "RemoveConfig",
+    "target_id": "18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "event_type": "activity_completed",
+    "activity_name": "deploy_in_flight",
+    "outcome": "success",
+    "reason": null,
+    "payload": {},
+    "timestamp": "2026-11-26T08:50:00.446892Z",
+    "actor": null
+  },
+  {
+    "event_id": "1dec7565-67f8-428c-b1f2-707381fd4129",
+    "workflow_id": "remove-config-18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "workflow_type": "RemoveConfig",
+    "target_id": "18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "event_type": "activity_completed",
+    "activity_name": "fetch_desired_state",
+    "outcome": "success",
+    "reason": null,
+    "payload": {},
+    "timestamp": "2026-11-26T08:50:00.623673Z",
+    "actor": null
+  },
+  {
+    "event_id": "60732712-c30d-4d4e-9c3d-374c2e696ba5",
+    "workflow_id": "remove-config-18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "workflow_type": "RemoveConfig",
+    "target_id": "18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "event_type": "activity_completed",
+    "activity_name": "collect_drift_state",
+    "outcome": "success",
+    "reason": null,
+    "payload": {},
+    "timestamp": "2026-11-26T08:50:00.946425Z",
+    "actor": null
+  },
+  {
+    "event_id": "5693c5d9-f21b-4f02-9e9d-0e54bbda7abe",
+    "workflow_id": "remove-config-18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "workflow_type": "RemoveConfig",
+    "target_id": "18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "event_type": "activity_completed",
+    "activity_name": "detect_drift",
+    "outcome": "success",
+    "reason": null,
+    "payload": {},
+    "timestamp": "2026-11-26T08:50:01.073824Z",
+    "actor": null
+  },
+  {
+    "event_id": "5a81c46a-b8e6-4a23-90ba-bdc1c11513ff",
+    "workflow_id": "remove-config-18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "workflow_type": "RemoveConfig",
+    "target_id": "18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "event_type": "activity_completed",
+    "activity_name": "plan_removal",
+    "outcome": "success",
+    "reason": null,
+    "payload": {},
+    "timestamp": "2026-11-26T08:50:01.164232Z",
+    "actor": null
+  },
+  {
+    "event_id": "3916891f-5c7b-411d-8ada-850e05be2591",
+    "workflow_id": "remove-config-18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "workflow_type": "RemoveConfig",
+    "target_id": "18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "event_type": "activity_completed",
+    "activity_name": "deploy_in_flight",
+    "outcome": "success",
+    "reason": null,
+    "payload": {},
+    "timestamp": "2026-11-26T08:50:01.246753Z",
+    "actor": null
+  },
+  {
+    "event_id": "a52d6c14-5ed2-47f3-a133-520ce6f75c26",
+    "workflow_id": "remove-config-18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "workflow_type": "RemoveConfig",
+    "target_id": "18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "event_type": "activity_completed",
+    "activity_name": "dry_run_remove",
+    "outcome": "success",
+    "reason": null,
+    "payload": {},
+    "timestamp": "2026-11-26T08:50:01.333638Z",
+    "actor": null
+  },
+  {
+    "event_id": "82a786ed-bfcf-49ca-a126-0e53ee88aa33",
+    "workflow_id": "remove-config-18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "workflow_type": "RemoveConfig",
+    "target_id": "18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "event_type": "activity_completed",
+    "activity_name": "remove_config",
+    "outcome": "success",
+    "reason": null,
+    "payload": {
+      "paths": [
+        "/interface[name=ethernet-1/49]/subinterface[index=0]/ipv4/address[ip-prefix=192.0.2.1/31]",
+        "/interface[name=ethernet-1/7]",
+        "/interface[name=ethernet-1/8]",
+        "/network-instance[name=default]/protocols/bgp/neighbor[peer-address=192.0.2.0]"
+      ],
+      "device_response": "{'timestamp': 1795683001466403657, 'prefix': None, 'response': [{'path': 'interface[name=ethernet-1/49]/subinterface[index=0]/ipv4/address[ip-prefix=192.0.2.1/31]', 'op': 'DELETE'}, {'path': 'interface[name=ethernet-1/7]', 'op': 'DELETE'}, {'path': 'interface[name=ethernet-1/8]', 'op': 'DELETE'}, {'path': 'network-instance[name=default]/protocols/bgp/neighbor[peer-address=192.0.2.0]', 'op': 'DELETE'}]}"
+    },
+    "timestamp": "2026-11-26T08:50:01.659857Z",
+    "actor": null
+  },
+  {
+    "event_id": "1561a393-8717-426c-b992-ac49d8331bb7",
+    "workflow_id": "remove-config-18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "workflow_type": "RemoveConfig",
+    "target_id": "18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "event_type": "activity_completed",
+    "activity_name": "collect_drift_state",
+    "outcome": "success",
+    "reason": null,
+    "payload": {},
+    "timestamp": "2026-11-26T08:50:01.994981Z",
+    "actor": null
+  },
+  {
+    "event_id": "507acc1b-777d-447e-89d6-14bfc3100f5b",
+    "workflow_id": "remove-config-18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "workflow_type": "RemoveConfig",
+    "target_id": "18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "event_type": "activity_completed",
+    "activity_name": "detect_drift",
+    "outcome": "success",
+    "reason": null,
+    "payload": {},
+    "timestamp": "2026-11-26T08:50:02.115144Z",
+    "actor": null
+  },
+  {
+    "event_id": "b83897b0-d922-43a4-9f0f-7e76bfffce04",
+    "workflow_id": "remove-config-18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "workflow_type": "RemoveConfig",
+    "target_id": "18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "event_type": "workflow_terminated",
+    "activity_name": null,
+    "outcome": "success",
+    "reason": "succeeded",
+    "payload": {
+      "deleted_paths": [
+        "/interface[name=ethernet-1/49]/subinterface[index=0]/ipv4/address[ip-prefix=192.0.2.1/31]",
+        "/interface[name=ethernet-1/7]",
+        "/interface[name=ethernet-1/8]",
+        "/network-instance[name=default]/protocols/bgp/neighbor[peer-address=192.0.2.0]"
+      ],
+      "device_response": "{'timestamp': 1795683001466403657, 'prefix': None, 'response': [{'path': 'interface[name=ethernet-1/49]/subinterface[index=0]/ipv4/address[ip-prefix=192.0.2.1/31]', 'op': 'DELETE'}, {'path': 'interface[name=ethernet-1/7]', 'op': 'DELETE'}, {'path': 'interface[name=ethernet-1/8]', 'op': 'DELETE'}, {'path': 'network-instance[name=default]/protocols/bgp/neighbor[peer-address=192.0.2.0]', 'op': 'DELETE'}]}",
+      "gone": [
+        "/interface[name=ethernet-1/49]/subinterface[index=0]/ipv4/address[ip-prefix=192.0.2.1/31]",
+        "/interface[name=ethernet-1/7]",
+        "/interface[name=ethernet-1/8]",
+        "/network-instance[name=default]/protocols/bgp/neighbor[peer-address=192.0.2.0]"
+      ],
+      "remaining": [],
+      "new_forward": [],
+      "still_refused": [],
+      "detail": null
+    },
+    "timestamp": "2026-11-26T08:50:02.167136Z",
+    "actor": null
+  },
+  {
+    "event_id": "40badcb8-67ab-4a2b-a503-710a3cb4a139",
+    "workflow_id": "remove-config-18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "workflow_type": "RemoveConfig",
+    "target_id": "18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "event_type": "workflow_started",
+    "activity_name": null,
+    "outcome": null,
+    "reason": null,
+    "payload": {
+      "confirmed_paths": [
+        "/interface[name=ethernet-1/7]",
+        "/network-instance[name=default]/interface[name=ethernet-1/7.0]"
+      ]
+    },
+    "timestamp": "2026-11-26T08:50:26.976166Z",
+    "actor": "anton"
+  },
+  {
+    "event_id": "1d0f6872-d323-491e-808c-16e92a7ae574",
+    "workflow_id": "remove-config-18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "workflow_type": "RemoveConfig",
+    "target_id": "18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "event_type": "activity_completed",
+    "activity_name": "deploy_in_flight",
+    "outcome": "success",
+    "reason": null,
+    "payload": {},
+    "timestamp": "2026-11-26T08:50:27.087559Z",
+    "actor": null
+  },
+  {
+    "event_id": "637b7e81-8c5a-4cec-a787-4291dd8b2a0d",
+    "workflow_id": "remove-config-18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "workflow_type": "RemoveConfig",
+    "target_id": "18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "event_type": "activity_completed",
+    "activity_name": "fetch_desired_state",
+    "outcome": "success",
+    "reason": null,
+    "payload": {},
+    "timestamp": "2026-11-26T08:50:27.247446Z",
+    "actor": null
+  },
+  {
+    "event_id": "4e741e0a-1aef-4508-8024-b604655f527a",
+    "workflow_id": "remove-config-18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "workflow_type": "RemoveConfig",
+    "target_id": "18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "event_type": "activity_completed",
+    "activity_name": "collect_drift_state",
+    "outcome": "success",
+    "reason": null,
+    "payload": {},
+    "timestamp": "2026-11-26T08:50:27.552037Z",
+    "actor": null
+  },
+  {
+    "event_id": "a6f1c273-3376-41e4-96c0-d358a0ee09b6",
+    "workflow_id": "remove-config-18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "workflow_type": "RemoveConfig",
+    "target_id": "18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "event_type": "activity_completed",
+    "activity_name": "detect_drift",
+    "outcome": "success",
+    "reason": null,
+    "payload": {},
+    "timestamp": "2026-11-26T08:50:27.653615Z",
+    "actor": null
+  },
+  {
+    "event_id": "8bc5cb8f-a02a-421b-90ef-825e99334754",
+    "workflow_id": "remove-config-18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "workflow_type": "RemoveConfig",
+    "target_id": "18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "event_type": "activity_completed",
+    "activity_name": "plan_removal",
+    "outcome": "success",
+    "reason": null,
+    "payload": {},
+    "timestamp": "2026-11-26T08:50:27.745171Z",
+    "actor": null
+  },
+  {
+    "event_id": "8d73d587-6077-40c3-b5ff-fb3cb3183e66",
+    "workflow_id": "remove-config-18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "workflow_type": "RemoveConfig",
+    "target_id": "18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "event_type": "activity_completed",
+    "activity_name": "deploy_in_flight",
+    "outcome": "success",
+    "reason": null,
+    "payload": {},
+    "timestamp": "2026-11-26T08:50:27.828643Z",
+    "actor": null
+  },
+  {
+    "event_id": "7ffe9742-6487-41b8-ad1e-c782339d70f9",
+    "workflow_id": "remove-config-18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "workflow_type": "RemoveConfig",
+    "target_id": "18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "event_type": "activity_completed",
+    "activity_name": "dry_run_remove",
+    "outcome": "success",
+    "reason": null,
+    "payload": {},
+    "timestamp": "2026-11-26T08:50:27.919766Z",
+    "actor": null
+  },
+  {
+    "event_id": "da7d63b3-81cd-4958-a809-449a6993f1b2",
+    "workflow_id": "remove-config-18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "workflow_type": "RemoveConfig",
+    "target_id": "18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "event_type": "activity_completed",
+    "activity_name": "remove_config",
+    "outcome": "success",
+    "reason": null,
+    "payload": {
+      "paths": [
+        "/interface[name=ethernet-1/7]",
+        "/network-instance[name=default]/interface[name=ethernet-1/7.0]"
+      ],
+      "device_response": "{'timestamp': 1795683028127870783, 'prefix': None, 'response': [{'path': 'interface[name=ethernet-1/7]', 'op': 'DELETE'}, {'path': 'network-instance[name=default]/interface[name=ethernet-1/7.0]', 'op': 'DELETE'}]}"
+    },
+    "timestamp": "2026-11-26T08:50:28.314204Z",
+    "actor": null
+  },
+  {
+    "event_id": "b19c03a9-59c3-4ff2-8b9c-e9c3cbc47287",
+    "workflow_id": "remove-config-18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "workflow_type": "RemoveConfig",
+    "target_id": "18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "event_type": "activity_completed",
+    "activity_name": "collect_drift_state",
+    "outcome": "success",
+    "reason": null,
+    "payload": {},
+    "timestamp": "2026-11-26T08:50:28.644929Z",
+    "actor": null
+  },
+  {
+    "event_id": "b4505e30-91f8-4f67-9cf4-a20e6e4202c0",
+    "workflow_id": "remove-config-18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "workflow_type": "RemoveConfig",
+    "target_id": "18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "event_type": "activity_completed",
+    "activity_name": "detect_drift",
+    "outcome": "success",
+    "reason": null,
+    "payload": {},
+    "timestamp": "2026-11-26T08:50:28.756966Z",
+    "actor": null
+  },
+  {
+    "event_id": "839a9489-13b2-49d0-b9c6-ce56802717f6",
+    "workflow_id": "remove-config-18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "workflow_type": "RemoveConfig",
+    "target_id": "18e67b75-bdcd-e7ea-371e-c51b22443f1d",
+    "event_type": "workflow_terminated",
+    "activity_name": null,
+    "outcome": "success",
+    "reason": "succeeded",
+    "payload": {
+      "deleted_paths": [
+        "/interface[name=ethernet-1/7]",
+        "/network-instance[name=default]/interface[name=ethernet-1/7.0]"
+      ],
+      "device_response": "{'timestamp': 1795683028127870783, 'prefix': None, 'response': [{'path': 'interface[name=ethernet-1/7]', 'op': 'DELETE'}, {'path': 'network-instance[name=default]/interface[name=ethernet-1/7.0]', 'op': 'DELETE'}]}",
+      "gone": [
+        "/interface[name=ethernet-1/7]",
+        "/network-instance[name=default]/interface[name=ethernet-1/7.0]"
+      ],
+      "remaining": [],
+      "new_forward": [],
+      "still_refused": [],
+      "detail": null
+    },
+    "timestamp": "2026-11-26T08:50:28.799337Z",
+    "actor": null
+  }
+]
