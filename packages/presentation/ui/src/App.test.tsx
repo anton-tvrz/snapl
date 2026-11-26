@@ -35,6 +35,16 @@ function provider(overrides: Partial<DataProvider> = {}): DataProvider {
 
 const device = (name: string) => screen.getByRole("button", { name: new RegExp(`^${name},`) });
 
+/**
+ * Wait until the page dates things by the server's clock (#379). Before the first
+ * answer it falls back to the browser's, so a range chosen earlier is measured
+ * from the wrong now.
+ */
+async function serverTime() {
+  const clock = await within(screen.getAllByRole("banner")[0]!).findByRole("time");
+  await vi.waitFor(() => expect(clock).toHaveTextContent(`${NOW.toISOString().slice(11, 19)} UTC`));
+}
+
 beforeEach(() => {
   history.replaceState(null, "", "/");
 });
@@ -354,7 +364,9 @@ describe("App", () => {
   it("has a panel for the schedule and worker, what is running, the runs and undesired config", async () => {
     render(<App provider={provider({ overview: async () => OVERVIEW_UP })} />);
 
-    expect(await screen.findByRole("region", { name: "Schedule and worker" })).toHaveTextContent("Remediate every 5 min");
+    // The region shows before its data does (#379): wait for the content, not the frame.
+    const schedule = await screen.findByRole("region", { name: "Schedule and worker" });
+    await vi.waitFor(() => expect(schedule).toHaveTextContent("Remediate every 5 min"));
     expect(screen.getByRole("region", { name: "Running now" })).toHaveTextContent("ScanDrift");
     // The latest 10 of the fixtures' 12 runs, and the header (spec 018 US4).
     expect(within(screen.getByRole("region", { name: "Runs" })).getAllByRole("row")).toHaveLength(11);
@@ -371,7 +383,8 @@ describe("App", () => {
   it("has a panel for CI and the live lab evidence, and the links", async () => {
     render(<App provider={provider({ overview: async () => OVERVIEW_UP })} />);
 
-    expect(await screen.findByRole("region", { name: "CI" })).toHaveTextContent("#212");
+    const ci = await screen.findByRole("region", { name: "CI" });
+    await vi.waitFor(() => expect(ci).toHaveTextContent("#212"));
     expect(screen.getByRole("region", { name: "Live lab evidence" })).toHaveTextContent("3 commits on main since this run");
     expect(await screen.findByRole("region", { name: "Links" })).toHaveTextContent("Project board");
   });
@@ -543,20 +556,22 @@ describe("App", () => {
     const metrics = vi.fn(async (view: keyof typeof METRICS) => METRICS[view]);
     render(<App provider={provider({ timeline, metrics })} />);
     await screen.findByRole("region", { name: "Worker up" });
+    await serverTime();
 
     await userEvent.click(screen.getByRole("button", { name: "24 h" }));
 
     const range = { start: new Date(NOW.getTime() - 86_400_000), end: NOW };
-    expect(timeline).toHaveBeenLastCalledWith(range);
+    // The views ask again from an effect after the click (#379).
+    await vi.waitFor(() => expect(timeline).toHaveBeenLastCalledWith(range));
     // The page's last metrics panel, every group open.
-    expect(metrics).toHaveBeenLastCalledWith("source-fetch-time", range);
+    await vi.waitFor(() => expect(metrics).toHaveBeenLastCalledWith("source-fetch-time", range));
     const params = new URLSearchParams(location.search);
     expect(params.get("from")).toBe(range.start.toISOString());
     expect(params.get("to")).toBe(NOW.toISOString());
 
     await userEvent.click(screen.getByRole("button", { name: "Follow now" }));
 
-    expect(timeline).toHaveBeenLastCalledWith(undefined);
+    await vi.waitFor(() => expect(timeline).toHaveBeenLastCalledWith(undefined));
     expect(new URLSearchParams(location.search).has("from")).toBe(false);
   });
 
@@ -582,10 +597,13 @@ describe("App", () => {
 
     expect(await screen.findByRole("region", { name: "Drift and deploys by hour" })).toBeInTheDocument();
     expect(history).toHaveBeenCalledWith(undefined, undefined);
+    await serverTime();
 
     await userEvent.click(screen.getByRole("button", { name: "7 d" }));
 
-    expect(history).toHaveBeenCalledWith({ start: new Date(NOW.getTime() - 7 * 86_400_000), end: NOW }, "1d");
+    await vi.waitFor(() =>
+      expect(history).toHaveBeenCalledWith({ start: new Date(NOW.getTime() - 7 * 86_400_000), end: NOW }, "1d"),
+    );
   });
 
   it("has the fabric history, its four series named and asked over the chosen range", async () => {
@@ -598,6 +616,7 @@ describe("App", () => {
     const named = ["in_sync_devices", "open_drifts", "runs", "repair_duration"];
     expect(history).toHaveBeenCalledWith(undefined, undefined, named);
 
+    await serverTime();
     await userEvent.click(screen.getByRole("button", { name: "7 d" }));
 
     expect(history).toHaveBeenCalledWith({ start: new Date(NOW.getTime() - 7 * 86_400_000), end: NOW }, "1d", named);
@@ -613,6 +632,7 @@ describe("App", () => {
     expect(card).toHaveTextContent("None failed.");
     expect(within(card).getByRole("link", { name: "Runs, 24 h: view more" })).toHaveAttribute("href", "#fabric-history");
 
+    await serverTime();
     await userEvent.click(screen.getByRole("button", { name: "7 d" }));
 
     // The page's history follows the range; the card's runs never do.
@@ -635,15 +655,18 @@ describe("App", () => {
     render(<App provider={provider({ health })} />);
 
     const panel = await screen.findByRole("region", { name: "Drift over time" });
-    const lanes = within(panel).getByRole("list", { name: "Drift lanes" });
+    const lanes = await within(panel).findByRole("list", { name: "Drift lanes" });
     const leaf = await within(lanes).findByRole("listitem", { name: "leaf-01" });
     expect(health).toHaveBeenLastCalledWith(undefined);
     // The axis takes the health changes in: it starts before leaf-01's unhealthy hour.
     await vi.waitFor(() => expect(leaf.querySelector<HTMLElement>("[data-health]")!.style.left).not.toBe("0%"));
 
+    await serverTime();
     await userEvent.click(screen.getByRole("button", { name: "7 d" }));
 
-    expect(health).toHaveBeenLastCalledWith({ start: new Date(NOW.getTime() - 7 * 86_400_000), end: NOW });
+    await vi.waitFor(() =>
+      expect(health).toHaveBeenLastCalledWith({ start: new Date(NOW.getTime() - 7 * 86_400_000), end: NOW }),
+    );
   });
 
   it("marks the unhealthy devices on the fabric and counts them in the number row", async () => {
@@ -662,13 +685,16 @@ describe("App", () => {
     const panel = await screen.findByRole("region", { name: "Drift by device" });
     expect(driftSummary).toHaveBeenLastCalledWith(undefined);
 
-    await userEvent.click(within(panel).getByRole("button", { name: /^Open leaf-01:/ }));
+    await userEvent.click(await within(panel).findByRole("button", { name: /^Open leaf-01:/ }));
 
     expect(screen.getByRole("dialog", { name: "leaf-01" })).toBeInTheDocument();
     expect(new URLSearchParams(location.search).get("device")).toBe("leaf-01");
 
+    await serverTime();
     await userEvent.click(screen.getByRole("button", { name: "7 d" }));
 
-    expect(driftSummary).toHaveBeenLastCalledWith({ start: new Date(NOW.getTime() - 7 * 86_400_000), end: NOW });
+    await vi.waitFor(() =>
+      expect(driftSummary).toHaveBeenLastCalledWith({ start: new Date(NOW.getTime() - 7 * 86_400_000), end: NOW }),
+    );
   });
 });
