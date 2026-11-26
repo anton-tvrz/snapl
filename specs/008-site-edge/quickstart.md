@@ -73,7 +73,7 @@ snapl scan --use-case site_edge                 # expect: clean, exit 0; entries
 ```bash
 docker exec clab-site-edge-ot-host ping -c 3 -W 1 10.50.10.10   # historian: delivered
 docker exec clab-site-edge-ot-host ping -c 3 -W 1 10.50.99.10   # wan-host: blocked
-uv run invoke test-e2e -- -k site_edge_traffic                  # the whole sequence, recorded under .snapl/test-runs/
+uv run invoke test-e2e --select site_edge_traffic                # the whole sequence, recorded under .snapl/test-runs/
 ```
 
 The e2e test repeats the blocked check with the deny removed by hand (delivered), after reconcile (blocked), with a permit inserted (delivered) and after `snapl remove --apply` (blocked).
