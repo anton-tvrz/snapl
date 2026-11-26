@@ -403,6 +403,8 @@ async def test_verification_ignores_undesired_only_drift_but_reports_it(dcfabric
     assert result.reason == WorkflowReason.SUCCEEDED
     assert result.detail is not None
     assert "1 path(s) not in intent" in result.detail
+    # Typed, so the CLI can name `snapl remove` without reading the prose (spec 008 FR-022).
+    assert result.undesired_paths == ["/interface[name=ethernet-1/7]/description"]
     events = await audit.query_by_workflow(result.workflow_id)
     terminated = [e for e in events if e.event_type == AuditEventType.WORKFLOW_TERMINATED]
     assert terminated[-1].payload == {"undesired_paths": ["/interface[name=ethernet-1/7]/description"]}

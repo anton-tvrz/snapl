@@ -77,22 +77,22 @@
 
 #### Tests (write first, verify they fail)
 
-- [ ] T006 [P] Extend tests/unit/test_orchestrator/test_worker_run.py:
+- [x] T006 [P] Extend tests/unit/test_orchestrator/test_worker_run.py:
   - with `SNAPL_TELEMETRY_USE_CASE` unset or blank, `telemetry_use_case()` returns `None`, and the `TelemetryRunner` the worker builds gets `use_case=None`;
   - with it set to `site_edge`, the runner gets `"site_edge"`;
   - the startup log line names "every use case" when `None` (research R21).
-- [ ] T007 [P] Extend tests/unit/test_presentation/test_render.py (FR-022):
+- [x] T007 [P] Extend tests/unit/test_presentation/test_render.py (FR-022):
   - a scan view with a device that has undesired items prints `snapl remove <device>` for that device, once;
   - a reconcile result whose verification leaves undesired items prints the same line for each such device;
   - a clean device, or one with forward drift only, prints no hint;
   - `--json` output gains no new key (the hint is human output only).
-- [ ] T008 [P] Extend tests/unit/test_presentation/test_cli.py: `snapl scan` and `snapl reconcile` pass the device names through to the renderer, so the hint names the device, not its id.
+- [x] T008 [P] Extend tests/unit/test_presentation/test_cli.py: `snapl scan` and `snapl reconcile` pass the device names through to the renderer, so the hint names the device, not its id.
 
 #### Implementation
 
-- [ ] T009 In packages/orchestrator/snapl_orchestrator/worker/run.py, drop `DEFAULT_TELEMETRY_USE_CASE`. `telemetry_use_case()` returns the variable's value or `None`, and the log line says which. Update the env-var docstring in the same file.
-- [ ] T010 In packages/presentation/snapl_presentation/render.py, print `To remove what intent never asked for: snapl remove <device>` under each device with undesired items, in the scan and reconcile views. Wire the device names through packages/presentation/snapl_presentation/cli.py if T008 needs it.
-- [ ] T011 Amend specs/016-device-telemetry/ (the contract or quickstart that names `SNAPL_TELEMETRY_USE_CASE`): unset now means every use case. Note the amendment in the PR body. Add the changelog fragment.
+- [x] T009 In packages/orchestrator/snapl_orchestrator/worker/run.py, drop `DEFAULT_TELEMETRY_USE_CASE`. `telemetry_use_case()` returns the variable's value or `None`, and the log line says which. Update the env-var docstring in the same file.
+- [x] T010 In packages/presentation/snapl_presentation/render.py, print `To remove what intent never asked for: snapl remove <device>` under each device with undesired items, in the scan and reconcile views. Wire the device names through packages/presentation/snapl_presentation/cli.py if T008 needs it.
+- [x] T011 Amend specs/016-device-telemetry/ (the contract or quickstart that names `SNAPL_TELEMETRY_USE_CASE`): unset now means every use case. Note the amendment in the PR body. Add the changelog fragment.
 
 **Checkpoint**: one worker streams every use case's devices. Scan and reconcile name the remove command.
 

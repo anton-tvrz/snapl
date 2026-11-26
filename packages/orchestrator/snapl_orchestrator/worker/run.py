@@ -53,10 +53,6 @@ __all__ = ["DEFAULT_AUDIT_DB", "DEFAULT_NAMESPACE", "DEFAULT_TASK_QUEUE", "DEFAU
 # (#63) and this module can never disagree about where the cluster is.
 DEFAULT_TASK_QUEUE = "snapl-orchestrator"
 DEFAULT_AUDIT_DB = "./snapl-audit.sqlite"
-# The lab's use case. Telemetry streams one use case, as a scan reads one, so
-# devices seeded for other use cases (the integration tests' test_edge) aren't
-# dialled (#341).
-DEFAULT_TELEMETRY_USE_CASE = "dcfabric"
 
 
 async def run_worker(*, activities: Activities | None = None) -> None:
@@ -84,7 +80,9 @@ async def run_worker(*, activities: Activities | None = None) -> None:
         WORKER_METRICS_PORT     — Prometheus endpoint port (default 18091; 'off' disables)
         WORKER_METRICS_BIND     — its bind address (default 127.0.0.1)
         SNAPL_TELEMETRY         — 'off' starts no device telemetry (spec 016); anything
-                                  else, or unset, streams every device in intent
+                                  else, or unset, streams the devices below
+        SNAPL_TELEMETRY_USE_CASE — the one use case whose devices telemetry streams;
+                                  unset or blank, every use case's (spec 008 FR-019)
     """
     temporal_host = os.environ.get("TEMPORAL_HOST", DEFAULT_TEMPORAL_HOST)
     namespace = os.environ.get("TEMPORAL_NAMESPACE", DEFAULT_NAMESPACE)
@@ -156,7 +154,10 @@ async def run_worker(*, activities: Activities | None = None) -> None:
     telemetry: asyncio.Task[None] | None = None
     if telemetry_enabled():
         use_case = telemetry_use_case()
-        logger.info("telemetry: streaming use case %s", use_case)
+        if use_case is None:
+            logger.info("telemetry: streaming every use case")
+        else:
+            logger.info("telemetry: streaming use case %s", use_case)
         runner = TelemetryRunner(
             intent_store=activities.intent_store,
             collector=activities.collector,
@@ -182,9 +183,13 @@ def telemetry_enabled() -> bool:
     return os.environ.get("SNAPL_TELEMETRY", "").strip().lower() != "off"
 
 
-def telemetry_use_case() -> str:
-    """The use case whose devices telemetry streams: ``SNAPL_TELEMETRY_USE_CASE``, or ``dcfabric``."""
-    return os.environ.get("SNAPL_TELEMETRY_USE_CASE", "").strip() or DEFAULT_TELEMETRY_USE_CASE
+def telemetry_use_case() -> str | None:
+    """The one use case telemetry streams, from ``SNAPL_TELEMETRY_USE_CASE``; ``None`` for every use case.
+
+    One worker streams the devices of every use case in intent (spec 008 FR-019).
+    Setting the variable narrows it to one, for a worker that serves one lab.
+    """
+    return os.environ.get("SNAPL_TELEMETRY_USE_CASE", "").strip() or None
 
 
 async def _run_telemetry(runner: TelemetryRunner) -> None:

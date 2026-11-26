@@ -834,3 +834,163 @@ class TestRemovalAuditLine:
         terminal = next(row for row in rows if "workflow_terminated" in row)
         assert "success" in terminal
         assert "removed" not in terminal
+
+
+# ---------------------------------------------------------------------------
+# The remove hint (spec 008 FR-022)
+# ---------------------------------------------------------------------------
+
+_HINT = "To remove what intent never asked for: snapl remove"
+
+
+def _undesired(path: str = "/interface[name=ethernet-1/9]/description"):
+    from snapl_observability.models import DriftItem
+
+    return DriftItem(path=path, desired=None, actual="by hand", entity_kind="interface", undesired=True)
+
+
+def _forward():
+    from snapl_observability.models import DriftItem
+
+    return DriftItem(path="/interface[name=ethernet-1/1]/mtu", desired=9000, actual=1500, entity_kind="interface")
+
+
+def _scan_of(items_by_device: dict[str, list], *, use_case: str = "dcfabric"):
+    from snapl_observability.models import DriftReport, DriftStatus
+    from snapl_orchestrator.models import DriftScanResult
+
+    at = datetime(2026, 11, 26, tzinfo=UTC)
+    reports = {}
+    for name, items in items_by_device.items():
+        device_id = uuid4()
+        reports[device_id] = DriftReport(
+            device_id=device_id,
+            device_name=name,
+            status=DriftStatus.DRIFTED if items else DriftStatus.CLEAN,
+            items=items,
+            timestamp=at,
+        )
+    drifted = sum(1 for items in items_by_device.values() if items)
+    return DriftScanResult(
+        workflow_id=f"scan-drift-{use_case}-1",
+        use_case_id=use_case,
+        reports=reports,
+        total=len(reports),
+        clean=len(reports) - drifted,
+        drifted=drifted,
+        errored=0,
+        started_at=at,
+        ended_at=at,
+    )
+
+
+def _reconcile_of(items_by_device: dict[str, list]):
+    from snapl_orchestrator.models import ReconcileResult, WorkflowResult
+
+    at = datetime(2026, 11, 26, tzinfo=UTC)
+    results = {}
+    names = {}
+    for name, items in items_by_device.items():
+        device_id = uuid4()
+        names[device_id] = name
+        # As DeployIntent returns them: undesired-only leftovers succeed and
+        # name their paths; forward drift fails verification with every item.
+        forward = any(not item.undesired for item in items)
+        results[device_id] = WorkflowResult(
+            workflow_id=f"deploy-intent-{device_id}",
+            workflow_type="DeployIntent",
+            target_id=device_id,
+            success=not forward,
+            reason=WorkflowReason.VERIFICATION_FAILED if forward else WorkflowReason.SUCCEEDED,
+            started_at=at,
+            ended_at=at,
+            drift_items=items if forward else [],
+            undesired_paths=[] if forward else [item.path for item in items],
+        )
+    failed = sum(1 for outcome in results.values() if not outcome.success)
+    result = ReconcileResult(
+        workflow_id="reconcile-1",
+        device_results=results,
+        total=len(results),
+        succeeded=len(results) - failed,
+        failed=failed,
+        started_at=at,
+        ended_at=at,
+    )
+    return result, names
+
+
+class TestRemoveHint:
+    def test_a_scanned_device_with_undesired_items_names_snapl_remove_once(self) -> None:
+        console, _ = _capture()
+        HumanRenderer(console).scan(
+            _scan_of({"leaf-04": [_undesired(), _undesired("/interface[name=ethernet-1/9]/mtu")], "leaf-01": []})
+        )
+        text = _text(console)
+        assert text.count(_HINT) == 1
+        assert f"{_HINT} leaf-04\n" in text
+
+    def test_the_hint_sits_under_its_own_device(self) -> None:
+        console, _ = _capture()
+        HumanRenderer(console).scan(_scan_of({"leaf-04": [_undesired()], "spine-01": [_forward()]}))
+        text = _text(console)
+        assert text.index(f"{_HINT} leaf-04") < text.index("spine-01")
+
+    def test_a_scan_of_another_use_case_names_it(self) -> None:
+        # `snapl remove` reads dcfabric unless told otherwise, so a bare name
+        # would not find a site_edge device.
+        console, _ = _capture()
+        HumanRenderer(console).scan(_scan_of({"site-edge-01": [_undesired()]}, use_case="site_edge"))
+        assert f"{_HINT} site-edge-01 --use-case site_edge\n" in _text(console)
+
+    def test_the_hint_is_never_hard_wrapped_on_a_narrow_console(self) -> None:
+        console = Console(record=True, width=60, force_terminal=False, no_color=True)
+        HumanRenderer(console).scan(_scan_of({"site-edge-01": [_undesired()]}, use_case="site_edge"))
+        assert f"{_HINT} site-edge-01 --use-case site_edge" in console.export_text().splitlines()[-1]
+
+    def test_forward_drift_only_or_a_clean_device_prints_no_hint(self) -> None:
+        console, _ = _capture()
+        HumanRenderer(console).scan(_scan_of({"spine-01": [_forward()], "leaf-01": []}))
+        assert _HINT not in _text(console)
+
+    def test_a_reconcile_that_leaves_undesired_items_names_each_device(self) -> None:
+        result, names = _reconcile_of(
+            {"leaf-04": [_undesired()], "leaf-02": [_undesired()], "spine-01": [_forward()], "leaf-01": []}
+        )
+        console, _ = _capture()
+        HumanRenderer(console).reconcile(result, names=names)
+        text = _text(console)
+        assert text.count(_HINT) == 2
+        assert f"{_HINT} leaf-04\n" in text
+        assert f"{_HINT} leaf-02\n" in text
+
+    def test_a_failed_verification_with_undesired_items_names_the_device(self) -> None:
+        result, names = _reconcile_of({"leaf-04": [_forward(), _undesired()]})
+        console, _ = _capture()
+        HumanRenderer(console).reconcile(result, names=names)
+        assert f"{_HINT} leaf-04\n" in _text(console)
+
+    def test_a_reconcile_of_another_use_case_names_it(self) -> None:
+        result, names = _reconcile_of({"site-edge-01": [_undesired()]})
+        console, _ = _capture()
+        HumanRenderer(console).reconcile(result, names=names, use_case="site_edge")
+        assert f"{_HINT} site-edge-01 --use-case site_edge\n" in _text(console)
+
+    def test_a_clean_reconcile_prints_no_hint(self) -> None:
+        result, names = _reconcile_of({"spine-01": [_forward()], "leaf-01": []})
+        console, _ = _capture()
+        HumanRenderer(console).reconcile(result, names=names)
+        assert _HINT not in _text(console)
+
+    def test_json_gains_no_key(self, capsys) -> None:
+        scan = _scan_of({"leaf-04": [_undesired()]})
+        reconcile, names = _reconcile_of({"leaf-04": [_undesired()]})
+
+        JsonRenderer().scan(scan)
+        scan_out = json.loads(capsys.readouterr().out)
+        JsonRenderer().reconcile(reconcile, names=names)
+        reconcile_out = json.loads(capsys.readouterr().out)
+
+        assert set(scan_out) == set(json.loads(scan.model_dump_json())) | {"exit_code"}
+        assert set(reconcile_out) == set(json.loads(reconcile.model_dump_json()))
+        assert "snapl remove" not in json.dumps(scan_out) + json.dumps(reconcile_out)

@@ -452,9 +452,10 @@ class TestTelemetryRunner:
         assert kwargs["intent_store"] is activities.intent_store
         assert isinstance(runtimes[0], Runtime)
         assert kwargs["meter"] is runtimes[0].metric_meter
-        assert kwargs["use_case"] == "dcfabric"  # #341: not the integration tests' test_edge devices
+        # Spec 008 FR-019: with SNAPL_TELEMETRY_USE_CASE unset, every use case's devices.
+        assert kwargs["use_case"] is None
 
-    @pytest.mark.parametrize(("raw", "expected"), [("site_edge", "site_edge"), (" lab2 ", "lab2"), ("", "dcfabric")])
+    @pytest.mark.parametrize(("raw", "expected"), [("site_edge", "site_edge"), (" lab2 ", "lab2")])
     async def test_the_use_case_comes_from_snapl_telemetry_use_case(
         self, monkeypatch, caplog, raw: str, expected: str
     ) -> None:
@@ -471,6 +472,27 @@ class TestTelemetryRunner:
         [kwargs] = seen["runners"]
         assert kwargs["use_case"] == expected
         assert f"telemetry: streaming use case {expected}" in [r.getMessage() for r in caplog.records]
+
+    @pytest.mark.parametrize("raw", [None, "", "   "])
+    async def test_unset_or_blank_streams_every_use_case(self, monkeypatch, caplog, raw: str | None) -> None:
+        """Spec 008 FR-019, research R21: one worker streams the devices of every use case."""
+        import logging
+
+        run_mod, seen = self._patch(monkeypatch)
+        monkeypatch.setenv("SNAPL_TELEMETRY", "on")
+        if raw is None:
+            monkeypatch.delenv("SNAPL_TELEMETRY_USE_CASE", raising=False)
+        else:
+            monkeypatch.setenv("SNAPL_TELEMETRY_USE_CASE", raw)
+        monkeypatch.setenv("WORKER_METRICS_PORT", "off")
+
+        assert run_mod.telemetry_use_case() is None
+        with caplog.at_level(logging.INFO, logger="snapl_orchestrator.worker.run"):
+            await run_mod.run_worker(activities=self._activities())
+
+        [kwargs] = seen["runners"]
+        assert kwargs["use_case"] is None
+        assert "telemetry: streaming every use case" in [r.getMessage() for r in caplog.records]
 
     async def test_stopping_the_worker_stops_the_runner(self, monkeypatch) -> None:
         run_mod, seen = self._patch(monkeypatch)
