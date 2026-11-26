@@ -91,8 +91,40 @@ def describe():
         yield mock
 
 
+@pytest.fixture(autouse=True)
+def temporal_env(monkeypatch):
+    """Which Temporal the CLI talks to; every schedule command names it (#391)."""
+    monkeypatch.setenv("TEMPORAL_HOST", "temporal.test:7233")
+    monkeypatch.setenv("TEMPORAL_NAMESPACE", "snapl-test")
+
+
+_TEMPORAL_ROW = "temporal          temporal.test:7233, namespace snapl-test"
+
+
 def _invoke(args: list[str]):
     return runner.invoke(cli.app, ["schedule", *args])
+
+
+class TestNamesItsTemporal:
+    """#391: a mistyped or leftover TEMPORAL_HOST puts a schedule on a Temporal
+    the operator did not mean. Every schedule command says which one it used."""
+
+    def test_create_names_it(self, audit_log, temporal, sot_identity, ensure) -> None:
+        result = _invoke(["create"])
+
+        assert result.exit_code == ExitCode.OK, result.output
+        assert _TEMPORAL_ROW in result.output
+
+    def test_create_json_carries_it(self, audit_log, temporal, sot_identity, ensure) -> None:
+        result = _invoke(["create", "--json"])
+
+        assert json.loads(result.stdout)["temporal"] == {"host": "temporal.test:7233", "namespace": "snapl-test"}
+
+    def test_show_names_it(self, temporal, describe) -> None:
+        result = _invoke(["show"])
+
+        assert result.exit_code == ExitCode.OK, result.output
+        assert _TEMPORAL_ROW in result.output
 
 
 # ---------------------------------------------------------------------------
@@ -347,7 +379,7 @@ def test_no_schedule_command_requires_a_worker(args, audit_log, temporal, sot_id
 # ---------------------------------------------------------------------------
 
 _CONFIRMATION = (
-    "Switch dcfabric to remediate?\n"
+    "Switch dcfabric to remediate on Temporal temporal.test:7233, namespace snapl-test?\n"
     "  Every 5m, devices whose scan shows drift a deploy can fix will be redeployed\n"
     "  without asking — including devices whose intent was changed in the Source of\n"
     "  Truth. Undesired config is never removed. Devices: 3.\n"
@@ -447,7 +479,10 @@ class TestTriggerRemediate:
         describe.return_value = _view(mode=DriftResponseMode.REMEDIATE)
         result = runner.invoke(cli.app, ["schedule", "trigger"], input="n\n")
         assert result.exit_code == ExitCode.ERROR
-        assert "Trigger a remediate run of dcfabric now?" in result.output
+        assert (
+            "Trigger a remediate run of dcfabric now, on Temporal temporal.test:7233, namespace snapl-test?"
+            in result.output
+        )
         assert "Undesired config is never removed." in result.output
         control.trigger.assert_not_called()
 

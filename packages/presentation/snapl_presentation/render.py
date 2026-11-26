@@ -38,6 +38,7 @@ if TYPE_CHECKING:
         ScheduledRunInfo,
         WorkflowResult,
     )
+    from snapl_presentation.settings import TemporalTarget
 
 _STATUS_STYLE = {
     DriftStatus.CLEAN: "green",
@@ -271,7 +272,7 @@ class Renderer:
     ) -> None:
         raise NotImplementedError
 
-    def schedule(self, view: DriftScheduleView) -> None:
+    def schedule(self, view: DriftScheduleView, *, temporal: TemporalTarget) -> None:
         raise NotImplementedError
 
     def removal_plan(self, plan: RemovalPlan, *, applying: bool = False) -> None:
@@ -366,7 +367,7 @@ class HumanRenderer(Renderer):
         else:
             self._console.print("\nno workflows running")
 
-    def schedule(self, view: DriftScheduleView) -> None:
+    def schedule(self, view: DriftScheduleView, *, temporal: TemporalTarget) -> None:
         mode = view.mode.value
         # Remediate means unattended writes; it should never read as routine.
         response = f"[yellow]{mode}[/]" if mode == "remediate" else mode
@@ -378,6 +379,7 @@ class HumanRenderer(Renderer):
         rows = [
             ("drift schedule", _esc(view.schedule_id)),
             ("use case", _esc(view.use_case_id)),
+            ("temporal", _esc(str(temporal))),
             ("every", format_interval(view.interval)),
             ("response", response),
             ("state", state),
@@ -519,8 +521,10 @@ class JsonRenderer(Renderer):
             }
         )
 
-    def schedule(self, view: DriftScheduleView) -> None:
-        self._emit(view.model_dump(mode="json"))
+    def schedule(self, view: DriftScheduleView, *, temporal: TemporalTarget) -> None:
+        self._emit(
+            {**view.model_dump(mode="json"), "temporal": {"host": temporal.host, "namespace": temporal.namespace}}
+        )
 
     def removal_plan(self, plan: RemovalPlan, *, applying: bool = False) -> None:
         # While applying, the plan goes out with the result as one document.
