@@ -33,7 +33,7 @@ ENTITY_FIELD_MAP: dict[str, dict[str, Any]] = {
     "interface": {
         "fields": ["description", "ip_address", "prefix_length", "enabled", "mtu"],
         "path_template": "/interface[name={name}]",
-        "key_field": "name",
+        "key_fields": ("name",),
         # Fields whose presence means somebody deliberately configured this
         # entity, used to tell real config sprawl from hardware that merely
         # exists. A chassis port nobody touched is reported by SR Linux with
@@ -71,7 +71,7 @@ ENTITY_FIELD_MAP: dict[str, dict[str, Any]] = {
         # eBGP default sends and accepts nothing (#317).
         "fields": ["peer_address", "peer_asn", "peer_group", "enabled", "export_policy", "import_policy"],
         "path_template": "/network-instance[name=default]/protocols/bgp/neighbor[peer-address={peer_address}]",
-        "key_field": "peer_address",
+        "key_fields": ("peer_address",),
         # Unlike an interface, a neighbour entry only exists because somebody
         # created it — there is no hardware equivalent of a bare chassis port
         # here. peer_address is the key rather than a value, so the ASN and
@@ -86,7 +86,7 @@ ENTITY_FIELD_MAP: dict[str, dict[str, Any]] = {
     "routed_interface": {
         "fields": ["name"],
         "path_template": "/network-instance[name=default]/interface[name={name}]",
-        "key_field": "name",
+        "key_fields": ("name",),
         "value_fields": ("name",),
         "protected": (),
     },
@@ -97,7 +97,7 @@ ENTITY_FIELD_MAP: dict[str, dict[str, Any]] = {
     "routing_policy": {
         "fields": ["accept_prefixes", "default_action"],
         "path_template": "/routing-policy/policy[name={name}]",
-        "key_field": "name",
+        "key_fields": ("name",),
         "value_fields": ("accept_prefixes", "default_action"),
         # A policy that lists nothing has nothing to report under accept_prefixes;
         # its default_action already marks it as somebody's.
@@ -174,7 +174,7 @@ def diff_desired_vs_actual(
             iface_spec,
             actual_data,
             kind="interface",
-            desired_keys={iface.name for iface in desired.interfaces},
+            desired_keys={(iface.name,) for iface in desired.interfaces},
         )
     )
     items.extend(
@@ -182,7 +182,7 @@ def diff_desired_vs_actual(
             bgp_spec,
             actual_data,
             kind="bgp_session",
-            desired_keys={session.peer_address for session in desired.bgp_sessions},
+            desired_keys={(session.peer_address,) for session in desired.bgp_sessions},
         )
     )
     items.extend(
@@ -190,7 +190,7 @@ def diff_desired_vs_actual(
             routed_spec,
             actual_data,
             kind="routed_interface",
-            desired_keys={binding.name for binding in routed},
+            desired_keys={(binding.name,) for binding in routed},
         )
     )
     items.extend(
@@ -198,7 +198,7 @@ def diff_desired_vs_actual(
             policy_spec,
             actual_data,
             kind="routing_policy",
-            desired_keys={policy.name for policy in desired.routing_policies},
+            desired_keys={(policy.name,) for policy in desired.routing_policies},
         )
     )
 
@@ -246,20 +246,23 @@ def _address_view(iface: Any, entry: Any) -> tuple[Any, list[dict[str, str]]]:
     return entry, addresses[1:]
 
 
+# One key in a path: it may hold '/' (ethernet-1/7, 192.0.2.1/31), never a bracket.
+_KEY_GROUP = r"([^\[\]]+)"
+
+
 @cache
 def _key_pattern(template: str) -> re.Pattern[str]:
-    """Compile a path template into a matcher for its key.
+    """Compile a path template into a matcher for its keys, one group per placeholder.
 
     ``/interface[name={name}]`` becomes a pattern that matches
-    ``/interface[name=ethernet-1/7]`` and captures ``ethernet-1/7``. Built by
-    splitting on the placeholder rather than escaping around it, because the
-    literal parts are full of regex metacharacters (``[``, ``]``, ``/``).
+    ``/interface[name=ethernet-1/7]`` and captures ``ethernet-1/7``; a
+    two-placeholder template captures two groups, in template order. Built by
+    splitting on the placeholders rather than escaping around them, because the
+    literal parts are full of regex metacharacters (``[``, ``]``, ``/``). A key
+    may hold '/' but never a bracket, so no key can swallow a deeper path.
     """
-    placeholder_start = template.index("{")
-    placeholder_end = template.index("}") + 1
-    head = template[:placeholder_start]
-    tail = template[placeholder_end:]
-    return re.compile(f"^{re.escape(head)}(.+){re.escape(tail)}$")
+    parts = re.split(r"\{[^{}]+\}", template)
+    return re.compile("^" + _KEY_GROUP.join(re.escape(part) for part in parts) + "$")
 
 
 def _undesired_entities(
@@ -267,7 +270,7 @@ def _undesired_entities(
     actual_data: dict[str, Any],
     *,
     kind: str,
-    desired_keys: set[str],
+    desired_keys: set[tuple[Any, ...]],
 ) -> list[DriftItem]:
     """Report entities present on the device but absent from intent.
 
@@ -276,6 +279,9 @@ def _undesired_entities(
     Protected entities are skipped outright.
     """
     pattern = _key_pattern(spec["path_template"])
+    # Compared as paths, both sides formatted through the template, so a key
+    # held as an int in intent (a sequence, 2) equals the "2" read off a path.
+    desired_paths = {_entity_path(spec, key) for key in desired_keys}
     value_fields: tuple[str, ...] = spec.get("value_fields", ())
     protected: tuple[str, ...] = spec.get("protected", ())
     device_defaults: dict[str, Any] = spec.get("device_defaults", {})
@@ -286,8 +292,8 @@ def _undesired_entities(
         match = pattern.match(path)
         if match is None:
             continue
-        key = match.group(1)
-        if key in protected or key in desired_keys:
+        key = match.groups()
+        if _is_protected(key, protected) or _entity_path(spec, key) in desired_paths:
             continue
 
         entry = actual_data.get(path)
@@ -309,6 +315,16 @@ def _undesired_entities(
     return items
 
 
+def _entity_path(spec: dict[str, Any], key: tuple[Any, ...]) -> str:
+    """The path of the entity keyed by ``key``, one value per ``key_fields`` entry."""
+    return str(spec["path_template"]).format(**dict(zip(spec["key_fields"], key, strict=True)))
+
+
+def _is_protected(key: tuple[str, ...], protected: tuple[str, ...]) -> bool:
+    """Whether ``key`` names a protected entity. Protected entries name one-key kinds' keys."""
+    return len(key) == 1 and key[0] in protected
+
+
 def _diff_entity(
     entity: Any,
     spec: dict[str, Any],
@@ -317,16 +333,11 @@ def _diff_entity(
     kind: str,
 ) -> list[DriftItem]:
     """Diff one intent entity against its corresponding actual_data entry."""
-    template: str = spec["path_template"]
-    key_field: str | None = spec["key_field"]
+    key_fields: tuple[str, ...] = spec["key_fields"]
     fields: list[str] = spec["fields"]
     skip_when_none: tuple[str, ...] = spec.get("skip_when_none", ())
 
-    if key_field is None:
-        path = template
-    else:
-        key_value = getattr(entity, key_field)
-        path = template.format(**{key_field: key_value})
+    path = _entity_path(spec, tuple(getattr(entity, field) for field in key_fields))
 
     actual_entry = actual_data.get(path)
 

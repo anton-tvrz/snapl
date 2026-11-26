@@ -55,21 +55,21 @@
 
 #### Tests (write first, verify they fail)
 
-- [ ] T002 Extend tests/unit/test_observability/test_diff.py:
+- [x] T002 Extend tests/unit/test_observability/test_diff.py:
   - every `ENTITY_FIELD_MAP` kind declares `key_fields` as a non-empty tuple, and no kind declares `key_field`;
   - `_key_pattern` compiles one capture group per placeholder: a two-placeholder template such as `/x[a={a}]/y[b={b}]` matches `/x[a=k1]/y[b=2]` as `("k1", "2")`, and does not match a deeper path;
   - `_undesired_entities` compares key tuples. Use a test-only two-key spec passed directly, not a new kind in the real map;
   - a desired key with an `int` field (`2`) equals the actual key captured as `"2"` (data-model §5, key types).
-- [ ] T003 [P] Run tests/unit/test_observability/test_removal_plan.py, tests/unit/test_orchestrator/test_render_diff_contract.py and tests/unit/test_observability/test_diff.py before the change, and record the counts in the PR body. Every existing test must pass unmodified after it, apart from renaming `key_field`.
+- [x] T003 [P] Run tests/unit/test_observability/test_removal_plan.py, tests/unit/test_orchestrator/test_render_diff_contract.py and tests/unit/test_observability/test_diff.py before the change, and record the counts in the PR body. Every existing test must pass unmodified after it, apart from renaming `key_field`.
 
 #### Implementation
 
-- [ ] T004 In packages/observability/snapl_observability/structural/diff.py:
+- [x] T004 In packages/observability/snapl_observability/structural/diff.py:
   - rename `key_field` to `key_fields` for all four kinds (`interface`, `bgp_session`, `routed_interface`, `routing_policy`), each a one-tuple;
   - make `_key_pattern` emit one group per `{placeholder}`;
   - make `_diff_entity` format the path from every key field;
   - make `_undesired_entities` build and compare key tuples, formatting both sides through the template.
-- [ ] T005 Update every other reader of `key_field` that `grep -rn key_field packages/ tests/unit` finds, then run `uv run pytest tests/unit -q`. No drift output changes.
+- [x] T005 Update every other reader of `key_field` that `grep -rn key_field packages/ tests/unit` finds, then run `uv run pytest tests/unit -q`. No drift output changes.
 
 **Checkpoint**: `uv run invoke test-unit` is green. dcfabric's drift output is byte-identical.
 
