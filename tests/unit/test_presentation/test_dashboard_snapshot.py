@@ -1,0 +1,508 @@
+"""The snapshot: one file that shows the loop with no server (spec 011 T079, research R14).
+
+A stub template stands in for the built `snapshot.html`: the UI build makes the
+real one (PR H2). The app is the fixture server's, with every source up, so the
+bundle holds what a live dashboard would answer.
+"""
+
+from __future__ import annotations
+
+import base64
+import gzip
+import importlib.util
+import json
+import re
+from datetime import datetime, timedelta
+from pathlib import Path
+from unittest.mock import patch
+
+import pytest
+from typer.testing import CliRunner
+
+from snapl_presentation import cli
+from snapl_presentation.dashboard.models import NETWORK_VIEWS, MetricsViewName
+from snapl_presentation.dashboard.snapshot import (
+    COARSE_POINTS,
+    COARSE_VIEWS,
+    FORMAT,
+    SnapshotError,
+    coarse_step,
+    collect_bundle,
+    render,
+    summary,
+    write,
+)
+from snapl_presentation.exit_codes import ExitCode
+
+pytestmark = pytest.mark.unit
+
+ROOT = Path(__file__).resolve().parents[3]
+SERVER = ROOT / "dev" / "scripts" / "serve_dashboard_fixtures.py"
+TEMPLATE = (
+    "<!doctype html><html><head><title>snapl</title></head><body><div id=root></div>"
+    '<script id="snapl-bundle" type="application/json"></script>'
+    "<script>/* the app */</script></body></html>"
+)
+# Spec 018 US5 (#235): the bundle is gzipped and base64-encoded, and says so.
+BUNDLE = re.compile(
+    r'<script id="snapl-bundle" type="application/json" data-encoding="gzip\+base64">(.*?)</script>', re.S
+)
+
+
+def _server():
+    spec = importlib.util.spec_from_file_location("serve_dashboard_fixtures", SERVER)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _app(up: bool = True):
+    return _server().build_app(ui_dir=ROOT / "no-built-ui", up=up)
+
+
+@pytest.fixture(scope="module")
+def bundle() -> dict:
+    return collect_bundle(_app(), days=7, commit="6baff39", source="live")
+
+
+def _parsed(html: str) -> dict:
+    """The bundle in a written snapshot, unpacked."""
+    [payload] = BUNDLE.findall(html)
+    return json.loads(gzip.decompress(base64.b64decode(payload, validate=True)))
+
+
+def _unpacked_kb(bundle: dict) -> int:
+    return round(len(json.dumps(bundle, ensure_ascii=False, separators=(",", ":")).encode()) / 1000)
+
+
+# --- collect_bundle ---------------------------------------------------------------
+
+
+def test_the_bundle_holds_every_view_the_page_reads(bundle: dict):
+    assert set(bundle) == {
+        "manifest",
+        "overview",
+        "devices",
+        "runs",
+        "topology",
+        "timeline",
+        "history",
+        "fabric_history",
+        "drift_summary",
+        # Spec 016: the health over the range, and the network at its end.
+        "health",
+        "network",
+        "steps",
+        "links",
+        "sources",
+        "metrics",
+    }
+    assert bundle["devices"]["devices"]["data"]
+    assert len(bundle["topology"]["topology"]["data"]["links"]) == 8
+    assert set(bundle["metrics"]) == {
+        "workflow-duration",
+        "gnmi-duration",
+        "gnmi-errors",
+        "worker-lag",
+        "worker-up",
+        "source-health",
+        # Spec 015.
+        "workflow-mean",
+        "gnmi-mean",
+        "workflows-completed",
+        "activity-time",
+        "worker-slots",
+        "server-request-time",
+        "source-fetch-time",
+        "scan-results",
+        "drift-paths",
+        "deploy-outcomes",
+        # Spec 016.
+        "interface-traffic",
+        "interface-errors",
+        "interface-discards",
+        "bgp-established",
+        "device-cpu",
+        "device-memory",
+    }
+
+
+def test_the_manifest_says_what_and_when_and_ends_at_the_apps_clock(bundle: dict):
+    manifest = bundle["manifest"]
+
+    assert manifest["format"] == FORMAT == "snapl-snapshot/1"
+    assert manifest["created_at"] == manifest["end"] == "2026-11-07T21:20:48.919877Z"
+    assert manifest["start"] == "2026-10-31T21:20:48.919877Z"
+    assert (manifest["snapl_commit"], manifest["use_case"], manifest["source"]) == ("6baff39", "dcfabric", "live")
+
+
+def test_the_views_cover_the_range(bundle: dict):
+    timeline = bundle["timeline"]["timeline"]["data"]
+    assert (timeline["start"], timeline["end"]) == (bundle["manifest"]["start"], bundle["manifest"]["end"])
+    assert bundle["history"]["series"][2]["bucket"] == "1d"
+    summary = bundle["drift_summary"]["summary"]["data"]
+    assert (summary["start"], summary["end"]) == (bundle["manifest"]["start"], bundle["manifest"]["end"])
+    fabric = bundle["fabric_history"]["series"]
+    assert [s["name"] for s in fabric] == ["in_sync_devices", "open_drifts", "runs", "repair_duration"]
+    assert fabric[2]["bucket"] == "1d"
+    assert bundle["metrics"]["worker-up"]["metrics"]["data"]["step"] >= 2520
+    health = bundle["health"]["health"]["data"]
+    assert (health["start"], health["end"]) == (bundle["manifest"]["start"], bundle["manifest"]["end"])
+    assert next(d for d in health["devices"] if d["name"] == "spine-01")["episodes"]
+    # The network's figures are the ones at the snapshot's end.
+    assert bundle["network"]["network"]["data"]["at"] == bundle["manifest"]["end"]
+
+
+def test_every_metrics_view_ends_at_the_snapshots_time(bundle: dict):
+    """To the second, as Prometheus is asked, at the page's step and the coarser one alike (#306)."""
+    end = datetime.fromisoformat(bundle["manifest"]["end"]).replace(microsecond=0)
+    for view, answer in bundle["metrics"].items():
+        assert datetime.fromisoformat(answer["metrics"]["data"]["end"]) == end, view
+
+
+def _data(bundle: dict, view: str) -> dict:
+    return bundle["metrics"][view]["metrics"]["data"]
+
+
+# Spec 015 T045, research R8: the views spec 015 added are exported coarser,
+# and spec 016's six follow the same rule (T051).
+def test_the_coarse_views_are_spec_015s_ten_and_spec_016s_six():
+    assert NETWORK_VIEWS <= COARSE_VIEWS
+    assert {view.value for view in COARSE_VIEWS - NETWORK_VIEWS} == {
+        "workflow-mean",
+        "gnmi-mean",
+        "workflows-completed",
+        "activity-time",
+        "worker-slots",
+        "server-request-time",
+        "source-fetch-time",
+        "scan-results",
+        "drift-paths",
+        "deploy-outcomes",
+    }
+
+
+@pytest.mark.parametrize(
+    ("span", "step", "words"),
+    [
+        (timedelta(days=7), 10800, "3 h"),
+        (timedelta(days=1), 1800, "30 min"),
+        (timedelta(hours=1), 300, "5 min"),
+        (timedelta(days=20), 43200, "12 h"),
+        (timedelta(days=30), 86400, "1 d"),
+        (timedelta(days=400), 604800, "1 w"),
+    ],
+)
+def test_the_coarse_step_is_the_smallest_on_the_ladder_within_the_point_limit(span, step, words):
+    assert coarse_step(int(span.total_seconds())) == (step, words)
+    assert span.total_seconds() / step + 1 <= COARSE_POINTS
+
+
+def test_a_seven_day_snapshot_has_spec_015_and_016_views_at_three_hours_and_says_so(bundle: dict):
+    for view in COARSE_VIEWS:
+        data = _data(bundle, view.value)
+        assert data["step"] == 10800, view
+        assert data["series"], view
+        assert all(len(series["points"]) <= COARSE_POINTS for series in data["series"]), view
+        assert "one point every 3 h in this snapshot" in data["note"], view
+        # The count's own window wording, which the page reads, is not mistaken for it.
+        assert "events in the last" not in data["note"].split("; ")[-1]
+
+
+def test_a_seven_day_snapshot_keeps_the_earlier_views_at_their_step(bundle: dict):
+    for view in MetricsViewName:
+        if view not in COARSE_VIEWS:
+            data = _data(bundle, view.value)
+            assert data["step"] == 2520, view
+            assert "in this snapshot" not in (data["note"] or ""), view
+
+
+def test_a_seven_day_snapshot_grows_less_than_60_percent_over_its_size_before_spec_015(bundle: dict):
+    """SC-006: measured against the same bundle without what spec 015 added, and without spec 016's parts."""
+    spec_016 = {"health", "network"}
+    after = {key: value for key, value in bundle.items() if key not in spec_016}
+    after["metrics"] = {name: answer for name, answer in bundle["metrics"].items() if name not in NETWORK_VIEWS}
+    before = {key: value for key, value in after.items() if key not in {"fabric_history", "drift_summary"}}
+    before["metrics"] = {name: answer for name, answer in bundle["metrics"].items() if name not in COARSE_VIEWS}
+
+    grown = len(render(TEMPLATE, after).encode()) / len(render(TEMPLATE, before).encode())
+
+    assert grown < 1.6
+
+
+def test_every_deploy_run_has_its_steps(bundle: dict):
+    deploys = [run for run in bundle["runs"]["runs"]["data"] if run["workflow_type"] == "DeployIntent"]
+
+    assert len(deploys) == 8
+    for run in deploys:
+        steps = bundle["steps"][f"{run['workflow_id']}@{run['started_at']}"]["steps"]["data"]
+        assert steps["recorded"] is True
+
+
+def test_the_latest_runs_of_any_type_have_their_steps(bundle: dict):
+    latest = bundle["runs"]["runs"]["data"][0]
+
+    assert f"{latest['workflow_id']}@{latest['started_at']}" in bundle["steps"]
+
+
+def test_a_source_that_did_not_answer_is_in_the_bundle_as_unavailable():
+    down = collect_bundle(_app(up=False), days=7, commit=None, source="live")
+
+    schedule = down["overview"]["schedule"]
+    assert schedule["available"] is False
+    assert "temporal is not part of the fixture server" in schedule["reason"]
+    assert down["metrics"]["worker-up"]["metrics"]["available"] is False
+
+
+def test_a_source_slower_than_the_request_budget_is_in_the_bundle_with_its_answer(monkeypatch):
+    """A page asks again while a source is still answering. A snapshot asks
+    once, so it waits for every source's own answer. On a large trail the audit
+    read outlasts the request budget, and the snapshot recorded the trail as
+    "still waiting" (#274). A zero budget makes every source that slow."""
+    from snapl_presentation.dashboard import app as app_module
+
+    monkeypatch.setattr(app_module, "REQUEST_BUDGET_S", 0.0)
+    app = _app()
+
+    slow = collect_bundle(app, days=7, commit=None, source="live")
+
+    assert [view["source"] for view in slow["sources"]["sources"] if not view["available"]] == []
+    assert slow["runs"]["runs"]["data"]
+    assert slow["steps"]
+    assert slow["timeline"]["timeline"]["available"] is True
+    assert slow["drift_summary"]["summary"]["available"] is True
+    assert all(view["metrics"]["available"] for view in slow["metrics"].values())
+    # The app serves pages again afterwards, within the request budget.
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as client:
+        assert "still waiting" in client.get("/api/v1/sources").json()["sources"][0]["reason"]
+
+
+# --- render ------------------------------------------------------------------------
+
+
+def test_render_puts_the_bundle_in_its_element(bundle: dict):
+    html = render(TEMPLATE, bundle)
+
+    assert _parsed(html) == bundle
+    assert html.count("snapl-bundle") == 1
+    assert html.startswith("<!doctype html>")
+    assert "<script>/* the app */</script>" in html
+
+
+def test_no_recorded_text_can_end_the_script_element(bundle: dict):
+    hostile = "</script><script>alert(1)</script><!-- & \u2028 \u2029 >"
+    tampered = json.loads(json.dumps(bundle))
+    tampered["devices"]["devices"]["data"][0]["error"] = hostile
+
+    html = render(TEMPLATE, tampered)
+
+    assert len(re.findall(r'<script id="snapl-bundle"', html)) == 1
+    payload = BUNDLE.findall(html)[0]
+    assert re.fullmatch(r"[A-Za-z0-9+/]*=*", payload)
+    assert _parsed(html)["devices"]["devices"]["data"][0]["error"] == hostile
+
+
+def test_render_packs_the_bundle_smaller_than_its_json(bundle: dict):
+    payload = BUNDLE.findall(render(TEMPLATE, bundle))[0]
+
+    assert len(payload) < _unpacked_kb(bundle) * 1000 / 2
+    assert render(TEMPLATE, bundle) == render(TEMPLATE, bundle)  # no timestamp in the gzip header
+
+
+def test_render_refuses_a_template_without_one_bundle_element(bundle: dict):
+    with pytest.raises(SnapshotError, match="no snapl-bundle element"):
+        render("<html></html>", bundle)
+
+
+# --- write and summary --------------------------------------------------------------
+
+
+def test_write_goes_through_a_partial_file_and_refuses_to_overwrite(tmp_path: Path):
+    target = tmp_path / "demo.html"
+    renames: list[tuple[str, str]] = []
+    real_rename = Path.rename
+
+    def spy(self: Path, other: Path) -> Path:
+        renames.append((self.name, Path(other).name))
+        return real_rename(self, other)
+
+    with patch.object(Path, "rename", spy):
+        write(target, "<html>one</html>")
+    assert renames == [("demo.html.partial", "demo.html")]
+    assert not (tmp_path / "demo.html.partial").exists()
+
+    with pytest.raises(SnapshotError, match="already exists"):
+        write(target, "<html>two</html>")
+    write(target, "<html>two</html>", force=True)
+    assert target.read_text() == "<html>two</html>"
+
+
+def test_summary_says_what_was_written(bundle: dict, tmp_path: Path):
+    target = tmp_path / "demo.html"
+    target.write_text("x" * 412_000)
+
+    lines = summary(target, bundle)
+
+    assert lines[0] == f"Snapshot written: demo.html (412 kB; its data is {_unpacked_kb(bundle)} kB unpacked)"
+    assert lines[1] == "  range: 2026-10-31 21:20 to 2026-11-07 21:20 UTC (7 days)"
+    assert lines[2] == "  from: live dashboard sources, commit 6baff39"
+    assert lines[3].startswith("  contains: devices, links, drift history, runs and their steps")
+    assert lines[3].endswith("metrics, device health and the network")
+    assert lines[4] == (
+        "  note: error text and paths recorded from devices are included as recorded. Read it before publishing:"
+        " --bundle-json FILE writes it as readable JSON."
+    )
+    assert len(lines) == 5
+
+
+def test_summary_names_the_readable_bundle_when_one_was_written(bundle: dict, tmp_path: Path):
+    target = tmp_path / "demo.html"
+    target.write_text("x")
+
+    lines = summary(target, bundle, bundle_json=tmp_path / "demo.json")
+
+    assert lines[4] == (
+        "  note: error text and paths recorded from devices are included as recorded. Read it before publishing:"
+        " it is in demo.json."
+    )
+
+
+def test_summary_names_each_source_that_did_not_answer(tmp_path: Path):
+    down = collect_bundle(_app(up=False), days=1, commit=None, source="live")
+    target = tmp_path / "demo.html"
+    target.write_text("x")
+
+    lines = summary(target, down)
+
+    assert lines[2] == "  from: live dashboard sources, commit unknown"
+    assert lines[-1].startswith("  unavailable when written: temporal (temporal is not part of the fixture server)")
+    assert "prometheus (prometheus is not part of the fixture server)" in lines[-1]
+
+
+# --- the command ----------------------------------------------------------------------
+
+runner = CliRunner()
+
+
+@pytest.fixture
+def template(tmp_path: Path):
+    path = tmp_path / "ui" / "snapshot.html"
+    path.parent.mkdir()
+    path.write_text(TEMPLATE)
+    with patch.object(cli, "_snapshot_template", return_value=path):
+        yield path
+
+
+@pytest.fixture
+def live_app():
+    with patch.object(cli, "_live_app", side_effect=lambda _settings, _use_case: _app()) as patched:
+        yield patched
+
+
+def test_snapshot_writes_the_file_prints_the_summary_and_binds_no_port(template, live_app, tmp_path: Path):
+    target = tmp_path / "demo.html"
+
+    with patch.object(cli, "_port_in_use", side_effect=AssertionError("port checked")):
+        result = runner.invoke(cli.app, ["dashboard", "--snapshot", str(target), "--days", "3"])
+
+    assert result.exit_code == 0, result.output
+    assert "Snapshot written: demo.html" in result.output
+    assert "(3 days)" in result.output
+    assert _parsed(target.read_text())["manifest"]["start"] == "2026-11-04T21:20:48.919877Z"
+
+
+def test_snapshot_carries_no_token_from_the_environment(template, live_app, tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp_fake_token_value_123")
+    monkeypatch.setenv("INFRAHUB_API_TOKEN", "18c0fake-infrahub-token")
+    target = tmp_path / "demo.html"
+
+    result = runner.invoke(cli.app, ["dashboard", "--snapshot", str(target)])
+
+    assert result.exit_code == 0, result.output
+    text = target.read_text()
+    assert "ghp_fake_token_value_123" not in text
+    assert "18c0fake-infrahub-token" not in text
+
+
+def test_snapshot_refuses_to_overwrite_without_force(template, live_app, tmp_path: Path):
+    target = tmp_path / "demo.html"
+    target.write_text("keep me")
+
+    result = runner.invoke(cli.app, ["dashboard", "--snapshot", str(target)])
+    assert result.exit_code == int(ExitCode.ERROR)
+    assert "already exists" in result.output
+    assert target.read_text() == "keep me"
+
+    assert runner.invoke(cli.app, ["dashboard", "--snapshot", str(target), "--force"]).exit_code == 0
+
+
+def test_snapshot_writes_the_readable_bundle_with_bundle_json(template, live_app, tmp_path: Path):
+    target, readable = tmp_path / "demo.html", tmp_path / "demo.json"
+
+    result = runner.invoke(cli.app, ["dashboard", "--snapshot", str(target), "--bundle-json", str(readable)])
+
+    assert result.exit_code == 0, result.output
+    text = readable.read_text(encoding="utf-8")
+    assert json.loads(text) == _parsed(target.read_text())
+    assert text.startswith('{\n  "manifest": {')
+    assert "it is in demo.json." in result.output
+
+
+def test_snapshot_refuses_to_overwrite_the_readable_bundle_without_force(template, live_app, tmp_path: Path):
+    target, readable = tmp_path / "demo.html", tmp_path / "demo.json"
+    readable.write_text("keep me")
+
+    result = runner.invoke(cli.app, ["dashboard", "--snapshot", str(target), "--bundle-json", str(readable)])
+    assert result.exit_code == int(ExitCode.ERROR)
+    assert "demo.json already exists" in result.output
+    assert readable.read_text() == "keep me"
+    assert not target.exists()
+
+    args = ["dashboard", "--snapshot", str(target), "--bundle-json", str(readable), "--force"]
+    assert runner.invoke(cli.app, args).exit_code == 0
+    assert json.loads(readable.read_text())["manifest"]["format"] == FORMAT
+
+
+def test_snapshot_needs_the_built_ui(live_app, tmp_path: Path):
+    with patch.object(cli, "_snapshot_template", return_value=None):
+        result = runner.invoke(cli.app, ["dashboard", "--snapshot", str(tmp_path / "demo.html")])
+
+    assert result.exit_code == int(ExitCode.ERROR)
+    assert "error: the designed UI is not built. Build it with: uv run invoke dashboard.build" in result.output
+    live_app.assert_not_called()
+
+
+@pytest.mark.parametrize("days", ["0", "91"])
+def test_snapshot_days_are_1_to_90(template, live_app, tmp_path: Path, days: str):
+    result = runner.invoke(cli.app, ["dashboard", "--snapshot", str(tmp_path / "x.html"), "--days", days])
+
+    assert result.exit_code != 0
+
+
+def test_snapshot_of_an_archive_says_so(template, tmp_path: Path):
+    from tests.unit.test_presentation.test_dashboard_archive import build_archive
+
+    archive = build_archive(tmp_path)
+    target = tmp_path / "demo.html"
+
+    readable = tmp_path / "demo.json"
+
+    result = runner.invoke(
+        cli.app,
+        ["dashboard", "--archive", str(archive), "--snapshot", str(target), "--bundle-json", str(readable)],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert f"  from: archive {archive.name}, commit 6baff39" in result.output
+    assert json.loads(readable.read_text()) == _parsed(target.read_text())
+    manifest = _parsed(target.read_text())["manifest"]
+    assert (manifest["source"], manifest["end"]) == ("archive", "2026-11-07T21:20:48Z")
+    assert manifest["start"] == (
+        (__import__("datetime").datetime.fromisoformat("2026-11-07T21:20:48+00:00") - timedelta(days=7))
+        .isoformat()
+        .replace("+00:00", "Z")
+    )

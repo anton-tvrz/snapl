@@ -33,6 +33,14 @@ dist/
 build/
 *.egg
 
+# Designed dashboard UI (spec 011): built files and the Node toolchain's own.
+# The source is in packages/presentation/ui; `invoke dashboard.build` builds it.
+packages/presentation/snapl_presentation/dashboard/static/ui/
+packages/presentation/ui/node_modules/
+packages/presentation/ui/coverage/
+packages/presentation/ui/playwright-report/
+packages/presentation/ui/test-results/
+
 # IDE
 .vscode/
 .idea/
@@ -56,6 +64,10 @@ containerlab/clab-dcfabric/
 # Durable audit log — the committed SNAPL_AUDIT_DB default, written by the worker
 snapl-audit.sqlite
 *.sqlite-journal
+
+# Local snapl state: recorded live lab runs (spec 010), Prometheus data (spec 012).
+# Lives outside Docker volumes so `invoke demo.reset` keeps it.
+.snapl/
 
 # Local backups of development/.env
 development/.env.backup-*

@@ -39,17 +39,23 @@ conventional port, so the mapping is readable without this table.
 | Temporal gRPC | **18033** | 7233 | `TEMPORAL_PORT` |
 | Temporal Web UI | **18034** | 8233 | `TEMPORAL_UI_PORT` |
 | RabbitMQ management | **18015** | 15672 | `RABBITMQ_MGMT_PORT` |
-| Grafana *(reserved, #101)* | **18030** | 3000 | `GRAFANA_PORT` |
+| Dashboard (`snapl dashboard`, on the host) | **18030** | — | `DASHBOARD_PORT` |
 | Prefect / task-manager | **18042** | 4200 | `PREFECT_PORT` |
 | RabbitMQ | **18072** | 5672 | `RABBITMQ_PORT` |
 | Neo4j HTTP | **18074** | 7474 | `NEO4J_HTTP_PORT` |
 | Redis | **18079** | 6379 | `REDIS_PORT` |
 | Neo4j bolt | **18087** | 7687 | `NEO4J_BOLT_PORT` |
-| Prometheus *(reserved, #101)* | **18090** | 9090 | `PROMETHEUS_PORT` |
+| Prometheus (loopback only) | **18090** | 9090 | `PROMETHEUS_PORT` |
+| Worker metrics endpoint (on the host) | **18091** | — | `WORKER_METRICS_PORT` |
 
-The two reserved rows are claimed ahead of use: #101 proposes adding Prometheus
-and Grafana, and *their* defaults (9090, 3000) are already taken by neighbours
-too. Claiming them now avoids relitigating this later.
+These three were claimed ahead of use for the #101 dashboard work (specs
+010–012) and are now in use. 18030 was first reserved for Grafana. Grafana was
+dropped on 2026-11-07, and snapl's own dashboard (spec 010) took the port.
+Prometheus (spec 012) runs in Compose on 18090. It scrapes the worker and the
+dashboard, which run on the host rather than in Compose, at 18091 and 18030
+(`development/prometheus/prometheus.yml`). Moving either with its env var
+also needs that file changed. The conventional defaults (9090, 3000) are
+already taken by neighbours.
 
 These are the committed compose defaults — a fresh clone is correct with no
 `.env` at all. `development/.env` remains available for further overrides, but

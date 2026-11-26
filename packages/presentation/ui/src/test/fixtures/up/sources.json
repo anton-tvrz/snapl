@@ -1,0 +1,61 @@
+{
+  "contract_version": "1",
+  "generated_at": "2026-11-07T21:20:48.919877Z",
+  "sources": [
+    {
+      "available": true,
+      "data": null,
+      "fetched_at": "2026-11-07T21:20:48.919877Z",
+      "reason": null,
+      "remedy": null,
+      "source": "audit",
+      "stale": false
+    },
+    {
+      "available": true,
+      "data": null,
+      "fetched_at": "2026-11-07T21:20:48.919877Z",
+      "reason": null,
+      "remedy": null,
+      "source": "temporal",
+      "stale": false
+    },
+    {
+      "available": true,
+      "data": null,
+      "fetched_at": "2026-11-07T21:20:48.919877Z",
+      "reason": null,
+      "remedy": null,
+      "source": "sot",
+      "stale": false
+    },
+    {
+      "available": true,
+      "data": null,
+      "fetched_at": "2026-11-07T21:20:48.919877Z",
+      "reason": null,
+      "remedy": null,
+      "source": "ci",
+      "stale": false
+    },
+    {
+      "available": true,
+      "data": null,
+      "fetched_at": "2026-11-07T21:20:48.919877Z",
+      "reason": null,
+      "remedy": null,
+      "source": "lab_runs",
+      "stale": false
+    },
+    {
+      "available": true,
+      "data": null,
+      "fetched_at": "2026-11-07T21:20:48.919877Z",
+      "reason": null,
+      "remedy": null,
+      "source": "prometheus",
+      "stale": false
+    }
+  ],
+  "use_case": "dcfabric"
+}

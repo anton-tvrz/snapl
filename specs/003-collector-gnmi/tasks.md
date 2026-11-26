@@ -19,10 +19,10 @@
 
 **Purpose**: Package directory structure, pyproject.toml, and test scaffolding
 
-- [ ] T001 Create packages/collector/pyproject.toml (name=snapl-collector, python>=3.12, deps: pygnmi>=0.8, grpcio>=1.60, pydantic>=2.5; workspace dep: snapl-intent; add snapl-collector to workspace members in root pyproject.toml)
-- [ ] T002 [P] Create package source directory structure: packages/collector/snapl_collector/ and packages/collector/snapl_collector/gnmi/ with empty __init__.py files in each
-- [ ] T003 [P] Create test directory scaffolding with __init__.py: tests/unit/test_collector/__init__.py and tests/integration/test_collector/__init__.py
-- [ ] T004 [P] Add shared collector fixture to tests/conftest.py — `make_device` factory fixture returning a `snapl_intent.models.Device` with management_address, name, id, role="spine", use_case="dcfabric", platform="nokia-srlinux"
+- [x] T001 Create packages/collector/pyproject.toml (name=snapl-collector, python>=3.12, deps: pygnmi>=0.8, grpcio>=1.60, pydantic>=2.5; workspace dep: snapl-intent; add snapl-collector to workspace members in root pyproject.toml)
+- [x] T002 [P] Create package source directory structure: packages/collector/snapl_collector/ and packages/collector/snapl_collector/gnmi/ with empty __init__.py files in each
+- [x] T003 [P] Create test directory scaffolding with __init__.py: tests/unit/test_collector/__init__.py and tests/integration/test_collector/__init__.py
+- [x] T004 [P] Add shared collector fixture to tests/conftest.py — `make_device` factory fixture returning a `snapl_intent.models.Device` with management_address, name, id, role="spine", use_case="dcfabric", platform="nokia-srlinux"
 
 ---
 
@@ -34,15 +34,15 @@
 
 ### Tests (TDD — write first, verify they fail)
 
-- [ ] T005 [P] Write unit tests for CollectResult and BatchCollectResult models (CollectResult: success=True implies error=None; success=False implies error set and data={}; duration_ms and timestamp fields present; frozen dataclass; BatchCollectResult: succeeded+failed==total; results is dict[UUID, CollectResult]) in tests/unit/test_collector/test_models.py
-- [ ] T006 [P] Write unit tests for Collector ABC contract enforcement (cannot instantiate Collector directly; concrete subclass missing any abstract method raises TypeError; subclass implementing all three abstract methods can be instantiated) in tests/unit/test_collector/test_abc.py
+- [x] T005 [P] Write unit tests for CollectResult and BatchCollectResult models (CollectResult: success=True implies error=None; success=False implies error set and data={}; duration_ms and timestamp fields present; frozen dataclass; BatchCollectResult: succeeded+failed==total; results is dict[UUID, CollectResult]) in tests/unit/test_collector/test_models.py
+- [x] T006 [P] Write unit tests for Collector ABC contract enforcement (cannot instantiate Collector directly; concrete subclass missing any abstract method raises TypeError; subclass implementing all three abstract methods can be instantiated) in tests/unit/test_collector/test_abc.py
 
 ### Implementation
 
-- [ ] T007 [P] Implement exception hierarchy (CollectorError base class, CollectorConfigError for invalid constructor args — e.g., missing host, bad port) in packages/collector/snapl_collector/exceptions.py
-- [ ] T008 [P] Implement result models (CollectResult, BatchCollectResult) as frozen dataclasses with field invariants per data-model.md — CollectResult.data defaults to empty dict, timestamp defaults to UTC now, CollectResult.paths defaults to empty list in packages/collector/snapl_collector/models.py
-- [ ] T009 Implement Collector ABC (collect, get_running_config, collect_batch as @abstractmethod async def with full docstrings) per contracts/collector.md in packages/collector/snapl_collector/abc.py
-- [ ] T010 Update packages/collector/snapl_collector/__init__.py with placeholder exports (Collector ABC, result models, exceptions) — full exports finalised in T026
+- [x] T007 [P] Implement exception hierarchy (CollectorError base class, CollectorConfigError for invalid constructor args — e.g., missing host, bad port) in packages/collector/snapl_collector/exceptions.py
+- [x] T008 [P] Implement result models (CollectResult, BatchCollectResult) as frozen dataclasses with field invariants per data-model.md — CollectResult.data defaults to empty dict, timestamp defaults to UTC now, CollectResult.paths defaults to empty list in packages/collector/snapl_collector/models.py
+- [x] T009 Implement Collector ABC (collect, get_running_config, collect_batch as @abstractmethod async def with full docstrings) per contracts/collector.md in packages/collector/snapl_collector/abc.py
+- [x] T010 Update packages/collector/snapl_collector/__init__.py with placeholder exports (Collector ABC, result models, exceptions) — full exports finalised in T026
 
 **Checkpoint**: Foundation ready — ABC, models, exceptions all tested and passing. User story implementation can begin.
 
@@ -56,18 +56,18 @@
 
 ### Tests (TDD — write first, verify they fail)
 
-- [ ] T011 [P] [US1] Write unit tests for gnmi_get client wrapper (mock gNMIclient as context manager: successful gc.get() returns expected response dict; OSError side_effect → propagated as-is; gRPC RpcError side_effect → propagated as-is; correct path list and datatype="all" forwarded to gc.get()) in tests/unit/test_collector/test_client.py
-- [ ] T012 [P] [US1] Write unit tests for GnmiCollector.get_running_config() (success: mock returns notification dict → CollectResult success=True data non-empty dict timestamp set duration_ms>0; unreachable device OSError → success=False error contains "connectivity" no exception raised; auth error gRPC UNAUTHENTICATED → success=False error contains "auth"; timeout gRPC DEADLINE_EXCEEDED → success=False error contains "timeout"; malformed response KeyError → success=False error contains "parse") in tests/unit/test_collector/test_collector.py
+- [x] T011 [P] [US1] Write unit tests for gnmi_get client wrapper (mock gNMIclient as context manager: successful gc.get() returns expected response dict; OSError side_effect → propagated as-is; gRPC RpcError side_effect → propagated as-is; correct path list and datatype="all" forwarded to gc.get()) in tests/unit/test_collector/test_client.py
+- [x] T012 [P] [US1] Write unit tests for GnmiCollector.get_running_config() (success: mock returns notification dict → CollectResult success=True data non-empty dict timestamp set duration_ms>0; unreachable device OSError → success=False error contains "connectivity" no exception raised; auth error gRPC UNAUTHENTICATED → success=False error contains "auth"; timeout gRPC DEADLINE_EXCEEDED → success=False error contains "timeout"; malformed response KeyError → success=False error contains "parse") in tests/unit/test_collector/test_collector.py
 
 ### Implementation
 
-- [ ] T013 [US1] Implement gnmi_get client wrapper (gNMIclient as per-call context manager with host/port/username/password/insecure/timeout params; wraps blocking gc.get(path=paths, datatype="all") call; propagates all exceptions — GnmiCollector handles classification; return raw response dict) in packages/collector/snapl_collector/gnmi/client.py
-- [ ] T014 [US1] Implement GnmiCollector scaffolding + _parse_response() + collect() + get_running_config() (constructor accepts host, port=57400, username="admin", password, insecure=True, timeout=30; collect() wraps asyncio.to_thread(_blocking_get), records wall-clock duration_ms, sets UTC timestamp, classifies OSError→"connectivity error", gRPC UNAUTHENTICATED→"auth error", DEADLINE_EXCEEDED→"timeout after Ns", KeyError/TypeError→"parse error" into CollectResult.error; never raises for device-side errors; get_running_config() delegates to collect(device, paths=["/"])) in packages/collector/snapl_collector/gnmi/collector.py
+- [x] T013 [US1] Implement gnmi_get client wrapper (gNMIclient as per-call context manager with host/port/username/password/insecure/timeout params; wraps blocking gc.get(path=paths, datatype="all") call; propagates all exceptions — GnmiCollector handles classification; return raw response dict) in packages/collector/snapl_collector/gnmi/client.py
+- [x] T014 [US1] Implement GnmiCollector scaffolding + _parse_response() + collect() + get_running_config() (constructor accepts host, port=57400, username="admin", password, insecure=True, timeout=30; collect() wraps asyncio.to_thread(_blocking_get), records wall-clock duration_ms, sets UTC timestamp, classifies OSError→"connectivity error", gRPC UNAUTHENTICATED→"auth error", DEADLINE_EXCEEDED→"timeout after Ns", KeyError/TypeError→"parse error" into CollectResult.error; never raises for device-side errors; get_running_config() delegates to collect(device, paths=["/"])) in packages/collector/snapl_collector/gnmi/collector.py
 
 ### Integration Tests (require running Containerlab SR Linux node)
 
-- [ ] T015 [US1] Create integration conftest.py for collector tests (SRLINUX_HOST/PORT/USERNAME/PASSWORD env vars with Containerlab defaults clab-dcfabric-spine-01/57400/admin; skip_if_unreachable session-scoped fixture probing TCP socket; build_collector() fixture returning GnmiCollector from env vars; build_device() fixture returning Device with management_address from env vars) in tests/integration/test_collector/conftest.py
-- [ ] T016 [US1] Write integration test for get_running_config() against live SR Linux node (call get_running_config() with spine Device; assert result.success=True; assert result.data["/"] is non-empty dict; assert result.duration_ms > 0; assert result.timestamp is not None; assert result.error is None) in tests/integration/test_collector/test_gnmi_collect.py
+- [x] T015 [US1] Create integration conftest.py for collector tests (SRLINUX_HOST/PORT/USERNAME/PASSWORD env vars with Containerlab defaults clab-dcfabric-spine-01/57400/admin; skip_if_unreachable session-scoped fixture probing TCP socket; build_collector() fixture returning GnmiCollector from env vars; build_device() fixture returning Device with management_address from env vars) in tests/integration/test_collector/conftest.py
+- [x] T016 [US1] Write integration test for get_running_config() against live SR Linux node (call get_running_config() with spine Device; assert result.success=True; assert result.data["/"] is non-empty dict; assert result.duration_ms > 0; assert result.timestamp is not None; assert result.error is None) in tests/integration/test_collector/test_gnmi_collect.py
 
 **Checkpoint**: US1 unit tests pass. get_running_config() returns structured CollectResult for both success and failure paths. Integration test validates against real SR Linux node.
 
@@ -81,15 +81,15 @@
 
 ### Tests (TDD — write first, verify they fail)
 
-- [ ] T017 [P] [US2] Write unit tests extending GnmiCollector.collect() coverage (paths=["/interface"]: mock returns single-path notification → data keyed by "/interface"; paths=["/a", "/b"]: mock returns two-path notification → data has both keys; path returns empty update list → data[path]={} success=True; paths=[] → raises ValueError before gNMI connection made; response with unexpected structure triggers parse error → success=False error contains "parse") in tests/unit/test_collector/test_collector.py (append)
+- [x] T017 [P] [US2] Write unit tests extending GnmiCollector.collect() coverage (paths=["/interface"]: mock returns single-path notification → data keyed by "/interface"; paths=["/a", "/b"]: mock returns two-path notification → data has both keys; path returns empty update list → data[path]={} success=True; paths=[] → raises ValueError before gNMI connection made; response with unexpected structure triggers parse error → success=False error contains "parse") in tests/unit/test_collector/test_collector.py (append)
 
 ### Implementation
 
-- [ ] T018 [US2] Extend GnmiCollector.collect() with empty-path validation (raise ValueError if paths is empty before opening gNMI connection) and verify _parse_response() correctly keys multi-path notification response by normalised path string (update existing collect() in packages/collector/snapl_collector/gnmi/collector.py)
+- [x] T018 [US2] Extend GnmiCollector.collect() with empty-path validation (raise ValueError if paths is empty before opening gNMI connection) and verify _parse_response() correctly keys multi-path notification response by normalised path string (update existing collect() in packages/collector/snapl_collector/gnmi/collector.py)
 
 ### Integration Tests
 
-- [ ] T019 [US2] Add targeted collect() integration test (collect with paths=["/interface", "/network-instance[name=default]/protocols/bgp/neighbor"]; assert result.success=True; assert both path strings are keys in result.data; assert result.paths == input paths; assert each value is a list or dict) in tests/integration/test_collector/test_gnmi_collect.py (append)
+- [x] T019 [US2] Add targeted collect() integration test (collect with paths=["/interface", "/network-instance[name=default]/protocols/bgp/neighbor"]; assert result.success=True; assert both path strings are keys in result.data; assert result.paths == input paths; assert each value is a list or dict) in tests/integration/test_collector/test_gnmi_collect.py (append) *Shipped as `test_collect_targeted_paths`, which asserts that at least one of the two paths is a key in `result.data`, not both (spec 018 T028).*
 
 **Checkpoint**: US2 complete. collect() handles multi-path retrieval, empty path validation, and partial response parsing. Targeted collection satisfies SC-002.
 
@@ -103,15 +103,15 @@
 
 ### Tests (TDD — write first, verify they fail)
 
-- [ ] T020 [P] [US3] Write unit tests for GnmiCollector.collect_batch() (3 devices all succeed → BatchCollectResult total=3 succeeded=3 failed=0 results has 3 entries; 1 of 3 fails with OSError → succeeded=2 failed=1 failure in results not raised; empty devices list raises ValueError; duplicate device IDs raises ValueError; empty paths raises ValueError) in tests/unit/test_collector/test_collector.py (append)
+- [x] T020 [P] [US3] Write unit tests for GnmiCollector.collect_batch() (3 devices all succeed → BatchCollectResult total=3 succeeded=3 failed=0 results has 3 entries; 1 of 3 fails with OSError → succeeded=2 failed=1 failure in results not raised; empty devices list raises ValueError; duplicate device IDs raises ValueError; empty paths raises ValueError) in tests/unit/test_collector/test_collector.py (append)
 
 ### Implementation
 
-- [ ] T021 [US3] Implement GnmiCollector.collect_batch() (validate non-empty devices, non-empty paths, no duplicate device UUIDs — raise ValueError for any violation; dispatch asyncio.gather() across per-device async helpers each calling self.collect() with per-device GnmiCollector params; collect all results into BatchCollectResult with succeeded/failed counts; never raises for per-device failures) in packages/collector/snapl_collector/gnmi/collector.py (append)
+- [x] T021 [US3] Implement GnmiCollector.collect_batch() (validate non-empty devices, non-empty paths, no duplicate device UUIDs — raise ValueError for any violation; dispatch asyncio.gather() across per-device async helpers each calling self.collect() with per-device GnmiCollector params; collect all results into BatchCollectResult with succeeded/failed counts; never raises for per-device failures) in packages/collector/snapl_collector/gnmi/collector.py (append)
 
 ### Integration Tests
 
-- [ ] T022 [US3] Add collect_batch() integration test (build Device list for 2 Containerlab spine nodes from env vars, call collect_batch() with paths=["/interface"]; assert BatchCollectResult.total=2 succeeded=2 failed=0; assert both device UUIDs present in results; assert each result.success=True) in tests/integration/test_collector/test_gnmi_collect.py (append)
+- [x] T022 [US3] Add collect_batch() integration test (build Device list for 2 Containerlab spine nodes from env vars, call collect_batch() with paths=["/interface"]; assert BatchCollectResult.total=2 succeeded=2 failed=0; assert both device UUIDs present in results; assert each result.success=True) in tests/integration/test_collector/test_gnmi_collect.py (append) *Shipped as `test_collect_batch_single_device`: one device, not two spines (spec 018 T028).*
 
 **Checkpoint**: US3 complete. collect_batch() dispatches GETs across all devices concurrently, captures per-device failures, satisfying SC-004 (12-device fabric within 2 minutes).
 
@@ -121,12 +121,12 @@
 
 **Purpose**: Performance assertions, export completeness, lint/format, final validation
 
-- [ ] T023 [P] Add SC-001 performance assertion to integration tests (get_running_config() completes in <30s for reachable device; measure with time.monotonic(); assert duration within threshold) in tests/integration/test_collector/test_gnmi_collect.py (append)
-- [ ] T024 [P] Add SC-002 performance assertion (targeted collect() for a single YANG path completes in <5s on reachable device; measure with time.monotonic()) in tests/integration/test_collector/test_gnmi_collect.py (append)
-- [ ] T025 [P] Add SC-003 assertion to unit tests (all four gNMI error categories — connectivity, auth, timeout, parse — return CollectResult success=False; verify no exception escapes) in tests/unit/test_collector/test_collector.py (append)
-- [ ] T026 Finalise package exports in packages/collector/snapl_collector/__init__.py (Collector, GnmiCollector, CollectResult, BatchCollectResult, CollectorError, CollectorConfigError)
-- [ ] T027 [P] Verify lint and format clean: uv run invoke lint && uv run invoke format — zero errors
-- [ ] T028 Verify all unit tests pass with ≥80% coverage: uv run pytest tests/unit/test_collector/ -m unit -v --cov=snapl_collector
+- [x] T023 [P] Add SC-001 performance assertion to integration tests (get_running_config() completes in <30s for reachable device; measure with time.monotonic(); assert duration within threshold) in tests/integration/test_collector/test_gnmi_collect.py (append)
+- [x] T024 [P] Add SC-002 performance assertion (targeted collect() for a single YANG path completes in <5s on reachable device; measure with time.monotonic()) in tests/integration/test_collector/test_gnmi_collect.py (append)
+- [x] T025 [P] Add SC-003 assertion to unit tests (all four gNMI error categories — connectivity, auth, timeout, parse — return CollectResult success=False; verify no exception escapes) in tests/unit/test_collector/test_collector.py (append)
+- [x] T026 Finalise package exports in packages/collector/snapl_collector/__init__.py (Collector, GnmiCollector, CollectResult, BatchCollectResult, CollectorError, CollectorConfigError) *Shipped as: the package root exports the ABC, the result and telemetry models and the exceptions; `GnmiCollector` is imported from `snapl_collector.gnmi.collector` (spec 018 T028).*
+- [x] T027 [P] Verify lint and format clean: uv run invoke lint && uv run invoke format — zero errors
+- [x] T028 Verify all unit tests pass with ≥80% coverage: uv run pytest tests/unit/test_collector/ -m unit -v --cov=snapl_collector *122 unit tests, 98% coverage of `snapl_collector` on 2026-11-22 (spec 018 T028).*
 - [ ] T029 Run quickstart.md validation end-to-end against live SR Linux node (get_running_config → targeted collect → collect_batch; all operations return expected result types; no exceptions from device-side errors; compare collected data keys against Executor's rendered payload keys to validate SC-006)
 
 ---

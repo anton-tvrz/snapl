@@ -16,7 +16,9 @@ def start(ctx):
 
     Reads env vars: TEMPORAL_HOST, TEMPORAL_NAMESPACE, TEMPORAL_TASK_QUEUE,
     SNAPL_AUDIT_DB, INFRAHUB_ADDRESS, INFRAHUB_API_TOKEN, SRLINUX_USERNAME,
-    SRLINUX_PASSWORD. See quickstart.md for defaults and required values.
+    SRLINUX_PASSWORD, WORKER_METRICS_PORT, WORKER_METRICS_BIND, SNAPL_TELEMETRY
+    (`off` starts no device telemetry). See quickstart.md for defaults and
+    required values.
     """
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
     asyncio.run(run_worker())

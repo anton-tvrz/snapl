@@ -6,7 +6,17 @@
       "Bash(uv run ruff check *)",
       "Bash(uv run invoke test-unit)",
       "Bash(uv run yamllint *)",
-      "Bash(uv run invoke backend.test-unit)"
+      "Bash(uv run invoke backend.test-unit)",
+      "Bash(uv run mypy packages/)",
+      "Bash(uv run bandit -r packages/ -c pyproject.toml -q)",
+      "Bash(uv run pytest tests/unit -q)",
+      "Bash(uv run snapl status)",
+      "Bash(uv run snapl status --json)",
+      "Bash(uv run snapl schedule show)",
+      "Bash(uv run snapl schedule show *)",
+      "Bash(uv run snapl audit *)",
+      "Bash(uv run ruff format --check *)",
+      "mcp__claude-in-chrome__tabs_context_mcp"
     ]
   }
 }

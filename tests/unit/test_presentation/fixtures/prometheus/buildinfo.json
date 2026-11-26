@@ -1,0 +1,14 @@
+{
+  "http_status": 200,
+  "body": {
+    "status": "success",
+    "data": {
+      "version": "3.10.0",
+      "revision": "54e010926b0a270cadb22be1113ad45fe9bcb90a",
+      "branch": "HEAD",
+      "buildUser": "root@2ee2be8e6652",
+      "buildDate": "20260225-21:17:03",
+      "goVersion": "go1.26.0"
+    }
+  }
+}

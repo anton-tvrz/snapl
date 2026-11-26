@@ -1,0 +1,61 @@
+{
+  "contract_version": "1",
+  "generated_at": "2026-11-07T21:20:48.919877Z",
+  "sources": [
+    {
+      "available": true,
+      "data": null,
+      "fetched_at": "2026-11-07T21:20:48.919877Z",
+      "reason": null,
+      "remedy": null,
+      "source": "audit",
+      "stale": false
+    },
+    {
+      "available": false,
+      "data": null,
+      "fetched_at": null,
+      "reason": "temporal is not part of the fixture server",
+      "remedy": "uv run invoke dev.deps",
+      "source": "temporal",
+      "stale": false
+    },
+    {
+      "available": true,
+      "data": null,
+      "fetched_at": "2026-11-07T21:20:48.919877Z",
+      "reason": null,
+      "remedy": null,
+      "source": "sot",
+      "stale": false
+    },
+    {
+      "available": false,
+      "data": null,
+      "fetched_at": null,
+      "reason": "ci is not part of the fixture server",
+      "remedy": "export GITHUB_TOKEN=\u2026",
+      "source": "ci",
+      "stale": false
+    },
+    {
+      "available": false,
+      "data": null,
+      "fetched_at": null,
+      "reason": "lab_runs is not part of the fixture server",
+      "remedy": "uv run invoke test-e2e",
+      "source": "lab_runs",
+      "stale": false
+    },
+    {
+      "available": false,
+      "data": null,
+      "fetched_at": null,
+      "reason": "prometheus is not part of the fixture server",
+      "remedy": "uv run invoke dev.deps",
+      "source": "prometheus",
+      "stale": false
+    }
+  ],
+  "use_case": "dcfabric"
+}

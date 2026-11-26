@@ -11,6 +11,9 @@ from tasks import dev, ns
 
 pytestmark = pytest.mark.unit
 
+# Read before the autouse fixture below points it at a temp dir.
+REAL_PROMETHEUS_DATA = getattr(dev, "PROMETHEUS_DATA", None)
+
 
 def _ctx() -> MagicMock:
     return MagicMock(spec=Context)
@@ -18,6 +21,14 @@ def _ctx() -> MagicMock:
 
 def _run_commands(ctx: MagicMock) -> list[str]:
     return [call.args[0] for call in ctx.run.call_args_list]
+
+
+@pytest.fixture(autouse=True)
+def prometheus_data(tmp_path, monkeypatch: pytest.MonkeyPatch):
+    """dev.deps creates the metrics store's directory; never the real checkout's."""
+    path = tmp_path / ".snapl" / "prometheus"
+    monkeypatch.setattr(dev, "PROMETHEUS_DATA", path)
+    return path
 
 
 def test_deps_starts_stack_and_waits_for_health() -> None:
@@ -93,3 +104,48 @@ def test_lab_tasks_use_dockerized_containerlab() -> None:
 def test_dev_collection_is_registered() -> None:
     collection = ns.collections["dev"]
     assert set(collection.tasks) == {"deps", "stop", "down", "lab-deploy", "lab-destroy"}
+
+
+# --- the metrics store's data directory (spec 012 T024, research R6) ----------
+
+
+def test_deps_creates_the_prometheus_data_dir_before_compose_up(prometheus_data) -> None:
+    """The container runs as `nobody`; a directory Docker creates on demand is root's."""
+    seen: list[bool] = []
+    ctx = _ctx()
+    ctx.run.side_effect = lambda *_a, **_k: seen.append(prometheus_data.is_dir())
+
+    dev.deps(ctx)
+
+    assert seen == [True]
+    assert prometheus_data.stat().st_mode & 0o777 == 0o777
+
+
+def test_deps_keeps_an_existing_prometheus_data_dir(prometheus_data) -> None:
+    prometheus_data.mkdir(parents=True)
+    (prometheus_data / "wal").mkdir()
+
+    dev.deps(_ctx())
+
+    assert (prometheus_data / "wal").is_dir()
+    assert prometheus_data.stat().st_mode & 0o777 == 0o777
+
+
+def test_the_prometheus_data_dir_is_the_one_compose_mounts() -> None:
+    import yaml
+
+    from tasks.shared import PROJECT_ROOT
+
+    compose_dir = PROJECT_ROOT / "development"
+    service = yaml.safe_load((compose_dir / "docker-compose.yml").read_text())["services"]["prometheus"]
+    [source] = [m.split(":")[0] for m in service["volumes"] if m.split(":")[1] == "/prometheus"]
+    assert (compose_dir / source).resolve() == REAL_PROMETHEUS_DATA.resolve()
+
+
+def test_down_with_volumes_never_names_snapl() -> None:
+    """FR-009: a reset must not delete metrics. Only named volumes go."""
+    ctx = _ctx()
+
+    dev.down(ctx, volumes=True)
+
+    assert not any(".snapl" in command for command in _run_commands(ctx))

@@ -1,0 +1,207 @@
+{
+  "contract_version": "1",
+  "generated_at": "2026-11-07T21:20:48.919877Z",
+  "timeline": {
+    "available": true,
+    "data": {
+      "end": "2026-11-07T21:20:15.330000Z",
+      "episodes": [
+        {
+          "closed_at": null,
+          "closed_by": null,
+          "device_id": "18e29d6e-246e-5cd1-32d2-c51d13d4de9e",
+          "duration_s": null,
+          "name": "leaf-01",
+          "opened_at": "2026-11-07T21:20:13.478360Z",
+          "scans": 2,
+          "states": [
+            "undesired"
+          ]
+        },
+        {
+          "closed_at": null,
+          "closed_by": null,
+          "device_id": "18e29d6d-e0c5-0ba7-32d1-c510fc3ef077",
+          "duration_s": null,
+          "name": "spine-01",
+          "opened_at": "2026-11-07T21:20:13.665165Z",
+          "scans": 2,
+          "states": [
+            "missing"
+          ]
+        }
+      ],
+      "first_event_at": "2026-11-07T21:18:56.168004Z",
+      "lanes": [
+        {
+          "device_id": "18e29d6d-e0c5-0ba7-32d1-c510fc3ef077",
+          "in_intent": true,
+          "name": "spine-01",
+          "points": [
+            {
+              "error": null,
+              "missing_paths": [
+                "/interface[name=ethernet-1/1]/enabled"
+              ],
+              "scan_workflow_id": "scan-drift-dcfabric-12cfb1cd-59a3-4058-bdcf-128b3791d2e7",
+              "state": "missing",
+              "t": "2026-11-07T21:20:13.665165Z",
+              "unclassified_paths": [],
+              "undesired_paths": []
+            },
+            {
+              "error": null,
+              "missing_paths": [
+                "/interface[name=ethernet-1/1]/enabled"
+              ],
+              "scan_workflow_id": "scan-drift-dcfabric-e9ad72a3-6448-4f39-8374-39c499b730a7",
+              "state": "missing",
+              "t": "2026-11-07T21:20:15.224266Z",
+              "unclassified_paths": [],
+              "undesired_paths": []
+            }
+          ]
+        },
+        {
+          "device_id": "18e29d6e-1959-3451-32dc-c51d9065aa58",
+          "in_intent": true,
+          "name": "spine-02",
+          "points": [
+            {
+              "error": null,
+              "missing_paths": [],
+              "scan_workflow_id": "scan-drift-dcfabric-12cfb1cd-59a3-4058-bdcf-128b3791d2e7",
+              "state": "in_sync",
+              "t": "2026-11-07T21:20:13.628060Z",
+              "unclassified_paths": [],
+              "undesired_paths": []
+            },
+            {
+              "error": null,
+              "missing_paths": [],
+              "scan_workflow_id": "scan-drift-dcfabric-e9ad72a3-6448-4f39-8374-39c499b730a7",
+              "state": "in_sync",
+              "t": "2026-11-07T21:20:15.329327Z",
+              "unclassified_paths": [],
+              "undesired_paths": []
+            }
+          ]
+        },
+        {
+          "device_id": "18e29d6e-246e-5cd1-32d2-c51d13d4de9e",
+          "in_intent": true,
+          "name": "leaf-01",
+          "points": [
+            {
+              "error": null,
+              "missing_paths": [],
+              "scan_workflow_id": "scan-drift-dcfabric-12cfb1cd-59a3-4058-bdcf-128b3791d2e7",
+              "state": "undesired",
+              "t": "2026-11-07T21:20:13.478360Z",
+              "unclassified_paths": [],
+              "undesired_paths": [
+                "/interface[name=ethernet-1/7]/description"
+              ]
+            },
+            {
+              "error": null,
+              "missing_paths": [],
+              "scan_workflow_id": "scan-drift-dcfabric-e9ad72a3-6448-4f39-8374-39c499b730a7",
+              "state": "undesired",
+              "t": "2026-11-07T21:20:15.079741Z",
+              "unclassified_paths": [],
+              "undesired_paths": [
+                "/interface[name=ethernet-1/7]/description"
+              ]
+            }
+          ]
+        },
+        {
+          "device_id": "18e29d6e-2e5b-c496-32da-c510ade043a0",
+          "in_intent": true,
+          "name": "leaf-02",
+          "points": [
+            {
+              "error": null,
+              "missing_paths": [],
+              "scan_workflow_id": "scan-drift-dcfabric-12cfb1cd-59a3-4058-bdcf-128b3791d2e7",
+              "state": "in_sync",
+              "t": "2026-11-07T21:20:13.628060Z",
+              "unclassified_paths": [],
+              "undesired_paths": []
+            },
+            {
+              "error": null,
+              "missing_paths": [],
+              "scan_workflow_id": "scan-drift-dcfabric-e9ad72a3-6448-4f39-8374-39c499b730a7",
+              "state": "in_sync",
+              "t": "2026-11-07T21:20:15.250518Z",
+              "unclassified_paths": [],
+              "undesired_paths": []
+            }
+          ]
+        },
+        {
+          "device_id": "18e29d6e-3794-c788-32d5-c519c5f18e3a",
+          "in_intent": true,
+          "name": "leaf-03",
+          "points": [
+            {
+              "error": null,
+              "missing_paths": [],
+              "scan_workflow_id": "scan-drift-dcfabric-12cfb1cd-59a3-4058-bdcf-128b3791d2e7",
+              "state": "in_sync",
+              "t": "2026-11-07T21:20:13.478360Z",
+              "unclassified_paths": [],
+              "undesired_paths": []
+            },
+            {
+              "error": null,
+              "missing_paths": [],
+              "scan_workflow_id": "scan-drift-dcfabric-e9ad72a3-6448-4f39-8374-39c499b730a7",
+              "state": "in_sync",
+              "t": "2026-11-07T21:20:14.990361Z",
+              "unclassified_paths": [],
+              "undesired_paths": []
+            }
+          ]
+        },
+        {
+          "device_id": "18e29d6e-422b-a401-32d9-c5162961ffbe",
+          "in_intent": true,
+          "name": "leaf-04",
+          "points": [
+            {
+              "error": null,
+              "missing_paths": [],
+              "scan_workflow_id": "scan-drift-dcfabric-12cfb1cd-59a3-4058-bdcf-128b3791d2e7",
+              "state": "in_sync",
+              "t": "2026-11-07T21:20:13.628060Z",
+              "unclassified_paths": [],
+              "undesired_paths": []
+            },
+            {
+              "error": null,
+              "missing_paths": [],
+              "scan_workflow_id": "scan-drift-dcfabric-e9ad72a3-6448-4f39-8374-39c499b730a7",
+              "state": "in_sync",
+              "t": "2026-11-07T21:20:15.224266Z",
+              "unclassified_paths": [],
+              "undesired_paths": []
+            }
+          ]
+        }
+      ],
+      "latest_closed": null,
+      "markers": [],
+      "open_count": 2,
+      "start": "2026-11-06T21:20:48.919877Z"
+    },
+    "fetched_at": "2026-11-07T21:20:48.919877Z",
+    "reason": null,
+    "remedy": null,
+    "source": "audit",
+    "stale": false
+  },
+  "use_case": "dcfabric"
+}

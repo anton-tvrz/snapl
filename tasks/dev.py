@@ -16,6 +16,10 @@ CLAB_IMAGE = "ghcr.io/srl-labs/clab:latest"
 LAB_TOPOLOGY = PROJECT_ROOT / "containerlab" / "dcfabric.yml"
 LAB_NODES = ("spine-01", "spine-02", "leaf-01", "leaf-02", "leaf-03", "leaf-04")
 
+# Prometheus's data, bind-mounted by the compose file (spec 012 R6). Under
+# .snapl/ so that `down --volumes` (demo.reset) never touches it.
+PROMETHEUS_DATA = PROJECT_ROOT / ".snapl" / "prometheus"
+
 
 def _clab_command(clab_args: str) -> str:
     root = shlex.quote(str(PROJECT_ROOT))
@@ -32,13 +36,19 @@ def _clab_command(clab_args: str) -> str:
 
 @task
 def deps(ctx):
-    """Start the dev dependency stack (Infrahub + backing stores + Temporal) and wait for health."""
+    """Start the dev dependency stack (Infrahub + backing stores + Temporal + Prometheus) and wait for health."""
+    # Created before compose up: a directory Docker creates for a bind mount is
+    # root's, and the Prometheus image runs as `nobody`. chmod, not mkdir's
+    # mode, which the umask would narrow.
+    PROMETHEUS_DATA.mkdir(parents=True, exist_ok=True)
+    PROMETHEUS_DATA.chmod(0o777)  # nosec B103 — container user differs; dir is under the git-ignored .snapl/
     print("Starting dev dependency stack...")
     execute_command(ctx, f"{COMPOSE} up -d --wait")
     print("Stack is healthy.")
     print("  Infrahub:        http://localhost:18000  (admin / infrahub)")
     print("  Temporal:        localhost:18033")
     print("  Temporal Web UI: http://localhost:18034")
+    print("  Prometheus:      http://127.0.0.1:18090")
 
 
 @task

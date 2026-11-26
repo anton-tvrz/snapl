@@ -1,0 +1,176 @@
+# Live Evidence: Device Telemetry
+
+Recorded on 2026-11-20 on the dcfabric lab (SR Linux 26.3.1, six devices), with the worker started from main at b4369e9, the merge of #340. Raw output is in `.snapl/lab/2026-11-20/t026/`.
+
+The lab had already been brought into line with #316, #318 and #340 before their merges (spec 016 research, and the #317 run earlier the same morning: scan 6/6 clean, each leaf learning the other five loopbacks). So this run is after #311 and #317, and item 3 below records the healthy fabric, not the flagged spines the quickstart was written for.
+
+## Item 1: the fault captures (T057)
+
+Two captures with `dev/scripts/capture_srlinux_telemetry.py`, every 10 s, while the worker from item 2 kept running. Timelines are in `.snapl/lab/2026-11-20/t057/timeline.txt`.
+
+**leaf-01, `ethernet-1/49` disabled and re-enabled** (`srlinux_v26_3_1_leaf01_interface_down_up.json`, 150 s from 07:47:45 UTC). Disabled at +15 s, enabled at +46 s, with `sr_cli -ec`.
+
+| t (s) | `ethernet-1/49` | BGP `10.10.1.0` (spine-01) | routes received |
+|---:|---|---|---:|
+| 0, 10 | up | established | 4 |
+| 20 to 40 | down | active | 0 |
+| 50 to 80 | up | active | 0 |
+| 90 on | up | established | 4 |
+
+The session takes about 45 s after the link to come back. `in-octets` stands still while the link is down. The running worker flagged leaf-01 and spine-01 at 07:48:19, 19 s after the disable, changed leaf-01's reasons when the link came back and only the session was left, and cleared both at 07:49:20.
+
+**spine-01 while leaf-01 is paused** (`srlinux_v26_3_1_spine01_peer_paused.json`, 240 s from 07:50:35 UTC). `docker pause clab-dcfabric-leaf-01` at +15 s, `docker unpause` at +115 s.
+
+| t (s) | `ethernet-1/1` | BGP `10.10.1.1` (leaf-01) | routes received |
+|---:|---|---|---:|
+| 0 to 90 | up | established | 2 |
+| 100, 110 | up | connect | 0 |
+| 120 | up | established | 0 |
+| 130 on | up | established | 2 |
+
+The link never goes down: a paused container keeps its veth up. The session drops only when the 90 s hold timer runs out, 85 s into the pause, so the quickstart's 60 s pause would have shown nothing here. The quickstart now asks for 100 s. The worker read leaf-01 `unknown` 30 s into the pause (never `unhealthy`), flagged spine-02 and spine-01 when their hold timers ran out (07:52:21, 07:52:31), and cleared all three at 07:52:41, 11 s after the unpause.
+
+Both captures are read by `TestStreamTelemetryFaultCaptures` (the collector: the state sequence, routes, counters) and `TestLabCaptures` (through the collector and the runner: the health changes above). With the debounce set to three intervals instead of one, both `TestLabCaptures` tests fail.
+
+## Item 2: the worker streams (T026, SC-004)
+
+No worker was running. `uv run invoke orchestrator.start` started at 07:20:26 UTC. Each of the six fabric devices had its first sample between 07:20:31 and 07:20:41, 5 to 15 s after start: each one's `health_changed` event carries `last_sample_at` from 07:20:31.91 (leaf-03) to 07:20:41.83 (leaf-02). At 07:20:41 the runner logged all six `unknown → healthy`. No stream for a fabric device broke during the run.
+
+The worker never logs a stream's state (`connecting`, `streaming`, `broken` live only inside the runner), so the quickstart's "its log names six streams `streaming`" can't be checked as written. The first sample time and the absence of `broke` warnings show the same thing. The quickstart now says so.
+
+`curl -s localhost:18091/metrics | grep -c '^snapl_\(interface\|bgp\|device\)_'` gave **162**, the quickstart's figure after #311:
+
+| family | series |
+|---|---:|
+| `snapl_interface_up` | 22 |
+| `snapl_interface_octets_total` | 32 |
+| `snapl_interface_errors_total` | 32 |
+| `snapl_interface_discards_total` | 32 |
+| `snapl_bgp_session_established` | 16 |
+| `snapl_bgp_prefixes_received` | 16 |
+| `snapl_device_cpu_percent` | 6 |
+| `snapl_device_memory_percent` | 6 |
+
+By device: 39 series for each spine, 21 for each leaf.
+
+**Two devices from outside dcfabric were streamed too.** Infrahub also holds `edge-01` and `edge-02` (`use_case=test_edge`, no `lab_node_name`), which the integration tests seed and keep. The runner reads every use case in intent, so it dialled them at their management addresses (10.200.0.1 and .2), which nothing answers. Each logged `telemetry from edge-0N broke (… FutureTimeoutError)` with the backoff doubling, and stayed `unknown`. They add no series and are not in dcfabric's health, `snapl status` or the page, which read one use case. Tracked in #341.
+
+## Item 3: the fabric's health (T026, SC-003)
+
+After #311 and #317 the fabric has no fault to flag:
+
+- `snapl status`: `fabric health   6 healthy, 0 unhealthy, 0 unknown`.
+- `snapl audit --device <name> --json` for each of the six: exactly one `health_changed`, `unknown → healthy`, with no reasons.
+- The dashboard's `/api/v1/health` (dashboard started from the same commit): all six `healthy`, no reasons, no episodes in the last 24 h.
+- `snapl_bgp_session_established` is 1 for all 16 session ends. `snapl_bgp_prefixes_received` is above 0 for every one: 4 or 5 on each leaf session, 2 or 5 on each spine session.
+- `snapl_interface_up` is 1 for all 22 interfaces in intent.
+- CPU reads 3 % and memory 91 % on every node. Both are the OrbStack VM's, the same on all six, and neither crosses a threshold. They say nothing about a switch.
+
+The quickstart's "both spines in sync and unhealthy, four `BGP … active` reasons each" was the lab before #311 and no longer reproduces. The flagged path is still to be shown on the lab, with a fault made on purpose: item 4 (an interface, T058) and item 7 (a BGP neighbour, T061).
+
+## Item 4: an interface fault (T058, SC-001)
+
+Same worker, with `snapl dashboard` from main at d741172. A poller read the page's own APIs, `/api/v1/network` (the drawer and the network views) and `/api/v1/health` (the fabric panel), every 2 s and logged each change. The page itself wasn't opened in a browser. Raw output is in `.snapl/lab/2026-11-20/t058/`.
+
+| UTC | what happened | after the disable |
+|---|---|---:|
+| 08:48:01 | `docker exec clab-dcfabric-leaf-01 sr_cli -ec 'set / interface ethernet-1/49 admin-state disable'` | 0 s |
+| 08:48:18 | `health_changed` for leaf-01 and spine-01: `unhealthy` | 17 s |
+| 08:48:20 | `/api/v1/health`: leaf-01 `ethernet-1/49 down (expected up)`, `BGP 10.10.1.0 active (expected established)`; spine-01 `ethernet-1/1 down (expected up)`, `BGP 10.10.1.1 active (expected established)` | 19 s |
+| 08:48:25 | `/api/v1/network`: leaf-01 `ethernet-1/49` and spine-01 `ethernet-1/1` down, both sessions not established, 0 routes | 24 s |
+| 08:49:16 | `snapl scan` exits 2: `5 clean, 1 drifted`, leaf-01 `/interface[name=ethernet-1/49]/enabled True → False`. `snapl status`: `4 healthy, 2 unhealthy (leaf-01, spine-01)` | |
+| 08:49:33 | `snapl reconcile --drifted --yes`: `1/1 succeeded` | |
+| 08:49:38 | `health_changed`: both still `unhealthy`, the interface reason gone, the session's left | |
+| 08:49:46 | `/api/v1/network`: both interfaces up | |
+| 08:50:19 | `health_changed`: both `healthy` | 46 s after the reconcile |
+| 08:50:21 | `/api/v1/health`: both healthy. `snapl scan`: `6 clean`, `snapl status`: `6 healthy` | 48 s after the reconcile |
+
+SC-001 holds: shown down within 30 s (24 s), flagged within 60 s (19 s), and cleared within 60 s of the repair (48 s). The clear has the narrowest margin. The link is up 13 s after the reconcile, and the rest is the BGP session coming back, as in item 1's capture.
+
+Drift and health are two separate marks: during the fault, the scan reported leaf-01 drifted and only leaf-01, and health reported leaf-01 and spine-01 unhealthy. spine-01 is in sync the whole time: nothing on it differs from intent, but its link and session are down.
+
+The quickstart said spine-01's "reasons grow by one". That was written for the lab before #311, when spine-01 was already flagged. Now it starts healthy and gets two reasons, its interface and its session. The quickstart now says so.
+
+An earlier attempt at 08:45:31 was dropped: the page poller had failed to start (`python3` on the host is 3.9), so that run has no page timeline. The interface was re-enabled at 08:46, and the run above started from a healthy fabric.
+
+## Item 5: a paused device (T059, SC-006)
+
+Same worker and dashboard, from main at c12053e. A poller logged `/api/v1/health` for all six devices and `/api/v1/network` every 2 s. Raw output is in `.snapl/lab/2026-11-20/t059/`.
+
+| UTC | what happened |
+|---|---|
+| 09:56:04 | `docker pause clab-dcfabric-leaf-03` (leaf-03's last sample was at 09:56:02) |
+| 09:56:28 | the worker: `telemetry from leaf-03 broke (… UNAVAILABLE: recvmsg:Operation timed out); retrying in 1 s`, then `FutureTimeoutError` with the backoff doubling (2, 4, 8, 16 s) |
+| 09:56:40 | `health_changed` leaf-03 `healthy → unknown`, reason `no telemetry since 2026-11-20T09:56:02+00:00`. On the page at 09:56:42 |
+| 09:57:05 | `docker unpause` |
+| 09:57:19 | the next retry gets a sample |
+| 09:57:20 | `health_changed` leaf-03 `unknown → healthy`. On the page at 09:57:21 |
+
+SC-006 holds. leaf-03 read `unknown` 36 s into the pause and was never `unhealthy`. It was `healthy` again 15 s after the unpause, with the worker untouched. No other device changed: a 60 s pause is shorter than the 90 s BGP hold time, so the spines' sessions to leaf-03 stayed up (item 1). The recovery time depends on where the backoff stands, which is capped at 30 s, so it stays within 60 s for any pause.
+
+## Item 6: scan time with and without telemetry (T060, SC-005)
+
+Measured as spec 015 T044 did: each ScanDrift's first to last audit event (15 events each: start, fetch, six collects, six detects, end). The runs are scheduled runs started with `snapl schedule trigger --use-case dcfabric` every 15 s, plus the 5-minute schedule's own 10:15 run. Same lab, same main (c12053e, the worker that had run items 1 to 8 on it), one worker at a time.
+
+| worker | UTC | scans | median | range |
+|---|---|---:|---:|---|
+| telemetry on (streaming six devices since 07:20) | 10:12 to 10:15 | 11 | 1.603 s | 1.384 to 2.133 s |
+| `SNAPL_TELEMETRY=off` | 10:15 to 10:18 | 10 | 1.553 s | 1.374 to 2.109 s |
+
+SC-005 holds: the median is 3.2 % higher with telemetry on, under 10 %. The two ranges overlap almost entirely, so 3 % is within the run-to-run spread. The worker was then restarted with telemetry on. Raw output is in `.snapl/lab/2026-11-20/t060/`.
+
+## Item 7: a BGP session brought down (T061, SC-002, SC-003)
+
+SC-003 was shown in item 3: all six devices healthy, all 16 session ends established with routes, nothing flagged for CPU or memory.
+
+For SC-002, `docker exec clab-dcfabric-spine-01 sr_cli -ec 'set / network-instance default protocols bgp neighbor 10.10.1.1 admin-state disable'`, twice, with the same poller. Raw output is in `.snapl/lab/2026-11-20/t061/` and `t059/page.log`.
+
+| trial | disabled | `/api/v1/network`: both ends not established | `health_changed`: both flagged | on the page's health |
+|---|---|---:|---:|---:|
+| 1 | 09:58:35 | 34 s | 26 s | 26 s |
+| 2 | 10:01:02 | 18 s | 19 s | 20 s |
+
+The reasons were `BGP 10.10.1.1 idle (expected established)` on spine-01 and `BGP 10.10.1.0 active (expected established)` on leaf-01. The disable is also drift: the scan after trial 1 exited 2 with spine-01 drifted on one path under `/network-instance[name=default]/protocols/bgp/neighbor[…]`, desired `True`, actual `False`, and `snapl status` read `4 healthy, 2 unhealthy (leaf-01, spine-01)`. leaf-01 was unhealthy and in sync. `snapl reconcile --drifted --yes` restored it each time: after trial 1 spine-01 was healthy in 11 s and leaf-01 in 21 s, and the scan was 6 clean.
+
+**SC-002 held in trial 2 and missed in trial 1, by 4 s.** The network view reaches the device through three waits in a row: up to 10 s for the next sample, up to 15 s for Prometheus's next scrape, and up to 15 s in the dashboard's cache of the network query. The worst case is about 40 s, so the 30 s in SC-001 and SC-002 holds only when those line up. Health reaches the page through the audit trail, not Prometheus, and stayed within 26 s. Tracked in #348, fixed by #359: item 9 has it within 30 s in three trials of three.
+
+## Item 8: an archive and a snapshot across a fault (T062, SC-008)
+
+Item 4 again: leaf-01's `ethernet-1/49` was disabled at 10:05:04 and reconciled at 10:06:11. leaf-01 was flagged 10:05:22 to 10:07:03 and spine-01 10:05:32 to 10:07:03. `snapl dashboard` was running on 18030, which `history.archive` needs: a first try with it on another port gave an archive with no dashboard export, which was deleted. Raw output is in `.snapl/lab/2026-11-20/t062/`.
+
+`uv run invoke history.archive` at 10:08:38: `snapl-history-20261120T100838Z.tar.gz`, 9.3 MB (audit DB 12.4 MB, metrics snapshot 27.0 MB, test runs 79.6 KB, dashboard export 2.2 MB, before compression).
+
+It was opened with `snapl dashboard --archive … --port 18061` and `PROMETHEUS_ADDRESS`, `INFRAHUB_ADDRESS` and `TEMPORAL_HOST` pointed at port 1 and `SNAPL_AUDIT_DB` at a path that doesn't exist. The stack itself was left running, since other work shares it. Every source the page would read live was unreachable.
+
+**The health history: SC-008 holds.** `/api/v1/health` came from the archive's trail (`source: audit`) and listed every episode of the day with its start, end and reasons: six for leaf-01 (07:48 to 10:07), seven for spine-01, and spine-02's 20 s at 07:52 when its hold timer ran out during item 1. The fault above is the last one: leaf-01 `10:05:22 → 10:07:03`, `ethernet-1/49 down (expected up)` and `BGP 10.10.1.0 active (expected established)`. leaf-03 has no episode: its 60 s `unknown` in item 5 opens none, as data-model.md says.
+
+**The network views: US5 scenario 1 doesn't hold.** The archive exports the six views over 7 days at a 2520 s (42 min) step. `bgp-established` has instant points at 07:30, 08:12, 08:54 and 09:36, and leaf-01 reads 2 sessions at each, so none of the day's faults shows. The export ends at 09:36, 32 min before the archive was made (#306), so the 10:05 fault isn't in it at all, and any other range is refused. SC-008 asks only for the health history, so it holds. The scenario's "the network views show the interface down over that time" does not. Tracked in #351, and item 10 has it after the fix.
+
+**The snapshot.** `snapl dashboard --snapshot … --days 7` at 10:09: **3.50 MB**, against spec 015's 3.2 MB. It contains device health and the network, as its summary says.
+
+**The Prometheus fixtures.** `dev/scripts/capture_prometheus_fixtures.py` at 10:07 wrote the six views' `range_<view>.json`. The other files it rewrites were restored, and the admin snapshot it leaves in `.snapl/prometheus/snapshots/` was deleted. Each view has all six devices. `bgp-established` has leaf-01 between 1 and 2 sessions and spine-01 between 3 and 4, from item 7 and the fault above. New tests read each file.
+
+## Item 9: a BGP session brought down, after #359 (#348)
+
+Item 7's fault again, three times, with main at f55c629: Prometheus recreated so it scrapes the worker every 5 s (a reload doesn't do it: the config's single-file mount still pointed at the file from before the `git pull`), the UI rebuilt, and `snapl dashboard` restarted on 18030. The page was timed in headless Chromium (Playwright, from the UI package) with spine-01's drawer open, reading the drawer's text and `/api/v1/network` every 250 ms, so the page's 5 s refresh is in the figures. Each disable landed at a different point in the 10 s sample. Times are from just before each `sr_cli` call. Each trial ended with `admin-state enable` and waited for the session to show established again. Raw output is in `.snapl/lab/2026-11-20/348/trials.log`.
+
+| trial | disabled (UTC) | `/api/v1/network`: not established | drawer: `10.10.1.1 not established` | drawer: health flagged | drawer: established again after enable |
+|---|---|---:|---:|---:|---:|
+| 1 | 14:05:21.9 | 10.6 s | 10.9 s | 21.1 s | 19.7 s |
+| 2 | 14:06:15.3 | 7.7 s | 12.6 s | 17.7 s | 19.8 s |
+| 3 | 14:07:07.8 | 5.2 s | 5.7 s | 15.2 s | 19.9 s |
+
+**SC-002 holds for the network view: 5.7 to 12.6 s, against 30 s, from 18 and 34 s in item 7.** The drawer followed the API by 0.3 to 4.9 s, its next refresh. Health is unchanged by #359 (it doesn't go through Prometheus) and came up in 15 to 21 s, 10 s after the API each time: one sample, as the one-interval debounce has it. An admin disable and enable brings the session back in about 15 s, faster than item 1's link flap. The drawer first showed it established with 6 routes received in trial 1 and 0 in trials 2 and 3, then 2, the count before the fault. Every session's routes received were back at their counts from before the trials by 14:08. The interface row wasn't timed again: it goes through the same scrape, cache and refresh as the session row.
+
+## Item 10: an archive with detail around faults (T065 to T067, #351)
+
+`uv run invoke history.archive` from the #351 branch at 20:26:56 UTC, with `snapl dashboard` on 18030: `snapl-history-20261120T202656Z.tar.gz`, 9.9 MB (dashboard export 3.1 MB before compression). The day's health episodes gave five windows: 07:43 to 07:57, 08:40 to 08:55, 09:54 to 10:12, 14:00 to 14:12, and the last hour from 19:26. That's 2 h 10 min in all, against the 6 h limit. The six network views over them at 15 s were 0.88 MB before compression, about 0.04 MB after. Prometheus has no worker samples between 15:18 and 19:58, so the last hour holds data from 19:57:30 only. Raw output is in `.snapl/lab/2026-11-20/351/`.
+
+It was opened as in item 8, with every live source pointed at port 1, on 18061. The page was driven in headless Chromium.
+
+- **The windows.** The range picker lists the five as "Detail around faults". Picking 14:00 to 14:12 made the six network views ask for exactly that range, and they answered at a 15 s step. Every other view kept the exported range.
+- **The BGP trials of item 9.** `bgp-established` shows spine-01 at 4, 3, 4 three times between 14:05:30 and 14:07:45, and leaf-01 at 2, 1, 2 (`bgp-established-14h.png`).
+- **Item 7's trials and item 8's link fault.** The 09:54 window shows leaf-01 at 1 session and spine-01 at 3 over 09:58, 10:01 and 10:05:30 to 10:06:30 (`bgp-established-10h.png`). The last is leaf-01's `ethernet-1/49` disabled at 10:05:04, flagged 10:05:22 to 10:07:03.
+- **Outside every window.** 12:00 to 13:00 is refused, naming the exported range and each window. The 7-day default is unchanged at 2520 s.
+
+**US5 scenario 1 holds for what the six views carry.** A link fault shows as the BGP sessions it took down, at 15 s, over the episode. The link's own state is not one of the six views: in an archive the drawer shows interface state at the archive's time only. Device-level traffic at the lab's idle rates (tens of B/s) is too noisy to show the link either way.

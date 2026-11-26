@@ -12,16 +12,22 @@ from typing import TYPE_CHECKING
 from snapl_observability.abc import Observer
 from snapl_observability.audit import AuditLog
 from snapl_observability.events import EventBus
+from snapl_observability.health import evaluate_health
 from snapl_observability.models import (
     STATUS_TO_EVENT_TYPE,
     AuditEntry,
     AuditOperation,
     AuditOutcome,
     BatchDriftReport,
+    DeviceHealth,
     DriftReport,
     DriftStatus,
+    HealthExpectation,
+    HealthObservation,
     ObservabilityEvent,
+    RemovalPlan,
 )
+from snapl_observability.structural import removal
 from snapl_observability.structural.diff import diff_desired_vs_actual
 
 if TYPE_CHECKING:
@@ -154,3 +160,20 @@ class StructuralObserver(Observer):
 
     async def log_audit(self, entry: AuditEntry) -> None:
         self.audit_log.append(entry)
+
+    # ---- Device health (spec 016) -------------------------------------------
+
+    def evaluate_health(
+        self,
+        expectation: HealthExpectation,
+        observation: HealthObservation,
+        *,
+        now: datetime,
+        interval_s: int,
+    ) -> DeviceHealth:
+        return evaluate_health(expectation, observation, now=now, interval_s=interval_s)
+
+    # ---- Removal (spec 013) -------------------------------------------------
+
+    def plan_removal(self, report: DriftReport) -> RemovalPlan:
+        return removal.plan_removal(report)

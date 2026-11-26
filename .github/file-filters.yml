@@ -49,6 +49,15 @@ python:
   - "pyproject.toml"
   - "uv.lock"
 
+# The designed dashboard UI (spec 011): its own source, the server it talks to,
+# and the contract its types are generated from.
+ui:
+  - "packages/presentation/ui/**"
+  - "packages/presentation/snapl_presentation/dashboard/**"
+  - "tests/unit/test_presentation/fixtures/openapi_v1.json"
+  - "dev/scripts/serve_dashboard_fixtures.py"
+  - ".github/workflows/quality.yml"
+
 documentation:
   - "docs/**"
   - "dev/**"

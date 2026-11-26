@@ -1,0 +1,15 @@
+{
+  "format": 1,
+  "suite": "integration",
+  "status": "failed",
+  "started_at": "2026-11-06T09:00:00Z",
+  "ended_at": "2026-11-06T09:02:10Z",
+  "exit_code": 1,
+  "commit": "COMMIT_PLACEHOLDER",
+  "tree": "TREE_PLACEHOLDER",
+  "branch": "010-e-lab",
+  "dirty": true,
+  "device_image": "ghcr.io/nokia/srlinux:26.3.1",
+  "pid": 41800,
+  "counts": {"passed": 20, "failed": 2, "skipped": 0, "errors": 1}
+}

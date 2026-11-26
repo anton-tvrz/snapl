@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from snapl_intent.exceptions import IntentError
-from snapl_presentation.exceptions import AmbiguousDeviceError, ConnectionCliError, UnknownDeviceError
+from snapl_intent.exceptions import IntentAttributionError, IntentError
+from snapl_presentation.exceptions import AmbiguousDeviceError, CliError, ConnectionCliError, UnknownDeviceError
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -33,6 +33,8 @@ async def load_states(store: IntentStore, settings: CliSettings, *, use_case: st
     """Fetch desired state, converting SoT failures into an operator message."""
     try:
         return await store.get_desired_state(use_case=use_case)
+    except IntentAttributionError as exc:
+        raise CliError(str(exc), hint="Check those nodes' device relation in the Source of Truth") from exc
     except IntentError as exc:
         raise ConnectionCliError(
             subsystem="Source of Truth",

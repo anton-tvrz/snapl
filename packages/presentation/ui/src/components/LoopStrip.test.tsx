@@ -1,0 +1,155 @@
+import { render, screen, within } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
+
+import type { RunSteps } from "../api/types";
+import { STEPS_DEPLOY, STEPS_RECONCILE, STEPS_SCAN } from "../test/fixtures";
+import { LoopStrip } from "./LoopStrip";
+
+const deploy = STEPS_DEPLOY.steps.data!;
+const reconcile = STEPS_RECONCILE.steps.data!;
+const scan = STEPS_SCAN.steps.data!;
+
+// The arc has no failed deploy. This one is the fixture's with its apply
+// failed, as the server reports one (research R15); T057 captures a real one.
+const failed: RunSteps = {
+  ...deploy,
+  run: { ...deploy.run, state: "failed", reason: "gNMI Set rejected: invalid value for mtu" },
+  steps: [deploy.steps[0]!, { ...deploy.steps[1]!, outcome: "failed", reason: "gNMI Set rejected: invalid value for mtu" }],
+  blocks: deploy.blocks.map((block) => {
+    if (block.block === "executor") return { ...block, status: "failed", reason: "gNMI Set rejected: invalid value for mtu" };
+    if (block.block === "collector" || block.block === "observability") return { block: block.block, status: "not_reached" };
+    return block;
+  }),
+};
+
+const blocks = () => within(screen.getByRole("list", { name: "The loop, block by block" })).getAllByRole("listitem");
+const block = (name: string) => blocks().find((item) => item.getAttribute("aria-label")?.startsWith(`${name}:`))!;
+
+describe("LoopStrip", () => {
+  it("shows the six blocks in loop order", () => {
+    render(<LoopStrip steps={deploy} />);
+
+    expect(blocks().map((item) => item.getAttribute("aria-label")?.split(":")[0])).toEqual([
+      "Intent",
+      "Executor",
+      "Collector",
+      "Observability",
+      "Orchestrator",
+      "Presentation",
+    ]);
+  });
+
+  it("marks a successful deploy's four steps done with their times, and Presentation as you are here", () => {
+    render(<LoopStrip steps={deploy} />);
+
+    for (const name of ["Intent", "Executor", "Collector", "Observability", "Orchestrator"]) {
+      expect(block(name)).toHaveTextContent("Done");
+    }
+    expect(block("Executor")).toHaveTextContent("21:20:16 UTC");
+    expect(block("Presentation")).toHaveTextContent("You are here");
+    expect(screen.getByText(/DeployIntent/)).toBeInTheDocument();
+  });
+
+  it("names the failed block with its reason, and the blocks after it not reached", () => {
+    render(<LoopStrip steps={failed} />);
+
+    expect(block("Executor")).toHaveTextContent("Failed");
+    expect(block("Executor")).toHaveTextContent("gNMI Set rejected: invalid value for mtu");
+    expect(block("Collector")).toHaveTextContent("Not reached");
+    expect(block("Observability")).toHaveTextContent("Not reached");
+    expect(block("Intent")).toHaveTextContent("Done");
+  });
+
+  // spec 015 US4: a scan records its steps, so its strip shows its blocks.
+  it("shows a scan's recorded steps: Intent, Collector and Observability done with their times, Executor not reached", () => {
+    render(<LoopStrip steps={scan} />);
+
+    for (const name of ["Intent", "Collector", "Observability"]) {
+      expect(block(name)).toHaveTextContent("Done");
+      expect(block(name)).toHaveTextContent(/21:20:1[78] UTC/);
+    }
+    expect(block("Executor")).toHaveTextContent("Not reached");
+    expect(screen.queryByText(/not recorded one by one/)).not.toBeInTheDocument();
+    expect(screen.getByText(/ScanDrift/)).toBeInTheDocument();
+  });
+
+  it("names the Collector failed with a device's reason when a scan could not collect it", () => {
+    const reason = "collect failed: leaf-01 unreachable";
+    const failedCollect: RunSteps = {
+      ...scan,
+      blocks: scan.blocks.map((b) => (b.block === "collector" ? { ...b, status: "failed", reason } : b)),
+    };
+    render(<LoopStrip steps={failedCollect} />);
+
+    expect(block("Collector")).toHaveTextContent("Failed");
+    expect(block("Collector")).toHaveTextContent(reason);
+    expect(block("Observability")).toHaveTextContent("Done");
+  });
+
+  it("says when a run type's steps are not recorded one by one, and gives the outcome", () => {
+    render(<LoopStrip steps={reconcile} />);
+
+    expect(screen.getByText(/ReconcileDevices steps are not recorded one by one/)).toBeInTheDocument();
+    expect(screen.getByText(/Succeeded/)).toBeInTheDocument();
+    expect(block("Executor")).toHaveTextContent("Not recorded");
+  });
+
+  // spec 014 US6: an unrecorded run must not read as six empty boxes.
+  it("shows a run with no recorded steps on one compact row: its blocks as chips, not boxes", () => {
+    render(<LoopStrip steps={reconcile} />);
+
+    const list = screen.getByRole("list", { name: "The loop, block by block" });
+    expect(list).toHaveAttribute("data-form", "compact");
+    expect(blocks()).toHaveLength(6);
+    for (const item of blocks()) expect(item).toHaveClass("chip");
+    // Each chip still says its status, for anyone not reading the glyph.
+    expect(block("Intent")).toHaveAccessibleName("Intent: Not recorded");
+    expect(block("Orchestrator")).toHaveAccessibleName("Orchestrator: Done");
+  });
+
+  it("shows a recorded run as six tiles, each with an icon tile, its status, time and reason", () => {
+    render(<LoopStrip steps={failed} />);
+
+    const list = screen.getByRole("list", { name: "The loop, block by block" });
+    expect(list).toHaveAttribute("data-form", "tiles");
+    for (const item of blocks()) expect(item.querySelector("[data-glyph]")).not.toBeNull();
+    expect(block("Executor")).toHaveTextContent("gNMI Set rejected: invalid value for mtu");
+    expect(block("Intent")).toHaveTextContent(/\d\d:\d\d:\d\d UTC/);
+  });
+
+  it("gives the run, its outcome and its start as one callout", () => {
+    render(<LoopStrip steps={deploy} />);
+
+    const callout = screen.getByRole("status", { name: "The run shown" });
+    expect(callout).toHaveTextContent("DeployIntent");
+    expect(callout).toHaveTextContent("Succeeded");
+    expect(callout).toHaveTextContent("started 2026-11-07");
+    expect(callout).toHaveClass("rounded-full");
+  });
+
+  it("never shows a block as in progress, even for a running run", () => {
+    const running = { ...deploy, run: { ...deploy.run, state: "running" as const, ended_at: null } };
+    render(<LoopStrip steps={running} />);
+
+    expect(screen.getByRole("list", { name: "The loop, block by block" }).textContent).not.toMatch(
+      /in progress|running/i,
+    );
+  });
+
+  it("shows a block or status a newer server sent by its raw text", () => {
+    const newer = {
+      ...deploy,
+      blocks: [...deploy.blocks, { block: "verifier", status: "skipped" }],
+    } as unknown as RunSteps;
+    render(<LoopStrip steps={newer} />);
+
+    expect(block("verifier")).toHaveTextContent("skipped");
+  });
+
+  it("tells each status apart by its icon as well as its colour", () => {
+    render(<LoopStrip steps={failed} />);
+    const glyph = (name: string) => block(name).querySelector("[data-glyph]")!.textContent;
+
+    expect(new Set([glyph("Intent"), glyph("Executor"), glyph("Collector"), glyph("Presentation")]).size).toBe(4);
+  });
+});

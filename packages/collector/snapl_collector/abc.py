@@ -6,7 +6,9 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from snapl_collector.models import BatchCollectResult, CollectResult
+    from collections.abc import AsyncIterator
+
+    from snapl_collector.models import BatchCollectResult, CollectResult, TelemetrySample, TelemetryTarget
     from snapl_intent.models import Device
 
 
@@ -59,4 +61,26 @@ class Collector(ABC):
 
         Raises:
             ValueError: devices is empty, paths is empty, or duplicate device IDs.
+        """
+
+    @abstractmethod
+    def stream_telemetry(self, target: TelemetryTarget, *, interval_s: int) -> AsyncIterator[TelemetrySample]:
+        """Stream the device's telemetry for the items intent names (spec 016).
+
+        Implementations are async generators. The first sample has ``sync=True``
+        and carries every item; later samples carry what each message carried.
+        Samples are vendor-neutral: no path or module prefix reaches the caller.
+
+        Args:
+            target: The device and the interfaces and BGP peers to watch.
+            interval_s: Seconds between samples.
+
+        Yields:
+            One TelemetrySample per message from the device.
+
+        Raises:
+            TelemetryStreamError: The stream broke (the dial failed, the device
+                closed it, or it stopped answering). The iterator ends there;
+                restarting it is the caller's job (research R4). Closing the
+                iterator ends it cleanly, without raising.
         """

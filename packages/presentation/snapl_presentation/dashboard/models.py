@@ -1,0 +1,901 @@
+"""The dashboard's response contract, v1 (spec 010 data-model.md).
+
+Every response is an ``Envelope`` holding one or more ``View``s. A view says
+which source it came from, whether that source answered, and how old its data
+is. A source failure is a view with ``available=False``, never an HTTP error
+(FR-005, FR-007). These models are the contract: the OpenAPI document is
+generated from them, and spec 011's UI builds on it.
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from enum import StrEnum
+from typing import Annotated, Literal
+from uuid import UUID  # noqa: TC003 — pydantic resolves field types at runtime
+
+from pydantic import AfterValidator, AwareDatetime, BaseModel, ConfigDict, Field, model_validator
+
+# The health contract's enum is the observability block's, re-exported (spec 016).
+from snapl_observability.models import DeviceHealthState  # noqa: TC001 — runtime field type
+from snapl_orchestrator.models import DriftScheduleView, WorkflowReason  # noqa: TC001 — runtime field types
+
+
+def _to_utc(value: datetime) -> datetime:
+    return value.astimezone(UTC)
+
+
+# Times must carry an offset on the way in, and leave in UTC (data-model.md).
+UtcDatetime = Annotated[AwareDatetime, AfterValidator(_to_utc)]
+
+Suite = Literal["e2e", "integration"]
+
+
+class _Model(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+
+# --- Envelope and source status ----------------------------------------------
+
+
+class SourceName(StrEnum):
+    AUDIT = "audit"
+    TEMPORAL = "temporal"
+    SOT = "sot"
+    CI = "ci"
+    LAB_RUNS = "lab_runs"
+    # Spec 012. Feeds /sources and the metrics routes, never the overview.
+    PROMETHEUS = "prometheus"
+
+
+class View[T](_Model):
+    """One source's answer, with its provenance and age (FR-005, FR-031)."""
+
+    source: SourceName
+    # False when the last attempt to read the source failed.
+    available: bool
+    # When `data` was read. None only when the source never answered.
+    fetched_at: UtcDatetime | None = None
+    # True when `data` is from an earlier successful read than the last attempt.
+    stale: bool = False
+    reason: str | None = None
+    # A command to run, e.g. `uv run invoke dev.deps`.
+    remedy: str | None = None
+    data: T | None = None
+
+    @model_validator(mode="after")
+    def _check(self) -> View[T]:
+        if not self.available and not (self.reason and self.remedy):
+            raise ValueError("an unavailable view needs a reason and remedy")
+        if self.stale and (self.data is None or self.fetched_at is None):
+            raise ValueError("a stale view needs the data it is stale about and when it was fetched")
+        return self
+
+
+class Envelope(_Model):
+    contract_version: Literal["1"] = "1"
+    use_case: str
+    generated_at: UtcDatetime
+
+
+# --- Devices (US1) -------------------------------------------------------------
+
+
+class DriftState(StrEnum):
+    IN_SYNC = "in_sync"
+    MISSING = "missing"
+    UNDESIRED = "undesired"
+    MISSING_AND_UNDESIRED = "missing_and_undesired"
+    # A scan recorded before FR-012a: the direction of its paths is unknown.
+    DRIFTED = "drifted"
+    ERROR = "error"
+    NEVER_SCANNED = "never_scanned"
+
+
+_PATH_LISTS: dict[str, set[DriftState]] = {
+    "missing_paths": {DriftState.MISSING, DriftState.MISSING_AND_UNDESIRED},
+    "undesired_paths": {DriftState.UNDESIRED, DriftState.MISSING_AND_UNDESIRED},
+    "unclassified_paths": {DriftState.DRIFTED},
+}
+
+
+class DeployOutcome(_Model):
+    workflow_id: str
+    success: bool
+    reason: WorkflowReason | None = None
+    ended_at: UtcDatetime
+
+
+# --- Device health (spec 016, contracts/telemetry.md) ----------------------------
+
+
+class HealthReasonView(_Model):
+    """Why a device is not healthy, as the worker recorded it."""
+
+    # "interface", "bgp_session" or "no_telemetry"; a newer kind is passed through.
+    kind: str
+    item: str | None = None
+    expected: str | None = None
+    actual: str | None = None
+    text: str
+
+
+class DeviceHealthView(_Model):
+    state: DeviceHealthState
+    # Empty when healthy.
+    reasons: list[HealthReasonView] = Field(default_factory=list)
+    # When this state was recorded.
+    since: UtcDatetime
+    last_sample_at: UtcDatetime | None = None
+
+
+class HealthEpisode(_Model):
+    """One device unhealthy: from the change to unhealthy to the change away from it."""
+
+    opened_at: UtcDatetime
+    # None while the episode is open.
+    closed_at: UtcDatetime | None = None
+    duration_s: int | None = None
+    # The reasons recorded when it opened; later changes are in the audit trail.
+    reasons: list[HealthReasonView]
+
+    @model_validator(mode="after")
+    def _check(self) -> HealthEpisode:
+        if (self.closed_at is None) != (self.duration_s is None):
+            raise ValueError("duration_s must be set exactly when the episode is closed")
+        return self
+
+
+class DeviceHealthEntry(_Model):
+    device_id: UUID
+    name: str
+    # At the range's end. None when nothing was recorded for the device by then.
+    current: DeviceHealthView | None = None
+    # Unhealthy spans overlapping the range, oldest first.
+    episodes: list[HealthEpisode] = Field(default_factory=list)
+
+
+class FabricHealth(_Model):
+    start: UtcDatetime
+    end: UtcDatetime
+    # Devices in intent, by name.
+    devices: list[DeviceHealthEntry]
+    # The first health event in the trail.
+    first_event_at: UtcDatetime | None = None
+
+
+class HealthResponse(Envelope):
+    health: View[FabricHealth]
+
+
+class RemovalPreviewView(_Model):
+    """A device's latest successful removal preview (spec 013 FR-016): what it would delete and leave."""
+
+    at: UtcDatetime
+    workflow_id: str
+    plan_paths: list[str]
+    # Entities the preview refused to remove; they stay on the device by design.
+    refused_paths: list[str]
+
+
+class DeviceView(_Model):
+    device_id: UUID
+    name: str
+    # None only in the degraded, audit-only view (research R13).
+    role: str | None
+    # False for a device seen in the audit trail but no longer in the SoT.
+    in_intent: bool
+    drift_state: DriftState
+    missing_paths: list[str] = Field(default_factory=list)
+    undesired_paths: list[str] = Field(default_factory=list)
+    unclassified_paths: list[str] = Field(default_factory=list)
+    error: str | None = None
+    last_scanned_at: UtcDatetime | None = None
+    last_scan_workflow_id: str | None = None
+    last_deploy: DeployOutcome | None = None
+    # `snapl reconcile <name>` for forward drift. None for undesired-only drift,
+    # which reconcile never removes; `note` says so.
+    suggested_command: str | None = None
+    # `snapl remove <name>` when the latest scan found undesired config (spec 013 FR-016).
+    remove_command: str | None = None
+    note: str | None = None
+    # The device's latest successful `PlanRemoval`, or None when it was never previewed.
+    last_removal_preview: RemovalPreviewView | None = None
+    # Spec 016: from the device's latest health_changed event; None when there is none.
+    health: DeviceHealthView | None = None
+
+    @model_validator(mode="after")
+    def _check(self) -> DeviceView:
+        for field, states in _PATH_LISTS.items():
+            if getattr(self, field) and self.drift_state not in states:
+                raise ValueError(f"{field} must be empty for drift state {self.drift_state.value}")
+        if self.drift_state is DriftState.ERROR and not self.error:
+            raise ValueError("an errored device needs its error")
+        if (self.last_scanned_at is None) != (self.drift_state is DriftState.NEVER_SCANNED):
+            raise ValueError("last_scanned_at must be empty exactly when the device is never_scanned")
+        return self
+
+
+# --- Runs and schedule (US2) ---------------------------------------------------
+
+
+class Trigger(StrEnum):
+    SCHEDULE = "schedule"
+    OPERATOR = "operator"
+    # A DeployIntent recorded before FR-016a: its parent cannot be told (research R5).
+    UNKNOWN = "unknown"
+
+
+class RunState(StrEnum):
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    # Started, no terminal event, and not running in Temporal.
+    UNFINISHED = "unfinished"
+
+
+class RemovalView(_Model):
+    """What a `RemoveConfig` run did, from its start and terminal events (spec 013 FR-016).
+
+    A run still in flight has only `actor` and `confirmed_paths`.
+    """
+
+    actor: str | None = None
+    confirmed_paths: list[str] = Field(default_factory=list)
+    # The paths the one Set deleted; empty when it wrote nothing.
+    deleted_paths: list[str] = Field(default_factory=list)
+    # The new plan, when the device changed after the preview (`plan_changed`).
+    plan_paths: list[str] = Field(default_factory=list)
+    device_response: str | None = None
+    gone: list[str] = Field(default_factory=list)
+    remaining: list[str] = Field(default_factory=list)
+    new_forward: list[str] = Field(default_factory=list)
+    still_refused: list[str] = Field(default_factory=list)
+    # The terminal reason, e.g. "succeeded" or "plan_changed"; None while in flight.
+    reason: str | None = None
+    detail: str | None = None
+
+
+class RunView(_Model):
+    """One workflow run. Its identity is (workflow_id, started_at), because
+    `deploy-intent-{device}` is reused across runs (research R5)."""
+
+    workflow_id: str
+    workflow_type: str
+    # A device name if resolvable, else the use case or the raw target id.
+    target: str | None
+    started_at: UtcDatetime
+    ended_at: UtcDatetime | None = None
+    # For a running run: seconds so far.
+    duration_s: int | None = None
+    state: RunState
+    reason: str | None = None
+    trigger: Trigger
+    # Only when the audit trail records one.
+    actor: str | None = None
+    web_ui_url: str
+    # For a `RemoveConfig` run only (spec 013).
+    removal: RemovalView | None = None
+
+
+class RepeatedRepairFailure(_Model):
+    device_id: UUID
+    name: str
+    consecutive_failures: int = Field(ge=3)
+    last_failed_at: UtcDatetime
+    # `snapl schedule mode report --use-case <uc>`
+    suggested_command: str
+
+
+class ScheduleStatus(_Model):
+    exists: bool
+    schedule: DriftScheduleView | None = None
+    # The actor and time of the latest SCHEDULE_CHANGED that paused it.
+    paused_by: str | None = None
+    paused_at: UtcDatetime | None = None
+    repeated_failures: list[RepeatedRepairFailure] = Field(default_factory=list)
+    # `snapl schedule create --use-case <uc>` when no schedule exists.
+    suggested_command: str | None = None
+
+    @model_validator(mode="after")
+    def _check(self) -> ScheduleStatus:
+        if self.exists != (self.schedule is not None):
+            raise ValueError("schedule must be set exactly when one exists")
+        return self
+
+
+class WorkerStatus(_Model):
+    pollers: int
+    task_queue: str
+
+
+# --- History (US3) -------------------------------------------------------------
+
+
+class Bucket(StrEnum):
+    FIVE_MINUTES = "5m"
+    HOUR = "1h"
+    DAY = "1d"
+    WEEK = "1w"
+
+
+class SeriesName(StrEnum):
+    DRIFTED_DEVICES = "drifted_devices"
+    UNDESIRED_PATHS = "undesired_paths"
+    DEPLOYS = "deploys"
+    REPAIRS = "repairs"
+    # Spec 015. Not in `/history`'s default, so older callers get the same answer.
+    IN_SYNC_DEVICES = "in_sync_devices"
+    OPEN_DRIFTS = "open_drifts"
+    RUNS = "runs"
+    REPAIR_DURATION = "repair_duration"
+
+
+# What `/history` answers when no series is named: the series of spec 010.
+DEFAULT_SERIES = (SeriesName.DRIFTED_DEVICES, SeriesName.UNDESIRED_PATHS, SeriesName.DEPLOYS, SeriesName.REPAIRS)
+
+
+class Point(_Model):
+    # The scan time for per-scan series, the close for `repair_duration`, the
+    # bucket start for counted series.
+    t: UtcDatetime
+    # Per-scan series; seconds for `repair_duration`; for `runs`, the runs that
+    # started in the bucket, None when none did.
+    value: int | None = None
+    # Counted series: `succeeded` and `failed`, each None in an empty bucket.
+    # `runs`: `<trigger>.<outcome>` keys, empty when no run started.
+    by_outcome: dict[str, int | None] | None = None
+
+
+class Marker(_Model):
+    t: UtcDatetime
+    kind: Literal["reconcile", "remediation"]
+    workflow_id: str
+    trigger: Trigger
+
+
+class Series(_Model):
+    name: SeriesName
+    start: UtcDatetime
+    end: UtcDatetime
+    # None for per-scan series.
+    bucket: Bucket | None
+    points: list[Point]
+    markers: list[Marker]
+    # The oldest audit event, so a UI can say "history starts here". Health
+    # changes (spec 016) are left out: they are not the loop's history.
+    first_event_at: UtcDatetime | None = None
+
+    @model_validator(mode="after")
+    def _check(self) -> Series:
+        if self.start >= self.end:
+            raise ValueError("start must be before end")
+        return self
+
+
+# --- CI (US4) ------------------------------------------------------------------
+
+
+class JobResult(StrEnum):
+    SUCCESS = "success"
+    FAILURE = "failure"
+    CANCELLED = "cancelled"
+    SKIPPED = "skipped"
+    IN_PROGRESS = "in_progress"
+    QUEUED = "queued"
+    NEUTRAL = "neutral"
+
+
+class CiJob(_Model):
+    name: str
+    result: JobResult
+    url: str
+
+
+class CiTarget(_Model):
+    kind: Literal["main", "pull_request"]
+    number: int | None = None
+    title: str | None = None
+    head_sha: str
+    # The result of the quality gate check run.
+    gate: JobResult
+    jobs: list[CiJob]
+    run_url: str | None = None
+    # `main` only, from Codecov.
+    coverage_pct: float | None = None
+
+
+class CiStatus(_Model):
+    # owner/name
+    repo: str
+    authenticated: bool
+    rate_limit_remaining: int | None = None
+    # `main` first, then PRs by number.
+    targets: list[CiTarget]
+    # Open PRs left out to stay inside the unauthenticated rate limit (research R9).
+    omitted_prs: int = 0
+
+
+# --- Lab runs (US4) ------------------------------------------------------------
+
+
+class LabRunStatus(StrEnum):
+    RUNNING = "running"
+    PASSED = "passed"
+    FAILED = "failed"
+    INTERRUPTED = "interrupted"
+    # Derived: still `running` on disk, and its pid is gone.
+    INCOMPLETE = "incomplete"
+    UNREADABLE = "unreadable"
+
+
+class LabRun(_Model):
+    # The folder name.
+    id: str
+    suite: Suite
+    status: LabRunStatus
+    started_at: UtcDatetime | None = None
+    ended_at: UtcDatetime | None = None
+    commit: str | None = None
+    tree: str | None = None
+    branch: str | None = None
+    dirty: bool | None = None
+    device_image: str | None = None
+    passed: int | None = None
+    failed: int | None = None
+    skipped: int | None = None
+    errors: int | None = None
+    problem: str | None = None
+
+    @model_validator(mode="after")
+    def _check(self) -> LabRun:
+        if self.status is LabRunStatus.UNREADABLE and not self.problem:
+            raise ValueError("an unreadable run needs its problem")
+        return self
+
+
+class LabEvidence(_Model):
+    # The newest readable run per suite.
+    latest: dict[Suite, LabRun]
+    commits_on_main_since: dict[Suite, int | None]
+    # Only for suites whose count is known (research R10).
+    matched_by: dict[Suite, Literal["ancestor", "tree"]] = Field(default_factory=dict)
+    # Only for suites whose count is None.
+    commits_unknown_reason: dict[Suite, str] = Field(default_factory=dict)
+    # Newest first, at most 20.
+    runs: list[LabRun] = Field(max_length=20)
+
+
+# --- Overview (the MVP page's poll) ----------------------------------------
+
+
+class Overview(Envelope):
+    devices: View[list[DeviceView]]
+    runs: View[list[RunView]]
+    # State `running` only, from Temporal.
+    running: View[list[RunView]]
+    schedule: View[ScheduleStatus]
+    worker: View[WorkerStatus]
+    ci: View[CiStatus]
+    lab: View[LabEvidence]
+
+
+# --- Links (#173) ---------------------------------------------------------------
+
+
+class LinkGroup(StrEnum):
+    STACK = "stack"
+    GITHUB = "github"
+    API = "api"
+    DOCS = "docs"
+
+
+class Link(_Model):
+    group: LinkGroup
+    label: str
+    # Absolute, or a path on this dashboard (the API links).
+    url: str
+
+
+class LinksResponse(Envelope):
+    links: list[Link]
+    # Set when some links are left out, saying which and why.
+    reason: str | None = None
+    remedy: str | None = None
+
+
+# --- Topology (spec 011) ----------------------------------------------------------
+
+
+class TopologyNode(_Model):
+    device_id: UUID
+    name: str
+    role: str
+
+
+class LinkEnd(_Model):
+    # A device name.
+    device: str
+    interface: str
+
+
+class TopologyLink(_Model):
+    """One link, as intent declares it. Its ends are ordered by (device,
+    interface), so a link declared from both ends has one identity."""
+
+    a: LinkEnd
+    b: LinkEnd
+    declared_by: Literal["both", "a", "b"]
+    # True only when both ends name each other's device and interface.
+    agreed: bool
+
+    @model_validator(mode="after")
+    def _check(self) -> TopologyLink:
+        if self.a.device == self.b.device:
+            raise ValueError("a link joins two different devices")
+        if self.agreed and self.declared_by != "both":
+            raise ValueError("a link is agreed only when both ends declare it")
+        return self
+
+
+class UnlinkedInterface(_Model):
+    device: str
+    interface: str
+    # The peer as intent declares it: not a device of this use case, the device
+    # itself, or a device named without its interface.
+    peer_device: str
+    peer_interface: str | None = None
+
+
+class Topology(_Model):
+    # By role tier, then name.
+    nodes: list[TopologyNode]
+    links: list[TopologyLink]
+    unlinked: list[UnlinkedInterface]
+
+
+class TopologyResponse(Envelope):
+    topology: View[Topology]
+
+
+# --- Drift timeline (spec 011) ------------------------------------------------------
+
+
+class ScanPoint(_Model):
+    """What one scan recorded for one device."""
+
+    # The per-device scan record's timestamp.
+    t: UtcDatetime
+    # Never `never_scanned`: a point exists only where a scan does.
+    state: DriftState
+    missing_paths: list[str] = Field(default_factory=list)
+    undesired_paths: list[str] = Field(default_factory=list)
+    unclassified_paths: list[str] = Field(default_factory=list)
+    error: str | None = None
+    scan_workflow_id: str
+
+
+class DeviceLane(_Model):
+    device_id: UUID
+    name: str
+    # False for a device the audit trail holds that is no longer in the SoT.
+    in_intent: bool
+    # In the requested range, oldest first.
+    points: list[ScanPoint]
+
+
+class EpisodeClose(_Model):
+    """The deploy or removal that repaired a drift episode."""
+
+    # A scheduled repair, an operator's reconcile, an operator's direct deploy,
+    # or an operator's confirmed removal (spec 013).
+    kind: Literal["remediation", "reconcile", "deploy", "removal"]
+    # The DeployIntent or RemoveConfig run.
+    workflow_id: str
+    trigger: Trigger
+    ended_at: UtcDatetime
+
+
+class DriftEpisode(_Model):
+    """One device's drift, from the scan that first saw it to the scan that first saw it gone."""
+
+    device_id: UUID
+    name: str
+    opened_at: UtcDatetime
+    # None while the episode is open.
+    closed_at: UtcDatetime | None = None
+    # closed_at - opened_at, scan to scan. Not the time to detect: nothing
+    # records when the drift was introduced.
+    duration_s: int | None = None
+    # Distinct states seen, in order of first appearance. `error` included.
+    states: list[DriftState]
+    # Scans from the opening one to the closing one, both included.
+    scans: int = Field(ge=1)
+    # None while open, and when no deploy targeted the device in between.
+    closed_by: EpisodeClose | None = None
+
+    @model_validator(mode="after")
+    def _check(self) -> DriftEpisode:
+        if (self.closed_at is None) != (self.duration_s is None):
+            raise ValueError("duration_s must be set exactly when the episode is closed")
+        if self.closed_at is None and self.closed_by is not None:
+            raise ValueError("closed_by must be empty while the episode is open")
+        return self
+
+
+class DriftTimeline(_Model):
+    start: UtcDatetime
+    end: UtcDatetime
+    lanes: list[DeviceLane]
+    # Every episode overlapping the range, oldest first.
+    episodes: list[DriftEpisode]
+    markers: list[Marker]
+    # The most recently closed episode in the whole trail up to `end`.
+    latest_closed: DriftEpisode | None = None
+    # Episodes open as of `end`.
+    open_count: int = Field(ge=0)
+    first_event_at: UtcDatetime | None = None
+
+
+class DriftTimelineResponse(Envelope):
+    timeline: View[DriftTimeline]
+
+
+class DeviceDriftSummary(_Model):
+    """One device's drift over a range (spec 015 FR-006)."""
+
+    device_id: UUID
+    name: str
+    in_intent: bool
+    # Drift episodes that overlap the range.
+    episodes: int = Field(ge=1)
+    # Of those, still open at the range's end.
+    open: int = Field(ge=0)
+    # Time drifted inside the range, scan to scan: an open episode counts up
+    # to its latest scan, not to the range's end.
+    drifted_s: int = Field(ge=0)
+    # The most missing paths any scan in the range saw.
+    most_missing: int = Field(ge=0)
+    # None when a drifted scan in the range predates the undesired split (010 FR-012a).
+    most_undesired: int | None = Field(default=None, ge=0)
+
+
+class DriftSummary(_Model):
+    start: UtcDatetime
+    end: UtcDatetime
+    # Most episodes first, then longest drifted, then name. A device with no
+    # episode in the range is left out.
+    devices: list[DeviceDriftSummary]
+
+
+class DriftSummaryResponse(Envelope):
+    summary: View[DriftSummary]
+
+
+# --- Run steps (spec 011) -----------------------------------------------------------
+
+
+class NafBlock(StrEnum):
+    INTENT = "intent"
+    EXECUTOR = "executor"
+    COLLECTOR = "collector"
+    OBSERVABILITY = "observability"
+    ORCHESTRATOR = "orchestrator"
+    PRESENTATION = "presentation"
+
+
+class BlockStatus(StrEnum):
+    DONE = "done"
+    FAILED = "failed"
+    NOT_REACHED = "not_reached"
+    # This run type records no steps one by one.
+    NOT_RECORDED = "not_recorded"
+    # Presentation: the surface being looked at, never a step.
+    SURFACE = "surface"
+
+
+class RunStep(_Model):
+    # The activity name as recorded.
+    name: str
+    # None for a name the server does not map to a block.
+    block: NafBlock | None
+    outcome: Literal["done", "failed"]
+    reason: str | None = None
+    t: UtcDatetime
+
+
+class BlockState(_Model):
+    block: NafBlock
+    status: BlockStatus
+    # Only when FAILED.
+    reason: str | None = None
+    # When its step, or its failure, was recorded.
+    t: UtcDatetime | None = None
+
+
+class RunSteps(_Model):
+    run: RunView
+    # True when this run type records its steps one by one (DeployIntent).
+    recorded: bool
+    # As recorded, oldest first.
+    steps: list[RunStep]
+    # Always the six blocks, in loop order.
+    blocks: list[BlockState] = Field(min_length=6, max_length=6)
+
+
+class RunStepsResponse(Envelope):
+    # `data` is None when the audit trail holds no such run.
+    steps: View[RunSteps]
+
+
+# --- Mode (spec 011) ----------------------------------------------------------------
+
+
+class ArchivePart(_Model):
+    name: str
+    present: bool
+    reason: str | None = None
+
+
+class MetricsWindow(_Model):
+    """A range an archive holds the six network views over at a 15 s step (spec 016, #351)."""
+
+    start: UtcDatetime
+    end: UtcDatetime
+
+
+class ArchiveInfo(_Model):
+    # The file's name, not its path.
+    name: str
+    created_at: UtcDatetime
+    snapl_commit: str | None = None
+    parts: list[ArchivePart]
+    # The range the metrics were exported over: the only range an archive can show.
+    metrics_start: UtcDatetime | None = None
+    metrics_end: UtcDatetime | None = None
+    # Spec 016 (#351): around each health episode and the archive's last hour, the
+    # six network views at 15 s. A range inside one of these is served from it.
+    metrics_windows: list[MetricsWindow] = Field(default_factory=list)
+
+
+class ModeResponse(Envelope):
+    mode: Literal["live", "archive"]
+    # The server's "now": the wall clock when live, the archive's creation time otherwise.
+    now: UtcDatetime
+    archive: ArchiveInfo | None = None
+
+    @model_validator(mode="after")
+    def _check(self) -> ModeResponse:
+        if (self.mode == "archive") != (self.archive is not None):
+            raise ValueError("archive must be set exactly when the mode is archive")
+        return self
+
+
+# --- Metrics (spec 012) ----------------------------------------------------------
+
+
+class MetricsViewName(StrEnum):
+    """The named PromQL views. A request picks one; it never supplies a query (FR-011)."""
+
+    WORKFLOW_DURATION = "workflow-duration"
+    GNMI_DURATION = "gnmi-duration"
+    GNMI_ERRORS = "gnmi-errors"
+    WORKER_LAG = "worker-lag"
+    WORKER_UP = "worker-up"
+    SOURCE_HEALTH = "source-health"
+    # Spec 015 (contracts/metrics-views.md): families already exported, not drawn before.
+    WORKFLOW_MEAN = "workflow-mean"
+    GNMI_MEAN = "gnmi-mean"
+    WORKFLOWS_COMPLETED = "workflows-completed"
+    ACTIVITY_TIME = "activity-time"
+    WORKER_SLOTS = "worker-slots"
+    SERVER_REQUEST_TIME = "server-request-time"
+    SOURCE_FETCH_TIME = "source-fetch-time"
+    # Spec 015 PR E: the worker's own counters.
+    SCAN_RESULTS = "scan-results"
+    DRIFT_PATHS = "drift-paths"
+    DEPLOY_OUTCOMES = "deploy-outcomes"
+    # Spec 016 (contracts/telemetry.md): the network, from the worker's telemetry.
+    INTERFACE_TRAFFIC = "interface-traffic"
+    INTERFACE_ERRORS = "interface-errors"
+    INTERFACE_DISCARDS = "interface-discards"
+    BGP_ESTABLISHED = "bgp-established"
+    DEVICE_CPU = "device-cpu"
+    DEVICE_MEMORY = "device-memory"
+
+
+# Spec 016's views. Archives export them; snapshots carry them at spec 015's
+# coarse step (snapshot.COARSE_VIEWS; spec 016 research R12).
+NETWORK_VIEWS = frozenset(
+    {
+        MetricsViewName.INTERFACE_TRAFFIC,
+        MetricsViewName.INTERFACE_ERRORS,
+        MetricsViewName.INTERFACE_DISCARDS,
+        MetricsViewName.BGP_ESTABLISHED,
+        MetricsViewName.DEVICE_CPU,
+        MetricsViewName.DEVICE_MEMORY,
+    }
+)
+
+
+# `count` (spec 015): events in one window, or a gauge's current count.
+# `bytes_per_second` and `percent` (0 to 100) are spec 016's.
+MetricUnit = Literal["ms", "per_second", "up", "count", "bytes_per_second", "percent"]
+
+
+class MetricPoint(_Model):
+    t: UtcDatetime
+    # None for NaN or +/-Inf: JSON has no such numbers, and the page shows a gap.
+    value: float | None
+
+
+class MetricSeries(_Model):
+    # Only the view's series labels: __name__, job and instance are dropped.
+    labels: dict[str, str]
+    points: list[MetricPoint]
+
+
+class MetricsData(_Model):
+    view: MetricsViewName
+    unit: MetricUnit
+    start: UtcDatetime
+    end: UtcDatetime
+    # Seconds, as used. It may be coarser than requested (FR-013).
+    step: int = Field(gt=0)
+    # Empty when there is no data: a note, not an error.
+    series: list[MetricSeries] = Field(default_factory=list)
+    note: str | None = None
+
+
+class MetricsResponse(Envelope):
+    metrics: View[MetricsData]
+
+
+# --- The network (spec 016, contracts/telemetry.md) ----------------------------------
+
+
+class InterfaceState(_Model):
+    """One interface intent names, with its latest figures. A figure with no series is null, never 0."""
+
+    name: str
+    # "down" for an interface intent disables.
+    expected: Literal["up", "down"]
+    up: bool | None = None
+    # Bytes per second over the rate window.
+    in_bps: float | None = None
+    out_bps: float | None = None
+    in_errors_ps: float | None = None
+    out_errors_ps: float | None = None
+    in_discards_ps: float | None = None
+    out_discards_ps: float | None = None
+
+
+class SessionState(_Model):
+    peer: str
+    # None for a session intent disables: nothing is expected of it.
+    expected: Literal["established"] | None = None
+    established: bool | None = None
+    prefixes_received: int | None = None
+
+
+class DeviceNetwork(_Model):
+    device_id: UUID
+    name: str
+    # Intent's, by name.
+    interfaces: list[InterfaceState] = Field(default_factory=list)
+    # Intent's, by peer.
+    sessions: list[SessionState] = Field(default_factory=list)
+    cpu_percent: float | None = None
+    memory_percent: float | None = None
+
+
+class FabricNetwork(_Model):
+    # When the figures were read.
+    at: UtcDatetime
+    # The page's device order, as /devices.
+    devices: list[DeviceNetwork]
+
+
+class NetworkResponse(Envelope):
+    network: View[FabricNetwork]

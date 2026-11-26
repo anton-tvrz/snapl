@@ -1,0 +1,24 @@
+{
+  "commitid": "680be56647f789593b863dd825d0fd3dbb80b553",
+  "message": "fix(presentation): say no audit events were read, not that the trail is empty (#163)",
+  "timestamp": "2026-11-07T22:40:00Z",
+  "ci_passed": true,
+  "branch": "overnight/010-d-history",
+  "totals": {
+    "files": 74,
+    "lines": 6120,
+    "hits": 5508,
+    "misses": 612,
+    "partials": 0,
+    "coverage": 90.0,
+    "branches": 0,
+    "methods": 0,
+    "sessions": 1,
+    "complexity": 0.0,
+    "complexity_total": 0.0,
+    "complexity_ratio": 0,
+    "diff": 0
+  },
+  "state": "complete",
+  "parent": "1c649df9"
+}

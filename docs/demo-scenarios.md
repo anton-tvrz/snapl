@@ -226,6 +226,239 @@ snapl audit --device spine-01
 
 ---
 
+## Scenario 9 — The loop closes itself (scheduled scans, opt-in self-healing)
+
+**Story:** "Nobody runs a scan. snapl watches the fabric on a schedule, reports
+what drifted, and — only when an operator explicitly says so — heals it."
+
+`demo.up` already created a report-only schedule. Shorten it for the stage, and
+look at it:
+
+```bash
+snapl schedule create --every 1m      # changes only the interval
+snapl schedule show
+```
+
+**Expect:** `response report`, `state active`, next runs one minute apart. In
+the Temporal UI, **Schedules → drift-response-dcfabric** shows the same.
+
+Break something by hand, then wait — do **not** run `snapl scan`:
+
+```bash
+docker exec clab-dcfabric-spine-01 sr_cli -ec 'set / interface ethernet-1/1 admin-state disable'
+snapl schedule trigger                # or just wait a minute
+snapl schedule show
+```
+
+**Expect:** a recent run reading `6 devices: 5 clean, 1 drifted, 0 errored   wrote: no`.
+Report mode found it and wrote nothing. `snapl audit --device spine-01` shows
+the scheduled scan's finding under workflow `drift-response-dcfabric-<time>-scan`,
+and `snapl audit --workflow drift-response-dcfabric-<time>` shows the run's
+`drift_response` summary, attributed to `schedule:drift-response-dcfabric`.
+
+Now opt in to self-healing. The prompt says exactly what is being authorized:
+
+```bash
+snapl schedule mode remediate         # answer y
+snapl schedule trigger --yes
+snapl schedule show                   # wrote: 1 device (1 ok, 0 failed)
+snapl scan                            # 6 clean — nobody ran reconcile
+snapl audit --device spine-01         # drift_response decision=remediated, then the deploy
+```
+
+**Temporal UI:** the scheduled run has a child `ScanDrift` and a child
+`ReconcileDevices`, which has the per-device `DeployIntent`.
+
+A schedule reports undesired config and never removes it, in any mode. Add some, and watch it stay:
+
+```bash
+docker exec clab-dcfabric-spine-01 sr_cli -ec 'set / interface ethernet-1/7 description hand-added'
+snapl schedule trigger --yes
+snapl audit --device spine-01         # decision undesired_only — no DeployIntent started
+```
+
+The scan reports two items: the description, and `enabled: True`. Creating an interface entry also enables the port. Neither the schedule nor a reconcile removes them. An operator does, when you're done (Scenario 15):
+
+```bash
+snapl remove spine-01                 # the preview: one delete, the whole interface entry
+snapl remove spine-01 --apply         # confirm, remove, verify
+```
+
+Pause before planned hand work, and switch back afterwards:
+
+```bash
+snapl schedule pause --reason "maintenance: spine-01 optics"
+snapl schedule resume
+snapl schedule mode report
+snapl audit --workflow drift-response-dcfabric   # every policy change, with who made it
+```
+
+---
+
+## Scenario 10 — Watch the loop (the dashboard)
+
+**Story:** "Everything the CLI shows, on one page that keeps itself current."
+
+```bash
+uv run snapl dashboard            # http://127.0.0.1:18030, in its own terminal
+```
+
+Open the page, then run beats 1 to 3 of the demo arc in another terminal.
+
+Build the page once with `uv run invoke dashboard.build` (Node 22.12 or later). Without it, the dashboard serves the plain page of spec 010, which shows the same facts as tables, and the points below read the same there.
+
+**Point at:**
+- The four numbers at the top: devices in sync, open drifts, the latest repair from scan to scan, and the runs of the last 24 hours with the failures named. Each one links to the panel with its detail. A number the page can't know is said in words, never shown as zero.
+- The fabric: spines above leaves, with the links intent declares. Each device's drift state has its own shape and glyph, not just a colour. Select a device for its detail. With none selected, the ring next to it gives the share of devices in sync, and the devices that differ are listed below it, most paths first.
+- Devices: each device's drift state and its direction. A few seconds after `snapl scan`, the device you changed by hand shows `undesired` or `missing`, with the exact paths and the command that fixes it: `snapl reconcile` for what is missing, `snapl remove` for what intent never asked for. The page shows the command to copy and never runs it. After a removal, the device's drawer shows the latest preview and the run list shows who confirmed the removal, what it deleted and whether the scan after agrees.
+- Recent runs: the deploy, scan and reconcile appear as each finishes, with its trigger (`operator` or `schedule`) and a link to the Temporal Web UI.
+- Schedule: the report-only schedule that `demo.up` created, its next run, and who paused it, if anyone did.
+- Last 24 hours: a chart of scans, the most drifted devices, deploys and scheduled repairs per hour. Failures are hatched and repairs outlined, so nothing depends on colour. An hour with no scans is left empty, and "Show the table" gives every number.
+- The source strip: stop the worker or Temporal, and the strip names what is down and what to run. Only the views that depend on that source change.
+
+**Expect:** the page keeps loading whatever is down. `curl -s localhost:18030/api/v1/overview | jq` returns the data the page shows.
+
+The dashboard is local and read-only, and has no authentication, so keep it on 127.0.0.1.
+
+---
+
+## Scenario 11 — How long did it take? (measured metrics)
+
+**Story:** "Every deploy and scan leaves a timing behind, and the dashboard charts it."
+
+Prometheus starts with the stack (`demo.up`). Keep the worker and `snapl dashboard` running, and open the dashboard's Metrics section with the range at 1 h. The range is a toolbar that stays on screen while the history and the metrics scroll. Each panel leads with its latest value, and a rate under one a second reads per minute.
+
+```bash
+uv run snapl deploy spine-01
+uv run snapl scan
+```
+
+**Point at:**
+- gNMI call duration: one line per device and operation. The deploy adds `configure` for spine-01, and the scan adds `collect` for every device. Prometheus scrapes the worker every 5 s and each line is a 95th percentile over at least a minute, so give it a minute to settle.
+- Workflow duration: `DeployIntent` and `ScanDrift` end to end, gNMI calls included.
+- Worker up: stop the worker and its strip turns red within a minute. Start it again and it turns green.
+- Dashboard sources up: the strip records when each source stopped answering, so an outage stays visible after it ends. It only moves while the page is open, because the page's polling is what reads the sources.
+
+**Expect:** `curl -s localhost:18091/metrics | grep snapl_gnmi_call_duration_count` prints the counters the gNMI panels are built from, one per device, operation and outcome.
+
+The numbers come from a six-node lab on one machine. Quote them as that.
+
+---
+
+## Scenario 12 — Replay it, and take it with you
+
+**Story:** "The drift you just repaired, scan by scan, and a file that shows it to someone without the lab."
+
+Run beats 1 to 3 of the demo arc with the dashboard open (Scenario 10). Then:
+
+**Point at:**
+- Drift over time: one lane per device. The device you changed by hand shows its drifted scans, then in sync after the reconcile, which is marked `R` between them.
+- The headline above the lanes: how long the drift lasted, from the scan that first saw it to the scan that first saw it gone, and that an operator's reconcile repaired it. It is a scan-to-scan time, not a detection time: name it that way.
+- "As of": focus it and press ← to step back one scan. The fabric and the device's detail show that scan's state, and a banner says you are looking at a past time. "Return to now" leaves it.
+- The loop: press "Loop" on the reconcile's deploy in the device's detail. Intent, Executor, Collector and Observability show done, with their times.
+
+Then write the recording:
+
+```bash
+uv run snapl dashboard --snapshot demo.html --days 1
+```
+
+**Expect:** the command prints the file's size, the range it covers and what it holds. Open `demo.html` from disk, with no server running: the same fabric, lanes, replay and loop strip, under a banner that says it is a recording. It makes no request.
+
+Read the file before you share it: it includes the error text and paths recorded from the devices as they were recorded.
+
+---
+
+## Scenario 13 — What did the loop do today?
+
+**Story:** "Not just the last run: a day of the loop's work, counted."
+
+Leave the schedule running in report mode for a few hours (Scenario 9), or run beats 1 to 3 of the demo arc. Then open the dashboard with the range at 24 h.
+
+**Point at:**
+- **The fabric history**, from the audit trail:
+  - devices in sync and open drifts at each scan;
+  - runs by trigger and outcome;
+  - how long each repaired drift lasted, from scan to scan.
+- **Drift by device**: for each device, how many drift episodes the range saw, how long it was drifted, and the most paths missing or undesired in one scan.
+- **"What the loop did"** in Metrics: workflows completed by type, scan results by device and state, differing paths found by device and kind, and deploys ended by outcome and reason. A count's point is the events in its window. Read the latest value, and don't add points up.
+- **The loop strip on the latest scan**: Intent, Collector and Observability done with their times, and Executor not reached. A scan recorded before spec 015 still says its steps are not recorded.
+
+**Expect:** once the worker has run a scan since it was restarted, `curl -s localhost:18091/metrics | grep '^snapl_scan_results_total'` prints one counter per device and state.
+
+These metrics describe the loop. The network itself is in Metrics' "The network" group and in Scenario 14.
+
+---
+
+## Scenario 14 — In sync, and still broken (device health)
+
+**Story:** "Drift asks whether the device is configured the way intent says. Health asks whether the network is actually up. They are different questions, and one device can pass the first and fail the second."
+
+Start from a converged, healthy fabric: `snapl status` ends with `fabric health   6 healthy, 0 unhealthy, 0 unknown`. Then break leaf-01's uplink to spine-01 on the device:
+
+```bash
+docker exec clab-dcfabric-leaf-01 sr_cli -ec 'set / interface ethernet-1/49 admin-state disable'
+```
+
+**Expect, within about 30 s:**
+- `snapl status`: `4 healthy, 2 unhealthy (leaf-01, spine-01)`.
+- The dashboard: both devices flagged. Open spine-01's drawer: `ethernet-1/1 down (expected up)` and `BGP 10.10.1.1 active (expected established)`. The interface and session rows in the drawer follow within about 25 s of the change by design; a downed BGP session showed in 6 to 13 s on the lab (#348).
+- `snapl scan`: **only leaf-01** drifted, with `/interface[name=ethernet-1/49]/enabled True → False`.
+
+**Point at:** spine-01. Nothing on it differs from intent, so it is in sync. Its link and its session are down all the same, so it is unhealthy. A config-only check would call it fine.
+
+Then repair it:
+
+```bash
+snapl reconcile --drifted --yes
+```
+
+**Expect:** the scan is clean right away, and both flags clear about 45 s later, once the BGP session comes back. `snapl audit --device spine-01` shows each `health_changed` with its reasons.
+
+Measured on the lab on 2026-11-20 (spec 016 evidence, item 4): flagged in 19 s, shown down in 24 s, cleared 48 s after the reconcile.
+
+---
+
+## Scenario 15 — Remove what intent never asked for
+
+**Story:** "A reconcile puts back what intent says and never deletes. Config someone added by hand stays until an operator removes it, after a preview, with a scan to prove it's gone."
+
+Pause the schedule so it doesn't race you, and start from a clean leaf-04. Then add three kinds of config intent doesn't hold:
+
+```bash
+snapl schedule pause --reason "demo: removal"
+L() { docker exec clab-dcfabric-leaf-04 sr_cli -ec "$1"; }
+L "info flat network-instance default protocols bgp group *"      # the group name to use below
+L "set / interface ethernet-1/7 description demo-probe"
+L "set / interface ethernet-1/7 admin-state enable"
+L "set / network-instance default protocols bgp neighbor 192.0.2.0 peer-as 65099 peer-group underlay-ipv4@leaf-04"
+L "set / interface ethernet-1/49 subinterface 0 ipv4 address 192.0.2.1/31"
+snapl scan                            # leaf-04 drifted: undesired items for each
+```
+
+Preview it. This writes nothing, however often you run it:
+
+```bash
+snapl remove leaf-04; echo $?         # one delete per entity, and what each one answers; exit 2
+```
+
+**Point at:** each delete is the entity's own path, never `/` or a container above it. Removing the neighbour says its session goes down and its peer group stays. `mgmt0`, `system0` and routing policies are listed as refused, with the reason, if they show up.
+
+Remove it:
+
+```bash
+snapl remove leaf-04 --apply          # the preview again, then: Remove 3 config entries from leaf-04?
+snapl scan                            # leaf-04 clean
+snapl audit --device leaf-04          # the removal: who confirmed it, what it deleted, verified
+snapl schedule resume
+```
+
+**Expect:** `removed 3 entries from leaf-04; the verifying scan finds none of them`. All the deletes go in one gNMI Set, which the device applies whole or not at all. If the device changes between the preview and your answer, nothing is written and the new plan is shown. If a deploy to the device is running, nothing is written either.
+
+A removal can leave config behind that the scan doesn't see: a peer group whose last neighbour it removed, and `ipv4 admin-state enable` on a subinterface whose extra address it removed. Neither carries traffic.
+
+---
+
 ## Suggested 10-minute demo arc
 
 | # | beat | command | *min* |
@@ -236,7 +469,15 @@ snapl audit --device spine-01
 | 4 | **Kill the worker mid-deploy** — durability is the differentiator | `snapl deploy leaf-01`, Ctrl-C the worker | 2 |
 | 5 | **Audit log** — everything you just did, from SQLite | `snapl audit --device spine-01` | 2 |
 
+Keep the dashboard (Scenario 10) open on a second screen through the arc: each beat shows up on it within seconds.
+
 Scenarios 4–6 are the Q&A reserve: "what if the SoT is stale / someone cancels / a device is down?"
+
+**Variant — the loop closes itself.** Replace beat 3 with Scenario 9: show the
+schedule finding the drift on its own in report mode, then
+`snapl schedule mode remediate` and `snapl schedule trigger --yes` to heal it
+without a reconcile command. Switch back to `report` before beat 4, or the
+schedule will heal whatever the next beat breaks.
 
 Worth showing the exit codes if the audience is technical — it is the thing that
 makes the CLI scriptable rather than just pretty:
@@ -249,7 +490,7 @@ snapl scan; echo $?   # 0 clean, 2 drifted, 1 something broke
 
 ```bash
 uv run invoke demo.check     # is it still ready? (safe anytime, changes nothing)
-uv run invoke demo.reset     # destroy lab + stack + volumes
+uv run invoke demo.reset     # destroy lab + stack + volumes (.snapl/ stays: metrics, lab runs, archives)
 uv run invoke demo.up        # rebuild from scratch
 ```
 
@@ -259,6 +500,10 @@ One thing resets on its own and will surprise you otherwise:
   SQLite on the `temporal_data` volume, so the Web UI keeps every workflow you
   ran. `demo.reset` does wipe it, along with every other volume, so a rehearsal
   that starts from `reset` starts with an empty UI.
+- **Metrics survive `demo.reset`.** Prometheus keeps its data in
+  `.snapl/prometheus/`, a host directory rather than a volume, so the charts
+  still show earlier rehearsals. `uv run invoke history.purge` deletes them when
+  you want an empty chart.
 - **SR Linux nodes keep their pushed config** across a container restart, but
   not across `lab-destroy`. After a redeploy the fabric is unconfigured, so
   Scenario 1's deploy is doing real work again — which is what you want.
@@ -268,11 +513,21 @@ node, or a port mismatch all show up there as a named failing line.
 
 ## Known limitations to name before you are asked
 
-- **Config removed from intent is not removed from the device** — apply is a
-  merge-only gNMI update at `/` (#65).
-- **Config that exists only on the device is never flagged** — the drift diff
-  compares intent against live for paths intent knows about, so an
-  operator-added interface or BGP neighbor goes unreported (#54).
+- **Deploys and reconciles never delete** — apply is a merge-only gNMI update
+  at `/`. Config that intent doesn't hold is flagged by a scan and stays until
+  an operator removes it with `snapl remove` (Scenario 15). No schedule
+  removes it, in any mode.
+- **Removal covers whole entities only** — interfaces, their default
+  network-instance bindings, BGP neighbours and extra IPv4 addresses. A field
+  removed from intent on an entity intent still manages (a description, say)
+  stays on the device. Routing policies are detected and refused, not removed.
 
-Together these mean "we converge to intent" is currently true for additions and
-changes, not deletions. Say it before the audience finds it.
+Together these mean "we converge to intent" is true for additions and changes,
+and for deletions only when an operator removes them. Say it before the
+audience finds it.
+
+- **Health checks interfaces and BGP sessions only**: a device is flagged for
+  an interface intent expects up that is down, or an expected session that is
+  not established. Routes, counters, CPU and memory are shown, never judged, and
+  on the lab CPU and memory are the container host's, not a switch's. Health is
+  never repaired automatically.

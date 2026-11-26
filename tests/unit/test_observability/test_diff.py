@@ -62,6 +62,12 @@ def _matching_actual_data(desired):
             "peer_group": bgp.peer_group,
             "enabled": bgp.enabled,
         },
+        # An addressed interface's subinterface is in the default instance (#315).
+        **{
+            f"/network-instance[name=default]/interface[name={i.name}.0]": {"name": f"{i.name}.0"}
+            for i in desired.interfaces
+            if i.ip_address
+        },
     }
 
 
@@ -239,7 +245,11 @@ class TestUndesiredEntities:
         assert any("ethernet-1/7" in path for path in paths), f"undesired interface not reported: {paths}"
         reported = [item for item in items if "ethernet-1/7" in item.path]
         assert all(item.desired is None for item in reported), "an undesired entity has no desired value"
-        assert {item.actual for item in reported} == {"192.0.2.1", 30}
+        assert [(item.path, item.actual) for item in reported] == [
+            ("/interface[name=ethernet-1/7]/ip_address", "192.0.2.1"),
+            ("/interface[name=ethernet-1/7]/prefix_length", 30),
+            ("/interface[name=ethernet-1/7]/enabled", True),
+        ]
 
     # SR Linux v26.3.1 reports its default mtu (9232) on any port carrying config,
     # though nobody set one (#122). A default carries no operator intent.
@@ -268,7 +278,8 @@ class TestUndesiredEntities:
         items = diff_desired_vs_actual(desired, actual)
 
         assert [(item.path, item.actual) for item in items] == [
-            ("/interface[name=ethernet-1/7]/description", "hand-added-by-operator")
+            ("/interface[name=ethernet-1/7]/description", "hand-added-by-operator"),
+            ("/interface[name=ethernet-1/7]/enabled", True),
         ]
 
     def test_a_non_default_mtu_on_an_undesired_port_is_reported(self):
@@ -280,7 +291,40 @@ class TestUndesiredEntities:
 
         items = diff_desired_vs_actual(desired, actual)
 
-        assert [(item.path, item.actual) for item in items] == [("/interface[name=ethernet-1/7]/mtu", 1500)]
+        assert [(item.path, item.actual) for item in items] == [
+            ("/interface[name=ethernet-1/7]/mtu", 1500),
+            ("/interface[name=ethernet-1/7]/enabled", True),
+        ]
+
+    # An interface entry in SR Linux config defaults to admin-state enable the
+    # moment it exists, while a port with no entry reports disable (#175). So an
+    # enabled port is one somebody created, and it is reported like any other
+    # value the port does not carry by default (spec 007 FR-003, amended).
+
+    def test_an_enabled_port_outside_intent_is_reported_on_its_own(self):
+        from snapl_observability.structural.diff import diff_desired_vs_actual
+
+        desired = _build_desired_state()
+        actual = _matching_actual_data(desired)
+        actual["/interface[name=ethernet-1/7]"] = {**_bare_interface(), "enabled": True}
+
+        items = diff_desired_vs_actual(desired, actual)
+
+        assert [(item.path, item.desired, item.actual, item.undesired) for item in items] == [
+            ("/interface[name=ethernet-1/7]/enabled", None, True, True)
+        ]
+
+    def test_an_enabled_port_carrying_only_the_default_mtu_reports_enabled_only(self):
+        """What SR Linux reports for an empty interface entry: enabled, mtu 9232."""
+        from snapl_observability.structural.diff import diff_desired_vs_actual
+
+        desired = _build_desired_state()
+        actual = _matching_actual_data(desired)
+        actual["/interface[name=ethernet-1/7]"] = {**_bare_interface(), "enabled": True, "mtu": 9232}
+
+        items = diff_desired_vs_actual(desired, actual)
+
+        assert [(item.path, item.actual) for item in items] == [("/interface[name=ethernet-1/7]/enabled", True)]
 
     def test_the_management_interface_is_never_reported(self):
         """SC-003: mgmt0 is shape-identical to real config, and deleting it
@@ -307,16 +351,6 @@ class TestUndesiredEntities:
         assert not [i for i in items if "mgmt0" in i.path or "system0" in i.path], (
             f"a protected interface was reported: {[i.path for i in items]}"
         )
-
-    def test_enabled_alone_does_not_make_an_interface_configured(self):
-        """FR-003: a port that is merely up is not evidence of intent."""
-        from snapl_observability.structural.diff import diff_desired_vs_actual
-
-        desired = _build_desired_state()
-        actual = _matching_actual_data(desired)
-        actual["/interface[name=ethernet-1/9]"] = {**_bare_interface(), "enabled": True}
-
-        assert diff_desired_vs_actual(desired, actual) == []
 
     def test_a_bgp_neighbor_outside_intent_is_reported(self):
         """US1 scenario 3 — the same rule applies to the other entity kind."""
@@ -390,3 +424,86 @@ class TestUndesiredEntities:
 
         assert [i.path for i in first] == [i.path for i in second]
         assert len(first) == 4
+
+
+class TestExtraAddressesOnIntentInterfaces:
+    """An intent-managed interface carrying more addresses than intent gives it (#193)."""
+
+    _IFACE = "/interface[name=ethernet-1/1]"
+
+    @staticmethod
+    def _address(prefix: str) -> dict[str, str]:
+        return {"prefix": prefix, "path": f"subinterface[index=0]/ipv4/address[ip-prefix={prefix}]"}
+
+    def _actual(self, desired, *prefixes: str):
+        actual = _matching_actual_data(desired)
+        entry = actual[self._IFACE]
+        entry["ipv4_addresses"] = [self._address(prefix) for prefix in prefixes]
+        first, _, length = prefixes[0].partition("/") if prefixes else (None, "", "")
+        entry["ip_address"] = first
+        entry["prefix_length"] = int(length) if length else None
+        return actual
+
+    def test_the_intended_address_alone_is_clean(self):
+        from snapl_observability.structural.diff import diff_desired_vs_actual
+
+        desired = _build_desired_state()
+
+        assert diff_desired_vs_actual(desired, self._actual(desired, "10.1.1.0/31")) == []
+
+    def test_an_extra_address_is_reported_as_undesired(self):
+        from snapl_observability.structural.diff import diff_desired_vs_actual
+
+        desired = _build_desired_state()
+
+        items = diff_desired_vs_actual(desired, self._actual(desired, "10.1.1.0/31", "10.99.0.1/31"))
+
+        assert len(items) == 1
+        item = items[0]
+        assert item.path == f"{self._IFACE}/subinterface[index=0]/ipv4/address[ip-prefix=10.99.0.1/31]"
+        assert item.desired is None
+        assert item.actual == "10.99.0.1/31"
+        assert item.undesired is True
+        assert item.entity_kind == "interface"
+
+    def test_the_intended_address_is_found_wherever_the_device_lists_it(self):
+        from snapl_observability.structural.diff import diff_desired_vs_actual
+
+        desired = _build_desired_state()
+
+        items = diff_desired_vs_actual(desired, self._actual(desired, "10.0.9.9/31", "10.1.1.0/31"))
+
+        assert [(item.actual, item.undesired) for item in items] == [("10.0.9.9/31", True)]
+
+    def test_a_missing_intended_address_is_forward_drift_and_the_rest_is_undesired(self):
+        from snapl_observability.structural.diff import diff_desired_vs_actual
+
+        desired = _build_desired_state()
+
+        items = diff_desired_vs_actual(desired, self._actual(desired, "10.99.0.1/31", "10.99.0.3/31"))
+
+        forward = [(item.path, item.desired, item.actual) for item in items if not item.undesired]
+        assert forward == [(f"{self._IFACE}/ip_address", "10.1.1.0", "10.99.0.1")]
+        assert [item.actual for item in items if item.undesired] == ["10.99.0.3/31"]
+
+    def test_actual_data_without_the_address_list_compares_as_before(self):
+        from snapl_observability.structural.diff import diff_desired_vs_actual
+
+        desired = _build_desired_state()
+        actual = _matching_actual_data(desired)
+        actual[self._IFACE]["ip_address"] = "10.9.9.9"
+
+        items = diff_desired_vs_actual(desired, actual)
+
+        assert [(item.path, item.actual) for item in items] == [(f"{self._IFACE}/ip_address", "10.9.9.9")]
+
+    def test_the_report_orders_forward_drift_before_undesired(self):
+        from snapl_observability.structural.diff import diff_desired_vs_actual
+
+        desired = _build_desired_state()
+        actual = self._actual(desired, "10.1.1.0/31", "10.99.0.1/31")
+        actual[self._IFACE]["description"] = "changed by hand"
+
+        items = diff_desired_vs_actual(desired, actual)
+
+        assert [item.undesired for item in items] == [False, True]

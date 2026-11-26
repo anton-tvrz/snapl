@@ -12,18 +12,20 @@ typically create one via :func:`snapl_intent.infrahub.client.build_client` or
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Any
 from uuid import UUID
 
 from snapl_intent.abc import IntentStore
 from snapl_intent.exceptions import (
-    IntentConnectionError,
+    IntentAttributionError,
     IntentDeletionError,
     IntentNotFoundError,
     IntentSchemaError,
 )
 from snapl_intent.infrahub.schema import SchemaLoader, discover_schema_batches
+from snapl_intent.infrahub.sdk_errors import sdk_errors_as_domain_errors
 from snapl_intent.infrahub.seed import SeedIngester
 from snapl_intent.models import (
     BGPSession,
@@ -32,6 +34,7 @@ from snapl_intent.models import (
     Device,
     Interface,
     ProvisionResult,
+    RoutingPolicy,
     Schema,
     SeedResult,
 )
@@ -53,6 +56,7 @@ DEVICE_KIND = "DcimDevice"
 # child-side queries filtered by ``device__ids`` (#33).
 INTERFACE_KIND = "InterfacePhysical"
 SESSION_KIND = "RoutingBGPSession"
+POLICY_KIND = "RoutingPolicy"
 
 # Schema namespaces declared in the packaged YAML tree. ``get_schema`` uses
 # this set to filter out Infrahub built-ins (Core*, Builtin*, Profile*) from
@@ -117,15 +121,18 @@ def _peer_node(node: Any, attr: str) -> Any | None:
 def _peer_id(node: Any, attr: str) -> str | None:
     """Read the id of the peer on a cardinality-one relation.
 
+    Prefer the relation's own ``id``: the live SDK fills it from the query
+    response, so it survives the store miss that makes ``.peer`` raise (#46).
+    Fall back to the resolved peer for relation objects exposing only ``.peer``.
+
     Stringify the id: some SDK nodes expose ``id`` as a ``uuid.UUID`` object
-    rather than a string, and both grouping keys (``str(node.id)``) and
-    ``UUID(peer_id)`` downstream assume str — a raw UUID silently drops the
-    child from its device group or raises (#48).
+    rather than a string, and the grouping keys (``str(node.id)``) assume
+    str — a raw UUID silently drops the child from its device group (#48).
     """
-    peer = _peer_node(node, attr)
-    if peer is None:
-        return None
-    peer_id = getattr(peer, "id", None)
+    rel = getattr(node, attr, None)
+    peer_id = getattr(rel, "id", None)
+    if peer_id is None:
+        peer_id = getattr(_resolve_peer(rel), "id", None)
     return str(peer_id) if peer_id is not None else None
 
 
@@ -160,6 +167,63 @@ def _select_interface_ip(
         if ":" not in address:
             return address, prefix
     return candidates[0] if candidates else (None, None)
+
+
+# SoT ``status`` values under which a child's config is admin-enabled (#47).
+_ENABLED_STATUSES = frozenset({"active", "provisioning", "maintenance", "outage"})
+
+
+def _status_enabled(node: Any) -> bool:
+    """Map a child node's SoT ``status`` to admin enablement.
+
+    One rule for every child kind. ``status`` tracks lifecycle, not admin
+    state, so lifecycle and operational annotations keep the config enabled:
+    rendering a ``provisioning`` link admin-shutdown takes it down exactly
+    when it is first pushed, and the observer then flags it as drift.
+
+    InterfacePhysical (``DcimInterface.status``, schemas/base/dcim.yml):
+        active, provisioning, maintenance, outage, None -> enabled
+        free, disabled, deleted                         -> disabled
+    RoutingBGPSession (``RoutingProtocol.status``, schemas/extensions/routing.yml):
+        active, None                                    -> enabled
+        disabled, deleted                               -> disabled
+
+    No status means the SoT has no opinion, so the config stays enabled. Any
+    other value is disabled: an unrecognised lifecycle state is not
+    confirmed live.
+    """
+    status = _value(node, "status")
+    return status is None or status in _ENABLED_STATUSES
+
+
+def _policy_names(state: DesiredState) -> set[str]:
+    """Every routing policy a state's sessions name, for import or export."""
+    return {name for session in state.bgp_sessions for name in (session.import_policy, session.export_policy) if name}
+
+
+def _group_by_device(nodes: list[Any], device_ids: list[str], *, kind: str) -> dict[str, list[Any]]:
+    """Group children from a ``device__ids`` query onto the queried devices.
+
+    Query membership attributes a child, not peer resolution: with one device
+    queried, every child returned is that device's. Across several devices the
+    ``device`` relation's id picks the parent. A child naming no queried
+    device can't be placed, and leaving it out would read as live-only config
+    downstream, which reconcile could remove (#46), so refuse instead.
+    """
+    queried = set(device_ids)
+    grouped: dict[str, list[Any]] = {}
+    unattributed: list[str] = []
+    for node in nodes:
+        device_ref = device_ids[0] if len(device_ids) == 1 else _peer_id(node, "device")
+        if device_ref in queried:
+            grouped.setdefault(device_ref, []).append(node)
+        else:
+            unattributed.append(str(node.id))
+    if unattributed:
+        raise IntentAttributionError(
+            f"{len(unattributed)} {kind} node(s) name no queried device: {', '.join(unattributed)}"
+        )
+    return grouped
 
 
 class InfrahubIntentStore(IntentStore):
@@ -221,19 +285,14 @@ class InfrahubIntentStore(IntentStore):
             "prefetch_relationships": True,
             "populate_store": True,
         }
-        iface_nodes = await self._filters(kind=INTERFACE_KIND, **relation_kwargs)
-        session_nodes = await self._filters(kind=SESSION_KIND, **relation_kwargs)
+        # Independent round-trips, so they overlap (#49).
+        iface_nodes, session_nodes = await asyncio.gather(
+            self._filters(kind=INTERFACE_KIND, **relation_kwargs),
+            self._filters(kind=SESSION_KIND, **relation_kwargs),
+        )
 
-        ifaces_by_device: dict[str, list[Any]] = {}
-        for node in iface_nodes:
-            device_ref = _peer_id(node, "device")
-            if device_ref is not None:
-                ifaces_by_device.setdefault(device_ref, []).append(node)
-        sessions_by_device: dict[str, list[Any]] = {}
-        for node in session_nodes:
-            device_ref = _peer_id(node, "device")
-            if device_ref is not None:
-                sessions_by_device.setdefault(device_ref, []).append(node)
+        ifaces_by_device = _group_by_device(iface_nodes, device_ids, kind=INTERFACE_KIND)
+        sessions_by_device = _group_by_device(session_nodes, device_ids, kind=SESSION_KIND)
 
         states: list[DesiredState] = []
         for node in device_nodes:
@@ -243,50 +302,48 @@ class InfrahubIntentStore(IntentStore):
                 DesiredState(
                     device=device,
                     interfaces=[
-                        self._node_to_interface(iface, fallback_device_id=device.id)
+                        self._node_to_interface(iface, device_id=device.id)
                         for iface in ifaces_by_device.get(node_id, [])
                     ],
                     bgp_sessions=[
-                        self._node_to_bgp_session(session, fallback_device_id=device.id)
+                        self._node_to_bgp_session(session, device_id=device.id)
                         for session in sessions_by_device.get(node_id, [])
                     ],
                 )
             )
+        await self._attach_policies(states, branch=resolved_branch)
         return states
+
+    async def _attach_policies(self, states: list[DesiredState], *, branch: str) -> None:
+        """Give each state the routing policies its sessions name (#317).
+
+        One read for every device. A name with no policy behind it is left out
+        rather than raised here, where it would fail every device's read: the
+        renderer refuses the one device whose session names it.
+        """
+        names = sorted({name for state in states for name in _policy_names(state)})
+        if not names:
+            return
+        nodes = await self._filters(kind=POLICY_KIND, branch=branch, name__values=names)
+        policies = {policy.name: policy for policy in map(self._node_to_policy, nodes)}
+        for state in states:
+            state.routing_policies = [policies[name] for name in sorted(_policy_names(state)) if name in policies]
 
     async def _filters(self, **kwargs: Any) -> list[Any]:
         """Call ``client.filters`` translating SDK failures to domain errors."""
-        try:
+        with sdk_errors_as_domain_errors():
             return list(await self._client.filters(**kwargs) or [])
-        except (OSError, TimeoutError) as exc:
-            raise IntentConnectionError(f"Infrahub unreachable: {exc}") from exc
-        except IntentConnectionError:
-            raise
-        except Exception as exc:
-            # Any non-domain error escaping the SDK is treated as a connection
-            # problem for callers. SDK-specific exceptions that may be subclasses
-            # of IntentConnectionError pass through unchanged above.
-            if exc.__class__.__module__.startswith("infrahub"):
-                raise IntentConnectionError(f"Infrahub error: {exc}") from exc
-            raise
 
     # ------------------------------------------------------------------ Phase stubs
     # These raise NotImplementedError until later tasks add them, but they
     # satisfy the ABC so the class is instantiable in Phase 3 unit tests.
 
     async def get_schema(self, use_case: str) -> Schema:
-        # A use case is "known" iff its seed directory exists in the package.
-        if not (_SEED_ROOT / use_case).is_dir():
-            raise IntentSchemaError(f"Unknown use case: {use_case}")
-
-        try:
+        # One schema serves every use case (``use_case`` is a text attribute on
+        # the device), so there is no per-use-case schema to be missing. Whether
+        # seed data ships for a use case says nothing about its schema (#68).
+        with sdk_errors_as_domain_errors():
             registry = await self._client.schema.all(branch=self._default_branch)
-        except (OSError, TimeoutError) as exc:
-            raise IntentConnectionError(f"Infrahub unreachable: {exc}") from exc
-        except Exception as exc:
-            if exc.__class__.__module__.startswith("infrahub"):
-                raise IntentConnectionError(f"Infrahub error: {exc}") from exc
-            raise
 
         project_kinds = sorted(k for k in (registry or {}) if _is_project_kind(k))
         if not project_kinds:
@@ -297,10 +354,21 @@ class InfrahubIntentStore(IntentStore):
 
         return Schema(
             use_case=use_case,
-            version="1.0",
+            version=self._schema_hash(),
             entities=project_kinds,
             source_files=source_files,
         )
+
+    def _schema_hash(self) -> str:
+        """The hash of the branch's live schema, as the SDK holds it after ``schema.all``.
+
+        This is the schema's revision: it changes when the schema does (#68).
+        ``"unknown"`` when the SDK's cache carries none.
+        """
+        cache = getattr(self._client.schema, "cache", None)
+        entry = cache.get(self._default_branch) if isinstance(cache, dict) else None
+        value = getattr(entry, "hash", None)
+        return value if isinstance(value, str) and value else "unknown"
 
     async def provision_schema(self, use_case: str) -> ProvisionResult:
         loader = SchemaLoader(
@@ -327,14 +395,7 @@ class InfrahubIntentStore(IntentStore):
         )
 
     async def delete_device(self, device_id: UUID) -> DeleteResult:
-        try:
-            nodes = await self._client.filters(
-                kind=DEVICE_KIND,
-                ids=[str(device_id)],
-                prefetch_relationships=True,
-            )
-        except (OSError, TimeoutError) as exc:
-            raise IntentConnectionError(f"Infrahub unreachable: {exc}") from exc
+        nodes = await self._filters(kind=DEVICE_KIND, ids=[str(device_id)], prefetch_relationships=True)
 
         if not nodes:
             raise IntentNotFoundError(f"Device {device_id} not found")
@@ -367,7 +428,7 @@ class InfrahubIntentStore(IntentStore):
         return Device(
             id=UUID(str(node.id)),
             name=_value(node, "name"),
-            management_address=str(management_ip).split("/", 1)[0],
+            management_address=_split_cidr(management_ip)[0] or "",
             role=_value(node, "role", default=""),
             use_case=_value(node, "use_case", default=""),
             platform=_value(node, "platform"),
@@ -375,13 +436,12 @@ class InfrahubIntentStore(IntentStore):
             lab_node_name=_value(node, "lab_node_name"),
         )
 
-    def _node_to_interface(self, node: Any, *, fallback_device_id: UUID) -> Interface:
+    def _node_to_interface(self, node: Any, *, device_id: UUID) -> Interface:
         # Live InterfacePhysical shape: the IP lives on the ``ip_addresses``
         # relation (IpamIPAddress peer with a CIDR ``address``); enablement is
         # the ``status`` attribute. There are no ip_address/prefix_length/
-        # enabled scalars (#33).
-        peer_id = _peer_id(node, "device")
-        device_id = UUID(peer_id) if peer_id else fallback_device_id
+        # enabled scalars (#33). ``device_id`` is the device the node was
+        # grouped under, not its re-resolved ``device`` peer (#46).
         ip_candidates: list[tuple[str, int | None]] = []
         for ip_rel in _peers(node, "ip_addresses"):
             ip_peer = _resolve_peer(ip_rel)
@@ -389,7 +449,6 @@ class InfrahubIntentStore(IntentStore):
             if address:
                 ip_candidates.append((address, prefix))
         ip_address, prefix_length = _select_interface_ip(ip_candidates)
-        status = _value(node, "status")
         return Interface(
             id=UUID(str(node.id)),
             device_id=device_id,
@@ -397,21 +456,19 @@ class InfrahubIntentStore(IntentStore):
             description=_value(node, "description"),
             ip_address=ip_address,
             prefix_length=prefix_length,
-            enabled=True if status is None else status == "active",
+            enabled=_status_enabled(node),
             speed=_value(node, "speed"),
             mtu=_value(node, "mtu"),
             peer_device=_value(node, "peer_device"),
             peer_interface=_value(node, "peer_interface"),
         )
 
-    def _node_to_bgp_session(self, node: Any, *, fallback_device_id: UUID) -> BGPSession:
+    def _node_to_bgp_session(self, node: Any, *, device_id: UUID) -> BGPSession:
         # Live RoutingBGPSession shape: ASNs and endpoint IPs are relations
         # (local_as/remote_as → RoutingAutonomousSystem, remote_ip →
         # IpamIPAddress), and the policy attributes are plural (#33).
-        peer_id = _peer_id(node, "device")
-        device_id = UUID(peer_id) if peer_id else fallback_device_id
+        # ``device_id`` is the device the node was grouped under (#46).
         peer_address, _prefix = _split_cidr(_peer_value(node, "remote_ip", "address"))
-        status = _value(node, "status")
         return BGPSession(
             id=UUID(str(node.id)),
             device_id=device_id,
@@ -420,7 +477,16 @@ class InfrahubIntentStore(IntentStore):
             peer_asn=_peer_value(node, "remote_as", "asn", default=0) or 0,
             peer_group=_peer_value(node, "peer_group", "name"),
             address_family=_value(node, "address_family", default="ipv4_unicast"),
-            export_policy=_value(node, "export_policies"),
-            import_policy=_value(node, "import_policies"),
-            enabled=True if status is None else status == "active",
+            # The seed names the policies on the peer group; a session's own wins (#317).
+            export_policy=_value(node, "export_policies") or _peer_value(node, "peer_group", "export_policies"),
+            import_policy=_value(node, "import_policies") or _peer_value(node, "peer_group", "import_policies"),
+            enabled=_status_enabled(node),
+        )
+
+    def _node_to_policy(self, node: Any) -> RoutingPolicy:
+        return RoutingPolicy(
+            name=_value(node, "name"),
+            description=_value(node, "description"),
+            accept_prefixes=list(_value(node, "accept_prefixes") or []),
+            default_action=_value(node, "default_action", default="reject") or "reject",
         )

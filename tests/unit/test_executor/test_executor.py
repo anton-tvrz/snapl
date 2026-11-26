@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import shutil
 import threading
 from unittest.mock import MagicMock, patch
 from uuid import UUID
 
 import pytest
+from jinja2 import UndefinedError
 
+import snapl_executor.gnmi.renderer as renderer_module
 from snapl_executor.gnmi.executor import GnmiExecutor
 from snapl_executor.models import ApplyResult, BatchResult, DryRunResult
 
@@ -101,11 +104,11 @@ class TestDryRun:
         executor = _make_executor()
         with patch("snapl_executor.gnmi.executor.ConfigRenderer") as mock_renderer_cls:
             mock_renderer = MagicMock()
-            mock_renderer.render_safe.return_value = {"_render_error": "undefined variable: foo"}
+            mock_renderer.render.side_effect = UndefinedError("undefined variable: foo")
             mock_renderer_cls.return_value = mock_renderer
             result = await executor.dry_run(dcfabric_desired_state)
         assert result.success is False
-        assert result.render_error is not None
+        assert "undefined variable: foo" in (result.render_error or "")
         assert result.payload is None
 
 
@@ -298,3 +301,194 @@ class TestDialHostResolution:
         assert result.succeeded == 2
         targets = {call.kwargs["target"] for call in mock_cls.call_args_list}
         assert targets == {("clab-dcfabric-spine-01", 57400), ("clab-dcfabric-leaf-01", 57400)}
+
+
+# ---------------------------------------------------------------------------
+# #56 — render failures are results on every entrypoint, never exceptions
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(
+    params=[
+        pytest.param(("nonexistent_use_case_xyz", "No templates found"), id="unknown-use-case"),
+        pytest.param(("undefined_var", "'no_such_variable' is undefined"), id="template-error"),
+        pytest.param(("bad_json", "JSONDecodeError"), id="bad-json"),
+    ]
+)
+def render_failure(request, tmp_path, monkeypatch, dcfabric_desired_state):
+    """A DesiredState whose render fails, its use case, and the cause its error must name.
+
+    The broken use cases are real template directories under a temporary
+    templates root: one references an undefined variable (StrictUndefined
+    raises UndefinedError, a TemplateError), one renders text that is not
+    JSON. The real dcfabric templates are copied alongside so a healthy
+    device still renders.
+    """
+    shutil.copytree(renderer_module._TEMPLATES_ROOT / "dcfabric", tmp_path / "dcfabric")
+    (tmp_path / "undefined_var").mkdir()
+    (tmp_path / "undefined_var" / "interfaces.j2").write_text("[{{ no_such_variable }}]")
+    (tmp_path / "bad_json").mkdir()
+    (tmp_path / "bad_json" / "interfaces.j2").write_text("not json")
+    monkeypatch.setattr(renderer_module, "_TEMPLATES_ROOT", tmp_path)
+
+    use_case, cause = request.param
+    dcfabric_desired_state.device.use_case = use_case
+    return dcfabric_desired_state, use_case, cause
+
+
+def _assert_render_error(message: str | None, use_case: str, cause: str) -> None:
+    assert message is not None
+    assert message.startswith(f"render failed for use case {use_case!r}: ")
+    assert cause in message
+
+
+class TestRenderFailureContract:
+    """An unknown use case, a template error and rendered text that is not
+    JSON come back as a failed result from apply, rollback, dry_run and
+    apply_batch alike, with no gNMI connection made (#56)."""
+
+    @pytest.mark.asyncio
+    async def test_apply_returns_failed_result(self, render_failure):
+        desired, use_case, cause = render_failure
+        executor = _make_executor()
+        with patch("snapl_executor.gnmi.executor.gNMIclient") as mock_cls:
+            result = await executor.apply(desired)
+            mock_cls.assert_not_called()
+        assert isinstance(result, ApplyResult)
+        assert result.success is False
+        assert result.is_rollback is False
+        assert result.payload == {}
+        _assert_render_error(result.error, use_case, cause)
+
+    @pytest.mark.asyncio
+    async def test_rollback_returns_failed_result(self, render_failure):
+        desired, use_case, cause = render_failure
+        executor = _make_executor()
+        with patch("snapl_executor.gnmi.executor.gNMIclient") as mock_cls:
+            result = await executor.rollback(desired)
+            mock_cls.assert_not_called()
+        assert isinstance(result, ApplyResult)
+        assert result.success is False
+        assert result.is_rollback is True
+        assert result.payload == {}
+        _assert_render_error(result.error, use_case, cause)
+
+    @pytest.mark.asyncio
+    async def test_dry_run_returns_failed_result(self, render_failure):
+        desired, use_case, cause = render_failure
+        executor = _make_executor()
+        result = await executor.dry_run(desired)
+        assert isinstance(result, DryRunResult)
+        assert result.success is False
+        assert result.payload is None
+        _assert_render_error(result.render_error, use_case, cause)
+
+    @pytest.mark.asyncio
+    async def test_apply_batch_reports_failed_device_and_applies_the_rest(
+        self, render_failure, make_desired, mock_gnmi_client
+    ):
+        desired, use_case, cause = render_failure
+        healthy = make_desired("leaf-01")
+        executor = _make_executor()
+        with patch("snapl_executor.gnmi.executor.gNMIclient", return_value=mock_gnmi_client) as mock_cls:
+            result = await executor.apply_batch([desired, healthy])
+        assert isinstance(result, BatchResult)
+        assert (result.total, result.succeeded, result.failed) == (2, 1, 1)
+        failed = result.results[desired.device.id]
+        assert failed.success is False
+        assert failed.payload == {}
+        _assert_render_error(failed.error, use_case, cause)
+        assert result.results[healthy.device.id].success is True
+        assert mock_cls.call_count == 1  # only the healthy device was dialled
+
+
+class _SilentError(Exception):
+    """An exception whose ``str()`` is empty, like a dial that never connects (#194)."""
+
+    def __str__(self) -> str:
+        return ""
+
+
+class TestApplyErrorIsNeverBlank:
+    @pytest.mark.asyncio
+    async def test_an_exception_with_no_message_is_named_with_the_dial_target(self, dcfabric_desired_state):
+        executor = _make_executor()
+        target = f"{executor._dial_host(dcfabric_desired_state.device)}:{executor._port}"
+        with patch("snapl_executor.gnmi.executor.gNMIclient") as mock_cls:
+            mock_cls.return_value.__enter__.side_effect = _SilentError()
+            result = await executor.apply(dcfabric_desired_state)
+
+        assert result.success is False
+        assert result.error == f"_SilentError, dialing {target}"
+
+    @pytest.mark.asyncio
+    async def test_a_message_is_kept_as_it_was(self, dcfabric_desired_state, mock_gnmi_client):
+        mock_gnmi_client.set.side_effect = Exception("gRPC status INVALID_ARGUMENT")
+        executor = _make_executor()
+        with patch("snapl_executor.gnmi.executor.gNMIclient", return_value=mock_gnmi_client):
+            result = await executor.apply(dcfabric_desired_state)
+
+        assert result.error == "gRPC status INVALID_ARGUMENT"
+
+
+# ---------------------------------------------------------------------------
+# #55 — a cap on how many devices a batch dials at once
+# ---------------------------------------------------------------------------
+
+
+class TestApplyBatchConcurrencyCap:
+    @staticmethod
+    def _states(make_desired, count: int):
+        states = [make_desired(f"leaf-{i:02d}") for i in range(count)]
+        # One host each, so the per-host set lock does not serialize them.
+        for i, state in enumerate(states):
+            state.device.management_address = f"10.0.0.{i + 1}"
+        return states
+
+    @pytest.mark.asyncio
+    async def test_no_more_than_the_cap_are_dialed_at_once(self, make_desired):
+        import time as _time
+
+        from snapl_executor.gnmi.executor import GnmiExecutor
+
+        executor = GnmiExecutor(password="test", max_concurrency=2)  # pragma: allowlist secret
+        in_flight = 0
+        max_in_flight = 0
+        lock = threading.Lock()
+
+        def fake_set(host, payload):
+            nonlocal in_flight, max_in_flight
+            with lock:
+                in_flight += 1
+                max_in_flight = max(max_in_flight, in_flight)
+            _time.sleep(0.03)
+            with lock:
+                in_flight -= 1
+            return "ok"
+
+        with patch.object(executor, "_blocking_set", side_effect=fake_set):
+            result = await executor.apply_batch(self._states(make_desired, 6))
+
+        assert result.succeeded == 6
+        assert max_in_flight == 2
+
+    def test_the_default_cap_is_documented(self):
+        from snapl_executor.gnmi.executor import DEFAULT_MAX_CONCURRENCY
+
+        assert DEFAULT_MAX_CONCURRENCY == 16
+
+    @pytest.mark.parametrize("bad", [0, -1])
+    def test_a_cap_below_one_is_a_config_error(self, bad):
+        from snapl_executor.exceptions import ExecutorConfigError
+        from snapl_executor.gnmi.executor import GnmiExecutor
+
+        with pytest.raises(ExecutorConfigError, match="max_concurrency"):
+            GnmiExecutor(password="test", max_concurrency=bad)  # pragma: allowlist secret
+
+
+def test_the_executor_has_one_gnmi_set_path():
+    """The unlocked ``gnmi_set`` helper is gone (#71): every set goes through
+    ``GnmiExecutor``, which serializes them per host."""
+    import importlib.util
+
+    assert importlib.util.find_spec("snapl_executor.gnmi.client") is None

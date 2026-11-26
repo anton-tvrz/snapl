@@ -1,0 +1,244 @@
+"""The snapshot: one HTML file that shows the loop with no server (spec 011 research R14).
+
+``snapl dashboard --snapshot <file>`` builds the app as serving would, calls its
+own routes in-process (no port is bound), puts the answers into the built
+template's ``snapl-bundle`` element, and writes one file. The bundle is made of
+API responses only, so it carries no credential or environment value.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import base64
+import gzip
+import json
+import re
+from datetime import datetime, timedelta
+from typing import TYPE_CHECKING, Any, Literal
+
+import httpx
+
+from snapl_presentation.dashboard.app import waiting_in_full
+from snapl_presentation.dashboard.models import DEFAULT_SERIES, NETWORK_VIEWS, MetricsViewName, SeriesName
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from fastapi import FastAPI
+
+FORMAT = "snapl-snapshot/1"
+NOT_BUILT = "the designed UI is not built. Build it with: uv run invoke dashboard.build"
+# The newest runs of any type also get their steps, so the loop strip has the
+# latest run; every deploy gets them because a deploy records each step.
+LATEST_WITH_STEPS = 20
+CONTAINS = (
+    "devices, links, drift history, runs and their steps, schedule, CI status, lab runs, metrics, "
+    "device health and the network"
+)
+NOTE = "error text and paths recorded from devices are included as recorded. Read it before publishing:"
+# Spec 018 US5 (#235): the bundle is gzipped and base64-encoded in the file,
+# which the page unpacks with the browser's DecompressionStream.
+ENCODING = "gzip+base64"
+
+# Spec 015 T045, research R8: the ten views spec 015 added would almost triple
+# a seven-day snapshot at the page's step (180 KB to 501 KB on the fixtures),
+# against SC-006's 60%. The snapshot asks them for at most COARSE_POINTS points
+# per series, at the smallest step on this ladder that keeps under it, and says
+# so in each view's note. The six views before them keep the page's step.
+# Spec 016's six network views follow the same rule (its T051, research R8 here).
+COARSE_VIEWS = NETWORK_VIEWS | frozenset(
+    {
+        MetricsViewName.WORKFLOW_MEAN,
+        MetricsViewName.GNMI_MEAN,
+        MetricsViewName.WORKFLOWS_COMPLETED,
+        MetricsViewName.ACTIVITY_TIME,
+        MetricsViewName.WORKER_SLOTS,
+        MetricsViewName.SERVER_REQUEST_TIME,
+        MetricsViewName.SOURCE_FETCH_TIME,
+        MetricsViewName.SCAN_RESULTS,
+        MetricsViewName.DRIFT_PATHS,
+        MetricsViewName.DEPLOY_OUTCOMES,
+    }
+)
+COARSE_POINTS = 60
+_LADDER = (
+    (60, "1 min"),
+    (300, "5 min"),
+    (900, "15 min"),
+    (1800, "30 min"),
+    (3600, "1 h"),
+    (7200, "2 h"),
+    (10800, "3 h"),
+    (21600, "6 h"),
+    (43200, "12 h"),
+    (86400, "1 d"),
+    (604800, "1 w"),
+)
+
+_ELEMENT = re.compile(r'(<script id="snapl-bundle" type="application/json")(>)(.*?)(</script>)', re.S)
+
+
+class SnapshotError(Exception):
+    """A snapshot that cannot be written, with the message to print."""
+
+
+def _iso(moment: datetime) -> str:
+    return moment.isoformat().replace("+00:00", "Z")
+
+
+def _bucket(days: int) -> str:
+    # The UI's history table buckets (lib/history.ts bucketFor).
+    if days <= 2:
+        return "1h"
+    return "1d" if days <= 60 else "1w"
+
+
+def coarse_step(span_s: int) -> tuple[int, str]:
+    """The step, and its words, for a spec 015 view over ``span_s`` seconds in a snapshot."""
+    for step, words in _LADDER:
+        if span_s / step + 1 <= COARSE_POINTS:
+            return step, words
+    return _LADDER[-1]
+
+
+def _say_coarse(answer: dict[str, Any], words: str) -> dict[str, Any]:
+    data = answer["metrics"].get("data")
+    if data is not None:
+        # Joined after the server's own notes, whose count window the page reads.
+        said = f"one point every {words} in this snapshot, to keep the file small"
+        data["note"] = "; ".join(note for note in (data.get("note"), said) if note)
+    return answer
+
+
+async def _collect(app: FastAPI, days: int, commit: str | None, source: str) -> dict[str, Any]:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://snapshot.invalid") as client:
+
+        async def get(path: str, **params: Any) -> Any:
+            response = await client.get(f"/api/v1/{path}", params=params)
+            response.raise_for_status()
+            return response.json()
+
+        mode = await get("mode")
+        end = datetime.fromisoformat(mode["now"])
+        start = end - timedelta(days=days)
+        window = {"start": _iso(start), "end": _iso(end)}
+        sources = await get("sources")
+        step, words = coarse_step(int((end - start).total_seconds()))
+
+        async def metrics(view: MetricsViewName) -> Any:
+            if view in COARSE_VIEWS:
+                return _say_coarse(await get(f"metrics/{view.value}", step=step, **window), words)
+            return await get(f"metrics/{view.value}", **window)
+
+        runs = await get("runs", limit=500)
+        listed = runs["runs"]["data"] or []
+        wanted = [run for run in listed if run["workflow_type"] == "DeployIntent"] + listed[:LATEST_WITH_STEPS]
+        steps = {}
+        for run in wanted:
+            key = f"{run['workflow_id']}@{run['started_at']}"
+            if key not in steps:
+                steps[key] = await get("runs/steps", workflow_id=run["workflow_id"], started_at=run["started_at"])
+        return {
+            "manifest": {
+                "format": FORMAT,
+                "created_at": mode["now"],
+                "snapl_commit": commit,
+                "use_case": mode["use_case"],
+                "start": window["start"],
+                "end": window["end"],
+                "source": source,
+            },
+            "overview": await get("overview", runs_limit=500),
+            "devices": await get("devices"),
+            "runs": runs,
+            "topology": await get("topology"),
+            "timeline": await get("drift-timeline", **window),
+            "history": await get("history", bucket=_bucket(days), **window),
+            # The series spec 015 added, which `/history` answers only when named.
+            "fabric_history": await get(
+                "history",
+                series=[name.value for name in SeriesName if name not in DEFAULT_SERIES],
+                bucket=_bucket(days),
+                **window,
+            ),
+            "drift_summary": await get("drift-summary", **window),
+            # Spec 016: the health over the range, and the network's figures at its end.
+            "health": await get("health", **window),
+            "network": await get("network"),
+            "steps": steps,
+            "links": await get("links"),
+            "sources": sources,
+            "metrics": {view.value: await metrics(view) for view in MetricsViewName},
+        }
+
+
+def collect_bundle(
+    app: FastAPI, *, days: int, commit: str | None, source: Literal["live", "archive"]
+) -> dict[str, Any]:
+    """Every view the page reads, over the ``days`` before the app's own now.
+
+    Each read waits for its source's own answer, not the page's request budget:
+    the page asks again, the snapshot can't (#274).
+    """
+    with waiting_in_full(app):
+        return asyncio.run(_collect(app, days, commit, source))
+
+
+def _compact(bundle: dict[str, Any]) -> bytes:
+    return json.dumps(bundle, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+
+
+def render(template: str, bundle: dict[str, Any]) -> str:
+    """The template with the bundle packed into its one ``snapl-bundle`` element.
+
+    Base64 has no character that could end or change a script element, so no
+    recorded text needs escaping. ``mtime=0`` keeps the same bundle's file the same.
+    """
+    if len(_ELEMENT.findall(template)) != 1:
+        raise SnapshotError("the snapshot template has no snapl-bundle element, or more than one")
+    payload = base64.b64encode(gzip.compress(_compact(bundle), compresslevel=9, mtime=0)).decode("ascii")
+    marker = f' data-encoding="{ENCODING}"'
+    return _ELEMENT.sub(lambda match: match.group(1) + marker + match.group(2) + payload + match.group(4), template)
+
+
+def readable(bundle: dict[str, Any]) -> str:
+    """The bundle as indented JSON, for ``--bundle-json``: what to read before publishing."""
+    return json.dumps(bundle, ensure_ascii=False, indent=2) + "\n"
+
+
+def write(target: Path, html: str, *, force: bool = False) -> None:
+    """Write through ``<name>.partial`` and rename: a failure never leaves a finished-looking file."""
+    if target.exists() and not force:
+        raise SnapshotError(f"{target} already exists. Pass --force to replace it.")
+    partial = target.with_name(target.name + ".partial")
+    try:
+        partial.write_text(html, encoding="utf-8")
+        partial.rename(target)
+    finally:
+        partial.unlink(missing_ok=True)
+
+
+def summary(
+    target: Path, bundle: dict[str, Any], *, archive: str | None = None, bundle_json: Path | None = None
+) -> list[str]:
+    """What the command prints once the file is written (contracts/cli-and-build.md)."""
+    manifest = bundle["manifest"]
+    start, end = datetime.fromisoformat(manifest["start"]), datetime.fromisoformat(manifest["end"])
+    days = round((end - start) / timedelta(days=1))
+    commit = (manifest["snapl_commit"] or "unknown")[:7]
+    origin = f"archive {archive}" if archive else "live dashboard sources"
+    size, unpacked = round(target.stat().st_size / 1000), round(len(_compact(bundle)) / 1000)
+    where = f"it is in {bundle_json.name}." if bundle_json else "--bundle-json FILE writes it as readable JSON."
+    lines = [
+        f"Snapshot written: {target.name} ({size} kB; its data is {unpacked} kB unpacked)",
+        f"  range: {start:%Y-%m-%d %H:%M} to {end:%Y-%m-%d %H:%M} UTC ({days} {'day' if days == 1 else 'days'})",
+        f"  from: {origin}, commit {commit}",
+        f"  contains: {CONTAINS}",
+        f"  note: {NOTE} {where}",
+    ]
+    down = [view for view in bundle["sources"]["sources"] if not view["available"]]
+    if down:
+        named = ", ".join(f"{view['source']} ({view.get('reason') or 'no reason given'})" for view in down)
+        lines.append(f"  unavailable when written: {named}")
+    return lines

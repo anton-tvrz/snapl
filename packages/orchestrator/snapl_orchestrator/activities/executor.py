@@ -1,12 +1,15 @@
-"""Executor activity — wraps snapl_executor.Executor.apply()."""
+"""Executor activities — wrap snapl_executor.Executor.apply() and the removal (dry run and Set)."""
 
 from __future__ import annotations
 
+import time
+
 from temporalio import activity
 
-from snapl_executor.models import ApplyResult
-from snapl_intent.models import DesiredState
+from snapl_executor.models import ApplyResult, RemoveResult
+from snapl_intent.models import DesiredState, Device
 from snapl_orchestrator.activities import get_activities
+from snapl_orchestrator.metrics import CallOutcome, GnmiOperation, record_gnmi_call
 
 
 @activity.defn(name="apply_config")
@@ -15,6 +18,45 @@ async def apply_config(desired: DesiredState) -> ApplyResult:
 
     Returns an ApplyResult — device-side failures are reflected in
     ``ApplyResult.success`` and ``ApplyResult.error`` rather than raised.
+
+    The call's wall time is recorded as ``snapl_gnmi_call_duration`` (spec 012
+    R5). The outcome starts as ``error`` so that an exception, cancellation
+    included, is recorded as one and then propagates unchanged.
     """
     activities = get_activities()
-    return await activities.executor.apply(desired)
+    outcome = CallOutcome.ERROR
+    started = time.monotonic()
+    try:
+        result = await activities.executor.apply(desired)
+        outcome = CallOutcome.OK if result.success else CallOutcome.ERROR
+        return result
+    finally:
+        record_gnmi_call(desired.device, GnmiOperation.CONFIGURE, started, outcome)
+
+
+@activity.defn(name="dry_run_remove")
+async def dry_run_remove(device: Device, paths: list[str]) -> RemoveResult:
+    """Check a removal's delete paths against the Executor's guard (spec 013).
+
+    Never dials, so it records no gNMI call. A refused path comes back as
+    ``success=False`` with ``refused`` set, not as an exception.
+    """
+    return await get_activities().executor.dry_run_remove(device, paths)
+
+
+@activity.defn(name="remove_config")
+async def remove_config(device: Device, paths: list[str]) -> RemoveResult:
+    """Send a confirmed removal: one Set of deletes (spec 013 FR-008).
+
+    The device's rejection comes back as ``success=False``, not as an
+    exception. It is a configure call to the device, so it is recorded as
+    ``snapl_gnmi_call_duration{operation="configure"}`` as ``apply_config`` is.
+    """
+    outcome = CallOutcome.ERROR
+    started = time.monotonic()
+    try:
+        result = await get_activities().executor.remove(device, paths)
+        outcome = CallOutcome.OK if result.success else CallOutcome.ERROR
+        return result
+    finally:
+        record_gnmi_call(device, GnmiOperation.CONFIGURE, started, outcome)

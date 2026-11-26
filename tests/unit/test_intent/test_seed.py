@@ -972,3 +972,381 @@ class TestRepoSeedContent:
         mtu_attr = next(a for a in generic["attributes"] if a["name"] == "mtu")
         assert mtu_attr.get("optional") is True, "mtu must be optional — loopbacks cannot carry one (#78)"
         assert "default_value" not in mtu_attr, "an mtu default poisons mtu-less seed rows in the SoT (#78)"
+
+    def test_every_session_between_seeded_devices_is_seeded_on_both_ends(self):
+        """A session reaches only its ``local_device`` (the store groups by it), so a
+        peer in intent needs its own, mirrored row, or it is never configured and
+        the session never comes up (#311)."""
+        checked = 0
+        for topo in sorted(self._package_root().glob("seed/*/topology.yml")):
+            data = yaml.safe_load(topo.read_text())
+            devices = {row["name"] for row in data.get("devices", [])}
+            ends = {(s["local_device"], s["local_ip"]): s for s in data.get("bgp_sessions", [])}
+            for session in data.get("bgp_sessions", []):
+                if session.get("remote_device") not in devices:
+                    continue  # a peer outside intent (a carrier) has no row to mirror
+                checked += 1
+                where = f"{topo.parent.name}: {session['description']}"
+                mirror = ends.get((session["remote_device"], session["remote_ip"]))
+                assert mirror is not None, f"{where}: no session on {session['remote_device']}"
+                assert mirror["remote_device"] == session["local_device"], where
+                assert mirror["remote_ip"] == session["local_ip"], where
+                assert (mirror["local_as"], mirror["remote_as"]) == (session["remote_as"], session["local_as"]), where
+                assert mirror.get("peer_group") == session.get("peer_group"), where
+        assert checked, "no session between seeded devices found: glob broken?"
+
+    def test_every_leaf_of_the_fabric_has_its_own_sessions(self):
+        """#62's related gap: sessions were seeded on the spine side only, so a
+        leaf had none in intent. Closed by #316 and #318 (spec 017 T013)."""
+        data = yaml.safe_load((self._package_root() / "seed" / "dcfabric" / "topology.yml").read_text())
+        leaves = {row["name"] for row in data["devices"] if row["role"] == "leaf"}
+        with_sessions = {session["local_device"] for session in data["bgp_sessions"]}
+
+        assert leaves, "no leaves in the dcfabric seed"
+        assert leaves <= with_sessions, f"leaves with no session: {sorted(leaves - with_sessions)}"
+
+    def test_session_descriptions_are_unique(self):
+        """The seed upserts a session by its description, so two rows sharing one
+        would overwrite each other (#311)."""
+        for topo in sorted(self._package_root().glob("seed/*/topology.yml")):
+            descriptions = [s["description"] for s in yaml.safe_load(topo.read_text()).get("bgp_sessions", [])]
+            assert len(descriptions) == len(set(descriptions)), topo.parent.name
+
+
+# ---------------------------------------------------------------------------
+# #62: branch on every lookup, domain errors only, no silent skips
+# ---------------------------------------------------------------------------
+
+
+class _SdkError(Exception):
+    """Stands in for an exception raised from inside the Infrahub SDK."""
+
+
+_SdkError.__module__ = "infrahub_sdk.exceptions"
+
+
+def _bgp_file(tmp_path: Path, dataset: dict[str, Any] | None = None) -> Path:
+    path = tmp_path / "t.yml"
+    path.write_text(yaml.safe_dump(dataset or _minimal_bgp_dataset(num_spines=1)))
+    return path
+
+
+class TestSeedBranchIsUsedForEveryLookup:
+    async def test_lookups_read_the_branch_the_seed_writes(self, tmp_path: Path):
+        """Lookups read main while creates wrote the branch, so a node that
+        existed only on main was updated there and branch nodes were wired to
+        main's peers."""
+        dataset = _minimal_bgp_dataset(num_spines=1)
+        dataset["organization"] = {"name": "Test Org"}
+        dataset["vrfs"] = [{"name": "default"}]
+        client = _make_bgp_client()
+
+        await SeedIngester(client=client).seed(
+            use_case="dcfabric", data_path=_bgp_file(tmp_path, dataset), branch="feature"
+        )
+
+        lookups = client.filters.await_args_list
+        assert lookups, "the seed made no lookups"
+        without = [call.kwargs.get("kind") for call in lookups if call.kwargs.get("branch") != "feature"]
+        assert without == [], f"lookups that did not read the branch: {without}"
+        assert all(call.kwargs.get("branch") == "feature" for call in client.create.await_args_list)
+
+    async def test_every_kind_of_lookup_reads_the_branch(self, tmp_path: Path):
+        """The default namespace and VRF, a relationship's peer, the upsert's own
+        lookup, the session's addresses and both BGP methods (spec 017 T013)."""
+        dataset = _minimal_bgp_dataset(num_spines=1)
+        dataset["manufacturer"] = {"name": "Nokia"}
+        dataset["device_types"] = [{"name": "7220 IXR-D2L", "manufacturer": "Nokia"}]
+        dataset["vrfs"] = [{"name": "default"}]
+        dataset["bgp_sessions"][0] |= {"local_ip": "10.10.1.0/31", "remote_ip": "10.10.1.1/31"}
+        client = _make_bgp_client()
+        bgp_filters = client.filters.side_effect
+
+        async def every_peer_exists(*, kind: str, **kwargs: Any) -> list[Any]:
+            if kind in {"OrganizationManufacturer", "IpamIPAddress"}:
+                return [_stub_node(kind)]
+            return await bgp_filters(kind=kind, **kwargs)
+
+        client.filters = AsyncMock(side_effect=every_peer_exists)
+
+        await SeedIngester(client=client).seed(use_case="dcfabric", data_path=_bgp_file(tmp_path, dataset), branch="b")
+
+        looked_up = {call.kwargs["kind"] for call in client.filters.await_args_list}
+        assert looked_up >= {
+            "IpamNamespace",
+            "IpamVRF",
+            "OrganizationManufacturer",
+            "DcimDeviceType",
+            "DcimDevice",
+            "RoutingAutonomousSystem",
+            "IpamIPAddress",
+            "RoutingBGPPeerGroup",
+            "RoutingBGPSession",
+        }
+        assert {call.kwargs.get("branch") for call in client.filters.await_args_list} == {"b"}
+
+
+class TestSeedRaisesOnlyDomainErrors:
+    async def test_an_unreachable_sot_during_the_namespace_lookup(self, tmp_path: Path):
+        """The first lookup ran before the try block and escaped as a raw OSError."""
+        client = _make_bgp_client()
+        client.filters = AsyncMock(side_effect=OSError("connection refused"))
+        path = tmp_path / "t.yml"
+        path.write_text(yaml.safe_dump({"vrfs": [{"name": "default"}]}))
+
+        with pytest.raises(IntentConnectionError, match="connection refused"):
+            await SeedIngester(client=client).seed(use_case="dcfabric", data_path=path)
+
+    @pytest.mark.parametrize("error", [OSError("connection refused"), TimeoutError("timed out")])
+    @pytest.mark.parametrize("failing_kind", ["IpamNamespace", "IpamVRF", "DcimDevice", "RoutingBGPSession"])
+    async def test_a_lost_connection_from_any_lookup(self, tmp_path: Path, error: Exception, failing_kind: str):
+        client = _make_bgp_client()
+        lookups = client.filters.side_effect
+
+        async def fails_once_it_reaches(*, kind: str, **kwargs: Any) -> list[Any]:
+            if kind == failing_kind:
+                raise error
+            return await lookups(kind=kind, **kwargs)
+
+        client.filters = AsyncMock(side_effect=fails_once_it_reaches)
+        dataset = _minimal_bgp_dataset(num_spines=1) | {"vrfs": [{"name": "default"}]}
+
+        with pytest.raises(IntentConnectionError, match=str(error)) as raised:
+            await SeedIngester(client=client).seed(use_case="dcfabric", data_path=_bgp_file(tmp_path, dataset))
+
+        assert raised.value.__cause__ is error
+
+    async def test_an_sdk_error_from_a_lookup(self, tmp_path: Path):
+        client = _make_bgp_client()
+        client.filters = AsyncMock(side_effect=_SdkError("graphql error"))
+
+        with pytest.raises(IntentConnectionError, match="graphql error"):
+            await SeedIngester(client=client).seed(use_case="dcfabric", data_path=_bgp_file(tmp_path))
+
+    async def test_an_sdk_error_from_a_write(self, tmp_path: Path):
+        client = _make_bgp_client()
+        client.create = AsyncMock(side_effect=_SdkError("node rejected"))
+
+        with pytest.raises(IntentConnectionError, match="node rejected"):
+            await SeedIngester(client=client).seed(use_case="dcfabric", data_path=_bgp_file(tmp_path))
+
+    async def test_a_validation_error_is_not_rewrapped(self, tmp_path: Path):
+        dataset = _minimal_bgp_dataset(num_spines=1)
+        dataset["bgp_sessions"][0]["local_device"] = "no-such-device"
+
+        with pytest.raises(IntentValidationError, match="no-such-device"):
+            await SeedIngester(client=_make_bgp_client()).seed(
+                use_case="dcfabric", data_path=_bgp_file(tmp_path, dataset)
+            )
+
+
+class TestSeedDoesNotSkipSilently:
+    @pytest.mark.parametrize("field", ["local_ip", "remote_ip"])
+    async def test_a_session_address_that_was_never_seeded_is_a_data_error(self, tmp_path: Path, field: str):
+        """It was left out of the session, which then rendered a neighbor with
+        an empty peer-address that the device rejected at deploy time."""
+        dataset = _minimal_bgp_dataset(num_spines=1)
+        dataset["bgp_sessions"][0][field] = "10.10.1.1/31"
+
+        with pytest.raises(IntentValidationError, match=r"10\.10\.1\.1/31") as raised:
+            await SeedIngester(client=_make_bgp_client()).seed(
+                use_case="dcfabric", data_path=_bgp_file(tmp_path, dataset)
+            )
+
+        assert raised.value.field == field
+
+    async def test_a_session_naming_an_undeclared_peer_group_is_a_data_error(self, tmp_path: Path):
+        dataset = _minimal_bgp_dataset(num_spines=1)
+        dataset["bgp_sessions"][0]["peer_group"] = "overlay-evpn"
+
+        with pytest.raises(IntentValidationError, match="overlay-evpn") as raised:
+            await SeedIngester(client=_make_bgp_client()).seed(
+                use_case="dcfabric", data_path=_bgp_file(tmp_path, dataset)
+            )
+
+        assert raised.value.field == "peer_group"
+
+    async def test_a_declared_peer_group_no_session_uses_is_warned_about(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ):
+        dataset = _minimal_bgp_dataset(num_spines=1)
+        dataset["bgp_peer_groups"].append({"name": "overlay-evpn"})
+
+        with caplog.at_level("WARNING", logger="snapl_intent.infrahub.seed"):
+            await SeedIngester(client=_make_bgp_client()).seed(
+                use_case="dcfabric", data_path=_bgp_file(tmp_path, dataset)
+            )
+
+        assert "overlay-evpn" in caplog.text
+        assert "no session" in caplog.text
+
+    def test_the_shipped_seeds_resolve_every_session_address_and_peer_group(self):
+        """The stricter rules must not break the seeds snapl ships."""
+        import snapl_intent
+
+        root = pathlib.Path(snapl_intent.__file__).resolve().parent
+        for topo in sorted(root.glob("seed/*/topology.yml")):
+            data = yaml.safe_load(topo.read_text())
+            addresses = {row["ip_address"] for row in data.get("interfaces", []) if row.get("ip_address")}
+            groups = {group["name"] for group in data.get("bgp_peer_groups", [])}
+            for session in data.get("bgp_sessions", []):
+                for field in ("local_ip", "remote_ip"):
+                    if field in session:
+                        assert session[field] in addresses, f"{topo.parent.name}: {session['description']} {field}"
+                if "peer_group" in session:
+                    assert session["peer_group"] in groups, f"{topo.parent.name}: {session['description']}"
+
+
+# ---------------------------------------------------------------------------
+# #317: routing policies as intent
+# ---------------------------------------------------------------------------
+
+
+_LOOPBACKS_POLICY = {
+    "name": "underlay-loopbacks",
+    "description": "the fabric's loopback /32s",
+    "accept_prefixes": ["10.1.0.0/24 32..32"],
+    "default_action": "reject",
+}
+
+
+def _policy_dataset(**group_policies: str) -> dict[str, Any]:
+    dataset = _minimal_bgp_dataset(num_spines=1)
+    dataset["routing_policies"] = [dict(_LOOPBACKS_POLICY)]
+    dataset["bgp_peer_groups"][0].update(group_policies)
+    return dataset
+
+
+class TestRoutingPolicySeeding:
+    """A session with no policy carries no routes (#317). The policy is intent:
+    declared in the seed, named by the peer group."""
+
+    def test_policies_are_seeded_before_the_peer_groups_that_name_them(self):
+        assert SEED_ORDER.index("routing_policies") < SEED_ORDER.index("bgp_peer_groups")
+
+    async def test_a_declared_policy_becomes_a_routing_policy_node(self, tmp_path: Path):
+        client = _make_bgp_client()
+
+        await SeedIngester(client=client).seed(use_case="dcfabric", data_path=_bgp_file(tmp_path, _policy_dataset()))
+
+        creates = [c.kwargs for c in client.create.await_args_list if c.kwargs.get("kind") == "RoutingPolicy"]
+        assert [c["data"] for c in creates] == [_LOOPBACKS_POLICY]
+
+    async def test_the_peer_group_carries_the_policy_names(self, tmp_path: Path):
+        client = _make_bgp_client()
+        dataset = _policy_dataset(export_policies="underlay-loopbacks", import_policies="underlay-loopbacks")
+
+        await SeedIngester(client=client).seed(use_case="dcfabric", data_path=_bgp_file(tmp_path, dataset))
+
+        creates = client.create.await_args_list
+        (group,) = [c.kwargs["data"] for c in creates if c.kwargs.get("kind") == "RoutingBGPPeerGroup"]
+        assert (group["export_policies"], group["import_policies"]) == ("underlay-loopbacks", "underlay-loopbacks")
+
+    @pytest.mark.parametrize("field", ["export_policies", "import_policies"])
+    async def test_a_peer_group_naming_an_undeclared_policy_is_a_data_error(self, tmp_path: Path, field: str):
+        """Left in, every neighbour in the group names a policy the device does
+        not have, and the whole SET is refused at deploy time."""
+        dataset = _policy_dataset(**{field: "nowhere"})
+        client = _make_bgp_client()
+
+        with pytest.raises(IntentValidationError, match="nowhere") as raised:
+            await SeedIngester(client=client).seed(use_case="dcfabric", data_path=_bgp_file(tmp_path, dataset))
+
+        assert raised.value.field == field
+        assert client.create.await_count == 0, "validation runs before anything is written"
+
+    async def test_a_policy_the_device_would_reject_is_a_data_error(self, tmp_path: Path):
+        dataset = _policy_dataset()
+        dataset["routing_policies"][0]["accept_prefixes"] = ["10.1.0.1/24 32..32"]
+        client = _make_bgp_client()
+
+        with pytest.raises(IntentValidationError, match="underlay-loopbacks") as raised:
+            await SeedIngester(client=client).seed(use_case="dcfabric", data_path=_bgp_file(tmp_path, dataset))
+
+        assert raised.value.field == "routing_policies"
+        assert client.create.await_count == 0
+
+
+class TestShippedUnderlayPolicy:
+    """The decision on #317 (2026-11-19): the underlay advertises each device's
+    loopback /32 and not the fabric /31 links, and the policy comes from the seed."""
+
+    @staticmethod
+    def _dcfabric() -> dict[str, Any]:
+        import snapl_intent
+
+        root = pathlib.Path(snapl_intent.__file__).resolve().parent
+        return yaml.safe_load((root / "seed" / "dcfabric" / "topology.yml").read_text())
+
+    def _underlay_policy(self):
+        from snapl_intent.models import RoutingPolicy
+
+        data = self._dcfabric()
+        (group,) = data["bgp_peer_groups"]
+        assert group["export_policies"] == group["import_policies"], "one policy both ways"
+        policies = {p["name"]: p for p in data["routing_policies"]}
+        return RoutingPolicy(**policies[group["export_policies"]]), data
+
+    @staticmethod
+    def _accepts(policy, address: str) -> bool:
+        import ipaddress
+
+        interface = ipaddress.ip_interface(address)
+        route = interface.network if interface.network.prefixlen < interface.max_prefixlen else interface.ip
+        route_net = ipaddress.ip_network(route)
+        for entry in policy.accept_prefixes:
+            prefix, lengths = entry.split()
+            low, high = (route_net.prefixlen,) * 2 if lengths == "exact" else map(int, lengths.split(".."))
+            if route_net.subnet_of(ipaddress.ip_network(prefix)) and low <= route_net.prefixlen <= high:
+                return True
+        return policy.default_action == "accept"
+
+    def test_every_loopback_is_accepted(self):
+        policy, data = self._underlay_policy()
+        loopbacks = [row["ip_address"] for row in data["interfaces"] if row.get("role") == "loopback"]
+        assert len(loopbacks) == 6
+        for address in loopbacks:
+            assert self._accepts(policy, address), address
+
+    def test_no_fabric_link_is_accepted(self):
+        policy, data = self._underlay_policy()
+        links = [row["ip_address"] for row in data["interfaces"] if row.get("ip_address", "").endswith("/31")]
+        assert links
+        for address in links:
+            assert not self._accepts(policy, address), address
+
+    def test_the_policy_rejects_what_it_does_not_list(self):
+        policy, _ = self._underlay_policy()
+        assert policy.default_action == "reject"
+
+
+class TestPolicySchema:
+    """The seed writes RoutingPolicy nodes, so the packaged schema must declare them."""
+
+    @staticmethod
+    def _declared_nodes() -> dict[str, dict[str, Any]]:
+        import snapl_intent
+
+        root = pathlib.Path(snapl_intent.__file__).resolve().parent / "schemas"
+        nodes: dict[str, dict[str, Any]] = {}
+        for path in sorted(root.rglob("*.yml")):
+            for node in (yaml.safe_load(path.read_text()) or {}).get("nodes", []):
+                nodes[f"{node['namespace']}{node['name']}"] = node
+        return nodes
+
+    def test_every_seed_section_writes_a_declared_kind(self):
+        from snapl_intent.infrahub.seed import _SECTIONS
+
+        declared = self._declared_nodes()
+        for name, section in _SECTIONS.items():
+            assert section.kind in declared, f"seed section {name!r} writes {section.kind}, which no schema declares"
+
+    def test_the_policy_node_holds_what_the_model_reads(self):
+        policy = self._declared_nodes()["RoutingPolicy"]
+        attrs = {a["name"]: a for a in policy["attributes"]}
+
+        assert set(attrs) == {"name", "description", "accept_prefixes", "default_action"}
+        assert attrs["name"].get("unique") is True, "the seed upserts a policy by its name"
+        assert attrs["accept_prefixes"]["kind"] == "List"
+        assert attrs["default_action"]["enum"] == ["accept", "reject"]
+        assert attrs["default_action"]["default_value"] == "reject"

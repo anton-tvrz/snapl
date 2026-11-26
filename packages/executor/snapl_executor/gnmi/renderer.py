@@ -61,11 +61,19 @@ class ConfigRenderer:
         for iface in desired.interfaces:
             if iface.ip_address and iface.prefix_length is None:
                 raise TemplateError(f"interface {iface.name!r}: ip_address {iface.ip_address!r} has no prefix_length")
+        # A neighbour naming a policy the device does not have makes it refuse
+        # the whole SET; name the policy here instead (#317).
+        held = {policy.name for policy in desired.routing_policies}
+        for session in desired.bgp_sessions:
+            for name in (session.export_policy, session.import_policy):
+                if name and name not in held:
+                    raise TemplateError(f"session to {session.peer_address}: policy {name!r} is not in intent")
 
         ctx = {
             "device": desired.device,
             "interfaces": desired.interfaces,
             "sessions": desired.bgp_sessions,
+            "policies": desired.routing_policies,
             "router_id": _select_router_id(desired),
         }
 
@@ -74,14 +82,21 @@ class ConfigRenderer:
         # Intent-first: no synthetic entities — the seeded lo0 is the loopback,
         # a hardcoded one collided with it and carried the wrong address (#78).
         payload: dict[str, Any] = {"interface": ifaces_raw}
+        # An address is routed only once its subinterface belongs to a network
+        # instance. interfaces.j2 puts each address on subinterface 0, so that is
+        # the one that joins (#315). Without it the fabric's /31s are unreachable
+        # and no session comes up.
+        instance: dict[str, Any] = {"name": "default"}
+        routed = [{"name": f"{iface.name}.0"} for iface in desired.interfaces if iface.ip_address]
+        if routed:
+            instance["interface"] = routed
         if desired.bgp_sessions:
             bgp_raw: dict = json.loads(self._env.get_template("bgp.j2").render(**ctx))
-            payload["network-instance"] = [
-                {
-                    "name": "default",
-                    "protocols": {"bgp": bgp_raw},
-                }
-            ]
+            instance["protocols"] = {"bgp": bgp_raw}
+        if len(instance) > 1:
+            payload["network-instance"] = [instance]
+        if desired.routing_policies:
+            payload["routing-policy"] = json.loads(self._env.get_template("routing_policy.j2").render(**ctx))
         return payload
 
     def render_safe(self, desired: DesiredState) -> dict[str, Any]:

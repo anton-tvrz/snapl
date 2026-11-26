@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 import os
 
 from temporalio.client import Client
+from temporalio.common import MetricMeter
 from temporalio.contrib.pydantic import pydantic_data_converter
 from temporalio.worker import Worker
 
@@ -16,22 +19,29 @@ from snapl_intent.infrahub.store import InfrahubIntentStore
 from snapl_observability.audit import BoundedAuditLog
 from snapl_observability.events import EventBus
 from snapl_observability.models import EventType, ObservabilityEvent
+from snapl_observability.structural.diff import ENTITY_FIELD_MAP
 from snapl_observability.structural.observer import StructuralObserver
 from snapl_orchestrator.activities import Activities, set_activities
 from snapl_orchestrator.activities.audit import record_audit_event
 from snapl_orchestrator.activities.collector import collect_drift_state
-from snapl_orchestrator.activities.executor import apply_config
+from snapl_orchestrator.activities.executor import apply_config, dry_run_remove, remove_config
 from snapl_orchestrator.activities.intent import (
     fetch_desired_state,
     fetch_devices_for_use_case,
 )
-from snapl_orchestrator.activities.observability import detect_drift
+from snapl_orchestrator.activities.observability import detect_drift, plan_removal
+from snapl_orchestrator.activities.schedule import stand_down_schedule
+from snapl_orchestrator.activities.workflows import deploy_in_flight
 from snapl_orchestrator.audit.sqlite import SqliteAuditLog
 from snapl_orchestrator.exceptions import OrchestratorConfigError
+from snapl_orchestrator.telemetry import TelemetryRunner
 from snapl_orchestrator.worker.client import DEFAULT_NAMESPACE, DEFAULT_TEMPORAL_HOST
+from snapl_orchestrator.worker.metrics import build_runtime, metrics_settings_from_env
 from snapl_orchestrator.worker.sandbox import build_workflow_runner
 from snapl_orchestrator.workflows.deploy_intent import DeployIntentWorkflow
+from snapl_orchestrator.workflows.drift_response import DriftResponseWorkflow
 from snapl_orchestrator.workflows.reconcile_devices import ReconcileDevicesWorkflow
+from snapl_orchestrator.workflows.removal import PlanRemovalWorkflow, RemoveConfigWorkflow
 from snapl_orchestrator.workflows.scan_drift import ScanDriftWorkflow
 
 logger = logging.getLogger(__name__)
@@ -43,6 +53,10 @@ __all__ = ["DEFAULT_AUDIT_DB", "DEFAULT_NAMESPACE", "DEFAULT_TASK_QUEUE", "DEFAU
 # (#63) and this module can never disagree about where the cluster is.
 DEFAULT_TASK_QUEUE = "snapl-orchestrator"
 DEFAULT_AUDIT_DB = "./snapl-audit.sqlite"
+# The lab's use case. Telemetry streams one use case, as a scan reads one, so
+# devices seeded for other use cases (the integration tests' test_edge) aren't
+# dialled (#341).
+DEFAULT_TELEMETRY_USE_CASE = "dcfabric"
 
 
 async def run_worker(*, activities: Activities | None = None) -> None:
@@ -65,6 +79,12 @@ async def run_worker(*, activities: Activities | None = None) -> None:
         SRLINUX_PASSWORD        — required
         SRLINUX_PORT            — gNMI port (default 57400)
         SRLINUX_INSECURE        — plaintext gNMI (default 'true'; set 'false' for TLS)
+
+    Env vars (always):
+        WORKER_METRICS_PORT     — Prometheus endpoint port (default 18091; 'off' disables)
+        WORKER_METRICS_BIND     — its bind address (default 127.0.0.1)
+        SNAPL_TELEMETRY         — 'off' starts no device telemetry (spec 016); anything
+                                  else, or unset, streams every device in intent
     """
     temporal_host = os.environ.get("TEMPORAL_HOST", DEFAULT_TEMPORAL_HOST)
     namespace = os.environ.get("TEMPORAL_NAMESPACE", DEFAULT_NAMESPACE)
@@ -76,10 +96,21 @@ async def run_worker(*, activities: Activities | None = None) -> None:
 
     set_activities(activities)
 
+    # Before connecting: the runtime is fixed for the client's lifetime, and a
+    # taken port fails here, at construction (spec 012 R3). None keeps the
+    # SDK's default runtime, so the worker runs without metrics (FR-002).
+    metrics = metrics_settings_from_env()
+    runtime = build_runtime(port=metrics.port, bind=metrics.bind)
+    if runtime is not None:
+        logger.info("metrics: %s", metrics.url)
+    elif metrics.port == "off":
+        logger.info("metrics off: WORKER_METRICS_PORT=off")
+
     client = await Client.connect(
         temporal_host,
         namespace=namespace,
         data_converter=pydantic_data_converter,
+        runtime=runtime,
     )
 
     worker = Worker(
@@ -90,6 +121,11 @@ async def run_worker(*, activities: Activities | None = None) -> None:
             DeployIntentWorkflow,
             ScanDriftWorkflow,
             ReconcileDevicesWorkflow,
+            # Started only by drift schedules; the worker never creates one (009 FR-009).
+            DriftResponseWorkflow,
+            # Started only by `snapl remove`; a schedule never starts either (spec 013 FR-012).
+            PlanRemovalWorkflow,
+            RemoveConfigWorkflow,
         ],
         activities=[
             fetch_desired_state,
@@ -98,6 +134,11 @@ async def run_worker(*, activities: Activities | None = None) -> None:
             collect_drift_state,
             detect_drift,
             record_audit_event,
+            stand_down_schedule,
+            plan_removal,
+            dry_run_remove,
+            remove_config,
+            deploy_in_flight,
         ],
     )
 
@@ -108,7 +149,52 @@ async def run_worker(*, activities: Activities | None = None) -> None:
         task_queue,
         audit_db,
     )
-    await worker.run()
+
+    # Device telemetry runs beside the Temporal worker, in this process, with the
+    # same blocks and the one audit writer (spec 016 R3). Without a metrics
+    # runtime the figures go to a no-op meter; health is still recorded.
+    telemetry: asyncio.Task[None] | None = None
+    if telemetry_enabled():
+        use_case = telemetry_use_case()
+        logger.info("telemetry: streaming use case %s", use_case)
+        runner = TelemetryRunner(
+            intent_store=activities.intent_store,
+            collector=activities.collector,
+            observer=activities.observer,
+            audit_log=activities.audit_log,
+            meter=runtime.metric_meter if runtime is not None else MetricMeter.noop,
+            use_case=use_case,
+        )
+        telemetry = asyncio.create_task(_run_telemetry(runner), name="snapl-telemetry")
+    else:
+        logger.info("telemetry off: SNAPL_TELEMETRY=off")
+    try:
+        await worker.run()
+    finally:
+        if telemetry is not None:
+            telemetry.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await telemetry
+
+
+def telemetry_enabled() -> bool:
+    """Device telemetry runs unless ``SNAPL_TELEMETRY`` is ``off``."""
+    return os.environ.get("SNAPL_TELEMETRY", "").strip().lower() != "off"
+
+
+def telemetry_use_case() -> str:
+    """The use case whose devices telemetry streams: ``SNAPL_TELEMETRY_USE_CASE``, or ``dcfabric``."""
+    return os.environ.get("SNAPL_TELEMETRY_USE_CASE", "").strip() or DEFAULT_TELEMETRY_USE_CASE
+
+
+async def _run_telemetry(runner: TelemetryRunner) -> None:
+    """Run the telemetry runner; a failure is logged and never stops the worker (FR-003)."""
+    try:
+        await runner.run()
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logger.exception("telemetry runner stopped; the worker carries on without device telemetry")
 
 
 async def _build_default_activities(*, audit_db: str) -> Activities:
@@ -166,8 +252,10 @@ def _srlinux_conn_env() -> dict:
 
 def _build_executor():
     # No fixed host: the executor resolves the dial target per device
-    # (lab_node_name, then management_address).
-    return GnmiExecutor(**_srlinux_conn_env())
+    # (lab_node_name, then management_address). The protected interfaces are
+    # the drift field map's own list, so detection, planning and the executor's
+    # delete guard can never disagree (spec 013 FR-004, research R5).
+    return GnmiExecutor(**_srlinux_conn_env(), protected_interfaces=ENTITY_FIELD_MAP["interface"]["protected"])
 
 
 def _build_collector():

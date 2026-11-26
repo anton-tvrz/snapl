@@ -6,6 +6,7 @@ See [AGENTS.md](AGENTS.md) for full project context.
 - Lint: `uv run invoke lint`
 - Format: `uv run invoke format`
 - Test: `uv run invoke test-unit`
+- Live tests (need the lab): `uv run invoke test-e2e`, `uv run invoke test-integration`. Each run is recorded under `.snapl/test-runs/`
 - Start infra: `uv run invoke dev.deps`
 - Start worker: `uv run invoke orchestrator.start`
 - Branch from `main`, PR to `main`
@@ -39,11 +40,18 @@ Each package under `packages/` maps to one NAF block:
 - `intent` — Source of Truth (Infrahub)
 - `executor` — Config deployment (gNMI)
 - `collector` — Live data retrieval
-- `observability` — Drift detection, metrics
+- `observability` — Drift detection, audit (metrics are recorded by `orchestrator` and served by `presentation`, spec 012)
 - `orchestrator` — Temporal workflows
 - `presentation` — CLI interface
 
 ## Recent Changes
+- 013-remove-undesired-config: `snapl remove <device>` previews deleting config that intent doesn't hold (read-only `PlanRemoval` workflow, executor guard, protected set; `changelog/398.added.md`); `--apply` confirms and runs `RemoveConfig` (one gNMI Set of deletes, a fresh-plan check, a deploy-in-flight check, a verifying scan; `changelog/400.added.md`); the audit trail, the drift timeline and both dashboard pages show removals, visibility only (`changelog/401.added.md`). Whole entities only: interfaces, their default network-instance bindings, BGP neighbours, extra IPv4 addresses; routing policies are refused (research R3). Never scheduled: `test_removal_never_scheduled.py` guards it. No new deps. Run on the lab on 2026-11-26 (`specs/013-remove-undesired-config/evidence.md`)
+- 016-device-telemetry: the worker streams each device in intent over one gNMI subscription (`Collector.stream_telemetry`, `TelemetryRunner` beside the Temporal worker, `SNAPL_TELEMETRY=off` to skip), judges health with `Observer.evaluate_health` and records `health_changed` in the audit trail; eight metric families on 18091; `/api/v1/health`, `/api/v1/network`, six "The network" views, health on the page and in `snapl status`; archives and snapshots carry them. No new deps; see ADR-0005 Decision 4. Run on the lab on 2026-11-20 (`specs/016-device-telemetry/evidence.md`); the network view refreshes every 5 s since #348
+- 015-more-metrics: ten more metrics views, seven over families already exported and three over the worker's new counters (`snapl_scan_results_total`, `snapl_drift_paths_total`, `snapl_deploy_ends_total`), and a `count` unit. Four history series and `/api/v1/drift-summary` come from the audit trail, as do a scan's steps (workflow patch `scan-drift-record-steps`). A snapshot exports the new views at a coarser step. No new deps; see ADR-0005 Decision 3.
+- 014-dashboard-look: the dashboard's look rules (8 px spacing, one type scale, one panel frame) in the "Look" section of `dev/skills/dashboard/SKILL.md`, enforced by `src/look.test.ts`; a number row, a fabric summary ring, the history as a chart, a sticky time range; `e2e/look.mjs` renders the page from fixtures; no new deps; see ADR-0005 Decision 2
+- 011-dashboard-ui: the designed dashboard UI in `packages/presentation/ui/` (React 19, Vite 8, TypeScript 5.9, Tailwind 4, Recharts; Vitest and Playwright), built by `invoke dashboard.build` into the package, served at `/` with the plain page at `/plain`; `snapl dashboard --archive` and `--snapshot`; see ADR-0005 Decision 2 and `dev/skills/dashboard/`
+- 012-measured-metrics: Prometheus v3.10.0 in Compose (data in `.snapl/prometheus`, kept by `demo.reset`), worker metrics via temporalio's runtime on 18091 (no new Python deps), dashboard `/api/v1/metrics/*` and `/metrics`, `invoke history.archive`/`history.purge`; see ADR-0005 Decision 3
+- 010-dashboard-read-api: `snapl dashboard`, a local read-only page and JSON API (`/api/v1/*`); fastapi>=0.115, uvicorn>=0.32, httpx>=0.28 in snapl-presentation; see ADR-0005
 - 004-observability-drift: Added Python 3.12+ + pydantic>=2.5, snapl-intent (workspace dep), snapl-collector (workspace dep)
 - 003-collector-gnmi: Added Python 3.12+ + pygnmi>=0.8, grpcio>=1.60, pydantic>=2.5, snapl-intent (workspace dep)
 - 002-executor-gnmi: Added Python 3.12+ + pygnmi>=0.8, grpcio>=1.60, jinja2>=3.1, pydantic>=2.5, snapl-intent (workspace dep)

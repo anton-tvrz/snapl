@@ -96,3 +96,20 @@ async def test_fetch_devices_for_use_case_empty_returns_empty_list() -> None:
 
     devices = await fetch_devices_for_use_case("unknown-use-case")
     assert devices == []
+
+
+@pytest.mark.asyncio
+async def test_fetch_devices_for_use_case_lists_each_device_once(make_desired) -> None:
+    """A device in two services of the use case comes back twice from the SoT.
+
+    ScanDrift keys its reports by device id, so a duplicate collapses there
+    while its total still counts it, and DriftScanResult refuses the mismatch.
+    """
+    spine, leaf = make_desired("spine-01"), make_desired("leaf-01")
+    intent_store = MagicMock(name="IntentStore")
+    intent_store.get_desired_state = AsyncMock(return_value=[spine, leaf, spine])
+    _install_activities(intent_store=intent_store)
+
+    devices = await fetch_devices_for_use_case("dcfabric")
+
+    assert [d.id for d in devices] == [spine.device.id, leaf.device.id]

@@ -33,6 +33,14 @@ def _worker_present():
         yield
 
 
+@pytest.fixture(autouse=True)
+def _no_schedule():
+    """No drift schedule unless a test says otherwise, so `status` never
+    describes a schedule against a MagicMock client."""
+    with patch("snapl_orchestrator.schedules.find_drift_schedule", new=AsyncMock(return_value=None)) as find:
+        yield find
+
+
 @pytest.fixture
 def sot(states):
     """Patch SoT access so no command reaches a real Infrahub."""
@@ -170,6 +178,18 @@ class TestReconcile:
 
         assert result.exit_code == ExitCode.OK
         assert client.execute_workflow.call_count == 1, "scanned, then stopped — no reconcile workflow"
+
+    def test_drifted_flag_refuses_a_cancelled_scan(self, scan_result, temporal_client) -> None:
+        """A cancelled scan returns the reports it finished (#36). Reconciling
+        those would act on part of the fabric as if it were all of it."""
+        cancelled = scan_result(drifted=1).model_copy(update={"cancelled": True})
+        client = temporal_client(cancelled)
+        with patch.object(cli, "_connect", new=AsyncMock(return_value=client)):
+            result = _invoke(["reconcile", "--drifted", "--yes"])
+
+        assert result.exit_code == ExitCode.ERROR
+        assert "cancelled" in result.output
+        assert client.execute_workflow.call_count == 1, "scanned, then stopped: no reconcile workflow"
 
     def test_naming_devices_and_drifted_together_is_refused(self, sot) -> None:
         result = _invoke(["reconcile", "spine-01", "--drifted", "--yes"])
@@ -369,6 +389,216 @@ class TestStatus:
             result = _invoke(["status"])
 
         assert result.exit_code == ExitCode.OK
+
+    def test_names_the_temporal_and_its_namespace(self, sot, temporal_client, monkeypatch) -> None:
+        """#391: the Temporal a schedule lives on, host and namespace."""
+        monkeypatch.setenv("TEMPORAL_HOST", "temporal.test:7233")
+        monkeypatch.setenv("TEMPORAL_NAMESPACE", "snapl-test")
+        result = self._status_with(temporal_client, AsyncMock(return_value=None))
+
+        assert "temporal — temporal.test:7233, namespace snapl-test" in result.output
+
+    def _status_with(self, temporal_client, find) -> object:
+        client = temporal_client()
+        with (
+            patch.object(cli, "_connect", new=AsyncMock(return_value=client)),
+            patch.object(cli, "count_pollers", new=AsyncMock(return_value=1)),
+            patch("snapl_orchestrator.schedules.find_drift_schedule", new=find),
+        ):
+            return _invoke(["status"])
+
+    def test_reports_the_drift_schedule(self, sot, temporal_client) -> None:
+        from datetime import timedelta
+
+        from snapl_orchestrator.models import DriftResponseMode, DriftScheduleView
+
+        view = DriftScheduleView(
+            schedule_id="drift-response-dcfabric",
+            use_case_id="dcfabric",
+            interval=timedelta(minutes=5),
+            mode=DriftResponseMode.REPORT,
+            paused=False,
+        )
+        result = self._status_with(temporal_client, AsyncMock(return_value=view))
+        assert result.exit_code == ExitCode.OK
+        assert "drift schedule — dcfabric: every 5m, report, active" in result.output
+
+    def test_reports_the_note_on_an_active_schedule(self, sot, temporal_client) -> None:
+        # A stand-down leaves the schedule active, with why on its note (#389).
+        from datetime import timedelta
+
+        from snapl_orchestrator.models import DriftResponseMode, DriftScheduleView
+
+        view = DriftScheduleView(
+            schedule_id="drift-response-dcfabric",
+            use_case_id="dcfabric",
+            interval=timedelta(minutes=5),
+            mode=DriftResponseMode.REPORT,
+            paused=False,
+            note="stood down: 4 of 6 devices drifted",
+        )
+        result = self._status_with(temporal_client, AsyncMock(return_value=view))
+        assert result.exit_code == ExitCode.OK
+        # Rich folds the row at the runner's 80 columns; the words are what count.
+        output = " ".join(result.output.split())
+        assert 'dcfabric: every 5m, report, active — "stood down: 4 of 6 devices drifted"' in output
+
+    def test_a_missing_schedule_is_informational(self, sot, temporal_client) -> None:
+        result = self._status_with(temporal_client, AsyncMock(return_value=None))
+        assert result.exit_code == ExitCode.OK
+        assert "drift schedule — none — snapl schedule create" in result.output
+
+    def test_a_schedule_lookup_failure_does_not_change_the_exit_code(self, sot, temporal_client) -> None:
+        result = self._status_with(temporal_client, AsyncMock(side_effect=RuntimeError("deadline exceeded\ntrace")))
+        assert result.exit_code == ExitCode.OK
+        assert "drift schedule — could not inspect: deadline exceeded" in result.output
+
+
+class TestStatusHealth:
+    """Spec 016 (contracts/telemetry.md): one `fabric health` line after the checks."""
+
+    @staticmethod
+    def _health(device_id, after, *, name, reasons=()):
+        from datetime import UTC, datetime
+        from uuid import uuid4
+
+        from snapl_orchestrator.models import AuditEvent, AuditEventType
+
+        return AuditEvent(
+            event_id=uuid4(),
+            workflow_id=f"telemetry:{name}",
+            workflow_type="DeviceTelemetry",
+            target_id=device_id,
+            event_type=AuditEventType.HEALTH_CHANGED,
+            payload={"before": "unknown", "after": after, "reasons": list(reasons), "last_sample_at": None},
+            timestamp=datetime(2026, 11, 19, 22, 0, tzinfo=UTC),
+            actor="worker",
+        )
+
+    @staticmethod
+    def _audit_db(tmp_path, monkeypatch, events) -> None:
+        import asyncio
+
+        from snapl_orchestrator.audit.sqlite import SqliteAuditLog
+
+        path = tmp_path / "audit.sqlite"
+
+        async def write() -> None:
+            log = SqliteAuditLog(database_url=str(path))
+            await log.initialize()
+            for event in events:
+                await log.append(event)
+            await log.close()
+
+        asyncio.run(write())
+        monkeypatch.setenv("SNAPL_AUDIT_DB", str(path))
+
+    def _status(self, temporal_client, *args: str, pollers: int = 1):
+        with (
+            patch.object(cli, "_connect", new=AsyncMock(return_value=temporal_client())),
+            patch.object(cli, "count_pollers", new=AsyncMock(return_value=pollers)),
+            patch.object(cli, "list_running_workflows", new=AsyncMock(return_value=[]), create=True),
+        ):
+            return _invoke(["status", *args])
+
+    def _record(self, tmp_path, monkeypatch, device_ids) -> None:
+        down = {"kind": "bgp_session", "item": "10.10.1.1", "expected": "established", "actual": "active", "text": "x"}
+        self._audit_db(
+            tmp_path,
+            monkeypatch,
+            [
+                self._health(device_ids["leaf-01"], "healthy", name="leaf-01"),
+                self._health(device_ids["spine-02"], "unhealthy", name="spine-02", reasons=[down]),
+                self._health(device_ids["spine-01"], "healthy", name="spine-01"),
+                self._health(device_ids["spine-01"], "unhealthy", name="spine-01", reasons=[down]),
+            ],
+        )
+
+    def test_prints_the_fabric_health_line(self, sot, temporal_client, tmp_path, monkeypatch, device_ids) -> None:
+        self._record(tmp_path, monkeypatch, device_ids)
+
+        result = self._status(temporal_client)
+
+        assert result.exit_code == ExitCode.OK
+        assert "fabric health   1 healthy, 2 unhealthy (spine-01, spine-02), 0 unknown" in result.output
+
+    def test_json_adds_the_health_key_by_device_name(
+        self, sot, temporal_client, tmp_path, monkeypatch, device_ids
+    ) -> None:
+        import json
+
+        self._record(tmp_path, monkeypatch, device_ids)
+
+        result = self._status(temporal_client, "--json")
+
+        assert json.loads(result.stdout)["health"] == {
+            "healthy": ["leaf-01"],
+            "unhealthy": ["spine-01", "spine-02"],
+            "unknown": [],
+        }
+
+    def test_an_unhealthy_fabric_never_changes_the_exit_code(
+        self, sot, temporal_client, tmp_path, monkeypatch, device_ids
+    ) -> None:
+        self._record(tmp_path, monkeypatch, device_ids)
+        assert self._status(temporal_client).exit_code == ExitCode.OK
+        # And a failed check still fails, health or not.
+        assert self._status(temporal_client, pollers=0).exit_code == ExitCode.ERROR
+
+    def test_a_device_with_nothing_recorded_counts_as_unknown(
+        self, sot, temporal_client, tmp_path, monkeypatch, device_ids
+    ) -> None:
+        self._audit_db(tmp_path, monkeypatch, [self._health(device_ids["leaf-01"], "healthy", name="leaf-01")])
+
+        result = self._status(temporal_client)
+
+        assert "fabric health   1 healthy, 0 unhealthy, 2 unknown" in result.output
+
+    def test_nothing_recorded_says_so(self, sot, temporal_client, tmp_path, monkeypatch) -> None:
+        self._audit_db(tmp_path, monkeypatch, [])
+
+        result = self._status(temporal_client)
+
+        assert result.exit_code == ExitCode.OK
+        assert "fabric health   no telemetry recorded" in result.output
+
+    def test_no_audit_log_says_why_and_changes_no_exit_code(self, sot, temporal_client, tmp_path, monkeypatch) -> None:
+        monkeypatch.setenv("SNAPL_AUDIT_DB", str(tmp_path / "nope.sqlite"))
+
+        result = self._status(temporal_client)
+
+        assert result.exit_code == ExitCode.OK
+        assert "fabric health   could not read: no audit log at" in result.output
+
+    def test_audit_device_renders_health_reasons_one_per_line(self, sot, tmp_path, monkeypatch, device_ids) -> None:
+        reasons = [
+            {
+                "kind": "interface",
+                "item": "e1",
+                "expected": "up",
+                "actual": "down",
+                "text": "ethernet-1/49 down (expected up)",
+            },
+            {
+                "kind": "bgp_session",
+                "item": "p",
+                "expected": "established",
+                "actual": "idle",
+                "text": "BGP 10.10.1.0 idle (expected established)",
+            },
+        ]
+        self._audit_db(
+            tmp_path, monkeypatch, [self._health(device_ids["leaf-01"], "unhealthy", name="leaf-01", reasons=reasons)]
+        )
+
+        # A real terminal's width: at the runner's 80 columns Rich folds each cell.
+        result = runner.invoke(cli.app, ["audit", "--device", "leaf-01"], env={"COLUMNS": "200"})
+
+        assert result.exit_code == ExitCode.OK
+        lines = result.output.splitlines()
+        assert any("health_changed" in line and "unknown→unhealthy" in line for line in lines)
+        assert any(line.strip() == "ethernet-1/49 down (expected up)" for line in lines)
+        assert any(line.strip() == "BGP 10.10.1.0 idle (expected established)" for line in lines)
 
 
 class TestErrorMessageBrevity:

@@ -45,6 +45,8 @@ class IntentStore(ABC):
 
         Raises:
             IntentConnectionError: Source of Truth unreachable.
+            IntentAttributionError: An interface or BGP session can't be placed
+                on a queried device, so no partial desired state is returned.
         """
 
     # ---- Schema operations --------------------------------------------------

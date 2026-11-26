@@ -1,0 +1,2 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="0" skipped="1" tests="15" time="402.1" timestamp="2026-11-05T09:00:01" hostname="lab"></testsuite></testsuites>

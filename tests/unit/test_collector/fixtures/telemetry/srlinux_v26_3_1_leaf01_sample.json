@@ -1,0 +1,421 @@
+[
+ {
+  "t_rel": 0.06,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/49]",
+      "val": {
+       "oper-state": "up"
+      }
+     },
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/49]/statistics",
+      "val": {
+       "in-packets": "12926",
+       "in-octets": "2925084",
+       "in-unicast-packets": "0",
+       "in-broadcast-packets": "0",
+       "in-multicast-packets": "12926",
+       "in-discarded-packets": "140",
+       "in-error-packets": "0",
+       "in-fcs-error-packets": "0",
+       "out-packets": "12786",
+       "out-octets": "2953436",
+       "out-mirror-octets": "0",
+       "out-unicast-packets": "0",
+       "out-broadcast-packets": "0",
+       "out-multicast-packets": "12786",
+       "out-discarded-packets": "0",
+       "out-error-packets": "0",
+       "out-mirror-packets": "0",
+       "carrier-transitions": "4",
+       "interface-transitions": "7",
+       "link-transitions": "0"
+      }
+     },
+     {
+      "path": "srl_nokia-interfaces:interface[name=lo0]",
+      "val": {
+       "oper-state": "up"
+      }
+     },
+     {
+      "path": "srl_nokia-interfaces:interface[name=lo0]/statistics",
+      "val": {}
+     },
+     {
+      "path": "srl_nokia-platform:platform/srl_nokia-platform-control:control[slot=A]/srl_nokia-platform-cpu:cpu[index=all]/total",
+      "val": {
+       "instant": 5
+      }
+     },
+     {
+      "path": "srl_nokia-platform:platform/srl_nokia-platform-control:control[slot=A]/srl_nokia-platform-memory:memory",
+      "val": {
+       "utilization": 94
+      }
+     }
+    ],
+    "timestamp": 1795097375288928413
+   },
+   "sync_response": true
+  }
+ },
+ {
+  "t_rel": 10.061,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/49]",
+      "val": {
+       "oper-state": "up"
+      }
+     }
+    ],
+    "timestamp": 1795097385288959237
+   }
+  }
+ },
+ {
+  "t_rel": 10.062,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/49]/statistics",
+      "val": {
+       "in-packets": "12927",
+       "in-octets": "2925312",
+       "in-unicast-packets": "0",
+       "in-broadcast-packets": "0",
+       "in-multicast-packets": "12927",
+       "in-discarded-packets": "140",
+       "in-error-packets": "0",
+       "in-fcs-error-packets": "0",
+       "out-packets": "12787",
+       "out-octets": "2953667",
+       "out-mirror-octets": "0",
+       "out-unicast-packets": "0",
+       "out-broadcast-packets": "0",
+       "out-multicast-packets": "12787",
+       "out-discarded-packets": "0",
+       "out-error-packets": "0",
+       "out-mirror-packets": "0",
+       "carrier-transitions": "4",
+       "interface-transitions": "7",
+       "link-transitions": "0"
+      }
+     }
+    ],
+    "timestamp": 1795097385289560370
+   }
+  }
+ },
+ {
+  "t_rel": 10.062,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=lo0]",
+      "val": {
+       "oper-state": "up"
+      }
+     }
+    ],
+    "timestamp": 1795097385289891291
+   }
+  }
+ },
+ {
+  "t_rel": 10.063,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=lo0]/statistics",
+      "val": {}
+     }
+    ],
+    "timestamp": 1795097385290199837
+   }
+  }
+ },
+ {
+  "t_rel": 10.063,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-platform:platform/srl_nokia-platform-control:control[slot=A]/srl_nokia-platform-cpu:cpu[index=all]/total",
+      "val": {
+       "instant": 5
+      }
+     }
+    ],
+    "timestamp": 1795097385290312755
+   }
+  }
+ },
+ {
+  "t_rel": 10.064,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-platform:platform/srl_nokia-platform-control:control[slot=A]/srl_nokia-platform-memory:memory",
+      "val": {
+       "utilization": 94
+      }
+     }
+    ],
+    "timestamp": 1795097385290353714
+   }
+  }
+ },
+ {
+  "t_rel": 20.059,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/49]",
+      "val": {
+       "oper-state": "up"
+      }
+     }
+    ],
+    "timestamp": 1795097395289004895
+   }
+  }
+ },
+ {
+  "t_rel": 20.062,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/49]/statistics",
+      "val": {
+       "in-packets": "12927",
+       "in-octets": "2925312",
+       "in-unicast-packets": "0",
+       "in-broadcast-packets": "0",
+       "in-multicast-packets": "12927",
+       "in-discarded-packets": "140",
+       "in-error-packets": "0",
+       "in-fcs-error-packets": "0",
+       "out-packets": "12787",
+       "out-octets": "2953667",
+       "out-mirror-octets": "0",
+       "out-unicast-packets": "0",
+       "out-broadcast-packets": "0",
+       "out-multicast-packets": "12787",
+       "out-discarded-packets": "0",
+       "out-error-packets": "0",
+       "out-mirror-packets": "0",
+       "carrier-transitions": "4",
+       "interface-transitions": "7",
+       "link-transitions": "0"
+      }
+     }
+    ],
+    "timestamp": 1795097395289340108
+   }
+  }
+ },
+ {
+  "t_rel": 20.062,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=lo0]",
+      "val": {
+       "oper-state": "up"
+      }
+     }
+    ],
+    "timestamp": 1795097395290093701
+   }
+  }
+ },
+ {
+  "t_rel": 20.063,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=lo0]/statistics",
+      "val": {}
+     }
+    ],
+    "timestamp": 1795097395290165869
+   }
+  }
+ },
+ {
+  "t_rel": 20.063,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-platform:platform/srl_nokia-platform-control:control[slot=A]/srl_nokia-platform-cpu:cpu[index=all]/total",
+      "val": {
+       "instant": 5
+      }
+     }
+    ],
+    "timestamp": 1795097395290819127
+   }
+  }
+ },
+ {
+  "t_rel": 20.063,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-platform:platform/srl_nokia-platform-control:control[slot=A]/srl_nokia-platform-memory:memory",
+      "val": {
+       "utilization": 94
+      }
+     }
+    ],
+    "timestamp": 1795097395290969379
+   }
+  }
+ },
+ {
+  "t_rel": 30.061,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/49]",
+      "val": {
+       "oper-state": "up"
+      }
+     }
+    ],
+    "timestamp": 1795097405290008190
+   }
+  }
+ },
+ {
+  "t_rel": 30.061,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/49]/statistics",
+      "val": {
+       "in-packets": "12927",
+       "in-octets": "2925312",
+       "in-unicast-packets": "0",
+       "in-broadcast-packets": "0",
+       "in-multicast-packets": "12927",
+       "in-discarded-packets": "140",
+       "in-error-packets": "0",
+       "in-fcs-error-packets": "0",
+       "out-packets": "12787",
+       "out-octets": "2953667",
+       "out-mirror-octets": "0",
+       "out-unicast-packets": "0",
+       "out-broadcast-packets": "0",
+       "out-multicast-packets": "12787",
+       "out-discarded-packets": "0",
+       "out-error-packets": "0",
+       "out-mirror-packets": "0",
+       "carrier-transitions": "4",
+       "interface-transitions": "7",
+       "link-transitions": "0"
+      }
+     }
+    ],
+    "timestamp": 1795097405290682199
+   }
+  }
+ },
+ {
+  "t_rel": 30.063,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=lo0]",
+      "val": {
+       "oper-state": "up"
+      }
+     }
+    ],
+    "timestamp": 1795097405290896410
+   }
+  }
+ },
+ {
+  "t_rel": 30.063,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=lo0]/statistics",
+      "val": {}
+     }
+    ],
+    "timestamp": 1795097405290944494
+   }
+  }
+ },
+ {
+  "t_rel": 30.063,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-platform:platform/srl_nokia-platform-control:control[slot=A]/srl_nokia-platform-cpu:cpu[index=all]/total",
+      "val": {
+       "instant": 9
+      }
+     }
+    ],
+    "timestamp": 1795097405292592391
+   }
+  }
+ },
+ {
+  "t_rel": 30.273,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-platform:platform/srl_nokia-platform-control:control[slot=A]/srl_nokia-platform-memory:memory",
+      "val": {
+       "utilization": 94
+      }
+     }
+    ],
+    "timestamp": 1795097405292759269
+   }
+  }
+ },
+ {
+  "t_rel": 40.06,
+  "msg": {
+   "update": {
+    "update": [
+     {
+      "path": "srl_nokia-interfaces:interface[name=ethernet-1/49]",
+      "val": {
+       "oper-state": "up"
+      }
+     }
+    ],
+    "timestamp": 1795097415289980527
+   }
+  }
+ }
+]

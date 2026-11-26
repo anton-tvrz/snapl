@@ -1,0 +1,12 @@
+{
+  "format": 1,
+  "suite": "e2e",
+  "status": "running",
+  "started_at": "2026-11-06T10:00:00Z",
+  "commit": "COMMIT_PLACEHOLDER",
+  "tree": "TREE_PLACEHOLDER",
+  "branch": "main",
+  "dirty": false,
+  "device_image": "ghcr.io/nokia/srlinux:26.3.1",
+  "pid": 2147483646
+}

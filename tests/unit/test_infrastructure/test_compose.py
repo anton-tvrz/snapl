@@ -133,3 +133,70 @@ def test_the_example_env_token_matches_the_stack(compose: dict) -> None:
 
     example = dotenv_values(COMPOSE_PATH.with_name(".env.example"))
     assert example["INFRAHUB_API_TOKEN"] == compose["services"]["server"]["environment"]["INFRAHUB_INITIAL_ADMIN_TOKEN"]
+
+
+# ---------------------------------------------------------------------------
+# Prometheus, the metrics store (spec 012 T022, research R6)
+#
+# Metrics outlive the stack: `demo.reset` runs `dev.down --volumes`, which
+# removes named volumes. A bind mount is not a volume, so the data sits in
+# `.snapl/prometheus` on the host, next to the other evidence that survives
+# a reset.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def prometheus(compose: dict) -> dict:
+    service = compose["services"].get("prometheus")
+    assert service, "the stack has no prometheus service"
+    return service
+
+
+def _flags(service: dict) -> list[str]:
+    command = service.get("command") or []
+    return command.split() if isinstance(command, str) else list(command)
+
+
+def test_prometheus_is_pinned_to_the_captured_version(prometheus: dict) -> None:
+    """The dashboard's fixtures were captured from v3.10.0; a bump re-captures them."""
+    assert prometheus["image"] == "prom/prometheus:v3.10.0"
+
+
+def test_prometheus_is_published_on_loopback_only(prometheus: dict) -> None:
+    """The admin API is on (snapshots), so the port must not reach the LAN."""
+    assert prometheus["ports"] == ["127.0.0.1:${PROMETHEUS_PORT:-18090}:9090"]
+
+
+def test_prometheus_data_is_a_bind_mount_that_survives_a_reset(compose: dict, prometheus: dict) -> None:
+    mounts = dict(mount.split(":", 1) for mount in prometheus["volumes"])
+    sources = {target.split(":")[0]: source for source, target in mounts.items()}
+
+    assert sources["/prometheus"] == "../.snapl/prometheus"
+    assert not any("prometheus" in name for name in compose.get("volumes") or {}), (
+        "a named volume for Prometheus would be deleted by dev.down --volumes (demo.reset)"
+    )
+
+
+def test_prometheus_config_is_mounted_read_only(prometheus: dict) -> None:
+    assert "./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro" in prometheus["volumes"]
+
+
+def test_prometheus_retention_is_by_size_only(prometheus: dict) -> None:
+    flags = _flags(prometheus)
+
+    assert "--storage.tsdb.retention.size=${PROMETHEUS_RETENTION_SIZE:-2GB}" in flags
+    assert not any("retention.time" in flag for flag in flags), "Prometheus 3 has no time limit when only size is set"
+
+
+def test_prometheus_keeps_its_default_paths_and_enables_snapshots(prometheus: dict) -> None:
+    """Overriding `command` drops the image's own flags, so they are restated."""
+    flags = _flags(prometheus)
+
+    assert "--config.file=/etc/prometheus/prometheus.yml" in flags
+    assert "--storage.tsdb.path=/prometheus" in flags
+    assert "--web.enable-admin-api" in flags
+
+
+def test_prometheus_can_reach_the_host(prometheus: dict) -> None:
+    """The worker and the dashboard run on the host. Linux needs host-gateway for host.docker.internal."""
+    assert prometheus["extra_hosts"] == ["host.docker.internal:host-gateway"]

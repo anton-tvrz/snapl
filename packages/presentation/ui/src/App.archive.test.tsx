@@ -1,0 +1,216 @@
+import { act, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { App } from "./App";
+import type { DataProvider } from "./data/provider";
+import {
+  DRIFT_SUMMARY,
+  FABRIC_HISTORY,
+  HEALTH,
+  HISTORY,
+  LINKS,
+  METRICS,
+  MODE_ARCHIVE,
+  NETWORK,
+  OVERVIEW_ARCHIVE,
+  SOURCES,
+  STEPS_DEPLOY,
+  TIMELINE,
+  TOPOLOGY,
+} from "./test/fixtures";
+
+// Every folded panel and group open (#290).
+const ALL_OPEN = "/?open=history,fabric-history,drift-by-device,metrics-timing,metrics-work,metrics-worker,metrics-dashboard";
+
+// The page on `snapl dashboard --archive` (spec 011 US5, T073, T077).
+
+function provider(mode: typeof MODE_ARCHIVE = MODE_ARCHIVE) {
+  const calls = {
+    overview: vi.fn(async () => OVERVIEW_ARCHIVE),
+    metrics: vi.fn(async (view: keyof typeof METRICS) => METRICS[view]),
+    timeline: vi.fn(async () => TIMELINE),
+  };
+  const p = {
+    mode: async () => mode,
+    sources: async () => SOURCES,
+    overview: calls.overview,
+    topology: async () => TOPOLOGY,
+    links: async () => LINKS,
+    devices: async () => {
+      throw new Error("not asked");
+    },
+    runs: async () => {
+      throw new Error("not asked");
+    },
+    timeline: calls.timeline,
+    history: async (_range?: unknown, _bucket?: unknown, series?: unknown) => (series ? FABRIC_HISTORY : HISTORY),
+    driftSummary: async () => DRIFT_SUMMARY,
+    health: async () => HEALTH,
+    network: async () => NETWORK,
+    steps: async () => STEPS_DEPLOY,
+    metrics: calls.metrics,
+  } as unknown as DataProvider;
+  return { p, calls };
+}
+
+async function settle() {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+  });
+}
+
+beforeEach(() => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  history.replaceState(null, "", "/");
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+describe("App on an archive", () => {
+  it("names the archive in a banner, and nothing is labelled live", async () => {
+    render(<App provider={provider().p} />);
+    await settle();
+
+    expect(await screen.findByRole("region", { name: "Archive" })).toHaveTextContent(MODE_ARCHIVE.archive!.name);
+    expect(within(screen.getAllByRole("banner")[0]!).getByText("Archive")).toBeInTheDocument();
+    expect(screen.queryByText("Live")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Following now/)).not.toBeInTheDocument();
+  });
+
+  it("has the number row, from the archive's own answers", async () => {
+    render(<App provider={provider().p} />);
+    await settle();
+
+    const row = await screen.findByRole("list", { name: "The fabric in numbers" });
+    expect(within(row).getAllByRole("listitem")).toHaveLength(4);
+    expect(await within(row).findByText(/of \d+$/)).toBeInTheDocument();
+  });
+
+  it("counts the runs in the fourth card from the archive's trail", async () => {
+    render(<App provider={provider().p} />);
+    await settle();
+
+    const row = await screen.findByRole("list", { name: "The fabric in numbers" });
+    const card = within(row).getByRole("heading", { name: "Runs, 24 h" }).closest("li")!;
+    expect(await within(card).findByText("None failed.")).toBeInTheDocument();
+  });
+
+  it("has the fabric history, from the archive's trail", async () => {
+    history.replaceState(null, "", ALL_OPEN);
+    render(<App provider={provider().p} />);
+    await settle();
+
+    const panel = await screen.findByRole("region", { name: "Fabric history" });
+    expect(await within(panel).findByRole("img", { name: /^Runs started in each hour/ })).toBeInTheDocument();
+  });
+
+  it("has drift by device, from the archive's trail", async () => {
+    history.replaceState(null, "", ALL_OPEN);
+    render(<App provider={provider().p} />);
+    await settle();
+
+    const panel = await screen.findByRole("region", { name: "Drift by device" });
+    expect(await within(panel).findByRole("button", { name: /^Open spine-01:/ })).toBeInTheDocument();
+  });
+
+  it("shows what the archive does not hold neutrally", async () => {
+    render(<App provider={provider().p} />);
+    await settle();
+
+    const running = await screen.findByRole("region", { name: "Running now" });
+    expect(within(running).getByRole("status")).toHaveTextContent("Not in this archive");
+    expect(running).not.toHaveTextContent("Unavailable");
+  });
+
+  it("does not poll: an archive does not change", async () => {
+    const { p, calls } = provider();
+    render(<App provider={p} />);
+    await settle();
+    await screen.findByRole("region", { name: "Archive" });
+    const before = { overview: calls.overview.mock.calls.length, metrics: calls.metrics.mock.calls.length };
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(120_000);
+    });
+
+    expect(calls.overview).toHaveBeenCalledTimes(before.overview);
+    expect(calls.metrics).toHaveBeenCalledTimes(before.metrics);
+  });
+
+  // spec 015: an archive made before the new views answers them as not in this archive.
+  it("shows the views an older archive lacks as not in this archive, and the rest from the archive", async () => {
+    history.replaceState(null, "", ALL_OPEN);
+    const older = new Set(["workflow-duration", "gnmi-duration", "gnmi-errors", "worker-lag", "worker-up", "source-health"]);
+    const { p } = provider();
+    const metrics = async (view: keyof typeof METRICS) =>
+      older.has(view)
+        ? METRICS[view]
+        : {
+            ...METRICS[view],
+            metrics: { source: "prometheus", available: false, reason: "not in this archive", remedy: "uv run snapl dashboard" },
+          };
+    render(<App provider={{ ...p, metrics } as DataProvider} />);
+    await settle();
+
+    const missing = await screen.findByRole("region", { name: "Workflows completed (count)" });
+    expect(await within(missing).findByRole("status")).toHaveTextContent("Not in this archive");
+    const held = screen.getByRole("region", { name: "Worker up" });
+    expect(await within(held).findByRole("table", { name: "Worker up: latest values" })).toHaveTextContent("up");
+  });
+
+  it("asks the metrics for the exported range only, whatever range the lanes use", async () => {
+    const { p, calls } = provider();
+    render(<App provider={p} />);
+    await settle();
+    await screen.findByRole("region", { name: "Archive" });
+
+    await userEvent.click(screen.getByRole("button", { name: "24 h" }));
+    await settle();
+
+    expect(calls.timeline).toHaveBeenLastCalledWith(expect.objectContaining({ end: new Date(MODE_ARCHIVE.now) }));
+    for (const call of calls.metrics.mock.calls) expect(call).toEqual([expect.any(String), undefined]);
+    expect(screen.getByText(/an archive holds no other/)).toBeInTheDocument();
+  });
+
+  // Spec 016 T066 (#351): an archive holds the network views at 15 s around each fault.
+  const WINDOW = { start: "2026-11-07T10:00:15Z", end: "2026-11-07T10:12:00Z" };
+  const MODE_DETAIL = {
+    ...MODE_ARCHIVE,
+    archive: { ...MODE_ARCHIVE.archive!, metrics_windows: [WINDOW] },
+  } as typeof MODE_ARCHIVE;
+  const lastAsked = (calls: ReturnType<typeof provider>["calls"], view: string) =>
+    calls.metrics.mock.calls.filter((call) => call[0] === view).at(-1);
+
+  it("asks the network views for a window once it is picked, and the other views for the exported range", async () => {
+    history.replaceState(null, "", "/?open=metrics-network,metrics-worker");
+    const { p, calls } = provider(MODE_DETAIL);
+    render(<App provider={p} />);
+    await settle();
+    await screen.findByRole("region", { name: "Archive" });
+
+    await userEvent.click(screen.getByRole("button", { name: "2026-11-07 10:00 to 10:12 UTC" }));
+    await settle();
+
+    const picked = { start: new Date(WINDOW.start), end: new Date(WINDOW.end) };
+    for (const view of ["interface-traffic", "bgp-established", "device-cpu"]) {
+      expect(lastAsked(calls, view)).toEqual([view, picked]);
+    }
+    expect(lastAsked(calls, "worker-up")).toEqual(["worker-up", undefined]);
+  });
+
+  it("keeps the network views on the exported range for a range no window holds", async () => {
+    history.replaceState(null, "", "/?open=metrics-network");
+    const { p, calls } = provider(MODE_DETAIL);
+    render(<App provider={p} />);
+    await settle();
+    await screen.findByRole("region", { name: "Archive" });
+
+    await userEvent.click(screen.getByRole("button", { name: "24 h" }));
+    await settle();
+
+    expect(lastAsked(calls, "bgp-established")).toEqual(["bgp-established", undefined]);
+  });
+});

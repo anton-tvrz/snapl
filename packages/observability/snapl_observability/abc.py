@@ -11,13 +11,19 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from snapl_collector.models import CollectResult
     from snapl_intent.models import DesiredState
     from snapl_observability.models import (
         AuditEntry,
         BatchDriftReport,
+        DeviceHealth,
         DriftReport,
+        HealthExpectation,
+        HealthObservation,
         ObservabilityEvent,
+        RemovalPlan,
     )
 
 
@@ -71,3 +77,43 @@ class Observer(ABC):
     @abstractmethod
     async def log_audit(self, entry: AuditEntry) -> None:
         """Append an immutable AuditEntry to the audit log."""
+
+    # ---- Device health (spec 016) -------------------------------------------
+
+    @abstractmethod
+    def evaluate_health(
+        self,
+        expectation: HealthExpectation,
+        observation: HealthObservation,
+        *,
+        now: datetime,
+        interval_s: int,
+    ) -> DeviceHealth:
+        """Judge a device's health from intent's expectations and its telemetry (research R6).
+
+        Pure: no clock, no I/O and no audit entry; recording a change is the
+        caller's job. Health never changes a drift figure (FR-010).
+
+        Args:
+            expectation: The interfaces intent expects up or down, and the
+                sessions it expects established.
+            observation: Each item's latest state and since when, and the
+                time of the last sample (``None`` if none arrived).
+            now: The time to judge at.
+            interval_s: The sample interval; the staleness limit and the
+                debounce follow it.
+        """
+
+    # ---- Removal (spec 013) -------------------------------------------------
+
+    @abstractmethod
+    def plan_removal(self, report: DriftReport) -> RemovalPlan:
+        """The deletes that would remove a report's undesired config, and what is refused.
+
+        Pure: no I/O and no events. Forward items never produce a delete
+        (FR-003). Every undesired item ends up in exactly one PlannedDelete's
+        ``answers`` or one RefusedEntity's ``paths``.
+
+        Raises:
+            ValueError: report.status is ERROR (nothing to plan from).
+        """

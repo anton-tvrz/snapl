@@ -56,6 +56,14 @@ class IntentSchemaError(IntentError):
     """
 
 
+class IntentAttributionError(IntentError):
+    """A queried interface or BGP session can't be placed on a queried device.
+
+    Raised rather than leaving the child out: a missing child reads as
+    live-only config downstream, and reconcile could remove it from the device.
+    """
+
+
 class IntentDeletionError(IntentError):
     """Deletion preconditions were not met.
 

@@ -14,6 +14,12 @@ from snapl_orchestrator.worker.run import _build_collector, _build_executor, _bu
 pytestmark = pytest.mark.unit
 
 
+@pytest.fixture(autouse=True)
+def _no_telemetry_by_default(monkeypatch):
+    """The bootstrap tests below pass mock blocks; only TestTelemetryRunner starts a runner."""
+    monkeypatch.setenv("SNAPL_TELEMETRY", "off")
+
+
 class TestBuildExecutor:
     def test_has_no_fixed_host(self, monkeypatch):
         monkeypatch.setenv("SRLINUX_PASSWORD", "pw")
@@ -50,6 +56,22 @@ class TestBuildExecutor:
         monkeypatch.delenv("SRLINUX_PASSWORD", raising=False)
         with pytest.raises(OrchestratorConfigError, match="SRLINUX_PASSWORD"):
             _build_executor()
+
+    def test_gets_the_field_maps_protected_interfaces(self, monkeypatch):
+        """Spec 013 research R5: one protected list, handed over here and nowhere else."""
+        from snapl_observability.structural.diff import ENTITY_FIELD_MAP
+
+        monkeypatch.setenv("SRLINUX_PASSWORD", "pw")
+        executor = _build_executor()
+        assert executor._protected == tuple(ENTITY_FIELD_MAP["interface"]["protected"])
+
+    async def test_refuses_every_protected_interface(self, monkeypatch, make_device):
+        from snapl_observability.structural.diff import ENTITY_FIELD_MAP
+
+        monkeypatch.setenv("SRLINUX_PASSWORD", "pw")
+        paths = [f"/interface[name={name}]" for name in ENTITY_FIELD_MAP["interface"]["protected"]]
+        result = await _build_executor().dry_run_remove(make_device("leaf-04"), paths)
+        assert result.refused == dict.fromkeys(paths, "protected")
 
 
 class TestBuildCollector:
@@ -178,3 +200,329 @@ class TestLogDriftEvent:
         with caplog.at_level(logging.INFO, logger="snapl_orchestrator.worker.run"):
             _log_drift_event(self._event(DriftStatus.ERROR))
         assert any(r.levelno == logging.WARNING for r in caplog.records)
+
+
+class TestWorkerRegistration:
+    """run_worker registers the scheduled-run workflow and touches no schedule (009 FR-009)."""
+
+    async def test_registers_drift_response_and_creates_no_schedule(self, monkeypatch):
+        from unittest.mock import AsyncMock, MagicMock
+
+        import snapl_orchestrator.worker.run as run_mod
+
+        # Never bind the maintainer's 18091 from a unit test (spec 012).
+        monkeypatch.setenv("WORKER_METRICS_PORT", "off")
+        from snapl_orchestrator.workflows.drift_response import DriftResponseWorkflow
+
+        client = MagicMock()
+        monkeypatch.setattr(run_mod.Client, "connect", AsyncMock(return_value=client))
+        captured: dict = {}
+
+        class _FakeWorker:
+            def __init__(self, _client, **kwargs):
+                captured.update(kwargs)
+
+            async def run(self):
+                return None
+
+        monkeypatch.setattr(run_mod, "Worker", _FakeWorker)
+
+        await run_mod.run_worker(activities=MagicMock())
+
+        assert DriftResponseWorkflow in captured["workflows"]
+        # The six block activities, the schedule stand-down (#136), the removal preview's two
+        # and the confirmed removal's two (spec 013).
+        assert len(captured["activities"]) == 11
+        assert "stand_down_schedule" in {a.__name__ for a in captured["activities"]}
+        client.create_schedule.assert_not_called()
+        client.get_schedule_handle.assert_not_called()
+
+    async def test_registers_the_removal_preview(self, monkeypatch):
+        """Spec 013 T017: PlanRemoval and its two activities."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        import snapl_orchestrator.worker.run as run_mod
+        from snapl_orchestrator.workflows.removal import PlanRemovalWorkflow
+
+        monkeypatch.setenv("WORKER_METRICS_PORT", "off")
+        monkeypatch.setattr(run_mod.Client, "connect", AsyncMock(return_value=MagicMock()))
+        captured: dict = {}
+
+        class _FakeWorker:
+            def __init__(self, _client, **kwargs):
+                captured.update(kwargs)
+
+            async def run(self):
+                return None
+
+        monkeypatch.setattr(run_mod, "Worker", _FakeWorker)
+
+        await run_mod.run_worker(activities=MagicMock())
+
+        assert PlanRemovalWorkflow in captured["workflows"]
+        assert {"plan_removal", "dry_run_remove"} <= {a.__name__ for a in captured["activities"]}
+
+    async def test_registers_the_confirmed_removal(self, monkeypatch):
+        """Spec 013 T031: RemoveConfig, the Set and the deploy check."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        import snapl_orchestrator.worker.run as run_mod
+        from snapl_orchestrator.workflows.removal import RemoveConfigWorkflow
+
+        monkeypatch.setenv("WORKER_METRICS_PORT", "off")
+        monkeypatch.setattr(run_mod.Client, "connect", AsyncMock(return_value=MagicMock()))
+        captured: dict = {}
+
+        class _FakeWorker:
+            def __init__(self, _client, **kwargs):
+                captured.update(kwargs)
+
+            async def run(self):
+                return None
+
+        monkeypatch.setattr(run_mod, "Worker", _FakeWorker)
+
+        await run_mod.run_worker(activities=MagicMock())
+
+        assert RemoveConfigWorkflow in captured["workflows"]
+        assert {"remove_config", "deploy_in_flight"} <= {a.__name__ for a in captured["activities"]}
+
+
+class TestWorkerMetrics:
+    """run_worker serves metrics through the SDK runtime, and never stops for them (spec 012, T010, FR-002)."""
+
+    @staticmethod
+    def _free_port() -> int:
+        import socket
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("127.0.0.1", 0))
+            return s.getsockname()[1]
+
+    @staticmethod
+    def _patch(monkeypatch):
+        from unittest.mock import AsyncMock, MagicMock
+
+        import snapl_orchestrator.worker.run as run_mod
+
+        connect = AsyncMock(return_value=MagicMock())
+        monkeypatch.setattr(run_mod.Client, "connect", connect)
+        workers: list = []
+
+        class _FakeWorker:
+            def __init__(self, client, **kwargs):
+                workers.append((client, kwargs))
+
+            async def run(self):
+                return None
+
+        monkeypatch.setattr(run_mod, "Worker", _FakeWorker)
+        return run_mod, connect, workers
+
+    async def test_passes_the_metrics_runtime_to_the_client(self, monkeypatch, caplog):
+        import logging
+        from unittest.mock import MagicMock
+
+        from temporalio.runtime import Runtime
+
+        run_mod, connect, workers = self._patch(monkeypatch)
+        port = self._free_port()
+        monkeypatch.setenv("WORKER_METRICS_PORT", str(port))
+        monkeypatch.delenv("WORKER_METRICS_BIND", raising=False)
+
+        with caplog.at_level(logging.INFO, logger="snapl_orchestrator.worker.run"):
+            await run_mod.run_worker(activities=MagicMock())
+
+        assert isinstance(connect.await_args.kwargs["runtime"], Runtime)
+        assert len(workers) == 1
+        assert f"metrics: http://127.0.0.1:{port}/metrics" in [r.getMessage() for r in caplog.records]
+
+    async def test_a_taken_port_still_starts_the_worker(self, monkeypatch, caplog):
+        import logging
+        import socket
+        from unittest.mock import MagicMock
+
+        run_mod, connect, workers = self._patch(monkeypatch)
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as holder:
+            holder.bind(("127.0.0.1", 0))
+            holder.listen()
+            port = holder.getsockname()[1]
+            monkeypatch.setenv("WORKER_METRICS_PORT", str(port))
+
+            with caplog.at_level(logging.INFO):
+                await run_mod.run_worker(activities=MagicMock())
+
+        assert connect.await_args.kwargs["runtime"] is None
+        assert len(workers) == 1
+        messages = [r.getMessage() for r in caplog.records]
+        assert f"metrics off: port {port} in use (set WORKER_METRICS_PORT to move it, or off)" in messages
+        assert not any(m.startswith("metrics: http") for m in messages)
+
+    async def test_off_connects_with_the_default_runtime(self, monkeypatch, caplog):
+        import logging
+        from unittest.mock import MagicMock
+
+        run_mod, connect, workers = self._patch(monkeypatch)
+        monkeypatch.setenv("WORKER_METRICS_PORT", "off")
+
+        with caplog.at_level(logging.INFO, logger="snapl_orchestrator.worker.run"):
+            await run_mod.run_worker(activities=MagicMock())
+
+        assert connect.await_args.kwargs["runtime"] is None
+        assert len(workers) == 1
+        assert "metrics off: WORKER_METRICS_PORT=off" in [r.getMessage() for r in caplog.records]
+
+
+class TestTelemetryRunner:
+    """Spec 016 T023: run_worker starts the telemetry runner beside the Temporal worker (research R3)."""
+
+    @staticmethod
+    def _patch(monkeypatch, *, runner_error: Exception | None = None):
+        import asyncio
+        from unittest.mock import AsyncMock, MagicMock
+
+        import snapl_orchestrator.worker.run as run_mod
+
+        monkeypatch.setattr(run_mod.Client, "connect", AsyncMock(return_value=MagicMock()))
+        seen: dict = {"runners": [], "started": asyncio.Event(), "stopped": False, "worker_ran": False}
+
+        class _FakeRunner:
+            def __init__(self, **kwargs):
+                seen["runners"].append(kwargs)
+
+            async def run(self):
+                seen["started"].set()
+                if runner_error is not None:
+                    raise runner_error
+                try:
+                    await asyncio.Event().wait()
+                finally:
+                    seen["stopped"] = True
+
+        class _FakeWorker:
+            def __init__(self, _client, **_kwargs):
+                pass
+
+            async def run(self):
+                # The worker runs until the runner has had its chance to start.
+                await asyncio.wait_for(seen["started"].wait(), timeout=5)
+                await asyncio.sleep(0)
+                seen["worker_ran"] = True
+
+        monkeypatch.setattr(run_mod, "TelemetryRunner", _FakeRunner)
+        monkeypatch.setattr(run_mod, "Worker", _FakeWorker)
+        return run_mod, seen
+
+    @staticmethod
+    def _activities():
+        from unittest.mock import MagicMock
+
+        return MagicMock()
+
+    async def test_starts_the_runner_with_the_workers_blocks_and_the_runtimes_meter(self, monkeypatch) -> None:
+        import socket
+
+        from temporalio.runtime import Runtime
+
+        run_mod, seen = self._patch(monkeypatch)
+        monkeypatch.delenv("SNAPL_TELEMETRY")
+        monkeypatch.delenv("SNAPL_TELEMETRY_USE_CASE", raising=False)
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("127.0.0.1", 0))
+            port = s.getsockname()[1]
+        monkeypatch.setenv("WORKER_METRICS_PORT", str(port))
+        runtimes: list = []
+        real_build = run_mod.build_runtime
+
+        def _build(**kwargs):
+            runtime = real_build(**kwargs)
+            runtimes.append(runtime)
+            return runtime
+
+        monkeypatch.setattr(run_mod, "build_runtime", _build)
+        activities = self._activities()
+
+        await run_mod.run_worker(activities=activities)
+
+        [kwargs] = seen["runners"]
+        assert kwargs["audit_log"] is activities.audit_log
+        assert kwargs["collector"] is activities.collector
+        assert kwargs["observer"] is activities.observer
+        assert kwargs["intent_store"] is activities.intent_store
+        assert isinstance(runtimes[0], Runtime)
+        assert kwargs["meter"] is runtimes[0].metric_meter
+        assert kwargs["use_case"] == "dcfabric"  # #341: not the integration tests' test_edge devices
+
+    @pytest.mark.parametrize(("raw", "expected"), [("site_edge", "site_edge"), (" lab2 ", "lab2"), ("", "dcfabric")])
+    async def test_the_use_case_comes_from_snapl_telemetry_use_case(
+        self, monkeypatch, caplog, raw: str, expected: str
+    ) -> None:
+        import logging
+
+        run_mod, seen = self._patch(monkeypatch)
+        monkeypatch.setenv("SNAPL_TELEMETRY", "on")
+        monkeypatch.setenv("SNAPL_TELEMETRY_USE_CASE", raw)
+        monkeypatch.setenv("WORKER_METRICS_PORT", "off")
+
+        with caplog.at_level(logging.INFO, logger="snapl_orchestrator.worker.run"):
+            await run_mod.run_worker(activities=self._activities())
+
+        [kwargs] = seen["runners"]
+        assert kwargs["use_case"] == expected
+        assert f"telemetry: streaming use case {expected}" in [r.getMessage() for r in caplog.records]
+
+    async def test_stopping_the_worker_stops_the_runner(self, monkeypatch) -> None:
+        run_mod, seen = self._patch(monkeypatch)
+        monkeypatch.setenv("SNAPL_TELEMETRY", "on")
+        monkeypatch.setenv("WORKER_METRICS_PORT", "off")
+
+        await run_mod.run_worker(activities=self._activities())
+
+        assert seen["worker_ran"]
+        assert seen["stopped"]
+
+    @pytest.mark.parametrize("raw", ["off", "OFF", " off "])
+    async def test_off_starts_no_runner(self, monkeypatch, caplog, raw: str) -> None:
+        import asyncio
+        import logging
+
+        run_mod, seen = self._patch(monkeypatch)
+        monkeypatch.setenv("SNAPL_TELEMETRY", raw)
+        monkeypatch.setenv("WORKER_METRICS_PORT", "off")
+        seen["started"].set()  # the fake worker must not wait for a runner that never comes
+        await asyncio.sleep(0)
+
+        with caplog.at_level(logging.INFO, logger="snapl_orchestrator.worker.run"):
+            await run_mod.run_worker(activities=self._activities())
+
+        assert seen["runners"] == []
+        assert seen["worker_ran"]
+        assert "telemetry off: SNAPL_TELEMETRY=off" in [r.getMessage() for r in caplog.records]
+
+    async def test_a_runner_that_raises_is_logged_and_the_worker_carries_on(self, monkeypatch, caplog) -> None:
+        import logging
+
+        run_mod, seen = self._patch(monkeypatch, runner_error=RuntimeError("intent store exploded"))
+        monkeypatch.setenv("SNAPL_TELEMETRY", "on")
+        monkeypatch.setenv("WORKER_METRICS_PORT", "off")
+
+        with caplog.at_level(logging.INFO, logger="snapl_orchestrator.worker.run"):
+            await run_mod.run_worker(activities=self._activities())
+
+        assert seen["worker_ran"]
+        errors = [r for r in caplog.records if r.levelno >= logging.ERROR]
+        assert any("telemetry" in r.getMessage() for r in errors)
+        assert any("intent store exploded" in str(r.exc_info[1]) for r in errors if r.exc_info)
+
+    async def test_with_metrics_off_the_runner_records_into_a_noop_meter(self, monkeypatch) -> None:
+        from temporalio.common import MetricMeter
+
+        run_mod, seen = self._patch(monkeypatch)
+        monkeypatch.setenv("SNAPL_TELEMETRY", "on")
+        monkeypatch.setenv("WORKER_METRICS_PORT", "off")
+
+        await run_mod.run_worker(activities=self._activities())
+
+        [kwargs] = seen["runners"]
+        assert kwargs["meter"] is MetricMeter.noop

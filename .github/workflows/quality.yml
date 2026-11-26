@@ -41,6 +41,7 @@ jobs:
       yaml: ${{ steps.filter.outputs.yaml }}
       documentation: ${{ steps.filter.outputs.documentation }}
       schemas: ${{ steps.filter.outputs.schemas }}
+      ui: ${{ steps.filter.outputs.ui }}
     steps:
       - uses: actions/checkout@v7
       - uses: dorny/paths-filter@v4
@@ -225,6 +226,73 @@ jobs:
           path: test-results.xml
 
   # ---------------------------------------------------------------------------
+  # Dashboard UI — types, lint, unit tests, build and one browser check
+  # (spec 011). Runs only when the UI, the dashboard server or the contract
+  # changes. Node is a build tool here; nothing else in CI needs it.
+  # ---------------------------------------------------------------------------
+  ui:
+    name: Dashboard UI
+    runs-on: ubuntu-latest
+    needs: [changes]
+    if: needs.changes.outputs.ui == 'true'
+    defaults:
+      run:
+        working-directory: packages/presentation/ui
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: packages/presentation/ui/.nvmrc
+          cache: npm
+          cache-dependency-path: packages/presentation/ui/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Generated types match the contract
+        run: npm run types:check
+
+      - name: Unit tests with coverage
+        run: npm run test:coverage
+
+      - name: Build
+        run: npm run build
+
+      # The browser check runs the real server on captured fixtures.
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: ${{ env.UV_VERSION }}
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install the dashboard server
+        working-directory: .
+        run: uv sync --all-groups
+
+      - name: Install the browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Browser check
+        run: npm run e2e
+
+      - name: Upload the browser trace
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ui-browser-trace
+          path: packages/presentation/ui/test-results/
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------
   # Quality gate — aggregates all job results
   # ---------------------------------------------------------------------------
   quality-gate:
@@ -239,6 +307,7 @@ jobs:
       - secrets-detection
       - uv-lock-check
       - unit-tests
+      - ui
     if: always()
     steps:
       - name: Check job results
@@ -254,6 +323,7 @@ jobs:
           echo "| Secrets Detection | ${{ needs.secrets-detection.result }} |"
           echo "| uv Lock Check | ${{ needs.uv-lock-check.result }} |"
           echo "| Unit Tests | ${{ needs.unit-tests.result }} |"
+          echo "| Dashboard UI | ${{ needs.ui.result }} |"
           echo ""
 
           # Fail if any required job failed (skipped is OK — means path filter excluded it)
@@ -263,7 +333,8 @@ jobs:
              [[ "${{ needs.security-scanning.result }}" == "failure" ]] || \
              [[ "${{ needs.secrets-detection.result }}" == "failure" ]] || \
              [[ "${{ needs.uv-lock-check.result }}" == "failure" ]] || \
-             [[ "${{ needs.unit-tests.result }}" == "failure" ]]; then
+             [[ "${{ needs.unit-tests.result }}" == "failure" ]] || \
+             [[ "${{ needs.ui.result }}" == "failure" ]]; then
             echo "Required quality checks failed — blocking pipeline."
             exit 1
           fi

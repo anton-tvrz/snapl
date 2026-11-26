@@ -123,6 +123,44 @@ nodes:
         cardinality: one
         kind: Attribute
 
+  # What a session carries (#317). A peer group or session names one as its
+  # import or export policy; without one, SR Linux's eBGP default advertises and
+  # accepts nothing. Read into snapl_intent.models.RoutingPolicy.
+  - name: Policy
+    namespace: Routing
+    description: "A route filter: accept the listed prefixes, apply the default action to the rest"
+    label: Routing Policy
+    icon: mdi:filter-outline
+    menu_placement: RoutingBGPSession
+    human_friendly_id:
+      - name__value
+    order_by:
+      - name__value
+    display_label: "{{ name__value }}"
+    attributes:
+      - name: name
+        kind: Text
+        unique: true
+        description: "The name sessions use for it"
+        order_weight: 1000
+      - name: description
+        kind: Text
+        optional: true
+        order_weight: 1050
+      - name: accept_prefixes
+        kind: List
+        optional: true
+        description: "Each '<prefix> <low>..<high>' (the routes inside the prefix from /low to /high), or a bare prefix for that prefix alone"
+        order_weight: 1100
+      - name: default_action
+        kind: Text
+        enum:
+          - accept
+          - reject
+        default_value: reject
+        description: "What happens to a route no entry accepts"
+        order_weight: 1150
+
   - name: BGPSession
     namespace: Routing
     description: A BGP Session represent a point to point connection between two routers

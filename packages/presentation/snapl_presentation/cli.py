@@ -8,22 +8,32 @@ no gNMI and no drift computation — a bug in the loop is never fixed here.
     snapl reconcile --use-case dcfabric --drifted
     snapl audit --device spine-01
     snapl status
+    snapl schedule create --every 5m
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import functools
+import getpass
+import re
+import sys
+from datetime import timedelta
+from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any
 from uuid import uuid4
 
 import typer
 from rich.console import Console
+from rich.markup import escape
 
 from snapl_observability.models import DriftStatus
 from snapl_presentation.exceptions import CliError, ConnectionCliError, first_line
 from snapl_presentation.exit_codes import ExitCode
-from snapl_presentation.render import build_renderer
+from snapl_presentation.probes import connect as _connect
+from snapl_presentation.probes import count_pollers, identify_sot
+from snapl_presentation.render import FabricHealthSummary, build_renderer
 from snapl_presentation.resolve import build_store, load_states, resolve_device, resolve_devices
 from snapl_presentation.settings import CliSettings
 
@@ -45,6 +55,14 @@ DEFAULT_USE_CASE = "dcfabric"
 UseCaseOpt = Annotated[str, typer.Option("--use-case", help="Use case to operate on.")]
 JsonOpt = Annotated[bool, typer.Option("--json", help="Emit JSON on stdout instead of a table.")]
 YesOpt = Annotated[bool, typer.Option("--yes", "-y", help="Skip the confirmation prompt.")]
+EveryOpt = Annotated[str, typer.Option("--every", help="Scan interval: <n>s, <n>m or <n>h (minimum 1m).")]
+
+schedule_app = typer.Typer(
+    name="schedule",
+    help="Steer the drift schedule that scans a use case on an interval (spec 009).",
+    no_args_is_help=True,
+)
+app.add_typer(schedule_app)
 
 
 def command(fn: Callable) -> Callable:
@@ -60,7 +78,9 @@ def command(fn: Callable) -> Callable:
         try:
             code = asyncio.run(fn(*args, **kwargs))
         except CliError as exc:
-            _stderr.print(f"[red]error:[/] {exc.render()}")
+            # Escaped, and never hard-wrapped: a message may carry a gNMI path,
+            # whose brackets Rich would eat and which an operator may copy.
+            _stderr.print(f"[red]error:[/] {escape(exc.render())}", soft_wrap=True)
             raise typer.Exit(int(exc.code)) from None
         except KeyboardInterrupt:
             # The workflow is server-side; our exit does not stop it (FR /
@@ -70,84 +90,6 @@ def command(fn: Callable) -> Callable:
         raise typer.Exit(int(code or ExitCode.OK))
 
     return wrapper
-
-
-async def _probe(host_port: str, timeout: float) -> str | None:
-    """TCP-reachability probe. Returns a failure reason, or None if reachable."""
-    host, _, port = host_port.rpartition(":")
-    try:
-        _, writer = await asyncio.wait_for(
-            asyncio.open_connection(host or "localhost", int(port or 18033)),
-            timeout=timeout,
-        )
-    except TimeoutError:
-        return f"no response within {timeout:g}s"
-    except (OSError, ValueError) as exc:
-        return str(exc)
-    writer.close()
-    return None
-
-
-async def _connect(settings: CliSettings):
-    """Temporal client with the pydantic converter wired in (FR-008).
-
-    Probes TCP first. ``Client.connect`` retries its initial handshake forever
-    and takes no connect_timeout, and wrapping it in ``asyncio.wait_for`` does
-    not help: the Rust core blocks the event loop, so the timer never fires and
-    the CLI hangs with no output — the exact opposite of FR-014. A plain
-    asyncio socket probe is cancellable, costs milliseconds, and turns "nothing
-    is listening" into an immediate, specific message. The wait_for below still
-    guards the case where the port accepts but the handshake stalls.
-    """
-    from snapl_orchestrator.worker.client import build_client  # noqa: PLC0415
-
-    failure = await _probe(settings.temporal_host, settings.connect_timeout)
-    if failure is not None:
-        raise ConnectionCliError(
-            subsystem="Temporal",
-            address=settings.temporal_host,
-            env_var="TEMPORAL_HOST",
-            cause=failure,
-        )
-
-    try:
-        return await asyncio.wait_for(
-            build_client(target=settings.temporal_host, namespace=settings.temporal_namespace),
-            timeout=settings.connect_timeout,
-        )
-    except (TimeoutError, Exception) as exc:
-        cause = f"no response within {settings.connect_timeout:g}s" if isinstance(exc, TimeoutError) else str(exc)
-        raise ConnectionCliError(
-            subsystem="Temporal",
-            address=settings.temporal_host,
-            env_var="TEMPORAL_HOST",
-            cause=cause,
-        ) from exc
-
-
-async def identify_sot(store, *, address: str):
-    """Classify the Infrahub a store points at (#107)."""
-    from snapl_intent.infrahub.identity import identify  # noqa: PLC0415
-
-    return await identify(store.client, address=address)
-
-
-async def count_pollers(client: Any, settings: CliSettings) -> int:
-    """How many workers are polling our task queue."""
-    from temporalio.api.enums.v1 import TaskQueueType  # noqa: PLC0415
-    from temporalio.api.taskqueue.v1 import TaskQueue  # noqa: PLC0415
-    from temporalio.api.workflowservice.v1 import DescribeTaskQueueRequest  # noqa: PLC0415
-
-    request = DescribeTaskQueueRequest(
-        namespace=settings.temporal_namespace,
-        task_queue=TaskQueue(name=settings.task_queue),
-        task_queue_type=TaskQueueType.TASK_QUEUE_TYPE_WORKFLOW,
-    )
-    response = await asyncio.wait_for(
-        client.service_client.workflow_service.describe_task_queue(request),
-        timeout=settings.connect_timeout,
-    )
-    return len(response.pollers)
 
 
 async def _require_worker(client: Any, settings: CliSettings) -> None:
@@ -167,6 +109,29 @@ async def _require_worker(client: Any, settings: CliSettings) -> None:
             f"no worker is polling task queue {settings.task_queue!r}",
             hint="Start one in another terminal: uv run invoke orchestrator.start",
         )
+
+
+async def _open_audit_log(settings: CliSettings):
+    """The worker's durable audit log, refusing a path that does not exist.
+
+    For a reader, an absent database is not an empty one: "0 events" for a path
+    never written is indistinguishable from a real empty log. For a writer
+    (schedule changes) it is worse — a fresh file at a mismatched path would
+    hold "switched to remediate by X" where neither the worker nor `snapl
+    audit` ever looks.
+    """
+    from pathlib import Path  # noqa: PLC0415
+
+    from snapl_orchestrator.audit.sqlite import SqliteAuditLog  # noqa: PLC0415
+
+    if settings.audit_db != ":memory:" and not Path(settings.audit_db).exists():
+        raise CliError(
+            f"no audit log at {settings.audit_db}",
+            hint="Set SNAPL_AUDIT_DB to the path the worker writes, or run a workflow first.",
+        )
+    log = SqliteAuditLog(database_url=settings.audit_db)
+    await log.initialize()
+    return log
 
 
 def _confirm(message: str, *, yes: bool, as_json: bool) -> None:
@@ -218,6 +183,109 @@ async def deploy(
 
 @app.command()
 @command
+async def remove(
+    device: Annotated[str, typer.Argument(help="Device name, as it appears in the SoT.")],
+    apply: Annotated[
+        bool, typer.Option("--apply", help="Remove what the preview lists, after a confirmation.")
+    ] = False,
+    yes: YesOpt = False,
+    use_case: UseCaseOpt = DEFAULT_USE_CASE,
+    as_json: JsonOpt = False,
+) -> ExitCode:
+    """Remove config the device carries that intent never asked for (spec 013).
+
+    Without --apply, a preview: scans the device, then lists each delete that
+    would remove its undesired config, the drift each answers, and what is
+    refused and why. Writes nothing. With --apply, it confirms, then re-scans,
+    sends the deletes in one Set only if nothing changed, and verifies.
+    """
+    from temporalio.client import WorkflowFailureError  # noqa: PLC0415
+
+    from snapl_orchestrator.workflows.removal import PlanRemovalWorkflow  # noqa: PLC0415
+
+    if apply and not yes:
+        # Refused before anything connects: a write needs someone to confirm it (FR-006).
+        if as_json:
+            raise CliError("--json requires --yes for a command that writes to devices")
+        if not _stdin_is_terminal():
+            raise CliError("--apply needs --yes when there is no terminal to confirm at")
+
+    settings = CliSettings.from_env()
+    states = await load_states(build_store(settings), settings, use_case=use_case)
+    # Only a device in intent: removing a device intent has dropped is
+    # decommissioning, a different operation.
+    device_id = resolve_device(states, device)
+
+    client = await _connect(settings)
+    await _require_worker(client, settings)
+    try:
+        plan = await client.execute_workflow(
+            PlanRemovalWorkflow.run,
+            device_id,
+            # A preview never collides with another: each is its own run.
+            id=f"plan-removal-{device_id}-{uuid4()}",
+            task_queue=settings.task_queue,
+        )
+    except WorkflowFailureError as exc:
+        raise _removal_failed(device, exc) from None
+
+    renderer = build_renderer(as_json=as_json)
+    renderer.removal_plan(plan, applying=apply)
+    if not apply:
+        return renderer.removal_plan_code(plan)
+    if plan.is_empty:
+        renderer.removal(plan, None)
+        return renderer.removal_code(None)
+
+    _confirm(
+        f"Remove {len(plan.deletes)} config entr{'y' if len(plan.deletes) == 1 else 'ies'} from {device}? "
+        "This deletes them from the device.",
+        yes=yes,
+        as_json=as_json,
+    )
+    result = await _run_removal(client, settings, device, device_id, plan.delete_paths)
+    renderer.removal(plan, result)
+    return renderer.removal_code(result)
+
+
+def _stdin_is_terminal() -> bool:
+    return sys.stdin.isatty()
+
+
+async def _run_removal(client: Any, settings: CliSettings, device: str, device_id: UUID, paths: list[str]) -> Any:
+    """Start ``RemoveConfig`` for exactly the paths the operator saw; one removal per device at a time."""
+    from temporalio.client import WorkflowFailureError  # noqa: PLC0415
+    from temporalio.common import WorkflowIDConflictPolicy  # noqa: PLC0415
+    from temporalio.exceptions import WorkflowAlreadyStartedError  # noqa: PLC0415
+
+    from snapl_orchestrator.models import RemovalRequest, remove_config_id  # noqa: PLC0415
+    from snapl_orchestrator.workflows.removal import RemoveConfigWorkflow  # noqa: PLC0415
+
+    try:
+        return await client.execute_workflow(
+            RemoveConfigWorkflow.run,
+            RemovalRequest(device_id=device_id, actor=_actor(), confirmed_paths=paths),
+            id=remove_config_id(device_id),
+            task_queue=settings.task_queue,
+            # A second removal while one runs is refused, not joined (research R8).
+            id_conflict_policy=WorkflowIDConflictPolicy.FAIL,
+        )
+    except WorkflowAlreadyStartedError:
+        raise CliError(f"a removal of {device} is already running") from None
+    except WorkflowFailureError as exc:
+        raise _removal_failed(device, exc) from None
+
+
+def _removal_failed(device: str, exc: Exception) -> CliError:
+    """One line for a removal workflow that failed: its reason, its cause, and that nothing was written."""
+    cause = getattr(exc, "cause", None)
+    detail = first_line(getattr(cause, "message", None) or str(cause or exc))
+    reason = getattr(cause, "type", None) or "failed"
+    return CliError(f"{device}: {reason.replace('_', ' ')}: {detail}. Nothing was written.")
+
+
+@app.command()
+@command
 async def scan(use_case: UseCaseOpt = DEFAULT_USE_CASE, as_json: JsonOpt = False) -> ExitCode:
     """Scan a use case for drift. Exits 2 when drift is found, 1 on error."""
     from snapl_orchestrator.workflows.scan_drift import ScanDriftWorkflow  # noqa: PLC0415
@@ -264,6 +332,13 @@ async def reconcile(
             id=f"scan-drift-{use_case}-{uuid4()}",
             task_queue=settings.task_queue,
         )
+        if scan_result.cancelled:
+            # It returns only the devices it finished (#36): reconciling those
+            # would treat part of the fabric as all of it.
+            raise CliError(
+                f"the scan of {use_case} was cancelled before it finished; nothing was reconciled",
+                hint="run `snapl reconcile --drifted` again, or name the devices",
+            )
         target_ids: list[UUID] = [
             report.device_id for report in scan_result.reports.values() if report.status is DriftStatus.DRIFTED
         ]
@@ -299,24 +374,11 @@ async def audit(
     as_json: JsonOpt = False,
 ) -> ExitCode:
     """Read the durable audit trail by workflow or by device."""
-    from pathlib import Path  # noqa: PLC0415
-
-    from snapl_orchestrator.audit.sqlite import SqliteAuditLog  # noqa: PLC0415
-
     if bool(workflow) == bool(device):
         raise CliError("pass exactly one of --workflow or --device")
 
     settings = CliSettings.from_env()
-    # An absent database is not an empty one — reporting "0 events" for a path
-    # that was never written would be indistinguishable from a real empty log.
-    if settings.audit_db != ":memory:" and not Path(settings.audit_db).exists():
-        raise CliError(
-            f"no audit log at {settings.audit_db}",
-            hint="Set SNAPL_AUDIT_DB to the path the worker writes, or run a workflow first.",
-        )
-
-    log = SqliteAuditLog(database_url=settings.audit_db)
-    await log.initialize()
+    log = await _open_audit_log(settings)
     try:
         if workflow:
             events = await log.query_by_workflow(workflow)
@@ -346,7 +408,7 @@ async def status(use_case: UseCaseOpt = DEFAULT_USE_CASE, as_json: JsonOpt = Fal
         checks.append(("temporal", False, exc.message))
         client = None
     else:
-        checks.append(("temporal", True, settings.temporal_host))
+        checks.append(("temporal", True, str(settings.temporal)))
         running = await list_running_workflows(client, task_queue=settings.task_queue)
         # Poller count, not mere queue existence: a queue nothing polls looks
         # identical to a healthy one until a workflow sits in it forever
@@ -365,7 +427,16 @@ async def status(use_case: UseCaseOpt = DEFAULT_USE_CASE, as_json: JsonOpt = Fal
                     else f"nothing polling {settings.task_queue} — uv run invoke orchestrator.start",
                 )
             )
+        from snapl_orchestrator import schedules  # noqa: PLC0415
 
+        try:
+            view = await schedules.find_drift_schedule(client, use_case_id=use_case)
+        except Exception as exc:
+            checks.append(("drift schedule", True, f"could not inspect: {first_line(str(exc))}"))
+        else:
+            checks.append(_schedule_status_row(view, use_case))
+
+    states: list[Any] | None = None
     try:
         states = await load_states(build_store(settings), settings, use_case=use_case)
     except CliError as exc:
@@ -377,8 +448,636 @@ async def status(use_case: UseCaseOpt = DEFAULT_USE_CASE, as_json: JsonOpt = Fal
         checks.append(("source of truth is snapl's", not identity.is_foreign, identity.detail))
         checks.append((f"'{use_case}' seeded", bool(states), f"{len(states)} devices"))
 
-    build_renderer(as_json=as_json).status(checks, running)
+    health = await _fabric_health(settings, states) if states is not None else None
+    build_renderer(as_json=as_json).status(checks, running, health)
     return ExitCode.OK if all(ok for _, ok, _ in checks) else ExitCode.ERROR
+
+
+async def _fabric_health(settings: CliSettings, states: list[Any]) -> FabricHealthSummary:
+    """Each intent device's latest recorded health (spec 016, contracts/telemetry.md).
+
+    It reports the network, not snapl: an unreadable trail is said on the line
+    and never fails a check.
+    """
+    from snapl_presentation.dashboard.projections import latest_health  # noqa: PLC0415
+
+    try:
+        log = await _open_audit_log(settings)
+    except CliError as exc:
+        return FabricHealthSummary(healthy=[], unhealthy=[], unknown=[], error=exc.message)
+    try:
+        events = [event for state in states for event in await log.query_by_device(state.device.id)]
+    except Exception as exc:
+        return FabricHealthSummary(healthy=[], unhealthy=[], unknown=[], error=first_line(str(exc)))
+    finally:
+        await log.close()
+    latest = latest_health(events)
+    by_state: dict[str, list[str]] = {"healthy": [], "unhealthy": [], "unknown": []}
+    for name, device_id in sorted((state.device.name, state.device.id) for state in states):
+        health = latest.get(device_id)
+        by_state[health.state.value if health is not None else "unknown"].append(name)
+    return FabricHealthSummary(
+        healthy=by_state["healthy"], unhealthy=by_state["unhealthy"], unknown=by_state["unknown"], recorded=bool(latest)
+    )
+
+
+# ---------------------------------------------------------------------------
+# snapl schedule (spec 009)
+#
+# None of these requires a worker (FR-022): "stop the unattended writes" is the
+# command most likely to be needed when the worker is what is wrong. They warn
+# instead, because a schedule with no worker queues runs nobody executes.
+# ---------------------------------------------------------------------------
+
+_INTERVAL = re.compile(r"^(\d+)([smh])$")
+_UNITS = {"s": "seconds", "m": "minutes", "h": "hours"}
+
+
+def _parse_interval(text: str) -> timedelta:
+    from snapl_orchestrator.schedules import MIN_SCAN_INTERVAL  # noqa: PLC0415
+
+    match = _INTERVAL.match(text.strip())
+    if match is None:
+        raise CliError(f"cannot read interval {text!r}", hint="Use <n>s, <n>m or <n>h — for example 90s, 5m, 1h.")
+    interval = timedelta(**{_UNITS[match[2]]: int(match[1])})
+    if interval < MIN_SCAN_INTERVAL:
+        # Refused, not silently raised: an operator who asked for 30s should
+        # learn it was not honoured.
+        raise CliError(f"interval {text} is below the 1m minimum")
+    return interval
+
+
+def _actor() -> str:
+    return getpass.getuser()
+
+
+def _no_schedule(use_case: str) -> CliError:
+    return CliError(
+        f"no drift schedule for {use_case}",
+        hint=f"Create one: snapl schedule create --use-case {use_case}",
+    )
+
+
+def _unreadable_schedule(use_case: str, exc: Exception) -> CliError:
+    return CliError(
+        str(exc),
+        hint=f"Restore an interval: snapl schedule create --use-case {use_case} --every 5m",
+    )
+
+
+async def _warn_if_no_worker(client: Any, settings: CliSettings) -> None:
+    try:
+        pollers = await count_pollers(client, settings)
+    except Exception:
+        return
+    if pollers == 0:
+        _stderr.print(
+            f"[yellow]warning:[/] no worker is polling task queue {settings.task_queue!r} — "
+            "scheduled runs will wait (uv run invoke orchestrator.start)"
+        )
+
+
+async def _refuse_foreign_sot(settings: CliSettings) -> None:
+    """A schedule scans, and may repair, against whatever SoT the worker reads (FR-031).
+
+    Only a positive "this is another project's" refuses; an Infrahub that could
+    not be read is not evidence of anything (#107).
+    """
+    identity = await identify_sot(build_store(settings), address=settings.infrahub_address)
+    if identity.is_foreign:
+        raise CliError(
+            f"refusing to create a drift schedule: {identity.detail}",
+            hint="Point INFRAHUB_ADDRESS at snapl's Infrahub.",
+        )
+
+
+async def _schedule_write(settings: CliSettings, use_case: str, operation: Callable) -> Any:
+    """Run one mutating schedule call with the audit log open.
+
+    The log is opened (and a missing one refused) before Temporal is touched,
+    so a change is never applied without its audit record (FR-021).
+    """
+    from snapl_orchestrator.exceptions import (  # noqa: PLC0415
+        ScheduleNotFoundError,
+        ScheduleRunInProgressError,
+        UnreadableScheduleError,
+    )
+
+    log = await _open_audit_log(settings)
+    try:
+        client = await _connect(settings)
+        await _warn_if_no_worker(client, settings)
+        return await operation(client, log)
+    except ScheduleNotFoundError:
+        raise _no_schedule(use_case) from None
+    except UnreadableScheduleError as exc:
+        raise _unreadable_schedule(use_case, exc) from None
+    except ScheduleRunInProgressError as exc:
+        raise CliError(str(exc), hint="Follow it: snapl schedule show") from None
+    finally:
+        await log.close()
+
+
+@schedule_app.command("create")
+@command
+async def schedule_create(
+    use_case: UseCaseOpt = DEFAULT_USE_CASE,
+    every: EveryOpt = "5m",
+    as_json: JsonOpt = False,
+) -> ExitCode:
+    """Put a use case on a report-only drift schedule, or change its interval."""
+    from snapl_orchestrator import schedules  # noqa: PLC0415
+
+    settings = CliSettings.from_env()
+    interval = _parse_interval(every)
+    await _refuse_foreign_sot(settings)
+    log = await _open_audit_log(settings)
+    try:
+        client = await _connect(settings)
+        await _warn_if_no_worker(client, settings)
+        view = await schedules.ensure_drift_schedule(
+            client,
+            use_case_id=use_case,
+            task_queue=settings.task_queue,
+            audit_log=log,
+            actor=_actor(),
+            interval=interval,
+        )
+    finally:
+        await log.close()
+
+    build_renderer(as_json=as_json).schedule(view, temporal=settings.temporal)
+    return ExitCode.OK
+
+
+@schedule_app.command("show")
+@command
+async def schedule_show(use_case: UseCaseOpt = DEFAULT_USE_CASE, as_json: JsonOpt = False) -> ExitCode:
+    """Show a use case's drift schedule and its recent runs."""
+    from snapl_orchestrator import schedules  # noqa: PLC0415
+    from snapl_orchestrator.exceptions import ScheduleNotFoundError, UnreadableScheduleError  # noqa: PLC0415
+
+    settings = CliSettings.from_env()
+    client = await _connect(settings)
+    await _warn_if_no_worker(client, settings)
+    try:
+        view = await schedules.describe_drift_schedule(client, use_case_id=use_case)
+    except ScheduleNotFoundError:
+        raise _no_schedule(use_case) from None
+    except UnreadableScheduleError as exc:
+        raise _unreadable_schedule(use_case, exc) from None
+
+    build_renderer(as_json=as_json).schedule(view, temporal=settings.temporal)
+    return ExitCode.OK
+
+
+@schedule_app.command("pause")
+@command
+async def schedule_pause(
+    reason: Annotated[str | None, typer.Option("--reason", help="Why scans stop — required.")] = None,
+    use_case: UseCaseOpt = DEFAULT_USE_CASE,
+) -> ExitCode:
+    """Suppress: stop scheduled runs until resumed, with a stated reason."""
+    from snapl_orchestrator import schedules  # noqa: PLC0415
+
+    # Checked here rather than as a required Typer option, whose usage error
+    # would exit 2 — the code this CLI reserves for drift (spec 006 FR-011).
+    if not reason or not reason.strip():
+        raise CliError("pause needs --reason", hint='For example: --reason "maintenance: spine-01 optics"')
+    settings = CliSettings.from_env()
+    await _schedule_write(
+        settings,
+        use_case,
+        lambda client, log: schedules.pause_drift_schedule(
+            client, use_case_id=use_case, reason=reason, audit_log=log, actor=_actor()
+        ),
+    )
+    _stderr.print(f'drift schedule for {use_case} paused — "{reason}"')
+    return ExitCode.OK
+
+
+@schedule_app.command("resume")
+@command
+async def schedule_resume(
+    use_case: UseCaseOpt = DEFAULT_USE_CASE,
+    note: Annotated[str | None, typer.Option("--note", help="Optional note recorded with the resume.")] = None,
+) -> ExitCode:
+    """Resume scheduled runs at the next interval."""
+    from snapl_orchestrator import schedules  # noqa: PLC0415
+
+    settings = CliSettings.from_env()
+    await _schedule_write(
+        settings,
+        use_case,
+        lambda client, log: schedules.resume_drift_schedule(
+            client, use_case_id=use_case, audit_log=log, actor=_actor(), note=note
+        ),
+    )
+    _stderr.print(f"drift schedule for {use_case} resumed")
+    return ExitCode.OK
+
+
+async def _remediate_authorization(settings: CliSettings, use_case: str, interval: timedelta) -> str:
+    """What switching to (or triggering) remediate authorizes, in words (FR-012).
+
+    The wording is part of the contract: the operator is agreeing to unattended
+    writes, including SoT edits reaching the fabric without a `deploy`.
+    """
+    from snapl_presentation.render import format_interval  # noqa: PLC0415
+
+    try:
+        devices = str(len(await load_states(build_store(settings), settings, use_case=use_case)))
+    except CliError:
+        # Switching mode writes nothing to devices, so an unreachable SoT does
+        # not block the decision — it only makes the count unknowable.
+        devices = "unknown (SoT unreachable)"
+    return (
+        f"  Every {format_interval(interval)}, devices whose scan shows drift a deploy can fix will be redeployed\n"
+        "  without asking — including devices whose intent was changed in the Source of\n"
+        f"  Truth. Undesired config is never removed. Devices: {devices}.\n"
+        "  If a repair fails, the schedule switches itself back to report and says why.\n"
+        "Continue?"
+    )
+
+
+@schedule_app.command("mode")
+@command
+async def schedule_mode(
+    mode: Annotated[str, typer.Argument(help="report (write nothing) or remediate (repair forward drift).")],
+    use_case: UseCaseOpt = DEFAULT_USE_CASE,
+    yes: YesOpt = False,
+    as_json: JsonOpt = False,
+) -> ExitCode:
+    """Choose what scheduled runs do with the drift they find."""
+    from snapl_orchestrator import schedules  # noqa: PLC0415
+    from snapl_orchestrator.models import DriftResponseMode  # noqa: PLC0415
+
+    try:
+        target = DriftResponseMode(mode)
+    except ValueError:
+        raise CliError(
+            f"unknown mode {mode!r} — use report or remediate",
+            hint="To stop scheduled runs entirely, pause instead: snapl schedule pause --reason ...",
+        ) from None
+    settings = CliSettings.from_env()
+
+    async def _switch(client: Any, log: Any):
+        current = await schedules.describe_drift_schedule(client, use_case_id=use_case)
+        if target is DriftResponseMode.REMEDIATE:
+            body = await _remediate_authorization(settings, use_case, current.interval)
+            _confirm(
+                f"Switch {use_case} to remediate on Temporal {settings.temporal}?\n{body}", yes=yes, as_json=as_json
+            )
+        return await schedules.set_drift_response(
+            client, use_case_id=use_case, mode=target, audit_log=log, actor=_actor()
+        )
+
+    view = await _schedule_write(settings, use_case, _switch)
+    build_renderer(as_json=as_json).schedule(view, temporal=settings.temporal)
+    return ExitCode.OK
+
+
+@schedule_app.command("trigger")
+@command
+async def schedule_trigger(use_case: UseCaseOpt = DEFAULT_USE_CASE, yes: YesOpt = False) -> ExitCode:
+    """Start one scheduled run now, under the schedule's current response."""
+    from snapl_orchestrator import schedules  # noqa: PLC0415
+    from snapl_orchestrator.models import DriftResponseMode  # noqa: PLC0415
+
+    settings = CliSettings.from_env()
+
+    async def _trigger(client: Any, log: Any):
+        current = await schedules.describe_drift_schedule(client, use_case_id=use_case)
+        if current.mode is DriftResponseMode.REMEDIATE:
+            # A triggered remediate run may write, so it needs the same consent (FR-025).
+            body = await _remediate_authorization(settings, use_case, current.interval)
+            _confirm(
+                f"Trigger a remediate run of {use_case} now, on Temporal {settings.temporal}?\n{body}",
+                yes=yes,
+                as_json=False,
+            )
+        return await schedules.trigger_drift_schedule(client, use_case_id=use_case, audit_log=log, actor=_actor())
+
+    mode = await _schedule_write(settings, use_case, _trigger)
+    schedule_id = schedules.schedule_id_for(use_case)
+    _stderr.print(
+        f"triggered {schedule_id} ({mode.value}) — follow runs named {schedule_id}-<time>: snapl schedule show"
+    )
+    return ExitCode.OK
+
+
+@schedule_app.command("delete")
+@command
+async def schedule_delete(use_case: UseCaseOpt = DEFAULT_USE_CASE, yes: YesOpt = False) -> ExitCode:
+    """Remove a use case's drift schedule. A run in progress finishes."""
+    from snapl_orchestrator import schedules  # noqa: PLC0415
+
+    # Not destructive to devices, but it stops detection — worth a prompt.
+    _confirm(
+        f"Delete the drift schedule for {use_case}? Drift will no longer be found on its own.", yes=yes, as_json=False
+    )
+    settings = CliSettings.from_env()
+    await _schedule_write(
+        settings,
+        use_case,
+        lambda client, log: schedules.delete_drift_schedule(
+            client, use_case_id=use_case, audit_log=log, actor=_actor()
+        ),
+    )
+    _stderr.print(f"drift schedule for {use_case} deleted")
+    return ExitCode.OK
+
+
+def _schedule_status_row(view: Any, use_case: str) -> tuple[str, bool, str]:
+    """Informational only: `status` reports health, and no schedule is a choice, not a fault (FR-026)."""
+    from snapl_presentation.render import format_interval  # noqa: PLC0415
+
+    if view is None:
+        return ("drift schedule", True, "none — snapl schedule create")
+    # The note shows whether paused or not: a stand-down leaves the schedule active (#389).
+    state = "paused" if view.paused else "active"
+    if view.note:
+        state = f'{state} — "{view.note}"'
+    return ("drift schedule", True, f"{use_case}: every {format_interval(view.interval)}, {view.mode.value}, {state}")
+
+
+# ---------------------------------------------------------------------------
+# snapl dashboard (spec 010, contracts/cli-dashboard.md)
+# ---------------------------------------------------------------------------
+
+
+def _is_loopback(host: str) -> bool:
+    import ipaddress  # noqa: PLC0415
+
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _port_in_use(host: str, port: int) -> bool:
+    """Whether ``host:port`` is taken, checked the way uvicorn will bind it.
+
+    Checked before serving so a taken port is one clear line, never a uvicorn
+    traceback, and never a silent move to another port (#107).
+    """
+    import socket  # noqa: PLC0415
+
+    with socket.socket(socket.AF_INET6 if ":" in host else socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            sock.bind((host, port))
+        except OSError:
+            return True
+    return False
+
+
+def _built_ui():
+    """Where the built designed UI is, or None when this checkout has not built it."""
+    from snapl_presentation.dashboard import pages  # noqa: PLC0415
+
+    return pages.find_ui(pages.BUILT_UI)
+
+
+def _snapshot_template() -> Path | None:
+    """The built snapshot template, or None when this checkout has not built the UI."""
+    from snapl_presentation.dashboard import pages  # noqa: PLC0415
+
+    template = pages.BUILT_UI / "snapshot.html"
+    return template if template.is_file() else None
+
+
+def _git_commit() -> str | None:
+    """The commit this checkout is at, for a snapshot's manifest."""
+    # Bandit B404: a fixed git command, no shell.
+    import subprocess  # nosec B404  # noqa: PLC0415
+
+    try:
+        result = subprocess.run(  # nosec B603 B607
+            ["git", "rev-parse", "HEAD"], capture_output=True, text=True, timeout=10, check=False
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return result.stdout.strip() or None if result.returncode == 0 else None
+
+
+def _serve_dashboard(settings: CliSettings, use_case: str, host: str, port: int) -> None:
+    """Build the sources and serve until interrupted.
+
+    No source is required at start-up (FR-007): each one reports its own
+    failure in the views, and a missing audit file is never created.
+    """
+    import uvicorn  # noqa: PLC0415
+
+    app_ = _live_app(settings, use_case)
+    server = uvicorn.Server(uvicorn.Config(app_, host=host, port=port, log_level="warning", access_log=False))
+    asyncio.run(server.serve())
+
+
+def _live_app(settings: CliSettings, use_case: str) -> Any:
+    """The dashboard on the live sources, as `snapl dashboard` serves it."""
+    from snapl_presentation.dashboard.app import create_app  # noqa: PLC0415
+    from snapl_presentation.dashboard.ci import CiSource, resolve_repo  # noqa: PLC0415
+    from snapl_presentation.dashboard.lab_runs import LabRunSource  # noqa: PLC0415
+    from snapl_presentation.dashboard.prometheus import PrometheusSource  # noqa: PLC0415
+    from snapl_presentation.dashboard.sources import (  # noqa: PLC0415
+        AuditSource,
+        SotSource,
+        Sources,
+        TemporalSource,
+    )
+
+    # The checkout the dashboard runs from: its git history and its lab-run
+    # records are the ones to describe.
+    checkout = Path.cwd()
+    repo = resolve_repo(settings.github_repo, checkout)
+    sources = Sources(
+        audit=AuditSource(settings.audit_db),
+        sot=SotSource(settings, use_case),
+        temporal=TemporalSource(settings, use_case),
+        ci=CiSource(repo, settings.github_token),
+        lab_runs=LabRunSource(Path(settings.test_runs_dir), checkout),
+        prometheus=PrometheusSource(
+            settings.prometheus_address, settings.temporal_namespace, use_case, timeout=settings.connect_timeout
+        ),
+    )
+    return create_app(sources, settings, use_case, repo=repo)
+
+
+def _check_address(host: str, port: int) -> None:
+    """Warn about a non-loopback address, and refuse a port in use (010's rules)."""
+    if not _is_loopback(host):
+        _stderr.print(
+            f"[yellow]warning:[/] the dashboard has no authentication; anyone who can reach {host}:{port} can read it.",
+            highlight=False,
+            soft_wrap=True,
+        )
+    if _port_in_use(host, port):
+        _stderr.print(
+            f"[red]error:[/] port {port} is in use. Set DASHBOARD_PORT or pass --port.",
+            highlight=False,
+            soft_wrap=True,
+        )
+        raise typer.Exit(int(ExitCode.ERROR))
+
+
+def _write_snapshot(
+    target: Path,
+    app: Any,
+    days: int,
+    commit: str | None,
+    *,
+    force: bool,
+    archive: str | None = None,
+    bundle_json: Path | None = None,
+) -> None:
+    """Collect the bundle from ``app``, write the file and print what it holds. Binds no port."""
+    from snapl_presentation.dashboard.snapshot import (  # noqa: PLC0415
+        SnapshotError,
+        collect_bundle,
+        readable,
+        render,
+        summary,
+        write,
+    )
+
+    template = _snapshot_template()
+    if template is None:  # pragma: no cover — checked before the app is built
+        raise typer.Exit(int(ExitCode.ERROR))
+    try:
+        for path in (target, bundle_json):
+            if path is not None and path.exists() and not force:
+                raise SnapshotError(f"{path} already exists. Pass --force to replace it.")
+        bundle = collect_bundle(app, days=days, commit=commit, source="archive" if archive else "live")
+        write(target, render(template.read_text(encoding="utf-8"), bundle), force=force)
+        if bundle_json is not None:
+            write(bundle_json, readable(bundle), force=force)
+    except SnapshotError as exc:
+        _stderr.print(f"[red]error:[/] {exc}", highlight=False, soft_wrap=True)
+        raise typer.Exit(int(ExitCode.ERROR)) from exc
+    for line in summary(target, bundle, archive=archive, bundle_json=bundle_json):
+        typer.echo(line)
+
+
+def _dashboard_archive(
+    path: Path,
+    use_case: str | None,
+    host: str,
+    port: int,
+    snapshot: tuple[Path, int, bool, Path | None] | None = None,
+) -> None:
+    """Serve one history archive until interrupted, or write a snapshot of it.
+
+    Refusals exit before the port is checked.
+    """
+    from snapl_presentation.dashboard.archive import ArchiveError, create_archive_app, open_archive  # noqa: PLC0415
+
+    try:
+        with open_archive(path) as opened:
+            if use_case is not None and use_case != opened.use_case:
+                _stderr.print(
+                    f"[red]error:[/] {path} is for use case {opened.use_case!r}, not {use_case!r}.",
+                    highlight=False,
+                    soft_wrap=True,
+                )
+                raise typer.Exit(int(ExitCode.ERROR))
+            if snapshot is not None:
+                target, days, force, bundle_json = snapshot
+                app_ = create_archive_app(opened)
+                _write_snapshot(
+                    target,
+                    app_,
+                    days,
+                    opened.info.snapl_commit,
+                    force=force,
+                    archive=opened.info.name,
+                    bundle_json=bundle_json,
+                )
+                raise typer.Exit(int(ExitCode.OK))
+            _check_address(host, port)
+            url_host = f"[{host}]" if ":" in host else host
+            commit = (opened.info.snapl_commit or "unknown")[:7]
+            made = opened.created_at.strftime("%Y-%m-%d %H:%M UTC")
+            typer.echo(
+                f"Archive {opened.info.name} (made {made}, commit {commit}) for {opened.use_case} "
+                f"at http://{url_host}:{port} (read-only, Ctrl-C to stop)"
+            )
+            for part in opened.info.parts:
+                if not part.present:
+                    typer.echo(f"  missing: {part.name} ({part.reason or 'no reason recorded'})")
+            with contextlib.suppress(KeyboardInterrupt):
+                _serve_app(create_archive_app(opened), host, port)
+    except ArchiveError as exc:
+        _stderr.print(f"[red]error:[/] {exc}", highlight=False, soft_wrap=True)
+        raise typer.Exit(int(ExitCode.ERROR)) from exc
+    raise typer.Exit(int(ExitCode.OK))
+
+
+def _serve_app(app: Any, host: str, port: int) -> None:
+    import uvicorn  # noqa: PLC0415
+
+    uvicorn.run(app, host=host, port=port, log_level="warning", access_log=False)
+
+
+@app.command()
+def dashboard(
+    use_case: Annotated[
+        str | None,
+        typer.Option("--use-case", help="Use case to operate on [default: dcfabric; with --archive, the archive's]."),
+    ] = None,
+    port: Annotated[int | None, typer.Option("--port", help="Port to serve on [env: DASHBOARD_PORT].")] = None,
+    host: Annotated[str | None, typer.Option("--host", help="Address to bind [env: DASHBOARD_HOST].")] = None,
+    archive: Annotated[
+        Path | None,
+        typer.Option("--archive", help="Serve from a history.archive tarball, read-only, with no stack."),
+    ] = None,
+    snapshot: Annotated[
+        Path | None,
+        typer.Option("--snapshot", help="Write a single-file snapshot to FILE and exit. Serves nothing."),
+    ] = None,
+    days: Annotated[
+        int, typer.Option("--days", min=1, max=90, help="With --snapshot: the days it covers, ending now.")
+    ] = 7,
+    force: Annotated[bool, typer.Option("--force", help="With --snapshot: replace an existing file.")] = False,
+    bundle_json: Annotated[
+        Path | None,
+        typer.Option("--bundle-json", help="With --snapshot: also write its data to FILE as readable JSON."),
+    ] = None,
+) -> None:
+    """Serve a local, read-only dashboard of the fabric and the loop."""
+    # Only the dashboard's own address comes from the environment in archive
+    # mode: it reads no connection settings or tokens (spec 011).
+    settings = CliSettings.from_env()
+    host = host or settings.dashboard_host
+    port = port if port is not None else settings.dashboard_port
+    if snapshot is not None and _snapshot_template() is None:
+        from snapl_presentation.dashboard.snapshot import NOT_BUILT  # noqa: PLC0415
+
+        _stderr.print(f"[red]error:[/] {NOT_BUILT}", highlight=False, soft_wrap=True)
+        raise typer.Exit(int(ExitCode.ERROR))
+    if archive is not None:
+        _dashboard_archive(archive, use_case, host, port, (snapshot, days, force, bundle_json) if snapshot else None)
+    use_case = use_case or DEFAULT_USE_CASE
+    if snapshot is not None:
+        _write_snapshot(
+            snapshot, _live_app(settings, use_case), days, _git_commit(), force=force, bundle_json=bundle_json
+        )
+        raise typer.Exit(int(ExitCode.OK))
+
+    _check_address(host, port)
+    url_host = f"[{host}]" if ":" in host else host
+    typer.echo(f"Dashboard for {use_case} at http://{url_host}:{port} (read-only, Ctrl-C to stop)")
+    if _built_ui() is None:
+        from snapl_presentation.dashboard import pages  # noqa: PLC0415
+
+        typer.echo(pages.NOT_BUILT)
+    # Nothing runs server-side on the dashboard's behalf: stopping it is the
+    # whole of what Ctrl-C means here, so it is a clean exit.
+    with contextlib.suppress(KeyboardInterrupt):
+        _serve_dashboard(settings, use_case, host, port)
+    raise typer.Exit(int(ExitCode.OK))
 
 
 def main() -> None:

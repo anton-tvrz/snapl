@@ -1,0 +1,146 @@
+{
+  "contract_version": "1",
+  "generated_at": "2026-11-07T21:20:48.919877Z",
+  "topology": {
+    "available": true,
+    "data": {
+      "links": [
+        {
+          "a": {
+            "device": "leaf-01",
+            "interface": "ethernet-1/49"
+          },
+          "agreed": true,
+          "b": {
+            "device": "spine-01",
+            "interface": "ethernet-1/1"
+          },
+          "declared_by": "both"
+        },
+        {
+          "a": {
+            "device": "leaf-01",
+            "interface": "ethernet-1/50"
+          },
+          "agreed": true,
+          "b": {
+            "device": "spine-02",
+            "interface": "ethernet-1/1"
+          },
+          "declared_by": "both"
+        },
+        {
+          "a": {
+            "device": "leaf-02",
+            "interface": "ethernet-1/49"
+          },
+          "agreed": true,
+          "b": {
+            "device": "spine-01",
+            "interface": "ethernet-1/2"
+          },
+          "declared_by": "both"
+        },
+        {
+          "a": {
+            "device": "leaf-02",
+            "interface": "ethernet-1/50"
+          },
+          "agreed": true,
+          "b": {
+            "device": "spine-02",
+            "interface": "ethernet-1/2"
+          },
+          "declared_by": "both"
+        },
+        {
+          "a": {
+            "device": "leaf-03",
+            "interface": "ethernet-1/49"
+          },
+          "agreed": true,
+          "b": {
+            "device": "spine-01",
+            "interface": "ethernet-1/3"
+          },
+          "declared_by": "both"
+        },
+        {
+          "a": {
+            "device": "leaf-03",
+            "interface": "ethernet-1/50"
+          },
+          "agreed": true,
+          "b": {
+            "device": "spine-02",
+            "interface": "ethernet-1/3"
+          },
+          "declared_by": "both"
+        },
+        {
+          "a": {
+            "device": "leaf-04",
+            "interface": "ethernet-1/49"
+          },
+          "agreed": true,
+          "b": {
+            "device": "spine-01",
+            "interface": "ethernet-1/4"
+          },
+          "declared_by": "both"
+        },
+        {
+          "a": {
+            "device": "leaf-04",
+            "interface": "ethernet-1/50"
+          },
+          "agreed": true,
+          "b": {
+            "device": "spine-02",
+            "interface": "ethernet-1/4"
+          },
+          "declared_by": "both"
+        }
+      ],
+      "nodes": [
+        {
+          "device_id": "18e29d6d-e0c5-0ba7-32d1-c510fc3ef077",
+          "name": "spine-01",
+          "role": "spine"
+        },
+        {
+          "device_id": "18e29d6e-1959-3451-32dc-c51d9065aa58",
+          "name": "spine-02",
+          "role": "spine"
+        },
+        {
+          "device_id": "18e29d6e-246e-5cd1-32d2-c51d13d4de9e",
+          "name": "leaf-01",
+          "role": "leaf"
+        },
+        {
+          "device_id": "18e29d6e-2e5b-c496-32da-c510ade043a0",
+          "name": "leaf-02",
+          "role": "leaf"
+        },
+        {
+          "device_id": "18e29d6e-3794-c788-32d5-c519c5f18e3a",
+          "name": "leaf-03",
+          "role": "leaf"
+        },
+        {
+          "device_id": "18e29d6e-422b-a401-32d9-c5162961ffbe",
+          "name": "leaf-04",
+          "role": "leaf"
+        }
+      ],
+      "unlinked": []
+    },
+    "fetched_at": "2026-11-07T21:20:48.919877Z",
+    "reason": null,
+    "remedy": null,
+    "source": "sot",
+    "stale": false
+  },
+  "use_case": "dcfabric"
+}

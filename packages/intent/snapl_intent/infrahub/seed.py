@@ -30,16 +30,16 @@ keyed by their ``description`` field (unique on ``RoutingProtocol``).
 from __future__ import annotations
 
 import contextlib
+import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import yaml
+from pydantic import ValidationError
 
-from snapl_intent.exceptions import (
-    IntentConnectionError,
-    IntentValidationError,
-)
-from snapl_intent.models import SeedResult
+from snapl_intent.exceptions import IntentValidationError
+from snapl_intent.infrahub.sdk_errors import sdk_errors_as_domain_errors
+from snapl_intent.models import RoutingPolicy, SeedResult
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -59,6 +59,7 @@ SEED_ORDER: list[str] = [
     "ip_prefixes",
     "devices",
     "interfaces",
+    "routing_policies",  # before the peer groups that name them (#317)
     "bgp_peer_groups",  # Milestone D — handled by _seed_bgp_peer_groups (shadow copies)
     "bgp_sessions",  # Milestone D — handled by _seed_bgp_sessions
 ]
@@ -143,6 +144,7 @@ _SECTIONS: dict[str, _Section] = {
         ip_field="ip_address",
         lookup_rel_fields=frozenset({"device"}),
     ),
+    "routing_policies": _Section("RoutingPolicy", ("name",), True),
     "bgp_peer_groups": _Section("RoutingBGPPeerGroup", ("name",), True),
     "bgp_sessions": _Section(
         "RoutingBGPSession",
@@ -150,6 +152,9 @@ _SECTIONS: dict[str, _Section] = {
         True,
     ),
 }
+
+
+logger = logging.getLogger(__name__)
 
 
 def load_seed_file(path: Path) -> dict[str, Any]:
@@ -172,6 +177,16 @@ class SeedIngester:
 
     def __init__(self, *, client: Any) -> None:
         self._client = client
+        self._branch = "main"
+
+    async def _find(self, **kwargs: Any) -> list[Any]:
+        """Look nodes up on the branch being seeded.
+
+        Every lookup goes through here so that it reads the branch the creates
+        write. Reading the default branch updated nodes that existed only
+        there and wired branch nodes to its peers (#62).
+        """
+        return list(await self._client.filters(branch=self._branch, **kwargs) or [])
 
     async def seed(
         self,
@@ -182,7 +197,14 @@ class SeedIngester:
     ) -> SeedResult:
         dataset = load_seed_file(data_path)
         self._validate(dataset)
+        self._branch = branch
 
+        # The store's rule: an error from the SDK or the network reaches callers
+        # as a domain error, never raw, from any lookup or write (#62).
+        with sdk_errors_as_domain_errors():
+            return await self._seed(dataset, use_case=use_case, branch=branch)
+
+    async def _seed(self, dataset: dict[str, Any], *, use_case: str, branch: str) -> SeedResult:
         # Fetch the default IP namespace once if any section will materialise IpamIPAddress.
         namespace_id: str | None = None
         _needs_ns = {"vrfs", "ip_prefixes", "interfaces"}.intersection(dataset) or any(
@@ -195,49 +217,46 @@ class SeedIngester:
         devices_updated = 0
         total_records = 0
 
-        try:
-            for section_name in SEED_ORDER:
-                if section_name not in dataset:
-                    continue
-                if section_name in _BGP_SECTIONS:
-                    continue  # handled below via dedicated BGP methods
-                section = _SECTIONS[section_name]
-                items = self._items_for_section(section, dataset[section_name])
-                for item in items:
-                    created = await self._upsert_item(
-                        section=section,
-                        item=item,
-                        branch=branch,
-                        namespace_id=namespace_id,
-                    )
-                    total_records += 1
-                    if section_name == "devices":
-                        if created:
-                            devices_created += 1
-                        else:
-                            devices_updated += 1
+        for section_name in SEED_ORDER:
+            if section_name not in dataset:
+                continue
+            if section_name in _BGP_SECTIONS:
+                continue  # handled below via dedicated BGP methods
+            section = _SECTIONS[section_name]
+            items = self._items_for_section(section, dataset[section_name])
+            for item in items:
+                created = await self._upsert_item(
+                    section=section,
+                    item=item,
+                    branch=branch,
+                    namespace_id=namespace_id,
+                )
+                total_records += 1
+                if section_name == "devices":
+                    if created:
+                        devices_created += 1
+                    else:
+                        devices_updated += 1
 
-            if any(s in dataset for s in _BGP_SECTIONS):
-                vrf_id = await self._get_default_vrf_id()
-                pg_id_map: dict[str, dict[str, str]] = {}
-                if "bgp_peer_groups" in dataset:
-                    pg_id_map, pg_count = await self._seed_bgp_peer_groups(
-                        pg_declarations=dataset["bgp_peer_groups"],
-                        sessions=dataset.get("bgp_sessions", []),
-                        branch=branch,
-                        vrf_id=vrf_id,
-                    )
-                    total_records += pg_count
-                if "bgp_sessions" in dataset:
-                    session_count = await self._seed_bgp_sessions(
-                        sessions=dataset["bgp_sessions"],
-                        branch=branch,
-                        vrf_id=vrf_id,
-                        pg_id_map=pg_id_map,
-                    )
-                    total_records += session_count
-        except (OSError, TimeoutError) as exc:
-            raise IntentConnectionError(f"Infrahub unreachable: {exc}") from exc
+        if any(s in dataset for s in _BGP_SECTIONS):
+            vrf_id = await self._get_default_vrf_id()
+            pg_id_map: dict[str, dict[str, str]] = {}
+            if "bgp_peer_groups" in dataset:
+                pg_id_map, pg_count = await self._seed_bgp_peer_groups(
+                    pg_declarations=dataset["bgp_peer_groups"],
+                    sessions=dataset.get("bgp_sessions", []),
+                    branch=branch,
+                    vrf_id=vrf_id,
+                )
+                total_records += pg_count
+            if "bgp_sessions" in dataset:
+                session_count = await self._seed_bgp_sessions(
+                    sessions=dataset["bgp_sessions"],
+                    branch=branch,
+                    vrf_id=vrf_id,
+                    pg_id_map=pg_id_map,
+                )
+                total_records += session_count
 
         return SeedResult(
             use_case=use_case,
@@ -249,7 +268,7 @@ class SeedIngester:
 
     async def _materialise_ip_address(self, *, address: str, namespace_id: str, branch: str) -> str:
         """Upsert an IpamIPAddress node and return its id."""
-        existing = await self._client.filters(
+        existing = await self._find(
             kind="IpamIPAddress",
             address__value=address,
             ip_namespace__ids=[namespace_id],
@@ -265,7 +284,7 @@ class SeedIngester:
         return str(node.id)
 
     async def _get_default_namespace_id(self) -> str:
-        results = await self._client.filters(kind="IpamNamespace", default__value=True)
+        results = await self._find(kind="IpamNamespace", default__value=True)
         if not results:
             raise IntentValidationError(
                 "Default IP namespace not found in Infrahub — ensure Infrahub is fully initialized before seeding"
@@ -281,6 +300,33 @@ class SeedIngester:
                     f"Device {device.get('name', '<unknown>')} missing required fields: " + ", ".join(missing),
                     field=missing[0],
                 )
+        SeedIngester._validate_policies(dataset)
+
+    @staticmethod
+    def _validate_policies(dataset: dict[str, Any]) -> None:
+        """Refuse a policy the device would reject, or a name no policy answers to (#317).
+
+        Either one reaches the device inside the SET of every neighbour in the
+        group, which refuses the whole SET at deploy time, far from this file.
+        """
+        declared: set[str] = set()
+        for policy in dataset.get("routing_policies") or []:
+            try:
+                declared.add(RoutingPolicy(**policy).name)
+            except ValidationError as exc:
+                raise IntentValidationError(
+                    f"routing policy {policy.get('name', '<unnamed>')!r} is not valid: {exc}",
+                    field="routing_policies",
+                ) from exc
+        for group in dataset.get("bgp_peer_groups") or []:
+            for field_name in ("export_policies", "import_policies"):
+                name = group.get(field_name)
+                if name and name not in declared:
+                    raise IntentValidationError(
+                        f"peer group {group.get('name')!r}: {field_name}={name!r} "
+                        "is not declared under routing_policies",
+                        field=field_name,
+                    )
 
     @staticmethod
     def _items_for_section(section: _Section, value: Any) -> list[dict[str, Any]]:
@@ -325,7 +371,7 @@ class SeedIngester:
                 filters[f"{key}__ids"] = [payload[key]]
             else:
                 filters[f"{key}__value"] = payload[key]
-        existing = await self._client.filters(kind=section.kind, **filters)
+        existing = await self._find(kind=section.kind, **filters)
         if existing:
             node = existing[0]
             for attr, value in payload.items():
@@ -362,7 +408,7 @@ class SeedIngester:
                 continue
             value = resolved[field_name]
             filter_kwargs = {f"{rel.lookup_attr}__value": value}
-            peers = await self._client.filters(kind=rel.peer_kind, **filter_kwargs)
+            peers = await self._find(kind=rel.peer_kind, **filter_kwargs)
             if not peers:
                 raise IntentValidationError(
                     f"Unresolved {field_name}={value!r} for {section.kind}: "
@@ -373,7 +419,7 @@ class SeedIngester:
         return resolved
 
     async def _get_default_vrf_id(self) -> str:
-        results = await self._client.filters(kind="IpamVRF", name__value="default")
+        results = await self._find(kind="IpamVRF", name__value="default")
         if not results:
             raise IntentValidationError(
                 "Default VRF not found in Infrahub — ensure VRFs are seeded before BGP sections"
@@ -403,12 +449,17 @@ class SeedIngester:
                 pg_devices.setdefault(pg_name, set()).add(session["local_device"])
 
         pg_decl_map = {pg["name"]: pg for pg in pg_declarations}
+        # A shadow is made per device that uses the group, so a group no
+        # session names produces nothing. Say so: the file declares config that
+        # will not exist (#62).
+        for unused in sorted(set(pg_decl_map) - set(pg_devices)):
+            logger.warning("peer group %r is declared but no session uses it; nothing is created for it", unused)
         pg_id_map: dict[str, dict[str, str]] = {}
         count = 0
 
         for pg_name, pg_decl in pg_decl_map.items():
             for device_name in pg_devices.get(pg_name, set()):
-                device_peers = await self._client.filters(kind="DcimDevice", name__value=device_name)
+                device_peers = await self._find(kind="DcimDevice", name__value=device_name)
                 if not device_peers:
                     raise IntentValidationError(
                         f"BGPPeerGroup shadow: device {device_name!r} not found",
@@ -436,7 +487,7 @@ class SeedIngester:
                     if attr in pg_decl:
                         payload[attr] = pg_decl[attr]
 
-                existing = await self._client.filters(kind="RoutingBGPPeerGroup", name__value=shadow_name)
+                existing = await self._find(kind="RoutingBGPPeerGroup", name__value=shadow_name)
                 if existing:
                     node = existing[0]
                     for attr, value in payload.items():
@@ -472,7 +523,7 @@ class SeedIngester:
         for session in sessions:
             local_device_name = session["local_device"]
 
-            device_peers = await self._client.filters(kind="DcimDevice", name__value=local_device_name)
+            device_peers = await self._find(kind="DcimDevice", name__value=local_device_name)
             if not device_peers:
                 raise IntentValidationError(
                     f"BGPSession: local_device {local_device_name!r} not found",
@@ -495,7 +546,7 @@ class SeedIngester:
                 ("remote_as", "RoutingAutonomousSystem", "asn__value"),
             ):
                 if field_name in session:
-                    peers = await self._client.filters(kind=kind, **{lookup_attr: session[field_name]})
+                    peers = await self._find(kind=kind, **{lookup_attr: session[field_name]})
                     if not peers:
                         raise IntentValidationError(
                             f"BGPSession: {field_name}={session[field_name]!r} not found",
@@ -505,16 +556,29 @@ class SeedIngester:
 
             for field_name in ("local_ip", "remote_ip"):
                 if field_name in session:
-                    peers = await self._client.filters(kind="IpamIPAddress", address__value=session[field_name])
-                    if peers:
-                        payload[field_name] = peers[0].id
+                    peers = await self._find(kind="IpamIPAddress", address__value=session[field_name])
+                    if not peers:
+                        # Left out, the session reaches the device as a neighbor
+                        # with an empty peer-address, and the whole set is
+                        # rejected at deploy time, far from this file (#62).
+                        raise IntentValidationError(
+                            f"BGPSession {session['description']!r}: {field_name}={session[field_name]!r} "
+                            "is not an address any seeded interface carries",
+                            field=field_name,
+                        )
+                    payload[field_name] = peers[0].id
 
             if "peer_group" in session:
                 shadow_id = pg_id_map.get(session["peer_group"], {}).get(local_device_name)
-                if shadow_id:
-                    payload["peer_group"] = shadow_id
+                if not shadow_id:
+                    raise IntentValidationError(
+                        f"BGPSession {session['description']!r}: peer_group={session['peer_group']!r} "
+                        "is not declared under bgp_peer_groups",
+                        field="peer_group",
+                    )
+                payload["peer_group"] = shadow_id
 
-            existing = await self._client.filters(kind="RoutingBGPSession", description__value=session["description"])
+            existing = await self._find(kind="RoutingBGPSession", description__value=session["description"])
             if existing:
                 node = existing[0]
                 for attr, value in payload.items():

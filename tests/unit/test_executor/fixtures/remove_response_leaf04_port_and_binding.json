@@ -1,0 +1,14 @@
+{
+  "timestamp": 1795683028127870783,
+  "prefix": null,
+  "response": [
+    {
+      "path": "interface[name=ethernet-1/7]",
+      "op": "DELETE"
+    },
+    {
+      "path": "network-instance[name=default]/interface[name=ethernet-1/7.0]",
+      "op": "DELETE"
+    }
+  ]
+}

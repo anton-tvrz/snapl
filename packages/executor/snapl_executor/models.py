@@ -8,6 +8,9 @@ Invariants:
   DryRunResult:  success=True  → payload is set, render_error is None
                  success=False → render_error is set, payload is None
   BatchResult:   succeeded + failed == total
+  RemoveResult:  success=True  → error is None, refused is empty
+                 success=False → error is set
+                 dry_run=True  → device_response is None
 """
 
 from __future__ import annotations
@@ -49,3 +52,33 @@ class BatchResult:
     total: int = 0
     succeeded: int = 0
     failed: int = 0
+
+
+@dataclass(frozen=True)
+class RemoveResult:
+    """Outcome of a dry_run_remove() or remove() call (spec 013).
+
+    ``refused`` maps each path the guard turned down to its reason; when it is
+    not empty nothing was sent. ``dry_run`` results never dialled, so they
+    carry no device response.
+    """
+
+    device_id: UUID
+    device_name: str
+    success: bool
+    paths: list[str]
+    dry_run: bool
+    refused: dict[str, str] = field(default_factory=dict)
+    device_response: str | None = None
+    error: str | None = None
+    duration_ms: int = 0
+
+    def __post_init__(self) -> None:
+        if self.success and self.error is not None:
+            raise ValueError("a successful RemoveResult has no error")
+        if self.success and self.refused:
+            raise ValueError("a successful RemoveResult has nothing refused")
+        if not self.success and not self.error:
+            raise ValueError("a failed RemoveResult needs an error")
+        if self.dry_run and self.device_response is not None:
+            raise ValueError("a dry run never dials, so it has no device_response")

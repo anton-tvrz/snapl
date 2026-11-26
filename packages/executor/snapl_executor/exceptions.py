@@ -1,8 +1,9 @@
 """Executor domain exceptions (T006).
 
 ExecutorError and subclasses are raised for programming errors only.
-Device-side failures (unreachable, rejected config, timeout) are returned
-as ApplyResult/DryRunResult objects — not exceptions.
+Render failures (unknown use case, template error, rendered text that is not
+JSON) and device-side failures (unreachable, rejected config, timeout) are
+returned as ApplyResult/DryRunResult objects — not exceptions.
 """
 
 from __future__ import annotations
