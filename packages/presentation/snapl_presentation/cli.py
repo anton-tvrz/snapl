@@ -35,7 +35,7 @@ from snapl_presentation.probes import connect as _connect
 from snapl_presentation.probes import count_pollers, identify_sot
 from snapl_presentation.render import FabricHealthSummary, build_renderer
 from snapl_presentation.resolve import build_store, load_states, resolve_device, resolve_devices
-from snapl_presentation.settings import CliSettings
+from snapl_presentation.settings import DEFAULT_USE_CASE, CliSettings
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -49,8 +49,6 @@ app = typer.Typer(
 )
 
 _stderr = Console(stderr=True)
-
-DEFAULT_USE_CASE = "dcfabric"
 
 UseCaseOpt = Annotated[str, typer.Option("--use-case", help="Use case to operate on.")]
 JsonOpt = Annotated[bool, typer.Option("--json", help="Emit JSON on stdout instead of a table.")]
@@ -361,7 +359,7 @@ async def reconcile(
     )
 
     renderer = build_renderer(as_json=as_json)
-    renderer.reconcile(result)
+    renderer.reconcile(result, names=dict(zip(target_ids, names, strict=True)), use_case=use_case)
     return renderer.reconcile_code(result)
 
 

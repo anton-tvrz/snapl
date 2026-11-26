@@ -75,7 +75,7 @@ packages/orchestrator/snapl_orchestrator/
 ├── telemetry/
 │   ├── __init__.py
 │   └── runner.py            # new: streams, ticks, intent refresh, health, audit
-└── worker/run.py            # starts and stops the runner; SNAPL_TELEMETRY=off, SNAPL_TELEMETRY_USE_CASE (#341)
+└── worker/run.py            # starts and stops the runner; SNAPL_TELEMETRY=off, SNAPL_TELEMETRY_USE_CASE (#341; unset means every use case since spec 008 FR-019)
 
 packages/presentation/snapl_presentation/
 ├── dashboard/models.py      # views, units, DeviceHealthView, FabricHealth, FabricNetwork

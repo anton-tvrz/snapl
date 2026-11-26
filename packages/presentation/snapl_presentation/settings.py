@@ -22,6 +22,9 @@ from snapl_orchestrator.worker.run import (
 
 DEFAULT_CONNECT_TIMEOUT = 10.0
 
+# The use case a command acts on when --use-case is not given.
+DEFAULT_USE_CASE = "dcfabric"
+
 # Host ports from dev/knowledge/host-resource-registry.md.
 DEFAULT_DASHBOARD_PORT = 18030
 DEFAULT_TEMPORAL_UI_PORT = 18034

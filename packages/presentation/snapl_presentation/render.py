@@ -23,9 +23,12 @@ from rich.table import Table
 from snapl_observability.models import DriftStatus
 from snapl_orchestrator.models import WorkflowReason
 from snapl_presentation.exit_codes import ExitCode
+from snapl_presentation.settings import DEFAULT_USE_CASE
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
     from datetime import datetime, timedelta
+    from uuid import UUID
 
     from snapl_observability.models import RemovalPlan
     from snapl_orchestrator.models import (
@@ -204,6 +207,21 @@ def _relative(path: str, entity: str) -> str:
     return f"…{path[len(entity) :]}" if path.startswith(f"{entity}/") else path
 
 
+def remove_hint(device: str, use_case: str) -> str:
+    """The line that points an operator at ``snapl remove`` for ``device`` (spec 008 FR-022).
+
+    ``snapl remove`` reads the default use case unless told otherwise, so any
+    other use case is named, or the command would not find the device.
+    """
+    target = device if use_case == DEFAULT_USE_CASE else f"{device} --use-case {use_case}"
+    return f"To remove what intent never asked for: snapl remove {target}"
+
+
+def _leaves_undesired(outcome: WorkflowResult) -> bool:
+    """Whether a deploy's verification left config on the device that intent never asked for."""
+    return bool(outcome.undesired_paths) or any(item.undesired for item in outcome.drift_items)
+
+
 def _dump(model: Any) -> Any:
     """JSON-ready form of a pydantic model, with enums and UUIDs stringified."""
     return json.loads(model.model_dump_json())
@@ -261,7 +279,9 @@ class Renderer:
     def scan(self, result: DriftScanResult) -> None:
         raise NotImplementedError
 
-    def reconcile(self, result: ReconcileResult) -> None:
+    def reconcile(
+        self, result: ReconcileResult, *, names: Mapping[UUID, str] | None = None, use_case: str = DEFAULT_USE_CASE
+    ) -> None:
         raise NotImplementedError
 
     def audit(self, events: list[AuditEvent]) -> None:
@@ -314,8 +334,13 @@ class HumanRenderer(Renderer):
                 for item in report.items:
                     table.add_row(f"  {_esc(item.path)}", _desired_cell(item), _esc(item.actual))
                 self._console.print(table)
+            if any(item.undesired for item in report.items):
+                # soft_wrap: a command to copy must not break across lines.
+                self._console.print(f"  {_esc(remove_hint(report.device_name, result.use_case_id))}", soft_wrap=True)
 
-    def reconcile(self, result: ReconcileResult) -> None:
+    def reconcile(
+        self, result: ReconcileResult, *, names: Mapping[UUID, str] | None = None, use_case: str = DEFAULT_USE_CASE
+    ) -> None:
         self._console.print(
             f"{result.succeeded}/{result.total} succeeded, "
             f"[red]{result.failed} failed[/], {result.skipped} skipped ({_seconds(result):.1f}s)"
@@ -323,6 +348,9 @@ class HumanRenderer(Renderer):
         for device_id, outcome in result.device_results.items():
             mark = "[green]ok[/]" if outcome.success else f"[red]{_esc(outcome.reason.value)}[/]"
             self._console.print(f"  {_esc(device_id)} {mark}")
+            if _leaves_undesired(outcome):
+                name = (names or {}).get(device_id, str(device_id))
+                self._console.print(f"    {_esc(remove_hint(name, use_case))}", soft_wrap=True)
 
     def audit(self, events: list[AuditEvent]) -> None:
         if not events:
@@ -502,7 +530,10 @@ class JsonRenderer(Renderer):
         payload["exit_code"] = int(self.scan_code(result))
         self._emit(payload)
 
-    def reconcile(self, result: ReconcileResult) -> None:
+    def reconcile(
+        self, result: ReconcileResult, *, names: Mapping[UUID, str] | None = None, use_case: str = DEFAULT_USE_CASE
+    ) -> None:
+        # The remove hint is human output only (spec 008 FR-022): the result already carries the paths.
         self._emit(_dump(result))
 
     def audit(self, events: list[AuditEvent]) -> None:

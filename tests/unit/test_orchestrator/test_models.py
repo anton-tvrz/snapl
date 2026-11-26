@@ -1080,3 +1080,31 @@ class TestRemoveConfigAuditStart:
     def test_other_workflow_starts_are_unaffected(self, workflow_type) -> None:
         e = self._start(workflow_type=workflow_type, actor=None, payload={})
         assert e.actor is None
+
+
+def test_workflow_result_carries_no_undesired_paths_by_default() -> None:
+    wr = WorkflowResult(
+        workflow_id="w",
+        workflow_type="DeployIntent",
+        target_id=uuid4(),
+        success=True,
+        reason=WorkflowReason.SUCCEEDED,
+        started_at=_NOW,
+        ended_at=_NOW,
+    )
+    assert wr.undesired_paths == []
+
+
+def test_workflow_result_undesired_paths_only_on_success() -> None:
+    """A failed verification already lists them in drift_items (spec 008 FR-022)."""
+    with pytest.raises(ValidationError, match="undesired_paths populated only for SUCCEEDED"):
+        WorkflowResult(
+            workflow_id="w",
+            workflow_type="DeployIntent",
+            target_id=uuid4(),
+            success=False,
+            reason=WorkflowReason.APPLY_FAILED,
+            started_at=_NOW,
+            ended_at=_NOW,
+            undesired_paths=["/interface[name=ethernet-1/7]/description"],
+        )

@@ -113,6 +113,10 @@ class WorkflowResult(BaseModel):
     started_at: datetime
     ended_at: datetime
     drift_items: list[DriftItem] = Field(default_factory=list)
+    # Config the device carries that intent never asked for, left in place by a
+    # deploy that otherwise verified (#121). A failed verification lists these
+    # in drift_items instead. The CLI names `snapl remove` from it (spec 008 FR-022).
+    undesired_paths: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _check_invariants(self) -> WorkflowResult:
@@ -122,6 +126,8 @@ class WorkflowResult(BaseModel):
             raise ValueError("success=False requires a non-SUCCEEDED reason")
         if self.drift_items and self.reason != WorkflowReason.VERIFICATION_FAILED:
             raise ValueError("drift_items populated only for VERIFICATION_FAILED")
+        if self.undesired_paths and self.reason != WorkflowReason.SUCCEEDED:
+            raise ValueError("undesired_paths populated only for SUCCEEDED")
         if self.ended_at < self.started_at:
             raise ValueError("ended_at must be >= started_at")
         return self

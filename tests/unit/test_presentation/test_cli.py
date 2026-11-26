@@ -217,6 +217,46 @@ class TestReconcile:
         assert result.exit_code == ExitCode.ERROR
         client.execute_workflow.assert_not_called()
 
+    @staticmethod
+    def _leaving_undesired(reconcile_result, device_id):
+        """A reconcile whose verification left undesired config on ``device_id`` (spec 008 FR-022)."""
+        result = reconcile_result(succeeded=1)
+        outcome = result.device_results[device_id]
+        result.device_results[device_id] = outcome.model_copy(
+            update={"undesired_paths": ["/interface[name=ethernet-1/9]/description"]}
+        )
+        return result
+
+    def test_named_reconcile_names_the_device_in_the_remove_hint(
+        self, sot, device_ids, reconcile_result, temporal_client
+    ) -> None:
+        client = temporal_client(self._leaving_undesired(reconcile_result, device_ids["spine-01"]))
+        with patch.object(cli, "_connect", new=AsyncMock(return_value=client)):
+            result = _invoke(["reconcile", "spine-01", "--yes"])
+
+        assert "snapl remove spine-01\n" in result.stdout
+        assert str(device_ids["spine-01"]) not in result.stdout.split("snapl remove", 1)[1]
+
+    def test_drifted_reconcile_names_the_device_in_the_remove_hint(
+        self, scan_result, reconcile_result, device_ids, temporal_client
+    ) -> None:
+        client = temporal_client(
+            scan_result(drifted=1), self._leaving_undesired(reconcile_result, device_ids["spine-01"])
+        )
+        with patch.object(cli, "_connect", new=AsyncMock(return_value=client)):
+            result = _invoke(["reconcile", "--drifted", "--yes"])
+
+        assert "snapl remove spine-01\n" in result.stdout
+
+    def test_reconcile_of_another_use_case_names_it_in_the_remove_hint(
+        self, sot, device_ids, reconcile_result, temporal_client
+    ) -> None:
+        client = temporal_client(self._leaving_undesired(reconcile_result, device_ids["spine-01"]))
+        with patch.object(cli, "_connect", new=AsyncMock(return_value=client)):
+            result = _invoke(["reconcile", "spine-01", "--use-case", "test_edge", "--yes"])
+
+        assert "snapl remove spine-01 --use-case test_edge\n" in result.stdout
+
     def test_failed_device_exits_non_zero(self, sot, reconcile_result, temporal_client) -> None:
         client = temporal_client(reconcile_result(succeeded=1, failed=1))
         with patch.object(cli, "_connect", new=AsyncMock(return_value=client)):

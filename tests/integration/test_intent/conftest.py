@@ -20,16 +20,19 @@ Env overrides (defaults match ``development/.env``):
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import httpx
 import pytest
 
+import snapl_intent
 from snapl_intent.infrahub.client import (
     DEFAULT_ADDRESS,  # single source of truth (#61/#74)
     build_client,
 )
-from snapl_intent.infrahub.store import InfrahubIntentStore
+from snapl_intent.infrahub.seed import load_seed_file
+from snapl_intent.infrahub.store import DEVICE_KIND, INTERFACE_KIND, SESSION_KIND, InfrahubIntentStore
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -124,15 +127,45 @@ _QUERY_TEST_DEVICES: list[dict[str, str]] = [
 ]
 
 
+_TEST_EDGE_TOPOLOGY = Path(snapl_intent.__file__).parent / "seed" / "test_edge" / "topology.yml"
+
+
 @pytest.fixture(scope="session")
-async def _test_edge_seeded_once(infrahub_address: str, infrahub_reachable: bool, _provisioned_once: bool) -> bool:
-    """Seed the test_edge topology exactly once per test session."""
+async def _test_edge_seeded_once(
+    infrahub_address: str, infrahub_reachable: bool, _provisioned_once: bool
+) -> AsyncIterator[bool]:
+    """Seed the test_edge topology once per test session, and remove its devices after it.
+
+    The worker's telemetry streams every use case's devices (spec 008 FR-019),
+    so a test_edge device left behind is dialled at an address no lab node
+    answers, forever (#341).
+    """
     if not (infrahub_reachable and _provisioned_once):
-        return False
+        yield False
+        return
     client = build_client(address=infrahub_address, api_token=_resolved_token())
     store = InfrahubIntentStore(client=client)
-    await store.seed("test_edge")
-    return True
+    try:
+        await store.seed("test_edge")
+        yield True
+    finally:
+        await _remove_test_edge_devices(client)
+
+
+async def _remove_test_edge_devices(client: Any) -> None:
+    """Delete each test_edge device, after its BGP sessions and interfaces.
+
+    Sessions too: a re-seed finds a session by its description and updates its
+    values, not its devices, so one left behind would stay orphaned. Children
+    are deleted explicitly rather than trusting a cascade. The rest (ASNs,
+    prefixes, the location) holds no device, and the next seed reuses it.
+    """
+    for device in load_seed_file(_TEST_EDGE_TOPOLOGY)["devices"]:
+        for node in await client.filters(kind=DEVICE_KIND, name__value=device["name"]):
+            for kind in (SESSION_KIND, INTERFACE_KIND):
+                for child in await client.filters(kind=kind, device__ids=[str(node.id)]):
+                    await child.delete()
+            await node.delete()
 
 
 @pytest.fixture(scope="session")

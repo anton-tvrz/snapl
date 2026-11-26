@@ -307,6 +307,7 @@ class DeployIntentWorkflow:
             ),
             started_at=started_at,
             ended_at=workflow.now(),
+            undesired_paths=undesired_paths,
         )
 
     async def _terminate_failure(
