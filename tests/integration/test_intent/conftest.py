@@ -152,17 +152,24 @@ async def _test_edge_seeded_once(
         await _remove_test_edge_devices(client)
 
 
-async def _remove_test_edge_devices(client: Any) -> None:
-    """Delete each test_edge device, after its BGP sessions and interfaces.
+# The seed gives each device its own copy of a peer group, ``<group>@<device>``,
+# whose ``device`` is mandatory: Infrahub refuses to delete a device one still
+# names (found live, 2026-11-26).
+_PEER_GROUP_KIND = "RoutingBGPPeerGroup"
 
-    Sessions too: a re-seed finds a session by its description and updates its
-    values, not its devices, so one left behind would stay orphaned. Children
-    are deleted explicitly rather than trusting a cascade. The rest (ASNs,
-    prefixes, the location) holds no device, and the next seed reuses it.
+
+async def _remove_test_edge_devices(client: Any) -> None:
+    """Delete each test_edge device, after everything the seed hung on it.
+
+    Sessions first: they name the peer group, and a re-seed finds a session by
+    its description and updates its values, not its devices, so one left behind
+    would stay orphaned. Then the device's peer groups, which name the device,
+    then its interfaces, explicitly rather than trusting a cascade. The rest
+    (ASNs, prefixes, the location) names no device, and the next seed reuses it.
     """
     for device in load_seed_file(_TEST_EDGE_TOPOLOGY)["devices"]:
         for node in await client.filters(kind=DEVICE_KIND, name__value=device["name"]):
-            for kind in (SESSION_KIND, INTERFACE_KIND):
+            for kind in (SESSION_KIND, _PEER_GROUP_KIND, INTERFACE_KIND):
                 for child in await client.filters(kind=kind, device__ids=[str(node.id)]):
                     await child.delete()
             await node.delete()
