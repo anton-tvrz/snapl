@@ -86,9 +86,84 @@ class TestEntityFieldMap:
         from snapl_observability.structural.diff import ENTITY_FIELD_MAP
 
         entry = ENTITY_FIELD_MAP["interface"]
-        assert entry["key_field"] == "name"
+        assert entry["key_fields"] == ("name",)
         assert "{name}" in entry["path_template"]
         assert "mtu" in entry["fields"]
+
+
+# A test-only two-key kind, passed straight to the helpers: the real map
+# gains no new kind in this change.
+_TWO_KEY_SPEC = {
+    "fields": ["action"],
+    "path_template": "/x[a={a}]/y[b={b}]",
+    "key_fields": ("a", "b"),
+    "value_fields": ("action",),
+    "protected": (),
+}
+
+
+class TestCompositeKeys:
+    """Spec 008 research R6: an entity may be keyed by more than one field."""
+
+    def test_every_kind_declares_key_fields_as_a_non_empty_tuple(self):
+        from snapl_observability.structural.diff import ENTITY_FIELD_MAP
+
+        for kind, spec in ENTITY_FIELD_MAP.items():
+            assert "key_field" not in spec, kind
+            assert isinstance(spec["key_fields"], tuple), kind
+            assert spec["key_fields"], kind
+            for field in spec["key_fields"]:
+                assert "{" + field + "}" in spec["path_template"], (kind, field)
+
+    def test_key_pattern_captures_one_group_per_placeholder(self):
+        from snapl_observability.structural.diff import _key_pattern
+
+        match = _key_pattern("/x[a={a}]/y[b={b}]").match("/x[a=k1]/y[b=2]")
+        assert match is not None
+        assert match.groups() == ("k1", "2")
+
+    def test_key_pattern_keeps_a_slash_in_a_key(self):
+        from snapl_observability.structural.diff import _key_pattern
+
+        match = _key_pattern("/interface[name={name}]").match("/interface[name=ethernet-1/7]")
+        assert match is not None
+        assert match.groups() == ("ethernet-1/7",)
+
+    def test_key_pattern_does_not_match_a_deeper_path(self):
+        from snapl_observability.structural.diff import _key_pattern
+
+        assert _key_pattern("/x[a={a}]/y[b={b}]").match("/x[a=k1]/y[b=2]/z[c=3]") is None
+        assert _key_pattern("/interface[name={name}]").match("/interface[name=e1]/subinterface[index=0]") is None
+
+    def test_diff_entity_formats_the_path_from_every_key_field(self):
+        from types import SimpleNamespace
+
+        from snapl_observability.structural.diff import _diff_entity
+
+        entity = SimpleNamespace(a="k1", b=2, action="drop")
+        actual = {"/x[a=k1]/y[b=2]": {"action": "accept"}}
+        items = _diff_entity(entity, _TWO_KEY_SPEC, actual, kind="two_key")
+        assert [(i.path, i.desired, i.actual) for i in items] == [("/x[a=k1]/y[b=2]/action", "drop", "accept")]
+
+    def test_undesired_entities_compares_key_tuples(self):
+        from snapl_observability.structural.diff import _undesired_entities
+
+        actual = {
+            "/x[a=k1]/y[b=2]": {"action": "drop"},
+            "/x[a=k1]/y[b=3]": {"action": "accept"},
+            "/x[a=k2]/y[b=2]": {"action": "accept"},
+        }
+        items = _undesired_entities(_TWO_KEY_SPEC, actual, kind="two_key", desired_keys={("k1", "2")})
+        assert [i.path for i in items] == ["/x[a=k1]/y[b=3]/action", "/x[a=k2]/y[b=2]/action"]
+        assert all(i.undesired for i in items)
+
+    def test_an_int_desired_key_equals_the_string_captured_from_the_path(self):
+        # data-model §5, key types: a sequence is an int in the model, the
+        # capture is a str. Both sides go through the template, so 2 == "2".
+        from snapl_observability.structural.diff import _undesired_entities
+
+        actual = {"/x[a=k1]/y[b=2]": {"action": "drop"}}
+        assert _undesired_entities(_TWO_KEY_SPEC, actual, kind="two_key", desired_keys={("k1", 2)}) == []
 
 
 class TestDiffMatchingState:
